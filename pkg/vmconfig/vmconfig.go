@@ -5,6 +5,12 @@ type VMConfig struct {
 	MemoryInMB int32
 	Cpus       int8
 	RootFS     string
+
+	// GVproxy control endpoint
+	GVproxyEndpoint string
+	// NetworkStackBackend is the network stack backend to use. which provided
+	// by gvproxy
+	NetworkStackBackend string
 }
 
 // Cmdline exec cmdline within rootfs

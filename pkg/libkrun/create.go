@@ -8,18 +8,13 @@ package libkrun
 */
 import "C"
 import (
+	"context"
 	"fmt"
-	"github.com/sirupsen/logrus"
 	"linuxvm/pkg/vmconfig"
+	"net/url"
 	"syscall"
 	"unsafe"
 )
-
-type LinuxDistro struct {
-	Name       string
-	RootFSPath string
-	MemoryInMB int32
-}
 
 type loglevel int
 
@@ -68,7 +63,7 @@ func GoString2CString(str string) (*C.char, func()) {
 	}
 }
 
-func CreateVM(vmc *vmconfig.VMConfig, cmdline *vmconfig.Cmdline, loglevel loglevel) error {
+func CreateVM(ctx context.Context, vmc *vmconfig.VMConfig, cmdline *vmconfig.Cmdline, loglevel loglevel) error {
 	id := C.krun_create_ctx()
 	if id < 0 {
 		return fmt.Errorf("failed to create ctx: %v", syscall.Errno(-id))
@@ -90,8 +85,7 @@ func CreateVM(vmc *vmconfig.VMConfig, cmdline *vmconfig.Cmdline, loglevel loglev
 		return fmt.Errorf("failed to set root: %v", syscall.Errno(-ret))
 	}
 
-	virglFlags := VIRGLRENDERER_USE_EGL | VIRGLRENDERER_DRM |
-		VIRGLRENDERER_THREAD_SYNC | VIRGLRENDERER_USE_ASYNC_FENCE_CB
+	virglFlags := VIRGLRENDERER_VENUS | VIRGLRENDERER_NO_VIRGL
 
 	virgl_flags := C.uint32_t(virglFlags)
 	if err := C.krun_set_gpu_options(ctxID, virgl_flags); err != 0 {
@@ -120,11 +114,29 @@ func CreateVM(vmc *vmconfig.VMConfig, cmdline *vmconfig.Cmdline, loglevel loglev
 	defer defunct6()
 
 	if ret := C.krun_set_exec(ctxID, targetBin, &targetBinArgs[0], &envPassIn[0]); ret != 0 {
-		logrus.Fatalf("Failed to set exec: %v\n", syscall.Errno(-ret))
+		return fmt.Errorf("Failed to set exec: %v\n", syscall.Errno(-ret))
+	}
+
+	parse, err := url.Parse(vmc.NetworkStackBackend)
+	if err != nil {
+		return fmt.Errorf("Failed to parse url: %v\n", err)
+	}
+	vfkitSocketPath := parse.Path
+
+	gvproxyVfkitSocket, defunct7 := GoString2CString(vfkitSocketPath)
+	defer defunct7()
+	if ret := C.krun_set_gvproxy_path(ctxID, gvproxyVfkitSocket); ret != 0 {
+		return fmt.Errorf("Failed to set gvproxy path: %v\n", syscall.Errno(-ret))
+	}
+
+	blockID, _ := GoString2CString("1")
+	disk, _ := GoString2CString("/Users/danhexon/disk")
+	if ret := C.krun_add_disk(ctxID, blockID, disk, false); ret != 0 {
+		return fmt.Errorf("Failed to add disk: %v\n", syscall.Errno(-ret))
 	}
 
 	if ret := C.krun_start_enter(ctxID); ret != 0 {
-		logrus.Fatalf("Failed to start enter: %v\n", syscall.Errno(-ret))
+		return fmt.Errorf("Failed to start enter: %v\n", syscall.Errno(-ret))
 	}
 
 	return nil
