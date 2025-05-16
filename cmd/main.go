@@ -34,6 +34,9 @@ func main() {
 			&cli.StringSliceFlag{
 				Name: "envs",
 			},
+			&cli.StringFlag{
+				Name: "data-disk",
+			},
 		},
 		Action: CreateVM,
 	}
@@ -48,6 +51,7 @@ func CreateVM(ctx context.Context, command *cli.Command) error {
 		MemoryInMB: command.Int32("memory"),
 		Cpus:       command.Int8("cpus"),
 		RootFS:     command.String("rootfs"),
+		DataDisk:   command.String("data-disk"),
 	}
 
 	tmpdir, err := os.MkdirTemp("", "gvproxy")

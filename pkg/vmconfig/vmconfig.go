@@ -6,6 +6,8 @@ type VMConfig struct {
 	Cpus       int8
 	RootFS     string
 
+	// data disk will map into /dev/vdX
+	DataDisk string
 	// GVproxy control endpoint
 	GVproxyEndpoint string
 	// NetworkStackBackend is the network stack backend to use. which provided
