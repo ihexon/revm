@@ -14,28 +14,33 @@ import (
 
 func main() {
 	app := cli.Command{
-		Name:        "alpiner",
-		Usage:       "Linux VM",
-		UsageText:   "linuxvm [command] [flags]",
-		Description: "Linux VM",
+		Name:        os.Args[0],
+		Usage:       "run a linux shell in 1 second",
+		UsageText:   os.Args[0] + " [command] [flags]",
+		Description: "run a linux shell in 1 second",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     "rootfs",
+				Usage:    "rootfs path, e.g. /var/lib/libkrun/rootfs/alpine-3.15.0",
 				Required: true,
 			},
 			&cli.Int8Flag{
 				Name:  "cpus",
+				Usage: "given how many cpu cores",
 				Value: 1,
 			},
 			&cli.Int32Flag{
 				Name:  "memory",
+				Usage: "set memory in MB",
 				Value: 512,
 			},
 			&cli.StringSliceFlag{
-				Name: "envs",
+				Name:  "envs",
+				Usage: "set envs for cmdline, e.g. --envs=FOO=bar --envs=BAZ=qux",
 			},
 			&cli.StringFlag{
-				Name: "data-disk",
+				Name:  "data-disk",
+				Usage: "set data disk path, the disk will be map into /dev/vdX",
 			},
 		},
 		Action: CreateVM,
