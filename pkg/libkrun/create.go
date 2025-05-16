@@ -10,6 +10,7 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 	"linuxvm/pkg/vmconfig"
 	"net/url"
 	"syscall"
@@ -80,7 +81,7 @@ func CreateVM(ctx context.Context, vmc *vmconfig.VMConfig, cmdline *vmconfig.Cmd
 
 	rootfs, defunct := GoString2CString(vmc.RootFS)
 	defer defunct()
-	// 显式进行类型转换
+
 	if ret := C.krun_set_root(ctxID, (rootfs)); ret != 0 {
 		return fmt.Errorf("failed to set root: %v", syscall.Errno(-ret))
 	}
@@ -129,10 +130,16 @@ func CreateVM(ctx context.Context, vmc *vmconfig.VMConfig, cmdline *vmconfig.Cmd
 		return fmt.Errorf("Failed to set gvproxy path: %v\n", syscall.Errno(-ret))
 	}
 
-	blockID, _ := GoString2CString("1")
-	disk, _ := GoString2CString("/Users/danhexon/disk")
-	if ret := C.krun_add_disk(ctxID, blockID, disk, false); ret != 0 {
-		return fmt.Errorf("Failed to add disk: %v\n", syscall.Errno(-ret))
+	if vmc.DataDisk != "" {
+		uuidGen := uuid.New()
+		blockID, funcBlkIDStr := GoString2CString(uuidGen.String())
+		defer funcBlkIDStr()
+		disk, funcDiskStr := GoString2CString(vmc.DataDisk)
+		defer funcDiskStr()
+		
+		if ret := C.krun_add_disk(ctxID, blockID, disk, false); ret != 0 {
+			return fmt.Errorf("Failed to add disk: %v\n", syscall.Errno(-ret))
+		}
 	}
 
 	if ret := C.krun_start_enter(ctxID); ret != 0 {

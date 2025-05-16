@@ -3,13 +3,15 @@ module linuxvm
 go 1.24
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.9.4-0.20241118143825-d1e633264448
 	github.com/urfave/cli/v3 v3.3.3-0.20250428204840-66d871f8b5bf
 	golang.org/x/sync v0.14.0
 	golang.org/x/sys v0.33.0
-	gvisor.dev/gvisor v0.0.0-20240916094835-a174eb65023f
 )
+
+require gvisor.dev/gvisor v0.0.0-20240916094835-a174eb65023f // indirect
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
