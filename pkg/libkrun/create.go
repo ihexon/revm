@@ -1,8 +1,8 @@
 package libkrun
 
 /*
-#cgo CFLAGS: -I /Users/danhexon/Downloads/libkrun/1.11.2-pre/include
-#cgo LDFLAGS: -L /Users/danhexon/Downloads/libkrun/1.11.2-pre/lib -lkrun -L /Users/danhexon/Downloads/libkrunfw/4.9.0/lib -l krunfw
+#cgo CFLAGS: -I ../../include
+#cgo LDFLAGS: -L ../../lib  -lkrun -lkrunfw
 #include <libkrun.h>
 #include <stdlib.h>
 */
@@ -136,7 +136,7 @@ func CreateVM(ctx context.Context, vmc *vmconfig.VMConfig, cmdline *vmconfig.Cmd
 		defer funcBlkIDStr()
 		disk, funcDiskStr := GoString2CString(vmc.DataDisk)
 		defer funcDiskStr()
-		
+
 		if ret := C.krun_add_disk(ctxID, blockID, disk, false); ret != 0 {
 			return fmt.Errorf("Failed to add disk: %v\n", syscall.Errno(-ret))
 		}
