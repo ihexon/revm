@@ -10,7 +10,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sys/unix"
 	"linuxvm/pkg/vmconfig"
 	"net"
 	"net/http"
@@ -231,34 +230,6 @@ func run(ctx context.Context, g *errgroup.Group, configuration *gvptypes.Configu
 	}
 
 	return g.Wait()
-}
-
-func WaitForSocket(ctx context.Context, socketPath string) error {
-	var backoff = 30 * time.Millisecond
-	for range 100 {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("cancel waitForSocket,ctx cancelled: %w", context.Cause(ctx))
-		default:
-			if err := Exists(socketPath); err != nil {
-				logrus.Warnf("Gvproxy network backend socket not ready, try test %q again....", socketPath)
-				time.Sleep(backoff)
-				continue
-			}
-			return nil
-		}
-	}
-	return fmt.Errorf("gvproxy network backend socket file not created in %q", socketPath)
-}
-
-func Exists(path string) error {
-	// It uses unix.Faccessat which is a faster operation compared to os.Stat for
-	// simply checking the existence of a file.
-	err := unix.Faccessat(unix.AT_FDCWD, path, unix.F_OK, 0)
-	if err != nil {
-		return &os.PathError{Op: "faccessat", Path: path, Err: err}
-	}
-	return nil
 }
 
 func StartNetworking(ctx context.Context, vmc *vmconfig.VMConfig) error {

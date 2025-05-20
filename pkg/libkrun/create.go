@@ -86,10 +86,8 @@ func CreateVM(ctx context.Context, vmc *vmconfig.VMConfig, cmdline *vmconfig.Cmd
 		return fmt.Errorf("failed to set root: %v", syscall.Errno(-ret))
 	}
 
-	virglFlags := VIRGLRENDERER_VENUS | VIRGLRENDERER_NO_VIRGL
-
-	virgl_flags := C.uint32_t(virglFlags)
-	if err := C.krun_set_gpu_options(ctxID, virgl_flags); err != 0 {
+	virglFlags := C.uint32_t(VIRGLRENDERER_VENUS | VIRGLRENDERER_NO_VIRGL)
+	if err := C.krun_set_gpu_options(ctxID, virglFlags); err != 0 {
 		return fmt.Errorf("Failed to set gpu options: %v\n", syscall.Errno(-err))
 	}
 
