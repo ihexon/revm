@@ -8,11 +8,20 @@ $ mkdir ~/alpine_rootfs && tar -xvf -C ~/alpine_rootfs
 
 ## run the rootfs
 
+
 ```shell
 ./revm --rootfs ~/alpine_rootfs --  /bin/sh
 ```
 
-You can given a virtual disk into vm
+You need to run `/dhclient4-linux-arm64` get ip address from network stack(provided by gvproxy) when get into vm shell:
+```shell
+vm shell $ /dhclient4-linux-arm64
+vm shell $ ifconfig # or ip addr
+```
+`dhclient4-linux-arm64` is a custom self-contained dhclient4 used to configure the network interface. 
+
+
+You can given a virtual disk into vm, but you need to format the disk and mount into somewhere:
 ```shell
 ./revm --rootfs ~/alpine_rootfs  --data-disk ~/disk --  /bin/sh
 
