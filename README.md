@@ -29,9 +29,6 @@ vm $ mkfs.ext4 /dev/vda
 vm $ mount /dev/vda /mnt
 ```
 
-
-
-
 ## Help message
 
 ```
