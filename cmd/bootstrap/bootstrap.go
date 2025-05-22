@@ -5,18 +5,16 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"linuxvm/pkg/network"
-	"os"
-	"os/exec"
 )
 
 const (
 	eth0     = "eth0"
 	attempts = 1
-	verbose  = false
+	verbose  = true
 )
 
 func main() {
-	g, ctx := errgroup.WithContext(context.Background())
+	g, _ := errgroup.WithContext(context.Background())
 	g.Go(func() error {
 		err := network.DHClient4(eth0, attempts, verbose)
 		if err != nil {
