@@ -34,7 +34,7 @@ func main() {
 	//	logrus.Infof("%q", cmd.Args)
 	//	return cmd.Run()
 	//})
-	
+
 	g.Go(func() error {
 		cmd := exec.CommandContext(ctx, "/bin/mount", "-o", "bind", "/dev/shm", "/tmp")
 		cmd.Stdout = os.Stdout
