@@ -1,13 +1,13 @@
 //go:build linux
 
-package startup
+package network
 
 import (
 	"fmt"
 	"github.com/insomniacslk/dhcp/dhcpv4"
 	"github.com/insomniacslk/dhcp/dhcpv4/client4"
 	"github.com/insomniacslk/dhcp/netboot"
-	"log"
+	"github.com/sirupsen/logrus"
 	"net"
 	"time"
 )
@@ -40,17 +40,16 @@ func dhClient4(ifname string, attempts int, verbose bool) (*netboot.BootConf, er
 		err  error
 	)
 	for attempt := 0; attempt < attempts; attempt++ {
-		log.Printf("Attempt %d of %d", attempt+1, attempts)
 		conv, err = client.Exchange(ifname)
 		if err != nil && attempt < attempts {
-			log.Printf("Error: %v", err)
+			logrus.Errorf("Error: %v", err)
 			continue
 		}
 		break
 	}
 	if verbose {
 		for _, m := range conv {
-			log.Print(m.Summary())
+			logrus.Info(m.Summary())
 		}
 	}
 	if err != nil {

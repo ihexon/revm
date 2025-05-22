@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-func CopyDHClientInToRootFS(rootfs string) error {
+func CopyBootstrapInToRootFS(rootfs string) error {
 	path, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable path: %w", err)
@@ -23,7 +23,7 @@ func CopyDHClientInToRootFS(rootfs string) error {
 		return fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	path = filepath.Join(filepath.Dir(path), "dhclient4-linux-arm64")
+	path = filepath.Join(filepath.Dir(path), "bootstrap-arm64")
 	logrus.Infof("dhclient4 client path %q", path)
 
 	fd, err := os.Open(path)
@@ -32,7 +32,7 @@ func CopyDHClientInToRootFS(rootfs string) error {
 	}
 	defer fd.Close()
 
-	destPath := filepath.Join(rootfs, "dhclient4-linux-arm64")
+	destPath := filepath.Join(rootfs, "bootstrap-arm64")
 
 	destFd, err := os.Create(destPath)
 	if err != nil {

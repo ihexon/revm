@@ -1,3 +1,5 @@
+//go:build darwin
+
 package main
 
 import (
@@ -84,7 +86,7 @@ func CreateVM(ctx context.Context, command *cli.Command) error {
 	logrus.Infof("set envs: %v", cmdline.Env)
 	logrus.Infof("run cmdline: %v, %v", cmdline.TargetBin, cmdline.TargetBinArgs)
 
-	err = system.CopyDHClientInToRootFS(vmc.RootFS)
+	err = system.CopyBootstrapInToRootFS(vmc.RootFS)
 	if err != nil {
 		return fmt.Errorf("failed to copy dhclient4 to rootfs: %v", err)
 	}
