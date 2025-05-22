@@ -55,6 +55,12 @@ func main() {
 }
 
 func CreateVM(ctx context.Context, command *cli.Command) error {
+	err := system.Rlimit()
+	if err != nil {
+		logrus.Infof("failed to set rlimit: %v", err)
+		return err
+	}
+
 	vmc := &vmconfig.VMConfig{
 		MemoryInMB: command.Int32("memory"),
 		Cpus:       command.Int8("cpus"),
@@ -69,8 +75,6 @@ func CreateVM(ctx context.Context, command *cli.Command) error {
 
 	vmc.GVproxyEndpoint = fmt.Sprintf("unix://%s/gvproxy-control.sock", tmpdir)
 	vmc.NetworkStackBackend = fmt.Sprintf("unixgram://%s/vfkit-network-backend.sock", tmpdir)
-
-	logrus.Warnf("%v", command.Args().First())
 
 	cmdline := &vmconfig.Cmdline{
 		TargetBin:     command.Args().First(),

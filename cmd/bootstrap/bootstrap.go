@@ -1,5 +1,3 @@
-//go:build linux
-
 package main
 
 import (
@@ -28,14 +26,14 @@ func main() {
 		return nil
 	})
 
-	g.Go(func() error {
-		cmd := exec.CommandContext(ctx, os.Args[1], os.Args[2:]...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Stdin = os.Stdin
-		logrus.Infof("%q", cmd.Args)
-		return cmd.Run()
-	})
+	//g.Go(func() error {
+	//	cmd := exec.CommandContext(ctx, os.Args[1], os.Args[2:]...)
+	//	cmd.Stdout = os.Stdout
+	//	cmd.Stderr = os.Stderr
+	//	cmd.Stdin = os.Stdin
+	//	logrus.Infof("%q", cmd.Args)
+	//	return cmd.Run()
+	//})
 
 	if err := g.Wait(); err != nil {
 		logrus.Errorf("failed to run cmd: %v", err)
