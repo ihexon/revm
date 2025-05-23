@@ -92,7 +92,7 @@ func searchDomains() []string {
 			logrus.Errorf("open file error: %v", err)
 			return nil
 		}
-		defer f.Close()
+		defer f.Close() //nolint:errcheck
 		sc := bufio.NewScanner(f)
 		searchPrefix := "search "
 		for sc.Scan() {

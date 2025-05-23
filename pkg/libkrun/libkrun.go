@@ -109,7 +109,7 @@ func NewVM(vmc vmconfig.VMConfig) (*VMInfo, error) {
 func (v *VMInfo) SetNetworkProvider() (*VMInfo, error) {
 	parse, err := url.Parse(v.vmc.NetworkStackBackend)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to parse url: %v\n", err)
+		return nil, fmt.Errorf("failed to parse url: %v", err)
 	}
 
 	gvpSocket, defunct := GoString2CString(parse.Path)
@@ -135,7 +135,7 @@ func (v *VMInfo) SetRLimited() (*VMInfo, error) {
 	defer defunct()
 
 	if err := C.krun_set_rlimits(C.uint32_t(v.vmc.CtxID), &limitStr[0]); err != 0 {
-		return nil, fmt.Errorf("Failed to set rlimits: %v\n", syscall.Errno(-err))
+		return nil, fmt.Errorf("failed to set rlimits: %v", syscall.Errno(-err))
 	}
 	return v, nil
 }
@@ -187,7 +187,7 @@ const (
 
 func (v *VMInfo) SetGPU() (*VMInfo, error) {
 	if err := C.krun_set_gpu_options(C.uint32_t(v.vmc.CtxID), C.uint32_t(VIRGLRENDERER_VENUS|VIRGLRENDERER_NO_VIRGL)); err != 0 {
-		return nil, fmt.Errorf("Failed to set gpu options: %v\n", syscall.Errno(-err))
+		return nil, fmt.Errorf("failed to set gpu options: %v", syscall.Errno(-err))
 	}
 	return v, nil
 }
@@ -214,7 +214,7 @@ func (v *VMInfo) AddDisk() (*VMInfo, error) {
 
 func (v *VMInfo) StartEnter() error {
 	if ret := C.krun_start_enter(C.uint32_t(v.vmc.CtxID)); ret != 0 {
-		return fmt.Errorf("Failed to start enter: %v\n", syscall.Errno(-ret))
+		return fmt.Errorf("failed to start enter: %v", syscall.Errno(-ret))
 	}
 	return nil
 }
@@ -227,7 +227,7 @@ func addDisk(ctxID uint32, disk string) error {
 	defer freeFunc2()
 
 	if ret := C.krun_add_disk(C.uint32_t(ctxID), blockID, extDisk, false); ret != 0 {
-		return fmt.Errorf("Failed to add disk: %v\n", syscall.Errno(-ret))
+		return fmt.Errorf("failed to add disk: %v", syscall.Errno(-ret))
 	}
 
 	return nil
