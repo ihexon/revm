@@ -11,9 +11,11 @@ import (
 	"context"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/pkg/errors"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/vmconfig"
 	"net/url"
+	"os"
 	"syscall"
 	"unsafe"
 )
@@ -73,7 +75,7 @@ func StartVM(ctx context.Context, vmc vmconfig.VMConfig, cmdline vmconfig.Cmdlin
 
 	vm, err = vm.AddDisk()
 	if err != nil {
-		return fmt.Errorf("set gpu err: %v", err)
+		return fmt.Errorf("set disk err: %v", err)
 	}
 
 	return vm.StartEnter()
@@ -220,6 +222,11 @@ func (v *VMInfo) StartEnter() error {
 }
 
 func addDisk(ctxID uint32, disk string) error {
+	_, err := os.Stat(disk)
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("%q disk not exist", disk)
+	}
+
 	blockID, freeFunc := GoString2CString(uuid.New().String())
 	defer freeFunc()
 
