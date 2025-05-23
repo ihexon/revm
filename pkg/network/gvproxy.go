@@ -232,7 +232,7 @@ func run(ctx context.Context, g *errgroup.Group, configuration *gvptypes.Configu
 	return g.Wait()
 }
 
-func StartNetworking(ctx context.Context, vmc *vmconfig.VMConfig) error {
+func StartNetworking(ctx context.Context, vmc vmconfig.VMConfig) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	endpoints := EndPoints{

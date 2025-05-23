@@ -3,8 +3,9 @@ module linuxvm
 go 1.24
 
 require (
-	github.com/diskfs/go-diskfs v1.6.1-0.20250518130040-b3152784dab9
 	github.com/google/uuid v1.6.0
+	github.com/moby/sys/mount v0.3.5-0.20240721113140-2c9636d9130c
+	github.com/moby/sys/mountinfo v0.7.2
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.9.4-0.20241118143825-d1e633264448
 	github.com/urfave/cli/v3 v3.3.3-0.20250428204840-66d871f8b5bf
@@ -13,15 +14,10 @@ require (
 )
 
 require (
-	github.com/djherbis/times v1.6.0 // indirect
-	github.com/elliotwutingfeng/asciiset v0.0.0-20240214025120-24af97c84155 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/jsimonetti/rtnetlink v1.3.5 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/mdlayher/netlink v1.7.2 // indirect
-	github.com/pkg/xattr v0.4.10 // indirect
-	github.com/ulikunitz/xz v0.5.12 // indirect
 	gvisor.dev/gvisor v0.0.0-20240916094835-a174eb65023f // indirect
 )
 
