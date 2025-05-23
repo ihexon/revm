@@ -41,7 +41,7 @@ func main() {
 				Name:  "envs",
 				Usage: "set envs for cmdline, e.g. --envs=FOO=bar --envs=BAZ=qux",
 			},
-			&cli.StringFlag{
+			&cli.StringSliceFlag{
 				Name:  "data-disk",
 				Usage: "set data disk path, the disk will be map into /dev/vdX",
 			},
@@ -61,11 +61,11 @@ func CreateVM(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 
-	vmc := &vmconfig.VMConfig{
+	vmc := vmconfig.VMConfig{
 		MemoryInMB: command.Int32("memory"),
 		Cpus:       command.Int8("cpus"),
 		RootFS:     command.String("rootfs"),
-		DataDisk:   command.String("data-disk"),
+		DataDisk:   command.StringSlice("data-disk"),
 	}
 
 	tmpdir, err := os.MkdirTemp("", "gvproxy")
@@ -76,7 +76,8 @@ func CreateVM(ctx context.Context, command *cli.Command) error {
 	vmc.GVproxyEndpoint = fmt.Sprintf("unix://%s/gvproxy-control.sock", tmpdir)
 	vmc.NetworkStackBackend = fmt.Sprintf("unixgram://%s/vfkit-network-backend.sock", tmpdir)
 
-	cmdline := &vmconfig.Cmdline{
+	cmdline := vmconfig.Cmdline{
+		Workspace:     "/",
 		TargetBin:     command.Args().First(),
 		TargetBinArgs: command.Args().Tail(),
 		Env:           command.StringSlice("envs"),
@@ -88,7 +89,8 @@ func CreateVM(ctx context.Context, command *cli.Command) error {
 	logrus.Infof("set gvproxy control: %q", vmc.GVproxyEndpoint)
 	logrus.Infof("set network backend: %q", vmc.NetworkStackBackend)
 	logrus.Infof("set envs: %v", cmdline.Env)
-	logrus.Infof("run cmdline: %v, %v", cmdline.TargetBin, cmdline.TargetBinArgs)
+	logrus.Infof("set data disk: %v", vmc.DataDisk)
+	logrus.Infof("set cmdline: %v, %v", cmdline.TargetBin, cmdline.TargetBinArgs)
 
 	err = system.CopyBootstrapInToRootFS(vmc.RootFS)
 	if err != nil {
@@ -102,7 +104,7 @@ func CreateVM(ctx context.Context, command *cli.Command) error {
 	})
 
 	g.Go(func() error {
-		return libkrun.CreateVM(ctx, vmc, cmdline, libkrun.INFO)
+		return libkrun.StartVM(ctx, vmc, cmdline)
 	})
 
 	return g.Wait()

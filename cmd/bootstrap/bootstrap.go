@@ -4,9 +4,8 @@ import (
 	"context"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
+	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
-	"os"
-	"os/exec"
 )
 
 const (
@@ -16,7 +15,7 @@ const (
 )
 
 func main() {
-	g, ctx := errgroup.WithContext(context.Background())
+	g, _ := errgroup.WithContext(context.Background())
 	g.Go(func() error {
 		err := network.DHClient4(eth0, attempts, verbose)
 		if err != nil {
@@ -26,22 +25,8 @@ func main() {
 		return nil
 	})
 
-	//g.Go(func() error {
-	//	cmd := exec.CommandContext(ctx, os.Args[1], os.Args[2:]...)
-	//	cmd.Stdout = os.Stdout
-	//	cmd.Stderr = os.Stderr
-	//	cmd.Stdin = os.Stdin
-	//	logrus.Infof("%q", cmd.Args)
-	//	return cmd.Run()
-	//})
-
 	g.Go(func() error {
-		cmd := exec.CommandContext(ctx, "/bin/mount", "-o", "bind", "/dev/shm", "/tmp")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Stdin = os.Stdin
-		logrus.Infof("%q", cmd.Args)
-		return cmd.Run()
+		return filesystem.MountTmpfs()
 	})
 
 	if err := g.Wait(); err != nil {
