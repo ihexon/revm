@@ -30,7 +30,7 @@ func CopyBootstrapInToRootFS(rootfs string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
-	defer fd.Close()
+	defer fd.Close() //nolint:errcheck
 
 	destPath := filepath.Join(rootfs, "bootstrap-arm64")
 
@@ -38,7 +38,7 @@ func CopyBootstrapInToRootFS(rootfs string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
-	defer destFd.Close()
+	defer destFd.Close() //nolint:errcheck
 
 	logrus.Infof("copy file from %q to %q", path, destPath)
 	_, err = io.Copy(destFd, fd)
