@@ -78,8 +78,8 @@ func CreateVM(ctx context.Context, command *cli.Command) error {
 
 	cmdline := vmconfig.Cmdline{
 		Workspace:     "/",
-		TargetBin:     command.Args().First(),
-		TargetBinArgs: command.Args().Tail(),
+		TargetBin:     "/bootstrap-arm64",
+		TargetBinArgs: append([]string{command.Args().First()}, command.Args().Tail()...),
 		Env:           command.StringSlice("envs"),
 	}
 
@@ -90,7 +90,7 @@ func CreateVM(ctx context.Context, command *cli.Command) error {
 	logrus.Infof("set network backend: %q", vmc.NetworkStackBackend)
 	logrus.Infof("set envs: %v", cmdline.Env)
 	logrus.Infof("set data disk: %v", vmc.DataDisk)
-	logrus.Infof("set cmdline: %v, %v", cmdline.TargetBin, cmdline.TargetBinArgs)
+	logrus.Infof("set cmdline: %q, %q", cmdline.TargetBin, cmdline.TargetBinArgs)
 
 	err = system.CopyBootstrapInToRootFS(vmc.RootFS)
 	if err != nil {

@@ -6,6 +6,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
+	"os"
+	"os/exec"
 )
 
 const (
@@ -15,21 +17,41 @@ const (
 )
 
 func main() {
-	g, _ := errgroup.WithContext(context.Background())
+	g, ctx := errgroup.WithContext(context.Background())
 	g.Go(func() error {
-		err := network.DHClient4(eth0, attempts, verbose)
-		if err != nil {
-			logrus.Errorf("failed to get dhcp config: %v", err)
-			return err
-		}
-		return nil
+		return configureNetwork()
 	})
 
 	g.Go(func() error {
 		return filesystem.MountTmpfs()
 	})
 
+	g.Go(func() error {
+		return doExecCmdLine(ctx, os.Args[1], os.Args[2:])
+	})
+
 	if err := g.Wait(); err != nil {
 		logrus.Errorf("failed to run cmd: %v", err)
 	}
+}
+
+func doExecCmdLine(ctx context.Context, targetBin string, targetBinArgs []string) error {
+	cmd := exec.CommandContext(ctx, targetBin, targetBinArgs...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	logrus.Infof("cmdline: %q", cmd.Args)
+	if err := cmd.Run(); err != nil {
+		logrus.Errorf("failed to run cmd: %v", err)
+		return err
+	}
+	return nil
+}
+
+func configureNetwork() error {
+	if err := network.DHClient4(eth0, attempts, verbose); err != nil {
+		logrus.Errorf("failed to get dhcp config: %v", err)
+		return err
+	}
+	return nil
 }
