@@ -13,7 +13,6 @@ import (
 const (
 	eth0     = "eth0"
 	attempts = 1
-	verbose  = true
 )
 
 func main() {
@@ -49,6 +48,11 @@ func doExecCmdLine(ctx context.Context, targetBin string, targetBinArgs []string
 }
 
 func configureNetwork() error {
+	verbose := false
+	if _, find := os.LookupEnv("REVM_DEBUG"); find {
+		verbose = true
+	}
+
 	if err := network.DHClient4(eth0, attempts, verbose); err != nil {
 		logrus.Errorf("failed to get dhcp config: %v", err)
 		return err

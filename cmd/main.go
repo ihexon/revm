@@ -8,6 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
+	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/system"
@@ -45,9 +46,15 @@ func main() {
 				Name:  "data-disk",
 				Usage: "set data disk path, the disk will be map into /dev/vdX",
 			},
+			&cli.StringSliceFlag{
+				Name:  "mount",
+				Usage: "mount host dir to guest dir",
+			},
 		},
 		Action: CreateVM,
 	}
+
+	app.DisableSliceFlagSeparator = true
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
 		logrus.Fatal(err)
@@ -66,6 +73,7 @@ func CreateVM(ctx context.Context, command *cli.Command) error {
 		Cpus:       command.Int8("cpus"),
 		RootFS:     command.String("rootfs"),
 		DataDisk:   command.StringSlice("data-disk"),
+		Mounts:     filesystem.CmdLineMountToMounts(command.StringSlice("mount")),
 	}
 
 	tmpdir, err := os.MkdirTemp("", "gvproxy")
@@ -91,6 +99,7 @@ func CreateVM(ctx context.Context, command *cli.Command) error {
 	logrus.Infof("set envs: %v", cmdline.Env)
 	logrus.Infof("set data disk: %v", vmc.DataDisk)
 	logrus.Infof("set cmdline: %q, %q", cmdline.TargetBin, cmdline.TargetBinArgs)
+	logrus.Infof("set mounts: %v", vmc.Mounts)
 
 	err = system.CopyBootstrapInToRootFS(vmc.RootFS)
 	if err != nil {
