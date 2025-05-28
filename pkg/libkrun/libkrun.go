@@ -12,7 +12,9 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
 	"net/url"
 	"os"
@@ -76,6 +78,11 @@ func StartVM(ctx context.Context, vmc vmconfig.VMConfig, cmdline vmconfig.Cmdlin
 	vm, err = vm.AddDisk()
 	if err != nil {
 		return fmt.Errorf("set disk err: %v", err)
+	}
+
+	vm, err = vm.AddVirtioFS()
+	if err != nil {
+		return fmt.Errorf("set virtiofs err: %v", err)
 	}
 
 	return vm.StartEnter()
@@ -235,6 +242,36 @@ func addDisk(ctxID uint32, disk string) error {
 
 	if ret := C.krun_add_disk(C.uint32_t(ctxID), blockID, extDisk, false); ret != 0 {
 		return fmt.Errorf("failed to add disk: %v", syscall.Errno(-ret))
+	}
+
+	return nil
+}
+
+func (v *VMInfo) AddVirtioFS() (*VMInfo, error) {
+	for _, mount := range v.vmc.Mounts {
+		logrus.Infof("add virtiofs: %q, tag: %q", mount.Source, mount.Tag)
+		if err := addVirtioFS(v.vmc.CtxID, mount.Tag, mount.Source); err != nil {
+			logrus.Errorf("failed to add virtiofs: %v", err)
+			return nil, err
+		}
+	}
+
+	return v, nil
+}
+
+func addVirtioFS(ctxID uint32, tag, hostPath string) error {
+	if !system.IsPathExist(hostPath) {
+		return fmt.Errorf("host dir %q not exist", hostPath)
+	}
+
+	cHostPath, freeFunc := GoString2CString(hostPath)
+	defer freeFunc()
+
+	cTag, freeFunc2 := GoString2CString(tag)
+	defer freeFunc2()
+
+	if ret := C.krun_add_virtiofs2(C.uint32_t(ctxID), cTag, cHostPath, C.uint64_t(1<<29)); ret != 0 {
+		return fmt.Errorf("failed to add virtiofs: %v", syscall.Errno(-ret))
 	}
 
 	return nil

@@ -1,5 +1,7 @@
 package vmconfig
 
+import "linuxvm/pkg/filesystem"
+
 // VMConfig Static virtual machine configuration.
 type VMConfig struct {
 	CtxID      uint32
@@ -15,6 +17,7 @@ type VMConfig struct {
 	// by gvproxy
 	NetworkStackBackend string
 	LogLevel            string
+	Mounts              []filesystem.Mount
 }
 
 // Cmdline exec cmdline within rootfs
