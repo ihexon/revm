@@ -5,15 +5,17 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/sirupsen/logrus"
-	"github.com/urfave/cli/v3"
-	"golang.org/x/sync/errgroup"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/network"
+	"linuxvm/pkg/server"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
 	"os"
+
+	"github.com/sirupsen/logrus"
+	"github.com/urfave/cli/v3"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -99,7 +101,6 @@ func CreateVM(ctx context.Context, command *cli.Command) error {
 	logrus.Infof("set envs: %v", cmdline.Env)
 	logrus.Infof("set data disk: %v", vmc.DataDisk)
 	logrus.Infof("set cmdline: %q, %q", cmdline.TargetBin, cmdline.TargetBinArgs)
-	logrus.Infof("set mounts: %v", vmc.Mounts)
 
 	err = system.CopyBootstrapInToRootFS(vmc.RootFS)
 	if err != nil {
@@ -108,8 +109,13 @@ func CreateVM(ctx context.Context, command *cli.Command) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
+	// vmc must be a static struct at this point
 	g.Go(func() error {
 		return network.StartNetworking(ctx, vmc)
+	})
+
+	g.Go(func() error {
+		return server.IgnServer(ctx, &vmc)
 	})
 
 	g.Go(func() error {

@@ -4,12 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/containers/gvisor-tap-vsock/pkg/transport"
-	gvptypes "github.com/containers/gvisor-tap-vsock/pkg/types"
-	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
-	"golang.org/x/sync/errgroup"
 	"linuxvm/pkg/vmconfig"
 	"net"
 	"net/http"
@@ -18,6 +12,13 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/containers/gvisor-tap-vsock/pkg/transport"
+	gvptypes "github.com/containers/gvisor-tap-vsock/pkg/types"
+	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
