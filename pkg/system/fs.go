@@ -1,9 +1,10 @@
 package system
 
 import (
+	"os"
+
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"os"
 )
 
 func IsPathExist(path string) bool {

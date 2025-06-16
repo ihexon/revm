@@ -10,16 +10,18 @@ import "C"
 import (
 	"context"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
 	"net/url"
 	"os"
+	"path/filepath"
 	"syscall"
 	"unsafe"
+
+	"github.com/google/uuid"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 // GoStringList2CStringArray takes an array of Go strings and converts it to an array of CStrings.
@@ -249,7 +251,6 @@ func addDisk(ctxID uint32, disk string) error {
 
 func (v *VMInfo) AddVirtioFS() (*VMInfo, error) {
 	for _, mount := range v.vmc.Mounts {
-		logrus.Infof("add virtiofs: %q, tag: %q", mount.Source, mount.Tag)
 		if err := addVirtioFS(v.vmc.CtxID, mount.Tag, mount.Source); err != nil {
 			logrus.Errorf("failed to add virtiofs: %v", err)
 			return nil, err
@@ -259,7 +260,16 @@ func (v *VMInfo) AddVirtioFS() (*VMInfo, error) {
 	return v, nil
 }
 
-func addVirtioFS(ctxID uint32, tag, hostPath string) error {
+func addVirtioFS(ctxID uint32, tag, path string) error {
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+	hostPath, err := filepath.EvalSymlinks(pathAbs)
+	if err != nil {
+		return fmt.Errorf("failed to eval symlinks: %w", err)
+	}
+
 	if !system.IsPathExist(hostPath) {
 		return fmt.Errorf("host dir %q not exist", hostPath)
 	}
@@ -270,6 +280,7 @@ func addVirtioFS(ctxID uint32, tag, hostPath string) error {
 	cTag, freeFunc2 := GoString2CString(tag)
 	defer freeFunc2()
 
+	logrus.Infof("add virtiofs, tag: %q, hostPath: %q", hostPath, tag)
 	if ret := C.krun_add_virtiofs2(C.uint32_t(ctxID), cTag, cHostPath, C.uint64_t(1<<29)); ret != 0 {
 		return fmt.Errorf("failed to add virtiofs: %v", syscall.Errno(-ret))
 	}
