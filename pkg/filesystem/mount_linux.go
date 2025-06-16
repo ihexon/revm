@@ -1,16 +1,22 @@
 package filesystem
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
+
 	"github.com/moby/sys/mount"
 	"github.com/moby/sys/mountinfo"
-	"os"
+	"github.com/sirupsen/logrus"
 )
 
 const (
 	Tmpfs        = "tmpfs"
 	TmpDir       = "/tmp"
 	TmpMountOpts = "rw,nosuid,relatime"
+
+	VirtioFs = "virtiofs"
 )
 
 func MountTmpfs() error {
@@ -27,4 +33,54 @@ func MountTmpfs() error {
 	}
 
 	return mount.Mount(Tmpfs, TmpDir, Tmpfs, TmpMountOpts)
+}
+
+type VMConfig struct {
+	CtxID      uint32
+	MemoryInMB int32
+	Cpus       int8
+	RootFS     string
+
+	// data disk will map into /dev/vdX
+	DataDisk []string
+	// GVproxy control endpoint
+	GVproxyEndpoint string
+	// NetworkStackBackend is the network stack backend to use. which provided
+	// by gvproxy
+	NetworkStackBackend string
+	LogLevel            string
+	Mounts              []Mount
+}
+
+// MountVirtioFS load $rootfs/.vmconfig, and mount the virtiofs mnt
+func MountVirtioFS(file string) error {
+	f, err := os.Open(file)
+	if err != nil {
+		return fmt.Errorf("failed to open file %s: %w", file, err)
+	}
+	defer f.Close()
+
+	vmc := &VMConfig{}
+
+	if err = json.NewDecoder(f).Decode(vmc); err != nil {
+		return fmt.Errorf("failed to decode file %s: %w", file, err)
+	}
+
+	for _, mnt := range vmc.Mounts {
+		if err := os.MkdirAll(mnt.Target, 755); err != nil {
+			return fmt.Errorf("failed to create virtiofs: %w", err)
+		}
+
+		//if err := mount.Mount(virtIOFs, TmpDir, Tmpfs, TmpMountOpts); err != nil {
+		//	return fmt.Errorf("failed to mount tmpfs: %w", err)
+		//}
+
+		cmd := exec.Command("/bin/mount", "-t", "virtiofs", mnt.Tag, mnt.Target)
+		logrus.Infof("cmdline: %q", cmd.Args)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to mount virtiofs: %w", err)
+		}
+	}
+
+	return nil
 }

@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"linuxvm/pkg/define"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/network"
@@ -12,6 +13,7 @@ import (
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
 	"os"
+	"path/filepath"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -102,9 +104,12 @@ func CreateVM(ctx context.Context, command *cli.Command) error {
 	logrus.Infof("set data disk: %v", vmc.DataDisk)
 	logrus.Infof("set cmdline: %q, %q", cmdline.TargetBin, cmdline.TargetBinArgs)
 
-	err = system.CopyBootstrapInToRootFS(vmc.RootFS)
-	if err != nil {
+	if err = system.CopyBootstrapInToRootFS(vmc.RootFS); err != nil {
 		return fmt.Errorf("failed to copy dhclient4 to rootfs: %v", err)
+	}
+
+	if err = vmc.WriteToJsonFile(filepath.Join(vmc.RootFS, define.VMConfig)); err != nil {
+		return fmt.Errorf("failed to write vmconfig to json file: %v", err)
 	}
 
 	g, ctx := errgroup.WithContext(ctx)

@@ -1,6 +1,11 @@
 package vmconfig
 
-import "linuxvm/pkg/filesystem"
+import (
+	"encoding/json"
+	"fmt"
+	"linuxvm/pkg/filesystem"
+	"os"
+)
 
 // VMConfig Static virtual machine configuration.
 type VMConfig struct {
@@ -26,4 +31,14 @@ type Cmdline struct {
 	TargetBin     string
 	TargetBinArgs []string
 	Env           []string
+}
+
+func (vmc *VMConfig) WriteToJsonFile(file string) error {
+	b, err := json.Marshal(vmc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal vmconfig: %v", err)
+	}
+
+	return os.WriteFile(file, b, 0644)
+
 }
