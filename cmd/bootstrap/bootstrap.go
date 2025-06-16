@@ -6,6 +6,7 @@ import (
 	"linuxvm/pkg/network"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
@@ -24,6 +25,10 @@ func main() {
 
 	g.Go(func() error {
 		return filesystem.MountTmpfs()
+	})
+
+	g.Go(func() error {
+		return filesystem.MountVirtioFS(filepath.Join("/", "vmconfig.json"))
 	})
 
 	g.Go(func() error {
