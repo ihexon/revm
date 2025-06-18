@@ -63,5 +63,6 @@ func configureNetwork() error {
 		logrus.Errorf("failed to get dhcp config: %v", err)
 		return err
 	}
+
 	return nil
 }

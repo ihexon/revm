@@ -33,6 +33,7 @@ func MountTmpfs() error {
 	return mount.Mount(Tmpfs, TmpDir, Tmpfs, TmpMountOpts)
 }
 
+// VMConfig taken from `pkg/vmconfig/vmconfig.go`
 type VMConfig struct {
 	CtxID      uint32
 	MemoryInMB int32

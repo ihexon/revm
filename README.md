@@ -16,29 +16,40 @@ You can given a virtual disk into vm, but you need to format the disk and mount 
 ```shell
 ./revm --rootfs ~/alpine_rootfs  --data-disk ~/disk --  /bin/sh
 
-vm $ mkfs.ext4 /dev/vda
-vm $ mount /dev/vda /mnt
+# a more complex example
+./out/bin/revm-arm64 \
+  --envs "HOME=/root"  \
+  --rootfs ~/ubuntu \
+  --memory 1024 \
+  --mount /Users:/Users  \
+  --mount /tmp:/mytmp  \
+  --data-disk ~/data.img \
+  --data-disk ~/data1.img  -- /bin/bash
+
+vm $ mkfs.ext4 /dev/vda && mkfs.ext4 /dev/vdb
+vm $ mount /dev/vda /mnt/vda && mount /dev/vdb /mnt/vdb
 ```
 
 ## Help message
 
-```
+```go
 NAME:
-./bin/main - run a linux shell in 1 second
+   ./out/bin/revm-arm64 - run a linux shell in 1 second
 
 USAGE:
-./bin/main [command] [flags]
+   ./out/bin/revm-arm64 [command] [flags]
 
 DESCRIPTION:
-run a linux shell in 1 second
+   run a linux shell in 1 second
 
 GLOBAL OPTIONS:
---rootfs string                  rootfs path, e.g. /var/lib/libkrun/rootfs/alpine-3.15.0
---cpus int                       given how many cpu cores (default: 1)
---memory int                     set memory in MB (default: 512)
---envs string [ --envs string ]  set envs for cmdline, e.g. --envs=FOO=bar --envs=BAZ=qux
---data-disk string               set data disk path, the disk will be map into /dev/vdX
---help, -h                       show help
+   --rootfs string                            rootfs path, e.g. /var/lib/libkrun/rootfs/alpine-3.15.0
+   --cpus int                                 given how many cpu cores (default: 1)
+   --memory int                               set memory in MB (default: 512)
+   --envs string [ --envs string ]            set envs for cmdline, e.g. --envs=FOO=bar --envs=BAZ=qux
+   --data-disk string [ --data-disk string ]  set data disk path, the disk will be map into /dev/vdX
+   --mount string [ --mount string ]          mount host dir to guest dir
+   --help, -h                                 show help
 ```
 
 
