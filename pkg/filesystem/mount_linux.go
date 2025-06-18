@@ -4,11 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 
 	"github.com/moby/sys/mount"
 	"github.com/moby/sys/mountinfo"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -71,13 +69,7 @@ func MountVirtioFS(file string) error {
 			return fmt.Errorf("failed to create virtiofs: %w", err)
 		}
 
-		//if err := mount.Mount(virtIOFs, TmpDir, Tmpfs, TmpMountOpts); err != nil {
-		//	return fmt.Errorf("failed to mount tmpfs: %w", err)
-		//}
-
-		cmd := exec.Command("/bin/mount", "-t", "virtiofs", mnt.Tag, mnt.Target)
-		logrus.Infof("cmdline: %q", cmd.Args)
-		if err := cmd.Run(); err != nil {
+		if err := mount.Mount(mnt.Tag, mnt.Target, VirtioFs, ""); err != nil {
 			return fmt.Errorf("failed to mount virtiofs: %w", err)
 		}
 	}
