@@ -22,4 +22,5 @@ echo "Build bootstrap for linux"
 GOOS=linux GOARCH=arm64 go build -v -o "out/bin/bootstrap-arm64" ./cmd/bootstrap
 
 echo "Packing revm and deps"
+cp -v revm.entitlements out
 tar -cvf revm.tar out/
