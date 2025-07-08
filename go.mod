@@ -18,6 +18,8 @@ require (
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/jsimonetti/rtnetlink v1.3.5 // indirect
 	github.com/mdlayher/netlink v1.7.2 // indirect
+	github.com/ubuntu/decorate v0.0.0-20250213124239-8228e241ee19 // indirect
+	github.com/ubuntu/gowsl v0.0.0-20250220202122-f4267f82434b // indirect
 	gvisor.dev/gvisor v0.0.0-20240916094835-a174eb65023f // indirect
 )
 

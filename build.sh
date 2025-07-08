@@ -1,5 +1,19 @@
 #! /usr/bin/env bash
 set -e
+
+download_rootfs(){
+	local cur_pwd="$(pwd)"
+	local dir=out/distro
+
+	echo "change dir to $dir"
+	mkdir -p "$dir"
+	cd "$dir"
+	wget -c https://dl-cdn.alpinelinux.org/alpine/v3.22/releases/x86_64/alpine-minirootfs-3.22.0-x86_64.tar.gz
+	wget https://dl-cdn.alpinelinux.org/alpine/v3.22/releases/x86_64/alpine-minirootfs-3.22.0-x86_64.tar.gz.sha256
+	echo "change dir back to $cur_pwd"
+	cd "$cur_pwd"
+}
+
 echo "Build revm..."
 rm -rf ./out && mkdir -p out
 
@@ -23,4 +37,7 @@ GOOS=linux GOARCH=arm64 go build -v -o "out/bin/bootstrap-arm64" ./cmd/bootstrap
 
 echo "Packing revm and deps"
 cp -v revm.entitlements out
-tar -cvf revm.tar out/
+download_rootfs
+tar --zstd -cvf revm.tar.zst out/
+
+
