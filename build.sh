@@ -4,10 +4,12 @@ echo "Build revm..."
 rm -rf ./out && mkdir -p out
 
 cp -av ./lib ./out
-install_name_tool -id @rpath/libkrunfw.dylib ./out/lib/libkrunfw.dylib
-install_name_tool -id @rpath/libkrun.dylib   ./out/lib/libkrun.dylib
 codesign --force --deep --sign - "out/lib/libkrun.dylib"
-codesign --force --deep --sign - "out/lib/libkrunfw.4.dylib"
+codesign --force --deep --sign - "out/lib/libkrunfw.dylib"
+codesign --force --deep --sign - "out/lib/libepoxy.dylib"
+codesign --force --deep --sign - "out/lib/libvirglrenderer.dylib"
+codesign --force --deep --sign - "out/lib/libMoltenVK.dylib"
+
 GOOS=darwin GOARCH=arm64 go build -v -o "out/bin/revm-arm64" ./cmd/main.go
 
 echo "add rpath"
