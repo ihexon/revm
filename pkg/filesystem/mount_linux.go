@@ -12,6 +12,7 @@ import (
 const (
 	Tmpfs        = "tmpfs"
 	TmpDir       = "/tmp"
+	RunDir       = "/run"
 	TmpMountOpts = "rw,nosuid,relatime"
 
 	VirtioFs = "virtiofs"
@@ -28,6 +29,14 @@ func MountTmpfs() error {
 
 	if err = os.MkdirAll(TmpDir, 755); err != nil {
 		return fmt.Errorf("failed to create tmp dir: %w", err)
+	}
+
+	if err = os.MkdirAll(RunDir, 755); err != nil {
+		return fmt.Errorf("failed to create /run dir: %w", err)
+	}
+
+	if err = mount.Mount(Tmpfs, RunDir, Tmpfs, TmpMountOpts); err != nil {
+		return fmt.Errorf("failed to mount /run dir: %w", err)
 	}
 
 	return mount.Mount(Tmpfs, TmpDir, Tmpfs, TmpMountOpts)
