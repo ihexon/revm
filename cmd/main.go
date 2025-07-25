@@ -128,8 +128,7 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 
 func makeCmdline(command *cli.Command) *vmconfig.Cmdline {
 	cmdline := vmconfig.Cmdline{
-		Workspace: "/",
-		// TODO: bootstrap-arm64 -> boostrap
+		Workspace:     "/",
 		TargetBin:     "/bootstrap",
 		TargetBinArgs: append([]string{command.Args().First()}, command.Args().Tail()...),
 		Env:           command.StringSlice("envs"),

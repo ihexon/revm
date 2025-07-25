@@ -40,8 +40,28 @@ func (s *Server) handleShowMounts(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, s.Vmc.Mounts)
 }
 
+type GVProxyInfo struct {
+	ControlEndpoints    string `json:"gvproxy_control_endpoint,omitempty"`
+	VFKitSocketEndpoint string `json:"gvproxy_network_endpoint,omitempty"`
+}
+
+func (s *Server) handleGVProxyInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		WriteJSON(w, http.StatusMethodNotAllowed, nil)
+		return
+	}
+
+	info := GVProxyInfo{
+		ControlEndpoints:    s.Vmc.GVproxyEndpoint,
+		VFKitSocketEndpoint: s.Vmc.NetworkStackBackend,
+	}
+
+	WriteJSON(w, http.StatusOK, info)
+}
+
 func (s *Server) registerRouter() {
 	s.Mux.HandleFunc("/host/mounts", s.handleShowMounts)
+	s.Mux.HandleFunc("/network/info", s.handleGVProxyInfo)
 }
 
 func (s *Server) Start() error {
