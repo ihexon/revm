@@ -9,28 +9,27 @@ import (
 
 // VMConfig Static virtual machine configuration.
 type VMConfig struct {
-	CtxID      uint32
-	MemoryInMB int32
-	Cpus       int8
-	RootFS     string
+	MemoryInMB int32  `json:"memoryInMB,omitempty"`
+	Cpus       int8   `json:"cpus,omitempty"`
+	RootFS     string `json:"rootFS,omitempty"`
 
 	// data disk will map into /dev/vdX
-	DataDisk []string
+	DataDisk []string `json:"dataDisk,omitempty"`
 	// GVproxy control endpoint
-	GVproxyEndpoint string
+	GVproxyEndpoint string `json:"GVproxyEndpoint,omitempty"`
 	// NetworkStackBackend is the network stack backend to use. which provided
 	// by gvproxy
-	NetworkStackBackend string
-	LogLevel            string
-	Mounts              []filesystem.Mount
+	NetworkStackBackend string             `json:"networkStackBackend,omitempty"`
+	LogLevel            string             `json:"logLevel,omitempty"`
+	Mounts              []filesystem.Mount `json:"mounts,omitempty"`
 }
 
 // Cmdline exec cmdline within rootfs
 type Cmdline struct {
-	Workspace     string
-	TargetBin     string
-	TargetBinArgs []string
-	Env           []string
+	Workspace     string   `json:"workspace,omitempty"`
+	TargetBin     string   `json:"targetBin,omitempty"`
+	TargetBinArgs []string `json:"targetBinArgs,omitempty"`
+	Env           []string `json:"env,omitempty"`
 }
 
 func (vmc *VMConfig) WriteToJsonFile(file string) error {
@@ -40,5 +39,4 @@ func (vmc *VMConfig) WriteToJsonFile(file string) error {
 	}
 
 	return os.WriteFile(file, b, 0644)
-
 }

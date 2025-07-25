@@ -1,3 +1,5 @@
+//go:build (darwin && arm64) || (linux && (arm64 || amd64))
+
 package libkrun
 
 /*
@@ -10,7 +12,9 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/network"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
 	"net/url"
@@ -21,7 +25,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 )
 
 // GoStringList2CStringArray takes an array of Go strings and converts it to an array of CStrings.
@@ -46,91 +49,95 @@ func GoString2CString(str string) (*C.char, func()) {
 	}
 }
 
-func StartVM(ctx context.Context, vmc vmconfig.VMConfig, cmdline vmconfig.Cmdline) error {
-	vm, err := NewVM(vmc)
-	if err != nil {
-		return fmt.Errorf("failed to create VM: %v", err)
-	}
-
-	vm, err = vm.SetRootFS()
-	if err != nil {
-		return fmt.Errorf("set rootfs err: %v", err)
-	}
-
-	vm, err = vm.SetGPU()
-	if err != nil {
-		return fmt.Errorf("set gpu err: %v", err)
-	}
-
-	vm, err = vm.SetRLimited()
-	if err != nil {
-		return fmt.Errorf("set rlimited err: %v", err)
-	}
-
-	vm, err = vm.SetCommandLine(cmdline.Workspace, cmdline.Env, cmdline.TargetBin, cmdline.TargetBinArgs...)
-	if err != nil {
-		return fmt.Errorf("set cmdline err: %v", err)
-	}
-
-	vm, err = vm.SetNetworkProvider()
-	if err != nil {
-		return fmt.Errorf("set network provider err: %v", err)
-	}
-
-	vm, err = vm.AddDisk()
-	if err != nil {
-		return fmt.Errorf("set disk err: %v", err)
-	}
-
-	vm, err = vm.AddVirtioFS()
-	if err != nil {
-		return fmt.Errorf("set virtiofs err: %v", err)
-	}
-
-	return vm.StartEnter()
+type AppleHVStubber struct {
+	krunCtxID uint32
+	vmc       *vmconfig.VMConfig
+	cmdline   *vmconfig.Cmdline
 }
 
-type VMInfo struct {
-	vmc     vmconfig.VMConfig
-	Cmdline vmconfig.Cmdline
+func NewAppleHyperVisor() *AppleHVStubber {
+	return &AppleHVStubber{}
 }
 
-func NewVM(vmc vmconfig.VMConfig) (*VMInfo, error) {
-	// int32_t krun_create_ctx();
+func (v *AppleHVStubber) Create(ctx context.Context, cfg *vmconfig.VMConfig, cmdline *vmconfig.Cmdline) error {
+	v.vmc = cfg
+	v.cmdline = cmdline
+
 	id := C.krun_create_ctx()
 	if id < 0 {
-		return nil, fmt.Errorf("failed to create ctx: %v", syscall.Errno(-id))
+		return fmt.Errorf("failed to create vm ctx id, return %v", id)
+	}
+	v.krunCtxID = uint32(id)
+
+	if ret := C.krun_set_log_level(C.uint32_t(define.LogLevelStr2Type(v.vmc.LogLevel))); ret != 0 {
+		return fmt.Errorf("failed to set log level, return %v", ret)
 	}
 
-	vmInfo := &VMInfo{
-		vmc: vmc,
+	if ret := C.krun_set_vm_config(C.uint32_t(v.krunCtxID), C.uint8_t(v.vmc.Cpus), C.uint32_t(v.vmc.MemoryInMB)); ret != 0 {
+		return fmt.Errorf("failed to set vm config, return %v", ret)
 	}
 
-	if ret := C.krun_set_log_level(C.uint32_t(define.LogLevelStr2Type(vmInfo.vmc.LogLevel))); ret != 0 {
-		return nil, fmt.Errorf("failed to set log level: %v", syscall.Errno(-ret))
+	if err := v.setRootFS(); err != nil {
+		return err
 	}
 
-	if err := C.krun_set_vm_config(C.uint32_t(vmInfo.vmc.CtxID), C.uint8_t(vmc.Cpus), C.uint32_t(vmc.MemoryInMB)); err != 0 {
-		return nil, fmt.Errorf("failed to set vm config: %v", syscall.Errno(-err))
+	if err := v.setGPU(); err != nil {
+		return err
 	}
 
-	return vmInfo, nil
+	if err := v.setRLimited(); err != nil {
+		return err
+	}
+
+	if err := v.setNetworkProvider(); err != nil {
+		return err
+	}
+	if err := v.addRawDisk(); err != nil {
+		return err
+	}
+
+	if err := v.addVirtioFS(); err != nil {
+		return err
+	}
+
+	return v.writeCfgToRootfs(ctx)
 }
 
-func (v *VMInfo) SetNetworkProvider() (*VMInfo, error) {
+func (v *AppleHVStubber) Start(ctx context.Context) error {
+	if err := v.setCommandLine(v.cmdline.Workspace, v.cmdline.Env, v.cmdline.TargetBin, v.cmdline.TargetBinArgs...); err != nil {
+		return err
+	}
+
+	if err := system.CopyBootstrapTo(v.vmc.RootFS); err != nil {
+		return fmt.Errorf("failed to copy bootstrap to rootfs: %w", err)
+	}
+
+	return execCmdlineInVM(ctx, v.krunCtxID)
+}
+
+func (v *AppleHVStubber) writeCfgToRootfs(ctx context.Context) error {
+	return v.vmc.WriteToJsonFile(filepath.Join(v.vmc.RootFS, define.VMConfig))
+}
+
+func (v *AppleHVStubber) Stop(ctx context.Context) error {
+	return stopVM(ctx, v.krunCtxID)
+}
+
+func (v *AppleHVStubber) setNetworkProvider() error {
+	logrus.Infof("set vm network backend: %q", v.vmc.NetworkStackBackend)
 	parse, err := url.Parse(v.vmc.NetworkStackBackend)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse url: %v", err)
+		return fmt.Errorf("failed to parse network stack backend: %w", err)
 	}
 
-	gvpSocket, defunct := GoString2CString(parse.Path)
-	defer defunct()
+	gvpSocket, fn1 := GoString2CString(parse.Path)
+	defer fn1()
 
-	if ret := C.krun_set_gvproxy_path(C.uint32_t(v.vmc.CtxID), gvpSocket); ret != 0 {
-		return nil, fmt.Errorf("failed to set gvproxy path: %v", syscall.Errno(-ret))
+	if ret := C.krun_set_gvproxy_path(C.uint32_t(v.krunCtxID), gvpSocket); ret != 0 {
+		return fmt.Errorf("failed to set gvproxy path, return %v", ret)
 	}
 
-	return v, nil
+	return nil
 }
 
 const (
@@ -139,47 +146,47 @@ const (
 	HardLimit    = "8192"
 )
 
-func (v *VMInfo) SetRLimited() (*VMInfo, error) {
-	limitStr, defunct := GoStringList2CStringArray(
+func (v *AppleHVStubber) setRLimited() error {
+	limitStr, fn1 := GoStringList2CStringArray(
 		[]string{fmt.Sprintf("%s=%s:%s", RLIMIT_NPROC, SoftLimit, HardLimit)},
 	)
-	defer defunct()
+	defer fn1()
 
-	if err := C.krun_set_rlimits(C.uint32_t(v.vmc.CtxID), &limitStr[0]); err != 0 {
-		return nil, fmt.Errorf("failed to set rlimits: %v", syscall.Errno(-err))
+	if ret := C.krun_set_rlimits(C.uint32_t(v.krunCtxID), &limitStr[0]); ret != 0 {
+		return fmt.Errorf("failed to set rlimits, return %v", ret)
 	}
-	return v, nil
+	return nil
 }
 
-func (v *VMInfo) SetCommandLine(dir string, env []string, bin string, args ...string) (*VMInfo, error) {
-	workdir, defunct := GoString2CString(dir)
-	defer defunct()
+func (v *AppleHVStubber) setCommandLine(dir string, env []string, bin string, args ...string) error {
+	workdir, fn1 := GoString2CString(dir)
+	defer fn1()
 
-	if err := C.krun_set_workdir(C.uint32_t(v.vmc.CtxID), workdir); err != 0 {
-		return nil, fmt.Errorf("failed to set workdir: %v", syscall.Errno(-err))
+	if ret := C.krun_set_workdir(C.uint32_t(v.krunCtxID), workdir); ret != 0 {
+		return fmt.Errorf("failed to set workdir, return %v", ret)
 	}
 
 	if bin == "" {
-		return nil, fmt.Errorf("no cmdline provided")
+		return errors.New("target bin is empty")
 	}
 
-	v.Cmdline.TargetBin = bin
-	v.Cmdline.TargetBinArgs = args
+	v.cmdline.TargetBin = bin
+	v.cmdline.TargetBinArgs = args
 
-	targetBin, defunct2 := GoString2CString(v.Cmdline.TargetBin)
-	defer defunct2()
+	targetBin, fn2 := GoString2CString(v.cmdline.TargetBin)
+	defer fn2()
 
-	targetBinArgs, defunct3 := GoStringList2CStringArray(v.Cmdline.TargetBinArgs)
-	defer defunct3()
+	targetBinArgs, fn3 := GoStringList2CStringArray(v.cmdline.TargetBinArgs)
+	defer fn3()
 
-	envPassIn, defunct4 := GoStringList2CStringArray(env)
-	defer defunct4()
+	envPassIn, fn4 := GoStringList2CStringArray(env)
+	defer fn4()
 
-	if ret := C.krun_set_exec(C.uint32_t(v.vmc.CtxID), targetBin, &targetBinArgs[0], &envPassIn[0]); ret != 0 {
-		return nil, fmt.Errorf("failed to set exec: %v", syscall.Errno(-ret))
+	if ret := C.krun_set_exec(C.uint32_t(v.krunCtxID), targetBin, &targetBinArgs[0], &envPassIn[0]); ret != 0 {
+		return fmt.Errorf("failed to set exec, return %v", ret)
 	}
 
-	return v, nil
+	return nil
 }
 
 const (
@@ -196,68 +203,67 @@ const (
 	VIRGLRENDERER_DRM                = 1 << 10
 )
 
-func (v *VMInfo) SetGPU() (*VMInfo, error) {
-	if err := C.krun_set_gpu_options(C.uint32_t(v.vmc.CtxID), C.uint32_t(VIRGLRENDERER_VENUS|VIRGLRENDERER_NO_VIRGL)); err != 0 {
-		return nil, fmt.Errorf("failed to set gpu options: %v", syscall.Errno(-err))
+func (v *AppleHVStubber) setGPU() error {
+	if err := C.krun_set_gpu_options(C.uint32_t(v.krunCtxID), C.uint32_t(VIRGLRENDERER_VENUS|VIRGLRENDERER_NO_VIRGL)); err != 0 {
+		return fmt.Errorf("failed to set gpu options,return %v", err)
 	}
-	return v, nil
+	return nil
 }
 
-func (v *VMInfo) SetRootFS() (*VMInfo, error) {
-	rootfs, defunct := GoString2CString(v.vmc.RootFS)
-	defer defunct()
+func (v *AppleHVStubber) setRootFS() error {
+	rootfs, fn1 := GoString2CString(v.vmc.RootFS)
+	defer fn1()
 
-	if ret := C.krun_set_root(C.uint32_t(v.vmc.CtxID), rootfs); ret != 0 {
-		return nil, fmt.Errorf("failed to set root: %v", syscall.Errno(-ret))
+	if ret := C.krun_set_root(C.uint32_t(v.krunCtxID), rootfs); ret != 0 {
+		return fmt.Errorf("failed to set root, return %v", ret)
 	}
-	return v, nil
+	return nil
 }
 
-func (v *VMInfo) AddDisk() (*VMInfo, error) {
+func (v *AppleHVStubber) addRawDisk() error {
 	for _, disk := range v.vmc.DataDisk {
-		if err := addDisk(v.vmc.CtxID, disk); err != nil {
-			return v, err
+		if err := addRawDisk(v.krunCtxID, disk); err != nil {
+			return err
 		}
 	}
 
-	return v, nil
-}
-
-func (v *VMInfo) StartEnter() error {
-	if ret := C.krun_start_enter(C.uint32_t(v.vmc.CtxID)); ret != 0 {
-		return fmt.Errorf("failed to start enter: %v", syscall.Errno(-ret))
-	}
 	return nil
 }
 
-func addDisk(ctxID uint32, disk string) error {
-	_, err := os.Stat(disk)
-	if errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("%q disk not exist", disk)
-	}
-
-	blockID, freeFunc := GoString2CString(uuid.New().String())
-	defer freeFunc()
-
-	extDisk, freeFunc2 := GoString2CString(disk)
-	defer freeFunc2()
-
-	if ret := C.krun_add_disk(C.uint32_t(ctxID), blockID, extDisk, false); ret != 0 {
-		return fmt.Errorf("failed to add disk: %v", syscall.Errno(-ret))
-	}
-
-	return nil
-}
-
-func (v *VMInfo) AddVirtioFS() (*VMInfo, error) {
+func (v *AppleHVStubber) addVirtioFS() error {
 	for _, mount := range v.vmc.Mounts {
-		if err := addVirtioFS(v.vmc.CtxID, mount.Tag, mount.Source); err != nil {
-			logrus.Errorf("failed to add virtiofs: %v", err)
-			return nil, err
+		if err := addVirtioFS(v.krunCtxID, mount.Tag, mount.Source); err != nil {
+			return fmt.Errorf("failed to add virtiofs: %w", err)
 		}
 	}
 
-	return v, nil
+	return nil
+}
+
+func (v *AppleHVStubber) StartNetwork(ctx context.Context, vmc *vmconfig.VMConfig) error {
+	return network.StartNetworking(ctx, vmc)
+}
+
+func stopVM(tx context.Context, vmID uint32) error {
+	return nil
+}
+
+func addRawDisk(ctxID uint32, disk string) error {
+	if _, err := os.Stat(disk); errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("access raw disk %q with err: %w", disk, err)
+	}
+
+	blockID, fn1 := GoString2CString(uuid.New().String())
+	defer fn1()
+
+	extDisk, fn2 := GoString2CString(disk)
+	defer fn2()
+
+	if ret := C.krun_add_disk2(C.uint32_t(ctxID), blockID, extDisk, C.KRUN_DISK_FORMAT_RAW, false); ret != 0 {
+		return fmt.Errorf("failed to add disk, return %v", ret)
+	}
+
+	return nil
 }
 
 func addVirtioFS(ctxID uint32, tag, path string) error {
@@ -274,15 +280,22 @@ func addVirtioFS(ctxID uint32, tag, path string) error {
 		return fmt.Errorf("host dir %q not exist", hostPath)
 	}
 
-	cHostPath, freeFunc := GoString2CString(hostPath)
-	defer freeFunc()
+	cHostPath, fn1 := GoString2CString(hostPath)
+	defer fn1()
 
-	cTag, freeFunc2 := GoString2CString(tag)
-	defer freeFunc2()
+	cTag, fn2 := GoString2CString(tag)
+	defer fn2()
 
-	logrus.Infof("add virtiofs, tag: %q, hostPath: %q", hostPath, tag)
 	if ret := C.krun_add_virtiofs2(C.uint32_t(ctxID), cTag, cHostPath, C.uint64_t(1<<29)); ret != 0 {
-		return fmt.Errorf("failed to add virtiofs: %v", syscall.Errno(-ret))
+		return fmt.Errorf("failed to add virtiofs, return: %v", ret)
+	}
+
+	return nil
+}
+
+func execCmdlineInVM(ctx context.Context, vmCtxID uint32) error {
+	if ret := C.krun_start_enter(C.uint32_t(vmCtxID)); ret != 0 {
+		return fmt.Errorf("failed to start enter: %v", syscall.Errno(-ret))
 	}
 
 	return nil

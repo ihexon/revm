@@ -4,20 +4,21 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"linuxvm/pkg/define"
-	"linuxvm/pkg/filesystem"
-	"linuxvm/pkg/libkrun"
-	"linuxvm/pkg/network"
-	"linuxvm/pkg/server"
-	"linuxvm/pkg/system"
-	"linuxvm/pkg/vmconfig"
-	"os"
-	"path/filepath"
-
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
+	"linuxvm/pkg/filesystem"
+	"linuxvm/pkg/server"
+	"linuxvm/pkg/system"
+	"linuxvm/pkg/vm"
+	"linuxvm/pkg/vmconfig"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
 )
 
 func main() {
@@ -55,7 +56,7 @@ func main() {
 				Usage: "mount host dir to guest dir",
 			},
 		},
-		Action: CreateVM,
+		Action: vmLifeCycle,
 	}
 
 	app.DisableSliceFlagSeparator = true
@@ -65,67 +66,73 @@ func main() {
 	}
 }
 
-func CreateVM(ctx context.Context, command *cli.Command) error {
-	err := system.Rlimit()
+func vmLifeCycle(ctx context.Context, command *cli.Command) error {
+	if err := system.Rlimit(); err != nil {
+		return fmt.Errorf("failed to set rlimit: %v", err)
+	}
+
+	vmc := makeVMCfg(command)
+	d, err := json.Marshal(vmc)
 	if err != nil {
-		logrus.Infof("failed to set rlimit: %v", err)
-		return err
+		return fmt.Errorf("failed to marshal vmconfig: %v", err)
 	}
+	logrus.Infof("vmconfig: %s", d)
 
-	vmc := vmconfig.VMConfig{
-		MemoryInMB: command.Int32("memory"),
-		Cpus:       command.Int8("cpus"),
-		RootFS:     command.String("rootfs"),
-		DataDisk:   command.StringSlice("data-disk"),
-		Mounts:     filesystem.CmdLineMountToMounts(command.StringSlice("mount")),
-	}
-
-	tmpdir, err := os.MkdirTemp("", "gvproxy")
+	cmdline := makeCmdline(command)
+	d, err = json.Marshal(cmdline)
 	if err != nil {
-		return fmt.Errorf("failed to create temp dir: %v", err)
+		return fmt.Errorf("failed to marshal cmdline: %v", err)
 	}
+	logrus.Infof("cmdline: %s", d)
 
-	vmc.GVproxyEndpoint = fmt.Sprintf("unix://%s/gvproxy-control.sock", tmpdir)
-	vmc.NetworkStackBackend = fmt.Sprintf("unixgram://%s/vfkit-network-backend.sock", tmpdir)
-
-	cmdline := vmconfig.Cmdline{
-		Workspace:     "/",
-		TargetBin:     "/bootstrap-arm64",
-		TargetBinArgs: append([]string{command.Args().First()}, command.Args().Tail()...),
-		Env:           command.StringSlice("envs"),
-	}
-
-	logrus.Infof("set memory to: %v", vmc.MemoryInMB)
-	logrus.Infof("set cpus to: %v", vmc.Cpus)
-	logrus.Infof("set rootfs to: %v", vmc.RootFS)
-	logrus.Infof("set gvproxy control: %q", vmc.GVproxyEndpoint)
-	logrus.Infof("set network backend: %q", vmc.NetworkStackBackend)
-	logrus.Infof("set envs: %v", cmdline.Env)
-	logrus.Infof("set data disk: %v", vmc.DataDisk)
-	logrus.Infof("set cmdline: %q, %q", cmdline.TargetBin, cmdline.TargetBinArgs)
-
-	if err = system.CopyBootstrapInToRootFS(vmc.RootFS); err != nil {
-		return fmt.Errorf("failed to copy dhclient4 to rootfs: %v", err)
-	}
-
-	if err = vmc.WriteToJsonFile(filepath.Join(vmc.RootFS, define.VMConfig)); err != nil {
-		return fmt.Errorf("failed to write vmconfig to json file: %v", err)
-	}
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	// vmc must be a static struct at this point
 	g.Go(func() error {
-		return network.StartNetworking(ctx, vmc)
+		return server.NewServer(ctx, vmc).Start()
+	})
+
+	vmp := vm.Get()
+
+	g.Go(func() error {
+		return vmp.StartNetwork(ctx, vmc)
 	})
 
 	g.Go(func() error {
-		return server.IgnServer(ctx, &vmc)
-	})
+		if err = vmp.Create(ctx, vmc, cmdline); err != nil {
+			return fmt.Errorf("failed to create vm: %w", err)
+		}
 
-	g.Go(func() error {
-		return libkrun.StartVM(ctx, vmc, cmdline)
+		return vmp.Start(ctx)
 	})
 
 	return g.Wait()
+}
+
+func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
+	prefix := filepath.Join(os.TempDir(), uuid.New().String()[:8])
+	vmc := vmconfig.VMConfig{
+		MemoryInMB:          command.Int32("memory"),
+		Cpus:                command.Int8("cpus"),
+		RootFS:              command.String("rootfs"),
+		DataDisk:            command.StringSlice("data-disk"),
+		Mounts:              filesystem.CmdLineMountToMounts(command.StringSlice("mount")),
+		GVproxyEndpoint:     fmt.Sprintf("unix://%s/gvproxy-control.sock", prefix),
+		NetworkStackBackend: fmt.Sprintf("unixgram://%s/gvproxy-network-backend.sock", prefix),
+	}
+
+	return &vmc
+}
+
+func makeCmdline(command *cli.Command) *vmconfig.Cmdline {
+	cmdline := vmconfig.Cmdline{
+		Workspace: "/",
+		// TODO: bootstrap-arm64 -> boostrap
+		TargetBin:     "/bootstrap",
+		TargetBinArgs: append([]string{command.Args().First()}, command.Args().Tail()...),
+		Env:           command.StringSlice("envs"),
+	}
+	return &cmdline
 }
