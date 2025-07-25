@@ -8,11 +8,11 @@ import (
 )
 
 type Mount struct {
-	ReadOnly bool   `json:"ReadOnly"`
-	Source   string `json:"Source"`
-	Tag      string `json:"Tag"`
-	Target   string `json:"Target"`
-	Type     string `json:"Type"`
+	ReadOnly bool   `json:"readOnly"`
+	Source   string `json:"source"`
+	Tag      string `json:"tag"`
+	Target   string `json:"target"`
+	Type     string `json:"type"`
 }
 
 func CmdLineMountToMounts(mnts []string) []Mount {

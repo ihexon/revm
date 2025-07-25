@@ -21,7 +21,7 @@ echo "Do codesign"
 codesign --entitlements revm.entitlements --force -s - "out/bin/revm-arm64"
 
 echo "Build bootstrap for linux"
-GOOS=linux GOARCH=arm64 go build -v -o "out/bin/bootstrap-arm64" ./cmd/bootstrap
+GOOS=linux GOARCH=arm64 go build -v -o "out/bin/bootstrap" ./cmd/bootstrap
 
 echo "Packing revm and deps"
 tar -cvf revm.tar out/

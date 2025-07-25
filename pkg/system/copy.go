@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"github.com/sirupsen/logrus"
 	"io"
+	"linuxvm/pkg/define"
 	"os"
 	"path/filepath"
 )
 
-func CopyBootstrapInToRootFS(rootfs string) error {
+func CopyBootstrapTo(rootfs string) error {
 	path, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable path: %w", err)
@@ -18,38 +19,44 @@ func CopyBootstrapInToRootFS(rootfs string) error {
 	if err != nil {
 		return fmt.Errorf("failed to eval symlinks: %w", err)
 	}
-	path, err = filepath.Abs(path)
+
+	path = filepath.Join(filepath.Dir(path), define.Bootstrap)
+	logrus.Infof("bootstrap path %q", path)
+
+	return CopyFile(path, filepath.Join(rootfs, define.Bootstrap))
+}
+
+func CopyFile(src, dst string) error {
+	src, err := filepath.Abs(src)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+	dst, err = filepath.Abs(dst)
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	path = filepath.Join(filepath.Dir(path), "bootstrap-arm64")
-	logrus.Infof("dhclient4 client path %q", path)
-
-	fd, err := os.Open(path)
+	srcFd, err := os.Open(src)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
-	defer fd.Close() //nolint:errcheck
-
-	destPath := filepath.Join(rootfs, "bootstrap-arm64")
-
-	destFd, err := os.Create(destPath)
+	defer srcFd.Close()
+	srcInfo, err := srcFd.Stat()
 	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
+		return fmt.Errorf("failed to get file info: %w", err)
 	}
-	defer destFd.Close() //nolint:errcheck
+	dstFd, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, srcInfo.Mode())
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer dstFd.Close()
 
-	logrus.Infof("copy file from %q to %q", path, destPath)
-	_, err = io.Copy(destFd, fd)
+	logrus.Infof("copy file from %q to %q", src, dst)
+	written, err := io.Copy(dstFd, srcFd)
 	if err != nil {
 		return fmt.Errorf("failed to copy file: %w", err)
 	}
-
-	logrus.Infof("chmod file %q to 0755", destPath)
-	if err = os.Chmod(destPath, 0755); err != nil {
-		return fmt.Errorf("failed to chmod file: %w", err)
-	}
+	logrus.Infof("copied %d bytes", written)
 
 	return nil
 }

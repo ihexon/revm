@@ -3,37 +3,73 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"linuxvm/pkg/filesystem"
+	"fmt"
+	"linuxvm/pkg/define"
 	"linuxvm/pkg/vmconfig"
 	"net/http"
+	"net/url"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
-type Handler struct {
-	vmc *vmconfig.VMConfig
+type Server struct {
+	Vmc        *vmconfig.VMConfig
+	Server     *http.Server
+	Mux        *http.ServeMux
+	ListenAddr url.URL
+	Ctx        context.Context
 }
 
-// MountResponse represents the HTTP response structure for mount information
-type MountResponse struct {
-	Mounts []filesystem.Mount `json:"mounts"`
-}
-
-func (h *Handler) HandleMounts(w http.ResponseWriter, r *http.Request) {
-	response := MountResponse{
-		Mounts: h.vmc.Mounts,
+func NewServer(ctx context.Context, vmc *vmconfig.VMConfig) *Server {
+	mux := http.NewServeMux()
+	server := &Server{
+		Mux:        mux,
+		Vmc:        vmc,
+		ListenAddr: url.URL{Scheme: "http", Host: define.DefaultRestAddr},
+		Ctx:        ctx,
 	}
-	
-	WriteJSON(w, http.StatusOK, response)
+	return server
 }
 
-func NewHandler(vmc *vmconfig.VMConfig) *Handler {
-	return &Handler{vmc: vmc}
+func (s *Server) handleShowMounts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		WriteJSON(w, http.StatusMethodNotAllowed, nil)
+		return
+	}
+	WriteJSON(w, http.StatusOK, s.Vmc.Mounts)
 }
 
-func IgnServer(ctx context.Context, vmc *vmconfig.VMConfig) error {
-	http.HandleFunc("/host/virtiofs", NewHandler(vmc).HandleMounts)
-	return http.ListenAndServe(":8080", nil)
+func (s *Server) registerRouter() {
+	s.Mux.HandleFunc("/host/mounts", s.handleShowMounts)
+}
+
+func (s *Server) Start() error {
+	s.registerRouter()
+
+	s.Server = &http.Server{
+		Addr:         s.ListenAddr.Host,
+		Handler:      s.Mux,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 5 * time.Second,
+		IdleTimeout:  30 * time.Second,
+	}
+	errChan := make(chan error, 1)
+
+	go func() {
+		logrus.Infof("start server on %q", s.ListenAddr.String())
+		if err := s.Server.ListenAndServe(); err != nil {
+			errChan <- err
+		}
+	}()
+
+	select {
+	case err := <-errChan:
+		return fmt.Errorf("start rest server error: %w", err)
+	case <-s.Ctx.Done():
+		logrus.Infof("close rest server on %q", s.ListenAddr.String())
+		return s.Server.Close()
+	}
 }
 
 // WriteJSON writes an interface value encoded as JSON to w
