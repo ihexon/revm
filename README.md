@@ -52,5 +52,17 @@ GLOBAL OPTIONS:
    --help, -h                                 show help
 ```
 
+# Binary signing issues on MacOS
 
+MacOS does not allow running external binaries, so you have to build re-vm from source code or sign the binary manually. 
 
+For build the binary from the source code. you need to have golang development environment (using [brew](https://brew.sh)), and run the build script:
+```shell
+./build.sh # run build script
+```
+
+Or download binaries from release, and remove `com.apple.quarantine` for binaries.
+```shell
+xattr -d com.apple.quarantine ./bin/revm-arm64
+xattr -d com.apple.quarantine ./lib/*
+```
