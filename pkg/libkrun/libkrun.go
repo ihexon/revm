@@ -241,7 +241,7 @@ func (v *AppleHVStubber) addVirtioFS() error {
 }
 
 func (v *AppleHVStubber) StartNetwork(ctx context.Context, vmc *vmconfig.VMConfig) error {
-	return network.StartNetworking(ctx, vmc)
+	return network.StartNetworking(ctx, vmc.GVproxyEndpoint, vmc.NetworkStackBackend)
 }
 
 func stopVM(tx context.Context, vmID uint32) error {
