@@ -40,7 +40,7 @@ func CopyFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
-	defer srcFd.Close()
+	defer srcFd.Close() //nolint:errcheck
 	srcInfo, err := srcFd.Stat()
 	if err != nil {
 		return fmt.Errorf("failed to get file info: %w", err)
@@ -49,14 +49,13 @@ func CopyFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
-	defer dstFd.Close()
+	defer dstFd.Close() //nolint:errcheck
 
 	logrus.Infof("copy file from %q to %q", src, dst)
-	written, err := io.Copy(dstFd, srcFd)
+	_, err = io.Copy(dstFd, srcFd)
 	if err != nil {
 		return fmt.Errorf("failed to copy file: %w", err)
 	}
-	logrus.Infof("copied %d bytes", written)
 
 	return nil
 }

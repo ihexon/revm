@@ -3,7 +3,7 @@ package network
 import (
 	"context"
 	"fmt"
-	"linuxvm/pkg/vmconfig"
+
 	"net"
 	"net/http"
 	"net/url"
@@ -101,6 +101,7 @@ func httpServe(ctx context.Context, g *errgroup.Group, ln net.Listener, mux http
 	// if ctx is canceled, close the listener
 	g.Go(func() error {
 		<-ctx.Done()
+		logrus.Infof("close gvproxy control endpoint on %q", ln.Addr())
 		return ln.Close()
 	})
 
@@ -135,8 +136,7 @@ func run(ctx context.Context, g *errgroup.Group, configuration *gvptypes.Configu
 	}
 
 	{
-		logrus.Infof("gvproxy control endpoint: %q", endpoints.ControlEndpoints)
-
+		logrus.Infof("listen gvproxy control endpoint: %q", endpoints.ControlEndpoints)
 		ln, err := transport.Listen(endpoints.ControlEndpoints)
 		if err != nil {
 			return fmt.Errorf("failed to listen on %q: %w", endpoints.ControlEndpoints, err)
@@ -149,6 +149,7 @@ func run(ctx context.Context, g *errgroup.Group, configuration *gvptypes.Configu
 	if err != nil {
 		return err
 	}
+
 	mux := http.NewServeMux()
 	mux.Handle("/services/forwarder/all", vn.Mux())
 	mux.Handle("/services/forwarder/expose", vn.Mux())
@@ -156,7 +157,7 @@ func run(ctx context.Context, g *errgroup.Group, configuration *gvptypes.Configu
 	httpServe(ctx, g, ln, mux)
 
 	if endpoints.VFKitSocketEndpoint != "" {
-		logrus.Infof("network backend: %q", endpoints.VFKitSocketEndpoint)
+		logrus.Infof("listen gvproxy network backend: %q", endpoints.VFKitSocketEndpoint)
 		conn, err := transport.ListenUnixgram(endpoints.VFKitSocketEndpoint)
 		if err != nil {
 			return fmt.Errorf("failed to listen on %q: %w", endpoints.VFKitSocketEndpoint, err)
@@ -164,6 +165,7 @@ func run(ctx context.Context, g *errgroup.Group, configuration *gvptypes.Configu
 
 		g.Go(func() error {
 			<-ctx.Done()
+			logrus.Infof("close gvproxy network backend on %q", endpoints.VFKitSocketEndpoint)
 			if err := conn.Close(); err != nil {
 				logrus.Errorf("error closing %s: %q", endpoints.VFKitSocketEndpoint, err)
 			}
@@ -189,12 +191,12 @@ func run(ctx context.Context, g *errgroup.Group, configuration *gvptypes.Configu
 	return g.Wait()
 }
 
-func StartNetworking(ctx context.Context, vmc *vmconfig.VMConfig) error {
+func StartNetworking(ctx context.Context, gvpCtl, gvpBkd string) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	endpoints := EndPoints{
-		ControlEndpoints:    vmc.GVproxyEndpoint,
-		VFKitSocketEndpoint: vmc.NetworkStackBackend,
+		ControlEndpoints:    gvpCtl,
+		VFKitSocketEndpoint: gvpBkd,
 	}
 
 	if err := makeDirForUnixSocks(endpoints.ControlEndpoints); err != nil {

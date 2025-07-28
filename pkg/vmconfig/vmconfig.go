@@ -3,7 +3,11 @@ package vmconfig
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/sirupsen/logrus"
+
 	"linuxvm/pkg/filesystem"
+	"linuxvm/pkg/network"
+
 	"os"
 )
 
@@ -30,6 +34,35 @@ type Cmdline struct {
 	TargetBin     string   `json:"targetBin,omitempty"`
 	TargetBinArgs []string `json:"targetBinArgs,omitempty"`
 	Env           []string `json:"env,omitempty"`
+}
+
+func (c *Cmdline) UsingSystemProxy() error {
+	proxyInfo, err := network.GetSystemProxy()
+	if err != nil {
+		return fmt.Errorf("failed to get system proxy: %v", err)
+	}
+
+	c.SetProxy(proxyInfo)
+
+	return nil
+}
+
+func (c *Cmdline) SetProxy(proxyInfo *network.Proxy) {
+	if proxyInfo.HTTP == nil {
+		logrus.Warnf("no system http proxy found")
+	} else {
+		httpProxy := fmt.Sprintf("http_proxy=%s:%d", proxyInfo.HTTP.Host, proxyInfo.HTTP.Port)
+		logrus.Infof("using system http proxy: %q", httpProxy)
+		c.Env = append(c.Env, httpProxy)
+	}
+
+	if proxyInfo.HTTPS == nil {
+		logrus.Warnf("no system https proxy found")
+	} else {
+		httpsProxy := fmt.Sprintf("https_proxy=%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port)
+		logrus.Infof("using system https proxy: %q", httpsProxy)
+		c.Env = append(c.Env, httpsProxy)
+	}
 }
 
 func (vmc *VMConfig) WriteToJsonFile(file string) error {
