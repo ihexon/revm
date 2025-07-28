@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/sirupsen/logrus"
-
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
 
@@ -42,6 +41,16 @@ func (c *Cmdline) UsingSystemProxy() error {
 		return fmt.Errorf("failed to get system proxy: %v", err)
 	}
 
+	if proxyInfo.HTTP != nil && (proxyInfo.HTTP.Host == "127.0.0.1" || proxyInfo.HTTP.Host == "localhost") {
+		logrus.Warnf("system http proxy is localhost, using gvproxy host ip instead")
+		proxyInfo.HTTP.Host = "host.containers.internal"
+	}
+
+	if proxyInfo.HTTPS != nil && (proxyInfo.HTTPS.Host == "127.0.0.1" || proxyInfo.HTTPS.Host == "localhost") {
+		logrus.Warnf("system https proxy is localhost, using gvproxy host ip instead")
+		proxyInfo.HTTPS.Host = "host.containers.internal"
+	}
+
 	c.SetProxy(proxyInfo)
 
 	return nil
@@ -51,7 +60,7 @@ func (c *Cmdline) SetProxy(proxyInfo *network.Proxy) {
 	if proxyInfo.HTTP == nil {
 		logrus.Warnf("no system http proxy found")
 	} else {
-		httpProxy := fmt.Sprintf("http_proxy=%s:%d", proxyInfo.HTTP.Host, proxyInfo.HTTP.Port)
+		httpProxy := fmt.Sprintf("http_proxy=http://%s:%d", proxyInfo.HTTP.Host, proxyInfo.HTTP.Port)
 		logrus.Infof("using system http proxy: %q", httpProxy)
 		c.Env = append(c.Env, httpProxy)
 	}
@@ -59,7 +68,7 @@ func (c *Cmdline) SetProxy(proxyInfo *network.Proxy) {
 	if proxyInfo.HTTPS == nil {
 		logrus.Warnf("no system https proxy found")
 	} else {
-		httpsProxy := fmt.Sprintf("https_proxy=%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port)
+		httpsProxy := fmt.Sprintf("https_proxy=https://%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port)
 		logrus.Infof("using system https proxy: %q", httpsProxy)
 		c.Env = append(c.Env, httpsProxy)
 	}
