@@ -55,6 +55,11 @@ func main() {
 				Name:  "mount",
 				Usage: "mount host dir to guest dir",
 			},
+			&cli.BoolFlag{
+				Name:  "system-proxy",
+				Usage: "use system proxy, set environment http(s)_proxy to guest",
+				Value: false,
+			},
 		},
 		Action: vmLifeCycle,
 	}
@@ -79,6 +84,13 @@ func vmLifeCycle(ctx context.Context, command *cli.Command) error {
 	logrus.Infof("vmconfig: %s", d)
 
 	cmdline := makeCmdline(command)
+
+	if command.Bool("system-proxy") {
+		if err := cmdline.UsingSystemProxy(); err != nil {
+			return fmt.Errorf("failed to use system proxy: %v", err)
+		}
+	}
+
 	d, err = json.Marshal(cmdline)
 	if err != nil {
 		return fmt.Errorf("failed to marshal cmdline: %v", err)
