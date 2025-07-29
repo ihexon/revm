@@ -108,8 +108,8 @@ func (v *AppleHVStubber) Start(ctx context.Context) error {
 		return err
 	}
 
-	if err := system.CopyBootstrapTo(v.vmc.RootFS); err != nil {
-		return fmt.Errorf("failed to copy bootstrap to rootfs: %w", err)
+	if err := system.Copy3rdFileTo(v.vmc.RootFS); err != nil {
+		return fmt.Errorf("failed to copy 3rd files to rootfs: %w", err)
 	}
 
 	return execCmdlineInVM(ctx, v.krunCtxID)
