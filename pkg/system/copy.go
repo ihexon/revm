@@ -16,11 +16,12 @@ func Copy3rdFileTo(rootfs string) error {
 
 	fileList := []string{
 		"bootstrap",
+		"busybox.static",
 	}
 
 	for _, file := range fileList {
 		src := filepath.Join(path, file)
-		dst := filepath.Join(rootfs, file)
+		dst := filepath.Join(rootfs, "3rd", file)
 		logrus.Infof("copy file from %q to %q", src, dst)
 		if err := CopyFile(src, dst); err != nil {
 			return fmt.Errorf("failed to copy file: %w", err)
@@ -38,6 +39,10 @@ func CopyFile(src, dst string) error {
 	dst, err = filepath.Abs(dst)
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	if err = os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return fmt.Errorf("failed to create dir: %w", err)
 	}
 
 	srcFd, err := os.Open(src)
