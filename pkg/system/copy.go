@@ -4,26 +4,30 @@ import (
 	"fmt"
 	"github.com/sirupsen/logrus"
 	"io"
-	"linuxvm/pkg/define"
 	"os"
 	"path/filepath"
 )
 
-func CopyBootstrapTo(rootfs string) error {
-	path, err := os.Executable()
+func Copy3rdFileTo(rootfs string) error {
+	path, err := Get3rdDir()
 	if err != nil {
-		return fmt.Errorf("failed to get executable path: %w", err)
+		return fmt.Errorf("failed to get 3rd dir: %w", err)
 	}
 
-	path, err = filepath.EvalSymlinks(path)
-	if err != nil {
-		return fmt.Errorf("failed to eval symlinks: %w", err)
+	fileList := []string{
+		"bootstrap",
 	}
 
-	path = filepath.Join(filepath.Dir(path), define.Bootstrap)
-	logrus.Infof("bootstrap path %q", path)
+	for _, file := range fileList {
+		src := filepath.Join(path, file)
+		dst := filepath.Join(rootfs, file)
+		logrus.Infof("copy file from %q to %q", src, dst)
+		if err := CopyFile(src, dst); err != nil {
+			return fmt.Errorf("failed to copy file: %w", err)
+		}
+	}
 
-	return CopyFile(path, filepath.Join(rootfs, define.Bootstrap))
+	return nil
 }
 
 func CopyFile(src, dst string) error {
@@ -51,7 +55,6 @@ func CopyFile(src, dst string) error {
 	}
 	defer dstFd.Close() //nolint:errcheck
 
-	logrus.Infof("copy file from %q to %q", src, dst)
 	_, err = io.Copy(dstFd, srcFd)
 	if err != nil {
 		return fmt.Errorf("failed to copy file: %w", err)

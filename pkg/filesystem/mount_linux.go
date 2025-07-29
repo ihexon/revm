@@ -3,10 +3,11 @@ package filesystem
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/moby/sys/mountinfo"
+	"github.com/sirupsen/logrus"
 	"os"
 
 	"github.com/moby/sys/mount"
-	"github.com/moby/sys/mountinfo"
 )
 
 const (
@@ -14,32 +15,36 @@ const (
 	TmpDir       = "/tmp"
 	RunDir       = "/run"
 	TmpMountOpts = "rw,nosuid,relatime"
-
-	VirtioFs = "virtiofs"
+	VirtioFs     = "virtiofs"
 )
 
 func MountTmpfs() error {
-	isMounted, err := mountinfo.Mounted(TmpDir)
-	if err != nil {
-		return fmt.Errorf("failed to check %q mounted: %w", TmpDir, err)
-	}
-	if isMounted {
-		return fmt.Errorf("%q is already mounted, can not mount again", TmpDir)
+	dirs := []string{
+		TmpDir,
+		RunDir,
 	}
 
-	if err = os.MkdirAll(TmpDir, 755); err != nil {
-		return fmt.Errorf("failed to create tmp dir: %w", err)
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 755); err != nil {
+			return fmt.Errorf("failed to create %q dir: %w", dir, err)
+		}
+
+		isMounted, err := mountinfo.Mounted(dir)
+		if err != nil {
+			return fmt.Errorf("failed to check %q mounted: %w", TmpDir, err)
+		}
+
+		if isMounted {
+			return fmt.Errorf("%q is already mounted, can not mount again", TmpDir)
+		}
+
+		logrus.Infof("mount devices %q, type %q to %q", Tmpfs, Tmpfs, dir)
+		if err = mount.Mount(Tmpfs, dir, Tmpfs, TmpMountOpts); err != nil {
+			return fmt.Errorf("failed to mount /run dir: %w", err)
+		}
 	}
 
-	if err = os.MkdirAll(RunDir, 755); err != nil {
-		return fmt.Errorf("failed to create /run dir: %w", err)
-	}
-
-	if err = mount.Mount(Tmpfs, RunDir, Tmpfs, TmpMountOpts); err != nil {
-		return fmt.Errorf("failed to mount /run dir: %w", err)
-	}
-
-	return mount.Mount(Tmpfs, TmpDir, Tmpfs, TmpMountOpts)
+	return nil
 }
 
 // VMConfig taken from `pkg/vmconfig/vmconfig.go`

@@ -35,6 +35,11 @@ type Cmdline struct {
 	Env           []string `json:"env,omitempty"`
 }
 
+func (c *Cmdline) SetPATH() error {
+	c.Env = append(c.Env, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+	return nil
+}
+
 func (c *Cmdline) UsingSystemProxy() error {
 	proxyInfo, err := network.GetSystemProxy()
 	if err != nil {
@@ -68,7 +73,7 @@ func (c *Cmdline) SetProxy(proxyInfo *network.Proxy) {
 	if proxyInfo.HTTPS == nil {
 		logrus.Warnf("no system https proxy found")
 	} else {
-		httpsProxy := fmt.Sprintf("https_proxy=https://%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port)
+		httpsProxy := fmt.Sprintf("https_proxy=http://%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port)
 		logrus.Infof("using system https proxy: %q", httpsProxy)
 		c.Env = append(c.Env, httpsProxy)
 	}
