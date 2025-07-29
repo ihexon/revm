@@ -66,7 +66,7 @@ type VMConfig struct {
 }
 
 // MountVirtioFS load $rootfs/.vmconfig, and mount the virtiofs mnt
-func MountVirtioFS(file string) error {
+func LoadVMConfigAndMountVirtioFS(file string) error {
 	f, err := os.Open(file)
 	if err != nil {
 		return fmt.Errorf("failed to open file %s: %w", file, err)

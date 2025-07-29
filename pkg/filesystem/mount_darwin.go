@@ -5,6 +5,6 @@ func MountTmpfs() error {
 }
 
 // MountVirtioFS load $rootfs/.vmconfig, and mount the virtiofs mnt
-func MountVirtioFS(f string) error {
+func LoadVMConfigAndMountVirtioFS(f string) error {
 	return nil
 }
