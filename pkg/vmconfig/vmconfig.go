@@ -36,7 +36,7 @@ type Cmdline struct {
 }
 
 func (c *Cmdline) SetPATH() error {
-	c.Env = append(c.Env, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+	c.Env = append(c.Env, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/3rd")
 	return nil
 }
 
