@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
 	"os"
@@ -18,26 +19,30 @@ const (
 )
 
 func main() {
+	if err := bootstrap(); err != nil {
+		logrus.Fatal(err)
+	}
+}
+
+func bootstrap() error {
+	if err := filesystem.MountTmpfs(); err != nil {
+		return err
+	}
+
+	if err := filesystem.LoadVMConfigAndMountVirtioFS(filepath.Join("/", "vmconfig.json")); err != nil {
+		return err
+	}
+
 	g, ctx := errgroup.WithContext(context.Background())
 	g.Go(func() error {
 		return configureNetwork()
 	})
 
 	g.Go(func() error {
-		return filesystem.MountTmpfs()
-	})
-
-	g.Go(func() error {
-		return filesystem.MountVirtioFS(filepath.Join("/", "vmconfig.json"))
-	})
-
-	g.Go(func() error {
 		return doExecCmdLine(ctx, os.Args[1], os.Args[2:])
 	})
 
-	if err := g.Wait(); err != nil {
-		logrus.Errorf("failed to run cmd: %v", err)
-	}
+	return g.Wait()
 }
 
 func doExecCmdLine(ctx context.Context, targetBin string, targetBinArgs []string) error {
@@ -47,9 +52,9 @@ func doExecCmdLine(ctx context.Context, targetBin string, targetBinArgs []string
 	cmd.Stdin = os.Stdin
 	logrus.Infof("run cmdline: %q", cmd.Args)
 	if err := cmd.Run(); err != nil {
-		logrus.Errorf("failed to run cmd: %v", err)
-		return err
+		return fmt.Errorf("cmdline %q exit with err: %w", cmd.Args, err)
 	}
+
 	return nil
 }
 
