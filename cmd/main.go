@@ -90,12 +90,14 @@ func vmLifeCycle(ctx context.Context, command *cli.Command) error {
 			return fmt.Errorf("failed to use system proxy: %v", err)
 		}
 	}
+	_ = cmdline.SetPATH()
 
 	d, err = json.Marshal(cmdline)
 	if err != nil {
 		return fmt.Errorf("failed to marshal cmdline: %v", err)
 	}
-	logrus.Infof("cmdline: %s", d)
+	
+	logrus.Infof("revm cmdline: %s", d)
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()

@@ -4,6 +4,9 @@ echo "Build revm..."
 rm -rf ./out && mkdir -p out
 
 cp -av ./lib ./out
+
+mkdir -p ./out/3rd
+
 codesign --force --deep --sign - "out/lib/libkrun.dylib"
 codesign --force --deep --sign - "out/lib/libkrunfw.dylib"
 codesign --force --deep --sign - "out/lib/libepoxy.dylib"
@@ -21,7 +24,7 @@ echo "Do codesign"
 codesign --entitlements revm.entitlements --force -s - "out/bin/revm-arm64"
 
 echo "Build bootstrap for linux"
-GOOS=linux GOARCH=arm64 go build -v -o "out/bin/bootstrap" ./cmd/bootstrap
+GOOS=linux GOARCH=arm64 go build -v -o "out/3rd/bootstrap" ./cmd/bootstrap
 
 echo "Packing revm and deps"
 tar --zstd -cvf revm.tar out/
