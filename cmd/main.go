@@ -72,6 +72,11 @@ func main() {
 }
 
 func vmLifeCycle(ctx context.Context, command *cli.Command) error {
+	setLogrus()
+	if command.Args().Len() < 1 {
+		return fmt.Errorf("no command specified")
+	}
+
 	if err := system.Rlimit(); err != nil {
 		return fmt.Errorf("failed to set rlimit: %v", err)
 	}
@@ -96,7 +101,7 @@ func vmLifeCycle(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal cmdline: %v", err)
 	}
-	
+
 	logrus.Infof("revm cmdline: %s", d)
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
@@ -143,9 +148,18 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 func makeCmdline(command *cli.Command) *vmconfig.Cmdline {
 	cmdline := vmconfig.Cmdline{
 		Workspace:     "/",
-		TargetBin:     "/bootstrap",
+		TargetBin:     "/3rd/bootstrap",
 		TargetBinArgs: append([]string{command.Args().First()}, command.Args().Tail()...),
 		Env:           command.StringSlice("envs"),
 	}
 	return &cmdline
+}
+
+func setLogrus() {
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp: true,
+		ForceColors:   true,
+	})
+	logrus.SetOutput(os.Stderr)
+	logrus.SetLevel(logrus.InfoLevel)
 }

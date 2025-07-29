@@ -50,6 +50,7 @@ func doExecCmdLine(ctx context.Context, targetBin string, targetBinArgs []string
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
+	
 	logrus.Infof("run cmdline: %q", cmd.Args)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("cmdline %q exit with err: %w", cmd.Args, err)
