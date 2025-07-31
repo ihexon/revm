@@ -1,6 +1,12 @@
 #! /usr/bin/env bash
 set -e
 
+args="$1"
+if [[ "$args" == "test" ]]; then
+  go test -v linuxvm/test/system
+  exit
+fi
+
 # Copy libkrun dynamic lib to ./out/lib
 {
   echo "copy prebuild libkrun dylib"

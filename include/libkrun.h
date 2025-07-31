@@ -1,3 +1,10 @@
+#ifndef _LIBKRUN_H
+#define _LIBKRUN_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <inttypes.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -18,6 +25,44 @@
  *  Zero on success or a negative error number on failure.
  */
 int32_t krun_set_log_level(uint32_t level);
+
+
+#define KRUN_LOG_TARGET_DEFAULT -1
+
+#define KRUN_LOG_LEVEL_OFF 0
+#define KRUN_LOG_LEVEL_ERROR 1
+#define KRUN_LOG_LEVEL_WARN 2
+#define KRUN_LOG_LEVEL_INFO 3
+#define KRUN_LOG_LEVEL_DEBUG 4
+#define KRUN_LOG_LEVEL_TRACE 5
+
+#define KRUN_LOG_STYLE_AUTO 0
+#define KRUN_LOG_STYLE_ALWAYS 1
+#define KRUN_LOG_STYLE_NEVER 2
+
+#define KRUN_LOG_OPTION_NO_ENV 1
+
+/**
+ * Initializes logging for the library.
+ *
+ * Arguments:
+ *  "target_fd" - File descriptor to write log to. Note that using a file descriptor pointing to a regular file on
+ *                filesystem might slow down the VM.
+ *                Use KRUN_LOG_TARGET_DEFAULT to use the default target for log output (stderr).
+ *
+ *  "level"     - Level is an integer specifying the level of verbosity, higher number means more verbose log.
+ *                The log levels are described by the constants: KRUN_LOG_LEVEL_{OFF, ERROR, WARN, INFO, DEBUG, TRACE}
+ *
+ *  "style"     - Enable/disable usage of terminal escape sequences (to display colors)
+ *                One of: KRUN_LOG_STYLE_{AUTO, ALWAYS, NEVER}.
+ *
+ *  "options"   - Bitmask of logging options, use 0 for default options.
+ *                KRUN_LOG_OPTION_NO_ENV to disallow environment variables to override these settings.
+ *
+ * Returns:
+ *  Zero on success or a negative error number on failure.
+ */
+int32_t krun_init_log(int target_fd, uint32_t level, uint32_t style, uint32_t options);
 
 /**
  * Creates a configuration context.
@@ -220,7 +265,114 @@ int32_t krun_add_virtiofs2(uint32_t ctx_id,
                            const char *c_path,
                            uint64_t shm_size);
 
+/* Send the VFKIT magic after establishing the connection,
+   as required by gvproxy in vfkit mode. */
+#define NET_FLAG_VFKIT 1 << 0
+
+/* Taken from uapi/linux/virtio_net.h */
+#define NET_FEATURE_CSUM 1 << 0
+#define NET_FEATURE_GUEST_CSUM 1 << 1
+#define NET_FEATURE_GUEST_TSO4 1 << 7
+#define NET_FEATURE_GUEST_TSO6 1 << 8
+#define NET_FEATURE_GUEST_UFO 1 << 10
+#define NET_FEATURE_HOST_TSO4 1 << 11
+#define NET_FEATURE_HOST_TSO6 1 << 12
+#define NET_FEATURE_HOST_UFO 1 << 14
+
+/* These are the features enabled by krun_set_passt_fd and krun_set_gvproxy_path. */
+#define COMPAT_NET_FEATURES NET_FEATURE_CSUM | NET_FEATURE_GUEST_CSUM | \
+                            NET_FEATURE_GUEST_TSO4 | NET_FEATURE_GUEST_UFO | \
+                            NET_FEATURE_HOST_TSO4 | NET_FEATURE_HOST_UFO
 /**
+ * Adds an independent virtio-net device connected to a
+ * unixstream-based userspace network proxy, such as passt or
+ * socket_vmnet.
+ *
+ * The "krun_add_net_*" functions can be called multiple times for
+ * adding multiple virtio-net devices. In the guest the interfaces
+ * will appear in the same order as they are added (that is, the
+ * first added interface will be "eth0", the second "eth1"...)
+ *
+ * If no network interface is added, libkrun will automatically
+ * enable the TSI backend.
+ *
+ * Arguments:
+ *  "ctx_id"   - the configuration context ID.
+ *  "c_path"   - a null-terminated string representing the path
+ *               for the unixstream socket where the userspace
+ *               network proxy is listening. Must be NULL if "fd"
+ *               is not -1.
+ *  "fd"       - a file descriptor for an already open unixstream
+ *               connection to the userspace network proxy. Must
+ *               be -1 if "c_path" is not NULL.
+ *  "c_mac"    - MAC address as an array of 6 uint8_t entries.
+ *  "features" - virtio-net features for the network interface.
+ *  "flags"    - generic flags for the network interface.
+ *
+ * Notes:
+ * The arguments "c_path" and "fd" are mutually exclusive. If using
+ * "fd", the socket must be already initialized and configured as
+ * the userspace network proxy requires.
+ * If no network devices are added, networking uses the TSI backend.
+ * This function should be called before krun_set_port_map.
+ *
+ * Returns:
+ *  Zero on success or a negative error number on failure.
+ */
+int32_t krun_add_net_unixstream(uint32_t ctx_id,
+                                const char *c_path,
+                                int fd,
+                                uint8_t *const c_mac,
+                                uint32_t features,
+                                uint32_t flags);
+
+/**
+ * Adds an independent virtio-net device with a unixgram-based
+ * backend, such as gvproxy or vmnet-helper.
+ *
+ * The "krun_add_net_*" functions can be called multiple times for
+ * adding multiple virtio-net devices. In the guest the interfaces
+ * will appear in the same order as they are added (that is, the
+ * first added interface will be "eth0", the second "eth1"...)
+ *
+ * If no network interface is added, libkrun will automatically
+ * enable the TSI backend.
+ *
+ * Arguments:
+ *  "ctx_id"   - the configuration context ID.
+ *  "c_path"   - a null-terminated string representing the path
+ *               for the unixstream socket where the userspace
+ *               network proxy is listening. Must be NULL if "fd"
+ *               is not -1.
+ *  "fd"       - a file descriptor for an already open unixstream
+ *               connection to the userspace network proxy. Must
+ *               be -1 if "c_path" is not NULL.
+ *  "c_mac"    - MAC address as an array of 6 uint8_t entries.
+ *  "features" - virtio-net features for the network interface.
+ *  "flags"    - generic flags for the network interface.
+ *
+ * Notes:
+ * The arguments "c_path" and "fd" are mutually exclusive. If using
+ * "fd", the socket must be already initialized and configured as
+ * the userspace network proxy requires.
+ * If no network devices are added, networking uses the TSI backend.
+ * This function should be called before krun_set_port_map.
+ * If using gvproxy in vfkit mode, NET_FLAG_VFKIT must be passed in
+ * "flags" when using "c_path" to indicate the connection endpoint.
+ *
+ * Returns:
+ *  Zero on success or a negative error number on failure.
+ */
+int32_t krun_add_net_unixgram(uint32_t ctx_id,
+                              const char *c_path,
+                              int fd,
+                              uint8_t *const c_mac,
+                              uint32_t features,
+                              uint32_t flags);
+
+/**
+ * DEPRECATED. Use krun_add_net_unixstream instead.
+ *
  * Configures the networking to use passt.
  * Call to this function disables TSI backend to use passt instead.
  *
@@ -238,6 +390,8 @@ int32_t krun_add_virtiofs2(uint32_t ctx_id,
 int32_t krun_set_passt_fd(uint32_t ctx_id, int fd);
 
 /**
+ * DEPRECATED. Use krun_add_net_unixgram instead.
+ *
  * Configures the networking to use gvproxy in vfkit mode.
  * Call to this function disables TSI backend to use gvproxy instead.
  *
@@ -554,6 +708,54 @@ int32_t krun_setgid(uint32_t ctx_id, gid_t gid);
 int32_t krun_set_nested_virt(uint32_t ctx_id, bool enabled);
 
 /**
+ * Check the system if Nested Virtualization is supported
+ *
+ * Notes:
+ *  This feature is only supported on macOS.
+ *
+ * Returns:
+ *  - 1 : Success and Nested Virtualization is supported
+ *  - 0 : Success and Nested Virtualization is not supported
+ *  - <0: Failure
+ */
+int32_t krun_check_nested_virt(void);
+
+/**
+ * Specify whether to split IRQCHIP responsibilities between the host and the guest.
+ *
+ * Arguments:
+ *  "ctx_id" - the configuration context ID.
+ *  "enable" - whether to enable the split IRQCHIP
+ *
+ * Returns:
+ *  Zero on success or a negative error number on failure.
+*/
+int32_t krun_split_irqchip(uint32_t ctx_id, bool enable);
+
+#define KRUN_NITRO_IMG_TYPE_EIF 1
+/**
+ * Configure a Nitro Enclaves image.
+ *
+ * Arguments:
+ *  "ctx_id"     - the configuration context ID.
+ *  "image_path" - a null-terminated string representing the path of the image
+ *                 in the host.
+ *  "image_type" - the type of enclave image being provided.
+ */
+int32_t krun_nitro_set_image(uint32_t ctx_id, const char *image_path,
+                             uint32_t image_type);
+
+#define KRUN_NITRO_START_FLAG_DEBUG (1 << 0)
+/**
+ * Configure a Nitro Enclave's start flags.
+ *
+ * Arguments:
+ *  "ctx_id" - the configuration context ID.
+ *  "start_flags" - Start flags.
+ */
+int32_t krun_nitro_set_start_flags(uint32_t ctx_id, uint64_t start_flags);
+
+/**
  * Starts and enters the microVM with the configured parameters. The VMM will attempt to take over
  * stdin/stdout to manage them on behalf of the process running inside the isolated environment,
  * simulating that the latter has direct control of the terminal.
@@ -563,9 +765,27 @@ int32_t krun_set_nested_virt(uint32_t ctx_id, bool enabled);
  * Arguments:
  *  "ctx_id" - the configuration context ID.
  *
- * Returns:
+ * Notes:
  *  This function only returns if an error happens before starting the microVM. Otherwise, the
- *  VMM assumes it has full control of the process, and will call to exit() once the microVM shuts
- *  down.
+ *  VMM assumes it has full control of the process, and will call to exit() with the workload's exit
+ *  code once the microVM shuts down. If an error occurred before running the workload the process
+ *  will exit() with an error exit code.
+ *
+ *  In the nitro flavor, this function always returns. Upon success, this function will return the
+ *  CID of the nitro enclave that was started.
+ *
+ * Error exit codes:
+ *  125     - "init" cannot set up the environment inside the microVM.
+ *  126     - "init" can find the executable to be run inside the microVM but cannot execute it.
+ *  127     - "init" cannot find the executable to be run inside the microVM.
+ *
+ * Returns:
+ *  -EINVAL - The VMM has detected an error in the microVM configuration.
  */
 int32_t krun_start_enter(uint32_t ctx_id);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // _LIBKRUN_H
