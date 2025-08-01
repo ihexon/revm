@@ -36,12 +36,12 @@ func main() {
 			&cli.Int8Flag{
 				Name:  "cpus",
 				Usage: "given how many cpu cores",
-				Value: 1,
+				Value: int8(system.GetCPUCores()),
 			},
 			&cli.Int32Flag{
 				Name:  "memory",
 				Usage: "set memory in MB",
-				Value: 512,
+				Value: setMaxMemory(),
 			},
 			&cli.StringSliceFlag{
 				Name:  "envs",
@@ -69,6 +69,16 @@ func main() {
 	if err := app.Run(context.Background(), os.Args); err != nil {
 		logrus.Fatal(err)
 	}
+}
+
+func setMaxMemory() int32 {
+	mb, err := system.GetMaxMemoryInMB()
+	if err != nil {
+		logrus.Warnf("failed to get max memory: %v", err)
+		return 512
+	}
+
+	return int32(mb)
 }
 
 func vmLifeCycle(ctx context.Context, command *cli.Command) error {

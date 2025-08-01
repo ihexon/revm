@@ -66,3 +66,7 @@ Or download binaries from release, and remove `com.apple.quarantine` for binarie
 xattr -d com.apple.quarantine ./bin/revm-arm64
 xattr -d com.apple.quarantine ./lib/*
 ```
+
+# Bug report
+
+For bug reports and feature suggestions, please open an [issue](https://github.com/ihexon/revm/issues).
