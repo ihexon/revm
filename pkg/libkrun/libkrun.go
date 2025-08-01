@@ -4,7 +4,7 @@ package libkrun
 
 /*
 #cgo CFLAGS: -I ../../include
-#cgo LDFLAGS: -L ../../lib  -lkrun -lkrunfw
+#cgo LDFLAGS: -L ../../lib  -lkrun.1 -lkrunfw.4
 #include <libkrun.h>
 #include <stdlib.h>
 */
@@ -97,6 +97,9 @@ func (v *AppleHVStubber) Create(ctx context.Context, cfg *vmconfig.VMConfig, cmd
 	}
 
 	if err := v.addVirtioFS(); err != nil {
+		return err
+	}
+	if err := v.NestVirt(ctx); err != nil {
 		return err
 	}
 
@@ -242,6 +245,25 @@ func (v *AppleHVStubber) addVirtioFS() error {
 
 func (v *AppleHVStubber) StartNetwork(ctx context.Context, vmc *vmconfig.VMConfig) error {
 	return network.StartNetworking(ctx, vmc.GVproxyEndpoint, vmc.NetworkStackBackend)
+}
+
+func (v *AppleHVStubber) NestVirt(ctx context.Context) error {
+	if ret := C.krun_check_nested_virt(); ret == 0 {
+		logrus.Info("current system not support nest virtualization, skip enable nested virtuallization")
+		return nil
+	} else if ret == 1 {
+		logrus.Info("current system support nested virtuallization")
+	} else {
+		return fmt.Errorf("failed to check nested virtuallization support, return %v", ret)
+	}
+
+	if ret := C.krun_set_nested_virt(C.uint32_t(v.krunCtxID), true); ret != 0 {
+		return fmt.Errorf("nested virtuallization support, but enable nested virtuallization failed")
+	}
+
+	logrus.Info("enable nested virtualization successful")
+
+	return nil
 }
 
 func stopVM(tx context.Context, vmID uint32) error {
