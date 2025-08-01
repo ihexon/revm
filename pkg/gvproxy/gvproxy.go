@@ -1,8 +1,10 @@
-package network
+package gvproxy
 
 import (
 	"context"
 	"fmt"
+	"linuxvm/pkg/network"
+	"linuxvm/pkg/vmconfig"
 
 	"net"
 	"net/http"
@@ -86,7 +88,7 @@ func newGvpConfigure() *gvptypes.Configuration {
 func getForwardsMap() (map[string]string, error) {
 	guestSideSSHAddr := fmt.Sprintf("%s:%s", guestIPAddr, "22")
 
-	portInHostSide, err := GetAvailablePort()
+	portInHostSide, err := network.GetAvailablePort()
 	if err != nil {
 		return map[string]string{}, fmt.Errorf("failed to get avaliable port: %w", err)
 	}
@@ -191,12 +193,12 @@ func run(ctx context.Context, g *errgroup.Group, configuration *gvptypes.Configu
 	return g.Wait()
 }
 
-func StartNetworking(ctx context.Context, gvpCtl, gvpBkd string) error {
+func StartNetworking(ctx context.Context, vmc *vmconfig.VMConfig) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	endpoints := EndPoints{
-		ControlEndpoints:    gvpCtl,
-		VFKitSocketEndpoint: gvpBkd,
+		ControlEndpoints:    vmc.GVproxyEndpoint,
+		VFKitSocketEndpoint: vmc.NetworkStackBackend,
 	}
 
 	if err := makeDirForUnixSocks(endpoints.ControlEndpoints); err != nil {
@@ -214,6 +216,7 @@ func StartNetworking(ctx context.Context, gvpCtl, gvpBkd string) error {
 	}
 	logrus.Infof("forward maps: %v", forwardMaps)
 	gvpCfg.Forwards = forwardMaps
+	vmc.PortForwardMap = forwardMaps
 
 	return run(ctx, g, gvpCfg, endpoints)
 }
