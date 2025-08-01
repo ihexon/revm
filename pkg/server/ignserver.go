@@ -58,10 +58,19 @@ func (s *Server) handleGVProxyInfo(w http.ResponseWriter, r *http.Request) {
 
 	WriteJSON(w, http.StatusOK, info)
 }
+func (s *Server) handlePortForwardInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		WriteJSON(w, http.StatusMethodNotAllowed, nil)
+		return
+	}
+	info := s.Vmc.PortForwardMap
+	WriteJSON(w, http.StatusOK, info)
+}
 
 func (s *Server) registerRouter() {
 	s.Mux.HandleFunc("/host/mounts", s.handleShowMounts)
-	s.Mux.HandleFunc("/network/info", s.handleGVProxyInfo)
+	s.Mux.HandleFunc("/network/info/gvproxy", s.handleGVProxyInfo)
+	s.Mux.HandleFunc("/network/info/portmap", s.handlePortForwardInfo)
 }
 
 func (s *Server) Start() error {

@@ -6,7 +6,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
-
 	"os"
 )
 
@@ -25,6 +24,7 @@ type VMConfig struct {
 	NetworkStackBackend string             `json:"networkStackBackend,omitempty"`
 	LogLevel            string             `json:"logLevel,omitempty"`
 	Mounts              []filesystem.Mount `json:"mounts,omitempty"`
+	PortForwardMap      map[string]string  `json:"portForwardMap,omitempty"`
 }
 
 // Cmdline exec cmdline within rootfs

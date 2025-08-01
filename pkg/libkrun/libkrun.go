@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"github.com/sirupsen/logrus"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/network"
+	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
 	"net/url"
@@ -244,7 +244,7 @@ func (v *AppleHVStubber) addVirtioFS() error {
 }
 
 func (v *AppleHVStubber) StartNetwork(ctx context.Context, vmc *vmconfig.VMConfig) error {
-	return network.StartNetworking(ctx, vmc.GVproxyEndpoint, vmc.NetworkStackBackend)
+	return gvproxy.StartNetworking(ctx, vmc)
 }
 
 func (v *AppleHVStubber) NestVirt(ctx context.Context) error {
