@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux && (arm64 || amd64)
 
 package network
 
@@ -36,7 +36,7 @@ func dhClient4(ifname string, attempts int, verbose bool) (*netboot.BootConf, er
 		attempts = 1
 	}
 	client := client4.NewClient()
-	
+
 	var (
 		conv []*dhcpv4.DHCPv4
 		err  error
