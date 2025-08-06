@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 func Copy3rdFileTo(rootfs string) error {
@@ -20,7 +21,7 @@ func Copy3rdFileTo(rootfs string) error {
 	}
 
 	for _, file := range fileList {
-		src := filepath.Join(path, file)
+		src := filepath.Join(path, runtime.GOOS, "bin", file)
 		dst := filepath.Join(rootfs, "3rd", file)
 		logrus.Infof("copy file from %q to %q", src, dst)
 		if err := CopyFile(src, dst); err != nil {
