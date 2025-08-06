@@ -37,7 +37,7 @@ jobs:
 
       - name: Build
         run: |
-          ./build.sh
+          ./build.sh build_darwin
 
       - name: Upload artifact
         uses: 'actions/upload-artifact@v4'

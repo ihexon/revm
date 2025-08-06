@@ -1,3 +1,5 @@
+//go:build darwin && arm64
+
 package filesystem
 
 func MountTmpfs() error {
