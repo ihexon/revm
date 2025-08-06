@@ -1,14 +1,17 @@
+//go:build (darwin && arm64) || (linux && (arm64 || amd64))
+
 package server
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"linuxvm/pkg/define"
-	"linuxvm/pkg/vmconfig"
 	"net/http"
 	"net/url"
 	"time"
+
+	"linuxvm/pkg/define"
+	"linuxvm/pkg/vmconfig"
 
 	"github.com/sirupsen/logrus"
 )
@@ -63,12 +66,35 @@ func (s *Server) handlePortForwardInfo(w http.ResponseWriter, r *http.Request) {
 		WriteJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
+
 	info := s.Vmc.PortForwardMap
+	WriteJSON(w, http.StatusOK, info)
+}
+
+type GuestInfo struct {
+	MemoryInMb int32  `json:"memory,omitempty"`
+	Cpus       int8   `json:"cpus,omitempty"`
+	RootfsPath string `json:"rootfsPath,omitempty"`
+}
+
+func (s *Server) handleGuestInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		WriteJSON(w, http.StatusMethodNotAllowed, nil)
+		return
+	}
+
+	info := &GuestInfo{
+		RootfsPath: s.Vmc.RootFS,
+		Cpus:       s.Vmc.Cpus,
+		MemoryInMb: s.Vmc.MemoryInMB,
+	}
+
 	WriteJSON(w, http.StatusOK, info)
 }
 
 func (s *Server) registerRouter() {
 	s.Mux.HandleFunc("/host/mounts", s.handleShowMounts)
+	s.Mux.HandleFunc("/guest/info", s.handleGuestInfo)
 	s.Mux.HandleFunc("/network/info/gvproxy", s.handleGVProxyInfo)
 	s.Mux.HandleFunc("/network/info/portmap", s.handlePortForwardInfo)
 }

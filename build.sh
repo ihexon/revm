@@ -1,52 +1,92 @@
 #! /usr/bin/env bash
 set -e
 
-args="$1"
-if [[ "$args" == "test" ]]; then
-  go test -v linuxvm/test/system
-  exit
-fi
+init_func() {
+	rm -rf ./out
+	mkdir -p ./out/bin && mkdir -p ./out/3rd
+	if [[ "$(uname)" == "Darwin" ]]; then
+		export PLT=darwin
+	elif [[ "$(uname)" == "Linux" ]]; then
+		export PLT=linux
+	fi
 
-# Copy libkrun dynamic lib to ./out/lib
-{
-  echo "copy prebuild libkrun dylib"
-  rm -rf ./out
-  mkdir -p out
-  cp -av ./lib ./out/lib
+	if [[ "$(uname -m)" == "arm64" ]] || [[ "$(uname -m)" == "aarch64" ]]; then
+		export ARCH="arm64"
+	fi
+
+	if [[ "$(uname -m)" == "x86_64" ]] || [[ "$(uname -m)" == "X86_64" ]] || [[ "$(uname -m)" == "amd64" ]] || [[ "$(uname -m)" == "AMD64" ]]; then
+		export ARCH="x86_64"
+	fi
 }
 
-# Download busybox.static from alpine v3.22 mirror, and save the busybox.static to ./out/3rd/busybox.static
-{
-  echo "get busybox static"
-  mkdir -p ./out/3rd
-  wget -c https://dl-cdn.alpinelinux.org/alpine/v3.22/main/aarch64/busybox-static-1.37.0-r18.apk --output-document ./out/busybox-static-1.37.0-r18.apk
-  tar -C out -xvf out/busybox-static-1.37.0-r18.apk bin/busybox.static
-  mv ./out/bin/busybox.static out/3rd
-  rm -f ./out/busybox-static-1.37.0-r18.apk
-  rm -f ./out/bin/busybox.static
+copy_3rd() {
+	cp -av ./3rd/"$PLT" ./out/3rd/"$PLT"
+
+	echo "codesign ./out/3rd/$PLT/lib/*"
+	if [[ "$PLT" == "darwin" ]]; then
+		codesign --force --deep --sign - ./out/3rd/"$PLT"/lib/*
+	fi
 }
 
-echo "codesign out/lib/*.dylib"
-codesign --force --deep --sign - "out/lib/libkrun.dylib"
-codesign --force --deep --sign - "out/lib/libkrunfw.dylib"
-codesign --force --deep --sign - "out/lib/libepoxy.dylib"
-codesign --force --deep --sign - "out/lib/libvirglrenderer.dylib"
-codesign --force --deep --sign - "out/lib/libMoltenVK.dylib"
+build_revm() {
+	local bin="out/bin/revm"
+	local lib_dir="3rd/$PLT/lib"
 
-echo "build revm from source"
-GOOS=darwin GOARCH=arm64 go build -v -o "out/bin/revm-arm64" ./cmd/main.go
+	GOOS=$PLT GOARCH=$ARCH go build -v -o "$bin" ./cmd/main.go
+}
 
-echo "codesign revm"
-codesign --force --deep --sign -  "out/bin/revm-arm64"
+process_binaries() {
+	local bin="out/bin/revm"
+	local lib_dir="3rd/$PLT/lib"
 
-echo "add rpath"
-install_name_tool -add_rpath @executable_path/../lib "out/bin/revm-arm64"
+	codesign --force --deep --sign - "$bin"
+	install_name_tool -add_rpath "@executable_path/../$lib_dir" "$bin"
+	codesign --entitlements revm.entitlements --force -s - "$bin"
+}
 
-echo "codesign revm again with revm.entitlements"
-codesign --entitlements revm.entitlements --force -s - "out/bin/revm-arm64"
+build_bootstrap() {
+	local bin="out/3rd/$PLT/bin/bootstrap"
+	echo "Build bootstrap for guest"
+	GOOS=linux GOARCH=$ARCH go build -v -o "$bin" ./cmd/bootstrap
+}
 
-echo "Build bootstrap for guest"
-GOOS=linux GOARCH=arm64 go build -v -o "out/3rd/bootstrap" ./cmd/bootstrap
+packaging() {
+	tar --zstd -cvf revm.tar out/
+}
 
-echo "Packing revm and deps"
-tar --zstd -cvf revm.tar out/
+main() {
+	local action=$1
+	local script_name=$0
+
+	if [[ -z $action ]]; then
+		echo "suppport operation: test, build_linux, build_darwin"
+		exit 1
+	fi
+
+	if [[ $action == "test" ]]; then
+		echo "$script_name: run test...."
+		go test -v linuxvm/test/system
+	fi
+
+	if [[ $action == "build_linux" ]]; then
+		echo "$script_name: build for linux"
+		init_func
+		copy_3rd
+		build_revm
+		build_bootstrap
+		packaging
+	fi
+
+	if [[ $action == "build_darwin" ]]; then
+		echo "$script_name: build for darwin"
+		init_func
+		copy_3rd
+		build_revm
+		process_binaries
+		build_bootstrap
+		packaging
+	fi
+
+}
+
+main "$@"
