@@ -4,11 +4,12 @@ package system
 
 import (
 	"fmt"
+	"runtime"
+	"syscall"
+
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
-	"runtime"
-	"syscall"
 )
 
 func Rlimit() error {
