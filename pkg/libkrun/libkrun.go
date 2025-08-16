@@ -12,7 +12,6 @@ import "C"
 import (
 	"context"
 	"fmt"
-	"github.com/sirupsen/logrus"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/system"
@@ -22,6 +21,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"unsafe"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
