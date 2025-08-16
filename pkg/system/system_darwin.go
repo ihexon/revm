@@ -1,4 +1,4 @@
-//go:build darwin && arm64
+//go:build darwin && (arm64 || amd64)
 
 package system
 
@@ -10,126 +10,100 @@ package system
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 
 
 typedef enum {
-    SUCCESS = 0,
-    ERROR_FILE_ACCESS,
-    ERROR_STREAM_CREATE,
-    ERROR_PROPERTY_LIST,
-    ERROR_INVALID_TYPE,
-    ERROR_STRING_CONVERSION
-} SystemInfoError;
+    SYSINFO_OK = 0,
+    SYSINFO_ERR_FILE_ACCESS,
+    SYSINFO_ERR_STREAM_CREATE,
+    SYSINFO_ERR_PROPERTY_LIST,
+    SYSINFO_ERR_INVALID_TYPE,
+    SYSINFO_ERR_STRING_CONVERSION,
+	SYSINFO_ERR_INVALID_ARGUMENT
+} sysinfo_error_t;
 
 typedef struct {
     char productName[256];
     char productVersion[256];
     char buildVersion[256];
-    SystemInfoError error;
-} SystemInfo;
+} sysinfo_t;
+
+typedef struct {
+    CFURLRef fileURL;
+    CFReadStreamRef stream;
+    CFPropertyListRef propertyList;
+} sysinfo_cf_handles_t;
 
 
-static void cleanupResources(CFPropertyListRef propertyList, CFReadStreamRef stream,
-                             CFURLRef fileURL) {
-    if (propertyList) CFRelease(propertyList);
-    if (stream) {
-        CFReadStreamClose(stream);
-        CFRelease(stream);
+static void sysinfo_cleanup_handles(sysinfo_cf_handles_t *h) {
+    if (!h) return;
+    if (h->propertyList) CFRelease(h->propertyList);
+    if (h->stream) {
+        CFReadStreamClose(h->stream);
+        CFRelease(h->stream);
     }
-    if (fileURL) CFRelease(fileURL);
+    if (h->fileURL) CFRelease(h->fileURL);
 }
 
-static SystemInfo *allocateSystemInfo(void) {
-    SystemInfo *info = calloc(1, sizeof(SystemInfo));
-    if (!info) {
-        info = NULL;
-        perror("Memory allocation failed");
-        return NULL;
-    }
-    info->error = SUCCESS;
-    return info;
+static bool sysinfo_get_string(CFDictionaryRef dict, CFStringRef key, char *out_buf, size_t buf_size) {
+    if (!dict || !key || !out_buf || buf_size == 0) return false;
+    CFStringRef value = CFDictionaryGetValue(dict, key);
+    return value && CFStringGetCString(value, out_buf, buf_size, kCFStringEncodingUTF8);
 }
 
-static bool getStringFromDict(CFDictionaryRef dict, const char *key, char *buffer, size_t bufferSize) {
-    if (!dict || !key || !buffer || bufferSize == 0) {
-        return false;
+
+sysinfo_error_t sysinfo_load(sysinfo_t *out_info) {
+    if (!out_info) return SYSINFO_ERR_INVALID_ARGUMENT;
+    memset(out_info, 0, sizeof(*out_info));
+
+    sysinfo_cf_handles_t h = {0}; // 初始化 CoreFoundation 句柄
+
+    h.fileURL = CFURLCreateWithFileSystemPath(
+        kCFAllocatorDefault,
+        CFSTR("/System/Library/CoreServices/SystemVersion.plist"),
+        kCFURLPOSIXPathStyle,
+        false
+    );
+    if (!h.fileURL) {
+        sysinfo_cleanup_handles(&h);
+        return SYSINFO_ERR_FILE_ACCESS;
     }
 
-    CFStringRef cfKey = CFStringCreateWithCString(kCFAllocatorDefault, key, kCFStringEncodingUTF8);
-    if (!cfKey) {
-        return false;
+    h.stream = CFReadStreamCreateWithFile(kCFAllocatorDefault, h.fileURL);
+    if (!h.stream || !CFReadStreamOpen(h.stream)) {
+        sysinfo_cleanup_handles(&h);
+        return SYSINFO_ERR_STREAM_CREATE;
     }
 
-    bool success = false;
-    CFStringRef value = CFDictionaryGetValue(dict, cfKey);
-    if (value) {
-        success = CFStringGetCString(value, buffer, bufferSize, kCFStringEncodingUTF8);
+    CFErrorRef cfErr = NULL;
+    h.propertyList = CFPropertyListCreateWithStream(
+        kCFAllocatorDefault,
+        h.stream,
+        0,
+        kCFPropertyListImmutable,
+        NULL,
+        &cfErr
+    );
+    if (!h.propertyList) {
+        if (cfErr) CFRelease(cfErr);
+        sysinfo_cleanup_handles(&h);
+        return SYSINFO_ERR_PROPERTY_LIST;
     }
 
-    CFRelease(cfKey);
-    return success;
-}
-
-SystemInfo *getSystemInfo() {
-    SystemInfo *info = allocateSystemInfo();
-    if (!info) {
-        return NULL;
+    if (CFGetTypeID(h.propertyList) != CFDictionaryGetTypeID()) {
+        sysinfo_cleanup_handles(&h);
+        return SYSINFO_ERR_INVALID_TYPE;
     }
 
-    CFURLRef fileURL = NULL;
-    CFReadStreamRef stream = NULL;
-    CFPropertyListRef propertyList = NULL;
+    CFDictionaryRef dict = (CFDictionaryRef)h.propertyList;
+    bool ok =
+        sysinfo_get_string(dict, CFSTR("ProductName"), out_info->productName, sizeof(out_info->productName)) &&
+        sysinfo_get_string(dict, CFSTR("ProductVersion"), out_info->productVersion, sizeof(out_info->productVersion)) &&
+        sysinfo_get_string(dict, CFSTR("ProductBuildVersion"), out_info->buildVersion, sizeof(out_info->buildVersion));
 
-    fileURL = CFURLCreateWithFileSystemPath(kCFAllocatorDefault,
-                                            CFSTR("/System/Library/CoreServices/SystemVersion.plist"),
-                                            kCFURLPOSIXPathStyle,
-                                            false);
-    if (!fileURL) {
-        cleanupResources(propertyList, stream, fileURL);
-        info->error = ERROR_FILE_ACCESS;
-        return info;
-    }
-
-    stream = CFReadStreamCreateWithFile(kCFAllocatorDefault, fileURL);
-    if (!stream || !CFReadStreamOpen(stream)) {
-        cleanupResources(propertyList, stream, fileURL);
-        info->error = ERROR_STREAM_CREATE;
-        return info;
-    }
-
-    CFErrorRef error = NULL;
-    propertyList = CFPropertyListCreateWithStream(kCFAllocatorDefault,
-                                                  stream,
-                                                  0,
-                                                  kCFPropertyListImmutable,
-                                                  NULL,
-                                                  &error);
-    if (!propertyList) {
-        cleanupResources(propertyList, stream, fileURL);
-        info->error = ERROR_PROPERTY_LIST;
-        if (error) CFRelease(error);
-        return info;
-    }
-
-    if (CFGetTypeID(propertyList) != CFDictionaryGetTypeID()) {
-        cleanupResources(propertyList, stream, fileURL);
-        info->error = ERROR_INVALID_TYPE;
-        return info;
-    }
-
-    CFDictionaryRef dict = (CFDictionaryRef) propertyList;
-    bool success = getStringFromDict(dict, "ProductName", info->productName, sizeof(info->productName)) &&
-                   getStringFromDict(dict, "ProductVersion", info->productVersion, sizeof(info->productVersion)) &&
-                   getStringFromDict(dict, "ProductBuildVersion", info->buildVersion, sizeof(info->buildVersion));
-
-    if (!success) {
-        cleanupResources(propertyList, stream, fileURL);
-        info->error = ERROR_STRING_CONVERSION;
-        return info;
-    };
-
-    cleanupResources(propertyList, stream, fileURL);
-    return info;
+    sysinfo_cleanup_handles(&h);
+    return ok ? SYSINFO_OK : SYSINFO_ERR_STRING_CONVERSION;
 }
 */
 import "C"
@@ -145,34 +119,15 @@ type Info struct {
 }
 
 func GetOSVersion() (*Info, error) {
-	info := C.getSystemInfo()
-	if info == nil {
-		return nil, fmt.Errorf("failed to get system info")
-	}
-	defer C.free(unsafe.Pointer(info))
-
-	if info.error != C.SUCCESS {
-		return nil, fmt.Errorf("failed to get system info, return: %v", info.error)
-	}
-
-	// Safer string conversion with nil checks
-	productVersion := (*C.char)(unsafe.Pointer(&info.productVersion[0]))
-	buildVersion := (*C.char)(unsafe.Pointer(&info.buildVersion[0]))
-	productName := (*C.char)(unsafe.Pointer(&info.productName[0]))
-
-	if productVersion == nil {
-		return nil, fmt.Errorf("invalid productVersion fields")
-	}
-	if buildVersion == nil {
-		return nil, fmt.Errorf("invalid buildVersion fields")
-	}
-	if productName == nil {
-		return nil, fmt.Errorf("invalid productName fields")
+	var info C.sysinfo_t
+	ret := C.sysinfo_load((*C.sysinfo_t)(unsafe.Pointer(&info)))
+	if ret != C.SYSINFO_OK {
+		return nil, fmt.Errorf("failed to get os version, return %v", ret)
 	}
 
 	return &Info{
+		ProductName:         C.GoString(&info.productName[0]),
 		ProductVersion:      C.GoString(&info.productVersion[0]),
 		ProductBuildVersion: C.GoString(&info.buildVersion[0]),
-		ProductName:         C.GoString(&info.productName[0]),
 	}, nil
 }

@@ -6,10 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
-	"github.com/urfave/cli/v3"
-	"golang.org/x/sync/errgroup"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/server"
 	"linuxvm/pkg/system"
@@ -19,6 +15,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+
+	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
+	"github.com/urfave/cli/v3"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -62,6 +63,7 @@ func main() {
 			},
 		},
 		Action: vmLifeCycle,
+		Before: earlyStage,
 	}
 
 	app.DisableSliceFlagSeparator = true
@@ -82,7 +84,6 @@ func setMaxMemory() int32 {
 }
 
 func vmLifeCycle(ctx context.Context, command *cli.Command) error {
-	setLogrus()
 	if command.Args().Len() < 1 {
 		return fmt.Errorf("no command specified")
 	}
@@ -163,6 +164,14 @@ func makeCmdline(command *cli.Command) *vmconfig.Cmdline {
 		Env:           command.StringSlice("envs"),
 	}
 	return &cmdline
+}
+
+func earlyStage(ctx context.Context, command *cli.Command) (context.Context, error) {
+	setLogrus()
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
+	defer stop()
+	
+	return ctx, nil
 }
 
 func setLogrus() {
