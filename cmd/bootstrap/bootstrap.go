@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"linuxvm/pkg/define"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh"
@@ -33,7 +34,7 @@ func bootstrap() error {
 		return err
 	}
 
-	if err := filesystem.LoadVMConfigAndMountVirtioFS(filepath.Join("/", "vmconfig.json")); err != nil {
+	if err := filesystem.LoadVMConfigAndMountVirtioFS(filepath.Join("/", define.VMConfig)); err != nil {
 		return err
 	}
 
