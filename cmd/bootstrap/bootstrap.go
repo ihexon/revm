@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
+	"linuxvm/pkg/ssh"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,8 +20,10 @@ const (
 	attempts = 1
 )
 
+var errProcessExitNormal = errors.New("process exit normally")
+
 func main() {
-	if err := bootstrap(); err != nil {
+	if err := bootstrap(); err != nil && !errors.Is(err, errProcessExitNormal) {
 		logrus.Fatal(err)
 	}
 }
@@ -34,8 +38,13 @@ func bootstrap() error {
 	}
 
 	g, ctx := errgroup.WithContext(context.Background())
+
 	g.Go(func() error {
 		return configureNetwork()
+	})
+
+	g.Go(func() error {
+		return ssh.StartSSHServer(ctx)
 	})
 
 	g.Go(func() error {
@@ -50,13 +59,13 @@ func doExecCmdLine(ctx context.Context, targetBin string, targetBinArgs []string
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
-	
+
 	logrus.Infof("run cmdline: %q", cmd.Args)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("cmdline %q exit with err: %w", cmd.Args, err)
 	}
 
-	return nil
+	return errProcessExitNormal
 }
 
 func configureNetwork() error {
