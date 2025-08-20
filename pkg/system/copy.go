@@ -2,11 +2,12 @@ package system
 
 import (
 	"fmt"
-	"github.com/sirupsen/logrus"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/sirupsen/logrus"
 )
 
 func Copy3rdFileTo(rootfs string) error {
@@ -18,6 +19,10 @@ func Copy3rdFileTo(rootfs string) error {
 	fileList := []string{
 		"bootstrap",
 		"busybox.static",
+		"dbclient",
+		"dropbear",
+		"dropbearconvert",
+		"dropbearkey",
 	}
 
 	for _, file := range fileList {

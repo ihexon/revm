@@ -5,10 +5,12 @@ package vmconfig
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/sirupsen/logrus"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
+	"linuxvm/pkg/ssh"
 	"os"
+
+	"github.com/sirupsen/logrus"
 )
 
 // VMConfig Static virtual machine configuration.
@@ -27,6 +29,10 @@ type VMConfig struct {
 	LogLevel            string             `json:"logLevel,omitempty"`
 	Mounts              []filesystem.Mount `json:"mounts,omitempty"`
 	PortForwardMap      map[string]string  `json:"portForwardMap,omitempty"`
+
+	HostSSHKeyPair    string `json:"hostSSHKeyPair,omitempty"`
+	HostSSHPublicKey  string `json:"sshPublicKey,omitempty"`
+	HostSSHPrivateKey string `json:"sshPrivateKey,omitempty"`
 }
 
 // Cmdline exec cmdline within rootfs
@@ -37,33 +43,12 @@ type Cmdline struct {
 	Env           []string `json:"env,omitempty"`
 }
 
-func (c *Cmdline) SetPATH() error {
-	c.Env = append(c.Env, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/3rd")
-	return nil
-}
-
-func (c *Cmdline) UsingSystemProxy() error {
-	proxyInfo, err := network.GetSystemProxy()
+func (c *Cmdline) TryGetSystemProxyAndSetToCmdline() error {
+	proxyInfo, err := network.GetAndNormalizeSystemProxy()
 	if err != nil {
-		return fmt.Errorf("failed to get system proxy: %v", err)
+		return fmt.Errorf("failed to get and normalize system proxy: %w", err)
 	}
 
-	if proxyInfo.HTTP != nil && (proxyInfo.HTTP.Host == "127.0.0.1" || proxyInfo.HTTP.Host == "localhost") {
-		logrus.Warnf("system http proxy is localhost, using gvproxy host ip instead")
-		proxyInfo.HTTP.Host = "host.containers.internal"
-	}
-
-	if proxyInfo.HTTPS != nil && (proxyInfo.HTTPS.Host == "127.0.0.1" || proxyInfo.HTTPS.Host == "localhost") {
-		logrus.Warnf("system https proxy is localhost, using gvproxy host ip instead")
-		proxyInfo.HTTPS.Host = "host.containers.internal"
-	}
-
-	c.SetProxy(proxyInfo)
-
-	return nil
-}
-
-func (c *Cmdline) SetProxy(proxyInfo *network.Proxy) {
 	if proxyInfo.HTTP == nil {
 		logrus.Warnf("no system http proxy found")
 	} else {
@@ -79,6 +64,8 @@ func (c *Cmdline) SetProxy(proxyInfo *network.Proxy) {
 		logrus.Infof("using system https proxy: %q", httpsProxy)
 		c.Env = append(c.Env, httpsProxy)
 	}
+
+	return nil
 }
 
 func (vmc *VMConfig) WriteToJsonFile(file string) error {
@@ -88,4 +75,18 @@ func (vmc *VMConfig) WriteToJsonFile(file string) error {
 	}
 
 	return os.WriteFile(file, b, 0644)
+}
+
+func (vmc *VMConfig) GenerateSSHKeyPairForHost() error {
+	keyPair, err := ssh.GenerateHostSSHKeyPair(vmc.HostSSHKeyPair)
+	if err != nil {
+		return fmt.Errorf("failed to generate host ssh keypair for host: %w", err)
+	}
+
+	logrus.Debugf("host ssh keypair private: %q", keyPair.RawProtectedPrivateKey())
+	vmc.HostSSHPrivateKey = string(keyPair.RawProtectedPrivateKey())
+	logrus.Debugf("host ssh keypair public: %q", keyPair.AuthorizedKey())
+	vmc.HostSSHPublicKey = string(keyPair.AuthorizedKey())
+
+	return nil
 }

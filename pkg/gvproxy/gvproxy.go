@@ -105,7 +105,7 @@ func httpServe(ctx context.Context, g *errgroup.Group, ln net.Listener, mux http
 	// if ctx is canceled, close the listener
 	g.Go(func() error {
 		<-ctx.Done()
-		logrus.Infof("close gvproxy control endpoint on %q", ln.Addr())
+		logrus.Infof("close gvproxy control endpoint on %q, cause by %v", ln.Addr(), context.Cause(ctx))
 		return ln.Close()
 	})
 
