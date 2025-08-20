@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/prashantgupta24/mac-sleep-notifier/notifier"
 	"github.com/sirupsen/logrus"
 
 	"github.com/google/uuid"
@@ -269,6 +270,28 @@ func (v *AppleHVStubber) NestVirt(ctx context.Context) error {
 
 func stopVM(tx context.Context, vmID uint32) error {
 	return nil
+}
+
+func (v *AppleHVStubber) SyncTime(ctx context.Context) error {
+	sleepNotifierInstance := notifier.GetInstance()
+	notifierCh := sleepNotifierInstance.Start()
+	defer sleepNotifierInstance.Quit()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+
+		case activity, ok := <-notifierCh:
+			if !ok {
+				return nil
+			}
+			if activity.Type == notifier.Awake {
+				// TODO: sync time to guest
+				logrus.Info("host awake, do sync host time to guest time")
+			}
+		}
+	}
 }
 
 func addRawDisk(ctxID uint32, disk string) error {

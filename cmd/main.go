@@ -4,8 +4,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"linuxvm/pkg/define"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/server"
 	"linuxvm/pkg/system"
@@ -93,30 +93,16 @@ func vmLifeCycle(ctx context.Context, command *cli.Command) error {
 	}
 
 	vmc := makeVMCfg(command)
-	d, err := json.Marshal(vmc)
-	if err != nil {
-		return fmt.Errorf("failed to marshal vmconfig: %v", err)
+	if err := vmc.GenerateSSHKeyPairForHost(); err != nil {
+		return err
 	}
-	logrus.Infof("vmconfig: %s", d)
 
 	cmdline := makeCmdline(command)
-
 	if command.Bool("system-proxy") {
-		if err := cmdline.UsingSystemProxy(); err != nil {
-			return fmt.Errorf("failed to use system proxy: %v", err)
+		if err := cmdline.TryGetSystemProxyAndSetToCmdline(); err != nil {
+			return err
 		}
 	}
-	_ = cmdline.SetPATH()
-
-	d, err = json.Marshal(cmdline)
-	if err != nil {
-		return fmt.Errorf("failed to marshal cmdline: %v", err)
-	}
-
-	logrus.Infof("revm cmdline: %s", d)
-
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
 
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -131,7 +117,7 @@ func vmLifeCycle(ctx context.Context, command *cli.Command) error {
 	})
 
 	g.Go(func() error {
-		if err = vmp.Create(ctx, vmc, cmdline); err != nil {
+		if err := vmp.Create(ctx, vmc, cmdline); err != nil {
 			return fmt.Errorf("failed to create vm: %w", err)
 		}
 
@@ -149,8 +135,9 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 		RootFS:              command.String("rootfs"),
 		DataDisk:            command.StringSlice("data-disk"),
 		Mounts:              filesystem.CmdLineMountToMounts(command.StringSlice("mount")),
-		GVproxyEndpoint:     fmt.Sprintf("unix://%s/gvproxy-control.sock", prefix),
-		NetworkStackBackend: fmt.Sprintf("unixgram://%s/gvproxy-network-backend.sock", prefix),
+		GVproxyEndpoint:     fmt.Sprintf("unix://%s/%s", prefix, define.GvProxyControlEndPoint),
+		NetworkStackBackend: fmt.Sprintf("unixgram://%s/%s", prefix, define.GvProxyNetworkEndpoint),
+		HostSSHKeyPair:      filepath.Join(os.TempDir(), uuid.New().String()[:8], define.SSHKeyPair),
 	}
 
 	return &vmc
@@ -158,19 +145,19 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 
 func makeCmdline(command *cli.Command) *vmconfig.Cmdline {
 	cmdline := vmconfig.Cmdline{
-		Workspace:     "/",
-		TargetBin:     "/3rd/bootstrap",
+		Workspace:     define.DefalutWorkDir,
+		TargetBin:     define.BootstrapBinary,
 		TargetBinArgs: append([]string{command.Args().First()}, command.Args().Tail()...),
-		Env:           command.StringSlice("envs"),
+		Env:           append(command.StringSlice("envs"), "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/3rd"),
 	}
+
 	return &cmdline
 }
 
 func earlyStage(ctx context.Context, command *cli.Command) (context.Context, error) {
 	setLogrus()
-	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
-	defer stop()
-	
+	ctx, _ = signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
+
 	return ctx, nil
 }
 

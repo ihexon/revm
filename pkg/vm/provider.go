@@ -12,4 +12,5 @@ type Provider interface {
 	Create(ctx context.Context, vmc *vmconfig.VMConfig, cmdline *vmconfig.Cmdline) error
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
+	SyncTime(ctx context.Context) error
 }
