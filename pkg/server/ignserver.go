@@ -35,40 +35,18 @@ func NewServer(ctx context.Context, vmc *vmconfig.VMConfig) *Server {
 	return server
 }
 
-func (s *Server) handleShowMounts(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		WriteJSON(w, http.StatusMethodNotAllowed, nil)
-		return
-	}
-	WriteJSON(w, http.StatusOK, s.Vmc.Mounts)
-}
-
 type GVProxyInfo struct {
 	ControlEndpoints    string `json:"gvproxy_control_endpoint,omitempty"`
 	VFKitSocketEndpoint string `json:"gvproxy_network_endpoint,omitempty"`
 }
 
-func (s *Server) handleGVProxyInfo(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleVMConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		WriteJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
 
-	info := GVProxyInfo{
-		ControlEndpoints:    s.Vmc.GVproxyEndpoint,
-		VFKitSocketEndpoint: s.Vmc.NetworkStackBackend,
-	}
-
-	WriteJSON(w, http.StatusOK, info)
-}
-func (s *Server) handlePortForwardInfo(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		WriteJSON(w, http.StatusMethodNotAllowed, nil)
-		return
-	}
-
-	info := s.Vmc.PortForwardMap
-	WriteJSON(w, http.StatusOK, info)
+	WriteJSON(w, http.StatusOK, s.Vmc)
 }
 
 type GuestInfo struct {
@@ -77,26 +55,8 @@ type GuestInfo struct {
 	RootfsPath string `json:"rootfsPath,omitempty"`
 }
 
-func (s *Server) handleGuestInfo(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		WriteJSON(w, http.StatusMethodNotAllowed, nil)
-		return
-	}
-
-	info := &GuestInfo{
-		RootfsPath: s.Vmc.RootFS,
-		Cpus:       s.Vmc.Cpus,
-		MemoryInMb: s.Vmc.MemoryInMB,
-	}
-
-	WriteJSON(w, http.StatusOK, info)
-}
-
 func (s *Server) registerRouter() {
-	s.Mux.HandleFunc("/host/mounts", s.handleShowMounts)
-	s.Mux.HandleFunc("/guest/info", s.handleGuestInfo)
-	s.Mux.HandleFunc("/network/info/gvproxy", s.handleGVProxyInfo)
-	s.Mux.HandleFunc("/network/info/portmap", s.handlePortForwardInfo)
+	s.Mux.HandleFunc("/vmconfig", s.handleVMConfig)
 }
 
 func (s *Server) Start() error {
