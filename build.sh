@@ -1,6 +1,32 @@
 #! /usr/bin/env bash
 set -e
 
+trace_off() {
+	{ set +x; } 2> /dev/null
+}
+
+trace_on() {
+	{ set -x; } 2> /dev/null
+}
+
+RED="\033[31m"
+YELLOW="\033[33m"
+GREEN="\033[32m"
+RESET="\033[0m"
+
+log_err() {
+	echo -e "${RED}[ERROR]${RESET} $*" >&2
+	exit 100
+}
+
+log_warn() {
+	echo -e "${YELLOW}[WARN]${RESET} $*" >&2
+}
+
+log_std() {
+	echo -e "${GREEN}[INFO]${RESET} $*"
+}
+
 detect_platform_arch() {
 	local uname_s uname_m
 	uname_s="$(uname)"
@@ -10,8 +36,7 @@ detect_platform_arch() {
 		Darwin) export PLT="darwin" ;;
 		Linux) export PLT="linux" ;;
 		*)
-			echo "Unsupported OS: ${uname_s}" >&2
-			exit 1
+			log_err "Unsupported OS: ${uname_s}" >&2
 			;;
 	esac
 
@@ -19,8 +44,7 @@ detect_platform_arch() {
 		arm64 | aarch64) export ARCH="arm64" ;;
 		x86_64 | X86_64 | amd64 | AMD64) export ARCH="amd64" ;;
 		*)
-			echo "Unsupported architecture: ${uname_m}" >&2
-			exit 1
+			log_err "Unsupported architecture: ${uname_m}" >&2
 			;;
 	esac
 }
@@ -37,44 +61,113 @@ EOF
 }
 
 init_func() {
-	rm -rf ./out
-	mkdir -p ./out/bin && mkdir -p ./out/3rd
+	WORKSPACE=$(realpath $(dirname $0))
+	log_std "remove and recreate out dir"
+	rm -rf "$WORKSPACE/out" && mkdir -p ./out/bin && mkdir -p ./out/3rd
+	log_std "change dir to $WORKSPACE"
 	detect_platform_arch
 }
 
-copy_3rd() {
-	cp -av ./3rd/"$PLT" ./out/3rd/"$PLT"
-
-	echo "codesign ./out/3rd/$PLT/lib/*"
+_download_libkrun_darwin() {
+	local libkrun_dir="$WORKSPACE/out/3rd/$PLT/lib"
+	mkdir -p "$libkrun_dir"
+	local urls=()
 	if [[ "$PLT" == "darwin" ]]; then
-		shopt -s nullglob
-		for f in ./out/3rd/"$PLT"/lib/*; do
-			codesign --force --deep --sign - "$f"
-		done
-		shopt -u nullglob
+		urls+=(
+			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/libkrun/arm64/darwin/libepoxy.0.dylib"
+			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/libkrun/arm64/darwin/libkrun.1.14.0.dylib"
+			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/libkrun/arm64/darwin/libkrunfw.4.dylib"
+			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/libkrun/arm64/darwin/libMoltenVK.dylib"
+			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/libkrun/arm64/darwin/libvirglrenderer.1.dylib"
+		)
 	fi
+
+	for item in "${urls[@]}"; do
+		log_std "download $item"
+		local _d="$libkrun_dir/$(basename "$item")"
+		wget "$item" -c --output-document "${_d}"
+		chmod +x "${_d}"
+		codesign --force --deep --sign - "${_d}"
+	done
+
+	log_std "change dir to $libkrun_dir"
+	log_std "create symbol link the libkrun"
+	cd "$libkrun_dir"
+	ln -sf libkrun.1.14.0.dylib libkrun.1.dylib
+	ln -sf libepoxy.0.dylib libepoxy.dylib
+	ln -sf libvirglrenderer.1.dylib libvirglrenderer.dylib
+	cd "$WORKSPACE"
+}
+
+_download_busybox_linux() {
+	local busybox_bindir="$WORKSPACE/out/3rd/linux/bin"
+	mkdir -p "$busybox_bindir"
+	local urls=(
+		"https://github.com/ihexon/prebuilds/raw/refs/heads/main/busybox/arm64/linux/busybox.static"
+	)
+
+	for item in "${urls[@]}"; do
+		log_std "download $item"
+		wget "$item" -c --output-document "$busybox_bindir/$(basename "$item")"
+	done
+
+	log_std "create symbol link the busybox"
+	cd "$busybox_bindir"
+	chmod +x busybox.static
+	ln -sf busybox.static busybox
+	cd "$WORKSPACE"
+}
+
+_download_dropbear() {
+	dropbear_bin_dir="$WORKSPACE/out/3rd/linux/bin"
+	mkdir -p "$dropbear_bin_dir"
+	local urls=(
+		"https://github.com/ihexon/prebuilds/raw/refs/heads/main/dropbear/arm64/linux/dropbear"
+		"https://github.com/ihexon/prebuilds/raw/refs/heads/main/dropbear/arm64/linux/dropbearkey"
+	)
+
+	for item in "${urls[@]}"; do
+		log_std "download $item"
+		local _d="$dropbear_bin_dir/$(basename "$item")"
+		wget "$item" -c --output-document "${_d}"
+		chmod +x "${_d}"
+	done
+}
+
+download_3rd() {
+	case $PLT in
+		darwin)
+			_download_libkrun_darwin
+			_download_busybox_linux
+			_download_dropbear
+			;;
+		*)
+			log_err "Unsupported architecture: ${PLT}"
+			;;
+	esac
 }
 
 build_revm() {
-	local bin="out/bin/revm"
-	local lib_dir="3rd/$PLT/lib"
+	local revm_bin="out/bin/revm"
+	rm -f "$revm_bin"
+	GOOS=$PLT GOARCH=$ARCH go build -v -o "$revm_bin" ./cmd/main.go
+	if [[ "$PLT" == "darwin" ]]; then
+		log_std "codesign to revm"
+		codesign --force --deep --sign - "$revm_bin"
 
-	GOOS=$PLT GOARCH=$ARCH go build -v -o "$bin" ./cmd/main.go
-}
+		log_std "add rpath to revm"
+		install_name_tool -add_rpath "@executable_path/../3rd/$PLT/lib" "$revm_bin"
 
-process_binaries() {
-	local bin="out/bin/revm"
-	local lib_dir="3rd/$PLT/lib"
-
-	codesign --force --deep --sign - "$bin"
-	install_name_tool -add_rpath "@executable_path/../$lib_dir" "$bin"
-	codesign --entitlements revm.entitlements --force -s - "$bin"
+		log_std "codesign revm with revm.entitlements"
+		codesign --entitlements revm.entitlements --force -s - "$revm_bin"
+	fi
 }
 
 build_bootstrap() {
-	local bin="out/3rd/$PLT/bin/bootstrap"
-	echo "Build bootstrap for guest"
-	GOOS=linux GOARCH=$ARCH go build -v -o "$bin" ./cmd/bootstrap
+	local boostrap_bin="out/3rd/linux/bin/bootstrap"
+	log_std "Build bootstrap for guest"
+	rm -f "$boostrap_bin"
+	GOOS=linux GOARCH=$ARCH go build -v -o "$boostrap_bin" ./cmd/bootstrap
 }
 
 packaging() {
@@ -82,8 +175,6 @@ packaging() {
 }
 
 main() {
-	local script_name=$0
-
 	local action="${1:-}"
 	if [[ -z "${action}" ]]; then
 		usage
@@ -92,24 +183,13 @@ main() {
 
 	case "${action}" in
 		test)
-			echo "$0: run tests..."
+			log_std "$0: run tests..."
 			go test -v linuxvm/test/system
 			;;
-
-		build_linux)
-			echo "$script_name: build for linux"
-			init_func
-			copy_3rd
-			build_revm
-			build_bootstrap
-			packaging
-			;;
 		build_darwin)
-			echo "$script_name: build for darwin"
 			init_func
-			copy_3rd
+			download_3rd
 			build_revm
-			process_binaries
 			build_bootstrap
 			packaging
 			;;
