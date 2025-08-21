@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/sirupsen/logrus"
 )
@@ -19,14 +18,12 @@ func Copy3rdFileTo(rootfs string) error {
 	fileList := []string{
 		"bootstrap",
 		"busybox.static",
-		"dbclient",
 		"dropbear",
-		"dropbearconvert",
 		"dropbearkey",
 	}
 
 	for _, file := range fileList {
-		src := filepath.Join(path, runtime.GOOS, "bin", file)
+		src := filepath.Join(path, "linux", "bin", file)
 		dst := filepath.Join(rootfs, "3rd", file)
 		logrus.Infof("copy file from %q to %q", src, dst)
 		if err := CopyFile(src, dst); err != nil {
