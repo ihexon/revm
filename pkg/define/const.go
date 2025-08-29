@@ -7,8 +7,7 @@ const (
 
 const (
 	DefalutWorkDir  = "/"
-	PrefixDir3rd    = "3rd"
-	DropBearBinary  = PrefixDir3rd + "/dropbear"
+	PrefixDir3rd    = "/3rd"
 	BootstrapBinary = PrefixDir3rd + "/bootstrap"
 
 	GvProxyControlEndPoint = "gvpctl.sock"
