@@ -2,8 +2,11 @@
 
 package vm
 
-import "linuxvm/pkg/libkrun"
+import (
+	"linuxvm/pkg/libkrun"
+	"linuxvm/pkg/vmconfig"
+)
 
-func Get() Provider {
-	return libkrun.NewAppleHyperVisor()
+func Get(vmc *vmconfig.VMConfig) Provider {
+	return libkrun.NewAppleHyperVisor(vmc)
 }

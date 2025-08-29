@@ -6,7 +6,7 @@ import (
 	"net"
 )
 
-func GetAvailablePort() (int, error) {
+func GetAvailablePort() (uint64, error) {
 	addr, err := net.ResolveTCPAddr("tcp4", "127.0.0.1:0")
 	if err != nil {
 		return 0, err
@@ -18,5 +18,5 @@ func GetAvailablePort() (int, error) {
 	}
 	defer l.Close() //nolint:errcheck
 
-	return l.Addr().(*net.TCPAddr).Port, nil
+	return uint64(l.Addr().(*net.TCPAddr).Port), nil
 }

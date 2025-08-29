@@ -93,7 +93,7 @@ func vmLifeCycle(ctx context.Context, command *cli.Command) error {
 	}
 
 	vmc := makeVMCfg(command)
-	if err := vmc.GenerateSSHKeyPairForHost(); err != nil {
+	if err := vmc.GenerateSSHInfo(); err != nil {
 		return err
 	}
 
@@ -110,18 +110,21 @@ func vmLifeCycle(ctx context.Context, command *cli.Command) error {
 		return server.NewServer(ctx, vmc).Start()
 	})
 
-	vmp := vm.Get()
+	vmp := vm.Get(vmc)
 
 	g.Go(func() error {
-		return vmp.StartNetwork(ctx, vmc)
+		return vmp.StartNetwork(ctx)
 	})
 
 	g.Go(func() error {
-		if err := vmp.Create(ctx, vmc, cmdline); err != nil {
+		if err := vmp.Create(ctx, cmdline); err != nil {
 			return fmt.Errorf("failed to create vm: %w", err)
 		}
-
 		return vmp.Start(ctx)
+	})
+
+	g.Go(func() error {
+		return vmp.SyncTime(ctx)
 	})
 
 	return g.Wait()

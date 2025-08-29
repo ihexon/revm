@@ -5,9 +5,8 @@ package gvproxy
 import (
 	"context"
 	"fmt"
-	"linuxvm/pkg/network"
+	"linuxvm/pkg/define"
 	"linuxvm/pkg/vmconfig"
-
 	"net"
 	"net/http"
 	"net/url"
@@ -31,7 +30,7 @@ const (
 	subNet         = "192.168.127.0/24"
 	gatewayMacAddr = "5a:94:ef:e4:0c:dd"
 	guestMacAddr   = "5a:94:ef:e4:0c:ee"
-	guestIPAddr    = "192.168.127.2"
+	guestIPAddr    = define.DefaultGuestSSHAddr
 )
 
 func newGvpConfigure() *gvptypes.Configuration {
@@ -85,20 +84,6 @@ func newGvpConfigure() *gvptypes.Configuration {
 
 	return &config
 
-}
-
-func getForwardsMap() (map[string]string, error) {
-	guestSideSSHAddr := fmt.Sprintf("%s:%s", guestIPAddr, "22")
-
-	portInHostSide, err := network.GetAvailablePort()
-	if err != nil {
-		return map[string]string{}, fmt.Errorf("failed to get avaliable port: %w", err)
-	}
-	hostSideSSHAddr := fmt.Sprintf("%s:%d", "127.0.0.1", portInHostSide)
-
-	return map[string]string{
-		hostSideSSHAddr: guestSideSSHAddr,
-	}, nil
 }
 
 func httpServe(ctx context.Context, g *errgroup.Group, ln net.Listener, mux http.Handler) {
@@ -210,15 +195,14 @@ func StartNetworking(ctx context.Context, vmc *vmconfig.VMConfig) error {
 		return fmt.Errorf("failed to create dir for gvproxy network unix socket file %q: %w", endpoints.VFKitSocketEndpoint, err)
 	}
 
-	gvpCfg := newGvpConfigure()
+	hostInfop := fmt.Sprintf("%s:%d", vmc.SSHInfo.HostAddr, vmc.SSHInfo.HostPort)
+	guestInfo := fmt.Sprintf("%s:%d", vmc.SSHInfo.GuestAddr, vmc.SSHInfo.GuestPort)
 
-	forwardMaps, err := getForwardsMap()
-	if err != nil {
-		return fmt.Errorf("failed to get avaliable port: %w", err)
+	gvpCfg := newGvpConfigure()
+	gvpCfg.Forwards = map[string]string{
+		hostInfop: guestInfo,
 	}
-	logrus.Infof("forward maps: %v", forwardMaps)
-	gvpCfg.Forwards = forwardMaps
-	vmc.PortForwardMap = forwardMaps
+	logrus.Infof("forward maps: %v", gvpCfg.Forwards)
 
 	return run(ctx, g, gvpCfg, endpoints)
 }

@@ -8,9 +8,10 @@ import (
 )
 
 type Provider interface {
-	StartNetwork(ctx context.Context, vmc *vmconfig.VMConfig) error
-	Create(ctx context.Context, vmc *vmconfig.VMConfig, cmdline *vmconfig.Cmdline) error
+	StartNetwork(ctx context.Context) error
+	Create(ctx context.Context, cmdline *vmconfig.Cmdline) error
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
+	IsSSHReady(ctx context.Context) bool
 	SyncTime(ctx context.Context) error
 }
