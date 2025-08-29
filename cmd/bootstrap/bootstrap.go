@@ -8,6 +8,7 @@ import (
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh"
+	"linuxvm/pkg/system"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,6 +51,9 @@ func bootstrap() error {
 
 	g.Go(func() error {
 		return doExecCmdLine(ctx, os.Args[1], os.Args[2:])
+	})
+	g.Go(func() error {
+		return system.SyncRTCTime(ctx)
 	})
 
 	return g.Wait()

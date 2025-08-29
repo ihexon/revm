@@ -3,6 +3,7 @@ module linuxvm
 go 1.24
 
 require (
+	github.com/charmbracelet/keygen v0.5.4-0.20250811135526-3a78fe71a39a
 	github.com/google/uuid v1.6.0
 	github.com/moby/sys/mount v0.3.5-0.20240721113140-2c9636d9130c
 	github.com/moby/sys/mountinfo v0.7.2
@@ -16,16 +17,15 @@ require (
 )
 
 require (
-	github.com/charmbracelet/keygen v0.5.4-0.20250811135526-3a78fe71a39a // indirect
 	github.com/ebitengine/purego v0.8.4 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
+	github.com/gofrs/flock v0.12.1 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/jsimonetti/rtnetlink v1.3.5 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/mdlayher/netlink v1.7.2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
-	github.com/prashantgupta24/mac-sleep-notifier v1.0.2-0.20190617155937-4660ee703786 // indirect
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/tklauser/numcpus v0.10.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
@@ -45,7 +45,7 @@ require (
 	github.com/miekg/dns v1.1.65 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect; indirecte
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
-	golang.org/x/crypto v0.41.0 // indirect
+	golang.org/x/crypto v0.41.0
 	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
