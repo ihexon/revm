@@ -1,4 +1,4 @@
-//go:build (darwin && arm64) || (linux && (arm64 || amd64))
+//go:build (darwin && (arm64 || amd64)) || (linux && (arm64 || amd64))
 
 package ssh
 
@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,11 +16,12 @@ import (
 )
 
 type SSHServer struct {
-	Provider   string
-	Port       int
-	KeyFile    string
-	RunTimeDir string
-	PidFile    string
+	Provider           string
+	Port               int
+	KeyFile            string
+	RunTimeDir         string
+	PidFile            string
+	AuthorizedKeysFile string
 }
 
 const (
@@ -29,11 +31,12 @@ const (
 
 func GetProvider() *SSHServer {
 	return &SSHServer{
-		Provider:   dropbear,
-		Port:       2222,
-		KeyFile:    define.DropBearKeyFile,
-		RunTimeDir: define.DropBearRuntimeDir,
-		PidFile:    define.DropBearPidFile,
+		Provider:           dropbear,
+		Port:               2222,
+		KeyFile:            define.DropBearKeyFile,
+		RunTimeDir:         define.DropBearRuntimeDir,
+		AuthorizedKeysFile: filepath.Join(define.DropBearRuntimeDir, "authorized_keys"),
+		PidFile:            define.DropBearPidFile,
 	}
 }
 
@@ -71,14 +74,41 @@ func (s *SSHServer) Start(ctx context.Context) error {
 	}
 }
 
+func writeAuthorizedkeys(file string) error {
+	vmc, err := define.LoadVMCFromFile(filepath.Join("/", define.VMConfigFile))
+	if err != nil {
+		return fmt.Errorf("failed to load vmconfig: %w", err)
+	}
+
+	f, err := os.Create(file)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+
+	defer func(f *os.File) {
+		err := f.Close()
+		if err != nil {
+			logrus.Errorf("failed to close file: %v", err)
+		}
+	}(f)
+
+	_, err = f.WriteString(vmc.HostSSHPublicKey)
+	if err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return nil
+}
+
 func StartSSHServer(ctx context.Context) error {
 	p := GetProvider()
 	if err := p.CreateSSHKey(ctx); err != nil {
 		return fmt.Errorf("failed to create ssh key: %w", err)
 	}
-	if err := p.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start ssh server: %w", err)
+
+	if err := writeAuthorizedkeys(p.AuthorizedKeysFile); err != nil {
+		return err
 	}
 
-	return nil
+	return p.Start(ctx)
 }

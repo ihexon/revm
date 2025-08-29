@@ -58,14 +58,38 @@ Actions:
   build_linux    Build binaries for Linux
   build_darwin   Build binaries for macOS (Darwin)
 EOF
+	exit 1
 }
 
 init_func() {
-	WORKSPACE=$(realpath $(dirname $0))
-	log_std "remove and recreate out dir"
-	rm -rf "$WORKSPACE/out" && mkdir -p ./out/bin && mkdir -p ./out/3rd
+	WORKSPACE="$(realpath "$(dirname "$0")")"
+	if [[ -n "$DIRTY_BUILD" ]]; then
+		log_std "!!DIRTY BUILD!!"
+	else
+		log_std "DELETE OUTPUT DIR"
+		rm -rf "$WORKSPACE/out" && mkdir -p ./out/bin && mkdir -p ./out/3rd
+	fi
+
 	log_std "change dir to $WORKSPACE"
 	detect_platform_arch
+}
+
+_downloader() {
+	local target_dir="$1"
+	local item="$2"
+	local do_codesign="$3"
+
+	local _d="$target_dir/$(basename "$item")"
+	log_std "download $item to ${_d}"
+
+	if [[ -f "${_d}" ]]; then
+		return
+	fi
+	wget "$item" -c --output-document "${_d}"
+	chmod +x "${_d}"
+	if [[ $do_codesign == true ]]; then
+		codesign --force --deep --sign - "${_d}"
+	fi
 }
 
 _download_libkrun_darwin() {
@@ -83,11 +107,7 @@ _download_libkrun_darwin() {
 	fi
 
 	for item in "${urls[@]}"; do
-		log_std "download $item"
-		local _d="$libkrun_dir/$(basename "$item")"
-		wget "$item" -c --output-document "${_d}"
-		chmod +x "${_d}"
-		codesign --force --deep --sign - "${_d}"
+		_downloader "$libkrun_dir" "$item" "true"
 	done
 
 	log_std "change dir to $libkrun_dir"
@@ -107,8 +127,7 @@ _download_busybox_linux() {
 	)
 
 	for item in "${urls[@]}"; do
-		log_std "download $item"
-		wget "$item" -c --output-document "$busybox_bindir/$(basename "$item")"
+		_downloader "$busybox_bindir" "$item" "false"
 	done
 
 	log_std "create symbol link the busybox"
@@ -127,10 +146,7 @@ _download_dropbear() {
 	)
 
 	for item in "${urls[@]}"; do
-		log_std "download $item"
-		local _d="$dropbear_bin_dir/$(basename "$item")"
-		wget "$item" -c --output-document "${_d}"
-		chmod +x "${_d}"
+		_downloader "$dropbear_bin_dir" "$item" "false"
 	done
 }
 
@@ -178,7 +194,6 @@ main() {
 	local action="${1:-}"
 	if [[ -z "${action}" ]]; then
 		usage
-		exit 1
 	fi
 
 	case "${action}" in
@@ -195,7 +210,6 @@ main() {
 			;;
 		*)
 			usage
-			exit 1
 			;;
 	esac
 }
