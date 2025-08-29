@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/gofrs/flock"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -93,6 +94,27 @@ func vmLifeCycle(ctx context.Context, command *cli.Command) error {
 	}
 
 	vmc := makeVMCfg(command)
+
+	// Lock the rootfs, only one vm instance can use it.
+	fileLock := flock.New(filepath.Join(vmc.RootFS, ".lock"))
+	logrus.Infof("lock rootfs: %s", vmc.RootFS)
+	ifLocked, err := fileLock.TryLock()
+	if err != nil {
+		return fmt.Errorf("failed to lock rootfs: %w", err)
+	}
+
+	defer func() {
+		if ifLocked {
+			if err := fileLock.Unlock(); err != nil {
+				logrus.Errorf("failed to unlock rootfs: %v", err)
+			}
+		}
+	}()
+
+	if !ifLocked {
+		return fmt.Errorf("failed to lock rootfs, mybe there is another vm instance running")
+	}
+
 	if err := vmc.GenerateSSHInfo(); err != nil {
 		return err
 	}

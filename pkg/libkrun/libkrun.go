@@ -14,17 +14,14 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/gvproxy"
-	"linuxvm/pkg/ssh"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
 	"net/url"
 	"os"
 	"path/filepath"
 	"syscall"
-	"time"
 	"unsafe"
 
-	"github.com/prashantgupta24/mac-sleep-notifier/notifier"
 	"github.com/sirupsen/logrus"
 
 	"github.com/google/uuid"
@@ -78,7 +75,7 @@ func (v *AppleHVStubber) Create(ctx context.Context, cmdline *vmconfig.Cmdline) 
 	}
 	v.krunCtxID = uint32(id)
 
-	if ret := C.krun_set_log_level(C.uint32_t(define.LogLevelStr2Type(v.vmc.LogLevel))); ret != 0 {
+	if ret := C.krun_set_log_level(C.KRUN_LOG_LEVEL_INFO); ret != 0 {
 		return fmt.Errorf("failed to set log level, return %v", ret)
 	}
 
@@ -280,32 +277,7 @@ func stopVM(tx context.Context, vmID uint32) error {
 }
 
 func (v *AppleHVStubber) SyncTime(ctx context.Context) error {
-	sleepNotifierInstance := notifier.GetInstance()
-	notifierCh := sleepNotifierInstance.Start()
-	defer sleepNotifierInstance.Quit()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-
-		case activity, ok := <-notifierCh:
-			if !ok {
-				return fmt.Errorf("sleep notifier channel closed")
-			}
-			if activity.Type == notifier.Awake {
-				client, err := ssh.NewClient(v.vmc.SSHInfo.HostAddr, v.vmc.SSHInfo.User, v.vmc.SSHInfo.HostPort, v.vmc.HostSSHKeyPair, "date", "-s", fmt.Sprintf("@%d", time.Now().Unix()))
-				if err != nil {
-					return fmt.Errorf("failed to create ssh client: %w", err)
-				}
-
-				logrus.Infof("host awake, do sync host time to guest time: %q", client.String())
-				if err = client.Run(ctx); err != nil {
-					logrus.Warnf("failed to run command: %v", err)
-				}
-			}
-		}
-	}
+	return nil
 }
 
 func addRawDisk(ctxID uint32, disk string) error {
