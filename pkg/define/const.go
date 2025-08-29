@@ -23,4 +23,6 @@ const (
 	DefaultGuestUser           = "root"
 	DefaultGuestSSHPort uint64 = 22
 	DefaultGuestSSHAddr        = "192.168.127.2"
+
+	LockFile = ".lock"
 )

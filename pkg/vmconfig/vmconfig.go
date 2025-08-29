@@ -9,7 +9,9 @@ import (
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh"
 	"os"
+	"path/filepath"
 
+	"github.com/gofrs/flock"
 	"github.com/sirupsen/logrus"
 )
 
@@ -78,4 +80,20 @@ func (vmc *VMConfig) GenerateSSHInfo() error {
 	vmc.SSHInfo.AuthorizationKeyFile = vmc.HostSSHKeyPair
 
 	return nil
+}
+
+func (vmc *VMConfig) Lock() (*flock.Flock, error) {
+	f := filepath.Join(vmc.RootFS, define.LockFile)
+	fileLock := flock.New(f)
+	logrus.Infof("try to lock file: %s", f)
+	ifLocked, err := fileLock.TryLock()
+	if err != nil {
+		return nil, fmt.Errorf("failed to lock file: %w", err)
+	}
+
+	if !ifLocked {
+		return nil, fmt.Errorf("try lock file unsuccessful, mybe there is another vm instance running")
+	}
+
+	return fileLock, nil
 }
