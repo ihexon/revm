@@ -6,19 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"linuxvm/pkg/define"
 	"strings"
 )
 
-type Mount struct {
-	ReadOnly bool   `json:"readOnly"`
-	Source   string `json:"source"`
-	Tag      string `json:"tag"`
-	Target   string `json:"target"`
-	Type     string `json:"type"`
-}
-
-func CmdLineMountToMounts(mnts []string) []Mount {
-	var mounts []Mount //nolint:prealloc
+func CmdLineMountToMounts(mnts []string) []define.Mount {
+	var mounts []define.Mount //nolint:prealloc
 	for i, volume := range mnts {
 		if volume == "" {
 			continue
@@ -67,8 +60,8 @@ type VirtIoFs struct {
 	Target   string
 }
 
-func (v VirtIoFs) ToMount() Mount {
-	return Mount{
+func (v VirtIoFs) ToMount() define.Mount {
+	return define.Mount{
 		ReadOnly: v.ReadOnly,
 		Tag:      v.Tag,
 		Source:   v.Source,

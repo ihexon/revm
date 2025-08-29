@@ -3,11 +3,12 @@
 package filesystem
 
 import (
-	"encoding/json"
 	"fmt"
+	"linuxvm/pkg/define"
+	"os"
+
 	"github.com/moby/sys/mountinfo"
 	"github.com/sirupsen/logrus"
-	"os"
 
 	"github.com/moby/sys/mount"
 )
@@ -49,36 +50,11 @@ func MountTmpfs() error {
 	return nil
 }
 
-// VMConfig taken from `pkg/vmconfig/vmconfig.go`
-type VMConfig struct {
-	CtxID      uint32
-	MemoryInMB int32
-	Cpus       int8
-	RootFS     string
-
-	// data disk will map into /dev/vdX
-	DataDisk []string
-	// GVproxy control endpoint
-	GVproxyEndpoint string
-	// NetworkStackBackend is the network stack backend to use. which provided
-	// by gvproxy
-	NetworkStackBackend string
-	LogLevel            string
-	Mounts              []Mount
-}
-
 // MountVirtioFS load $rootfs/.vmconfig, and mount the virtiofs mnt
 func LoadVMConfigAndMountVirtioFS(file string) error {
-	f, err := os.Open(file)
+	vmc, err := define.LoadVMCFromFile(file)
 	if err != nil {
-		return fmt.Errorf("failed to open file %s: %w", file, err)
-	}
-	defer f.Close()
-
-	vmc := &VMConfig{}
-
-	if err = json.NewDecoder(f).Decode(vmc); err != nil {
-		return fmt.Errorf("failed to decode file %s: %w", file, err)
+		return fmt.Errorf("failed to load vmconfig: %w", err)
 	}
 
 	for _, mnt := range vmc.Mounts {

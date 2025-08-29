@@ -1,7 +1,7 @@
 package define
 
 const (
-	VMConfig        = "vmconfig.json"
+	VMConfigFile    = "vmconfig.json"
 	DefaultRestAddr = "127.0.0.1:15731"
 )
 
@@ -18,4 +18,10 @@ const (
 	DropBearPidFile        = DropBearRuntimeDir + "/dropbear.pid"
 
 	SSHKeyPair = "ssh_keypair"
+
+	DefaultSSHInHost = "127.0.0.1"
+
+	DefaultGuestUser           = "root"
+	DefaultGuestSSHPort uint64 = 22
+	DefaultGuestSSHAddr        = "192.168.127.2"
 )

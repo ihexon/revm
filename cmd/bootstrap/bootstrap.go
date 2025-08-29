@@ -34,7 +34,7 @@ func bootstrap() error {
 		return err
 	}
 
-	if err := filesystem.LoadVMConfigAndMountVirtioFS(filepath.Join("/", define.VMConfig)); err != nil {
+	if err := filesystem.LoadVMConfigAndMountVirtioFS(filepath.Join("/", define.VMConfigFile)); err != nil {
 		return err
 	}
 

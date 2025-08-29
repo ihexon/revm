@@ -14,12 +14,14 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/gvproxy"
+	"linuxvm/pkg/ssh"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
 	"net/url"
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/prashantgupta24/mac-sleep-notifier/notifier"
@@ -57,12 +59,17 @@ type AppleHVStubber struct {
 	cmdline   *vmconfig.Cmdline
 }
 
-func NewAppleHyperVisor() *AppleHVStubber {
-	return &AppleHVStubber{}
+func (v *AppleHVStubber) IsSSHReady(ctx context.Context) bool {
+	return true
 }
 
-func (v *AppleHVStubber) Create(ctx context.Context, cfg *vmconfig.VMConfig, cmdline *vmconfig.Cmdline) error {
-	v.vmc = cfg
+func NewAppleHyperVisor(vmc *vmconfig.VMConfig) *AppleHVStubber {
+	return &AppleHVStubber{
+		vmc: vmc,
+	}
+}
+
+func (v *AppleHVStubber) Create(ctx context.Context, cmdline *vmconfig.Cmdline) error {
 	v.cmdline = cmdline
 
 	id := C.krun_create_ctx()
@@ -121,7 +128,7 @@ func (v *AppleHVStubber) Start(ctx context.Context) error {
 }
 
 func (v *AppleHVStubber) writeCfgToRootfs(ctx context.Context) error {
-	return v.vmc.WriteToJsonFile(filepath.Join(v.vmc.RootFS, define.VMConfig))
+	return v.vmc.WriteToJsonFile(filepath.Join(v.vmc.RootFS, define.VMConfigFile))
 }
 
 func (v *AppleHVStubber) Stop(ctx context.Context) error {
@@ -245,8 +252,8 @@ func (v *AppleHVStubber) addVirtioFS() error {
 	return nil
 }
 
-func (v *AppleHVStubber) StartNetwork(ctx context.Context, vmc *vmconfig.VMConfig) error {
-	return gvproxy.StartNetworking(ctx, vmc)
+func (v *AppleHVStubber) StartNetwork(ctx context.Context) error {
+	return gvproxy.StartNetworking(ctx, v.vmc)
 }
 
 func (v *AppleHVStubber) NestVirt(ctx context.Context) error {
@@ -284,11 +291,18 @@ func (v *AppleHVStubber) SyncTime(ctx context.Context) error {
 
 		case activity, ok := <-notifierCh:
 			if !ok {
-				return nil
+				return fmt.Errorf("sleep notifier channel closed")
 			}
 			if activity.Type == notifier.Awake {
-				// TODO: sync time to guest
-				logrus.Info("host awake, do sync host time to guest time")
+				client, err := ssh.NewClient(v.vmc.SSHInfo.HostAddr, v.vmc.SSHInfo.User, v.vmc.SSHInfo.HostPort, v.vmc.HostSSHKeyPair, "date", "-s", fmt.Sprintf("@%d", time.Now().Unix()))
+				if err != nil {
+					return fmt.Errorf("failed to create ssh client: %w", err)
+				}
+
+				logrus.Infof("host awake, do sync host time to guest time: %q", client.String())
+				if err = client.Run(ctx); err != nil {
+					logrus.Warnf("failed to run command: %v", err)
+				}
 			}
 		}
 	}
