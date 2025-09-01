@@ -24,7 +24,17 @@ const (
 
 var errProcessExitNormal = errors.New("process exit normally")
 
+func setLogrus() {
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp: true,
+		ForceColors:   true,
+	})
+	logrus.SetOutput(os.Stderr)
+	logrus.SetLevel(logrus.InfoLevel)
+}
+
 func main() {
+	setLogrus()
 	if err := bootstrap(); err != nil && !errors.Is(err, errProcessExitNormal) {
 		logrus.Fatal(err)
 	}

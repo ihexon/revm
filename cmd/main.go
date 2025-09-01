@@ -152,7 +152,7 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 		Mounts:              filesystem.CmdLineMountToMounts(command.StringSlice("mount")),
 		GVproxyEndpoint:     fmt.Sprintf("unix://%s/%s", prefix, define.GvProxyControlEndPoint),
 		NetworkStackBackend: fmt.Sprintf("unixgram://%s/%s", prefix, define.GvProxyNetworkEndpoint),
-		HostSSHKeyPair:      filepath.Join(os.TempDir(), uuid.New().String()[:8], define.SSHKeyPair),
+		HostSSHKeyFile:      filepath.Join(os.TempDir(), uuid.New().String()[:8], define.SSHKeyPair),
 	}
 
 	return &vmc
@@ -163,7 +163,7 @@ func makeCmdline(command *cli.Command) *vmconfig.Cmdline {
 		Workspace:     define.DefalutWorkDir,
 		TargetBin:     define.BootstrapBinary,
 		TargetBinArgs: append([]string{command.Args().First()}, command.Args().Tail()...),
-		Env:           append(command.StringSlice("envs"), "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/3rd"),
+		Env:           append(command.StringSlice("envs"), "PATH=/3rd:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"),
 	}
 
 	return &cmdline

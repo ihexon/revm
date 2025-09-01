@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +28,8 @@ const (
 	dropbearkey = "dropbearkey"
 )
 
+// GetProvider get ssh server provider. A struct of SSHServer contains KeyFile, RunTimeDir, AuthorizedKeysFile, PidFile
+// and Provider. all fields are initialed by default.
 func GetProvider() *SSHServer {
 	return &SSHServer{
 		Provider:           dropbear,
@@ -40,15 +41,14 @@ func GetProvider() *SSHServer {
 	}
 }
 
-// CreateSSHKey create ssh keypair for ssh provider
-func (s *SSHServer) CreateSSHKey(ctx context.Context) error {
+func (s *SSHServer) GenerateSSHKeyFile(ctx context.Context) error {
 	switch s.Provider {
 	case dropbear:
-		logrus.Infof("SSH Server provider is dropbear, create ssh key: %q", s.KeyFile)
+		logrus.Infof("generate sshkey file: %q", s.KeyFile)
 		if err := os.MkdirAll(filepath.Dir(s.KeyFile), 0755); err != nil {
 			return err
 		}
-		cmd := exec.CommandContext(ctx, filepath.Join("/", define.PrefixDir3rd, dropbearkey), "-f", s.KeyFile)
+		cmd := exec.CommandContext(ctx, dropbearkey, "-f", s.KeyFile)
 		cmd.Stdin = nil
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stderr
@@ -62,25 +62,27 @@ func (s *SSHServer) Start(ctx context.Context) error {
 	switch s.Provider {
 	case dropbear:
 		logrus.Infof("SSH Server provider is dropbear, start ssh server")
-		cmd := exec.CommandContext(ctx, filepath.Join("/", define.PrefixDir3rd, dropbear), "-r", s.KeyFile, "-D",
+		cmd := exec.CommandContext(ctx, dropbear, "-r", s.KeyFile, "-D",
 			s.RunTimeDir, "-F", "-B", "-P", s.PidFile)
 		cmd.Stdin = nil
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stderr
 		cmd.Env = append(os.Environ(), "PASS_FILEPEM_CHECK=1")
+		logrus.Infof("dropbear cmdline: %q", cmd.Args)
 		return cmd.Run()
 	default:
 		return errors.New("no ssh server provider found")
 	}
 }
 
-func writeAuthorizedkeys(file string) error {
+// WriteAuthorizedkeysFile write host public key (from vmconfig.HostSSHPublicKey) to dropbear's authorized_keys.
+func (s *SSHServer) WriteAuthorizedkeysFile() error {
 	vmc, err := define.LoadVMCFromFile(filepath.Join("/", define.VMConfigFile))
 	if err != nil {
 		return fmt.Errorf("failed to load vmconfig: %w", err)
 	}
 
-	f, err := os.Create(file)
+	f, err := os.Create(s.AuthorizedKeysFile)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
@@ -92,6 +94,7 @@ func writeAuthorizedkeys(file string) error {
 		}
 	}(f)
 
+	logrus.Infof("write host public key to %q", s.AuthorizedKeysFile)
 	_, err = f.WriteString(vmc.HostSSHPublicKey)
 	if err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
@@ -102,11 +105,11 @@ func writeAuthorizedkeys(file string) error {
 
 func StartSSHServer(ctx context.Context) error {
 	p := GetProvider()
-	if err := p.CreateSSHKey(ctx); err != nil {
+	if err := p.GenerateSSHKeyFile(ctx); err != nil {
 		return fmt.Errorf("failed to create ssh key: %w", err)
 	}
 
-	if err := writeAuthorizedkeys(p.AuthorizedKeysFile); err != nil {
+	if err := p.WriteAuthorizedkeysFile(); err != nil {
 		return err
 	}
 

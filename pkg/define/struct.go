@@ -40,7 +40,7 @@ type VMConfig struct {
 	LogLevel            string  `json:"logLevel,omitempty"`
 	Mounts              []Mount `json:"mounts,omitempty"`
 	SSHInfo             SSHInfo
-	HostSSHKeyPair      string `json:"hostSSHKeyPair,omitempty"`
+	HostSSHKeyFile      string `json:"hostSSHKeyFile,omitempty"`
 	HostSSHPublicKey    string `json:"sshPublicKey,omitempty"`
 	HostSSHPrivateKey   string `json:"sshPrivateKey,omitempty"`
 }
