@@ -57,7 +57,7 @@ func (c *Cmdline) TryGetSystemProxyAndSetToCmdline() error {
 }
 
 func (vmc *VMConfig) GenerateSSHInfo() error {
-	keyPair, err := ssh.GenerateHostSSHKeyPair(vmc.HostSSHKeyPair)
+	keyPair, err := ssh.GenerateHostSSHKeyPair(vmc.HostSSHKeyFile)
 	if err != nil {
 		return fmt.Errorf("failed to generate host ssh keypair for host: %w", err)
 	}
@@ -77,7 +77,7 @@ func (vmc *VMConfig) GenerateSSHInfo() error {
 	vmc.SSHInfo.HostPort = portInHostSide
 	vmc.SSHInfo.HostAddr = define.DefaultSSHInHost
 	vmc.SSHInfo.User = define.DefaultGuestUser
-	vmc.SSHInfo.AuthorizationKeyFile = vmc.HostSSHKeyPair
+	vmc.SSHInfo.AuthorizationKeyFile = vmc.HostSSHKeyFile
 
 	return nil
 }
