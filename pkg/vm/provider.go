@@ -14,4 +14,5 @@ type Provider interface {
 	Stop(ctx context.Context) error
 	IsSSHReady(ctx context.Context) bool
 	SyncTime(ctx context.Context) error
+	AttachGuestConsole(ctx context.Context, rootfs string)
 }
