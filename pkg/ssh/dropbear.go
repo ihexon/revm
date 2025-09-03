@@ -44,7 +44,7 @@ func GetProvider() *SSHServer {
 func (s *SSHServer) GenerateSSHKeyFile(ctx context.Context) error {
 	switch s.Provider {
 	case dropbear:
-		logrus.Infof("generate sshkey file: %q", s.KeyFile)
+		logrus.Infof("generate sshkey pair for guest: %q", s.KeyFile)
 		if err := os.MkdirAll(filepath.Dir(s.KeyFile), 0755); err != nil {
 			return err
 		}

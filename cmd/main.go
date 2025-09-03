@@ -24,15 +24,15 @@ import (
 
 func main() {
 	app := cli.Command{
+
 		Name:        os.Args[0],
 		Usage:       "run a linux shell in 1 second",
 		UsageText:   os.Args[0] + " [command] [flags]",
 		Description: "run a linux shell in 1 second",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "rootfs",
-				Usage:    "rootfs path, e.g. /var/lib/libkrun/rootfs/alpine-3.15.0",
-				Required: true,
+				Name:  "rootfs",
+				Usage: "rootfs path, e.g. /var/lib/libkrun/rootfs/alpine-3.15.0",
 			},
 			&cli.Int8Flag{
 				Name:  "cpus",
@@ -64,6 +64,9 @@ func main() {
 		},
 		Action: vmLifeCycle,
 		Before: earlyStage,
+	}
+	app.Commands = []*cli.Command{
+		&AttachConsole,
 	}
 
 	app.DisableSliceFlagSeparator = true

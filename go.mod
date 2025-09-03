@@ -4,6 +4,7 @@ go 1.24
 
 require (
 	github.com/charmbracelet/keygen v0.5.4-0.20250811135526-3a78fe71a39a
+	github.com/gofrs/flock v0.12.1
 	github.com/google/uuid v1.6.0
 	github.com/moby/sys/mount v0.3.5-0.20240721113140-2c9636d9130c
 	github.com/moby/sys/mountinfo v0.7.2
@@ -14,12 +15,12 @@ require (
 	github.com/urfave/cli/v3 v3.3.3-0.20250428204840-66d871f8b5bf
 	golang.org/x/sync v0.14.0
 	golang.org/x/sys v0.35.0
+	golang.org/x/term v0.34.0
 )
 
 require (
 	github.com/ebitengine/purego v0.8.4 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
-	github.com/gofrs/flock v0.12.1 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/jsimonetti/rtnetlink v1.3.5 // indirect

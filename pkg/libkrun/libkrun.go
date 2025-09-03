@@ -219,6 +219,10 @@ func (v *AppleHVStubber) setGPU() error {
 	return nil
 }
 
+func (v *AppleHVStubber) AttachGuestConsole(ctx context.Context, rootfs string) {
+	
+}
+
 func (v *AppleHVStubber) setRootFS() error {
 	rootfs, fn1 := GoString2CString(v.vmc.RootFS)
 	defer fn1()
