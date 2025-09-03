@@ -10,16 +10,14 @@ import (
 	"net/url"
 	"path/filepath"
 
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 )
 
 var AttachConsole = cli.Command{
-	Name:        "attach",
-	Description: "attach to the console of the running VM",
-	Flags:       []cli.Flag{},
-	Before:      earlyStage,
-	Action:      attachConsole,
+	Name:      "attach",
+	Usage:     "attach to the console of the running guest",
+	UsageText: "attach [rootfs]",
+	Action:    attachConsole,
 }
 
 func attachConsole(ctx context.Context, command *cli.Command) error {
@@ -38,8 +36,6 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
 	}
-	logrus.Infof("gvproxy endpoint: %q", endpoint.Path)
 
 	return client.RunOverGVProxyVSock(ctx, endpoint.Path)
-
 }
