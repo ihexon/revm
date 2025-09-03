@@ -166,7 +166,7 @@ download_3rd() {
 build_revm() {
 	local revm_bin="out/bin/revm"
 	rm -f "$revm_bin"
-	GOOS=$PLT GOARCH=$ARCH go build -v -o "$revm_bin" ./cmd/main.go
+	GOOS=$PLT GOARCH=$ARCH go build -v -o "$revm_bin" ./cmd/
 	if [[ "$PLT" == "darwin" ]]; then
 		log_std "codesign to revm"
 		codesign --force --deep --sign - "$revm_bin"

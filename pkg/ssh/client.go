@@ -7,11 +7,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"linuxvm/pkg/system"
 	"net"
 	"os"
 	"strings"
-	"sync"
+	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 )
@@ -47,8 +49,6 @@ func (c *client) setCmdLine(name string, args []string) {
 	c.args = args
 }
 
-const tcpProto = "tcp"
-
 // String returns the command line string, with each parameter wrapped in ""
 func (c *client) String() string {
 	args := append([]string{c.name}, c.args...)
@@ -58,78 +58,83 @@ func (c *client) String() string {
 	return strings.Join(args, " ")
 }
 
-// Run executes the given callback within session. Sends SIGINT when the context is canceled.
-func (c *client) Run(ctx context.Context) error {
-	context.AfterFunc(ctx, func() {
-		if c.mySession != nil {
-			logrus.Warnf("send signal [ %s ] to [ %q ], cause by %v", c.signal, c.name, context.Cause(ctx))
-			if err := c.mySession.Signal(c.signal); err != nil {
-				logrus.Errorf("send signal [ %s ] to [ %q ] failed: %v", c.signal, c.name, err)
-			}
-		}
-	})
-
-	sshClient, err := ssh.Dial(
-		tcpProto,
-		net.JoinHostPort(c.config.Addr, fmt.Sprint(c.config.Port)),
-		&ssh.ClientConfig{
-			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-			User:            c.config.User,
-			Auth:            c.config.Auth,
-		},
-	)
-
-	client := sshClient
+func (c *client) RunOverGVProxyVSock(ctx context.Context, gvCtl string) error {
+	gvpConn, err := net.DialTimeout("unix", gvCtl, 2*time.Second)
 	if err != nil {
-		return fmt.Errorf("failed to create ssh client: %w", err)
+		return fmt.Errorf("failed to connect to gvproxy control endpoint: %w", err)
 	}
-	defer client.Close() //nolint:errcheck
 
-	c.mySession, err = client.NewSession()
+	if err = transport.Tunnel(gvpConn, c.config.Addr, int(c.config.Port)); err != nil {
+		return err
+	}
+
+	conn, chans, reqs, err := ssh.NewClientConn(gvpConn, "", &ssh.ClientConfig{
+		User:            c.config.User,
+		Auth:            c.config.Auth,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	})
+	if err != nil {
+		if err = gvpConn.Close(); err != nil {
+			logrus.Errorf("ssh over vsock failed to close gvpConn: %v", err)
+		}
+		return fmt.Errorf("failed to create ssh client connection: %w", err)
+	}
+
+	sshclient := ssh.NewClient(conn, chans, reqs)
+	defer func() {
+		if err := sshclient.Close(); err != nil {
+			logrus.Errorf("failed to close ssh client: %v", err)
+		}
+	}()
+
+	c.mySession, err = sshclient.NewSession()
 	if err != nil {
 		return fmt.Errorf("failed to create ssh session: %w", err)
 	}
-
-	outPipe, err := c.mySession.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("failed to get session.StdoutPipe(): %w", err)
-	}
-	errPipe, err := c.mySession.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to get session.StderrPipe(): %w", err)
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(2) //nolint:mnd
-	logStdErr := func(pipe io.Reader) {
-		_, err := io.Copy(os.Stderr, pipe)
-		if err != nil {
-			logrus.Errorf("failed to copy pipe into os.Stderr")
-		}
-		wg.Done()
-	}
-
-	logStdOut := func(pipe io.Reader) {
-		_, err := io.Copy(os.Stdout, pipe)
-		if err != nil {
-			logrus.Errorf("failed to copy pipe into os.Stdout")
-		}
-		wg.Done()
-	}
-
-	if err = c.mySession.Start(c.String()); err != nil {
-		return fmt.Errorf("failed to start ssh command: %w", err)
-	}
-
 	defer func() {
-		_ = c.mySession.Close()
+		logrus.Infof("ssh over vsock done, close ssh session")
+		if err := c.mySession.Close(); err != nil && err != io.EOF {
+			logrus.Errorf("failed to close ssh session: %v", err)
+		}
 		c.mySession = nil
 	}()
 
-	go logStdOut(outPipe)
-	go logStdErr(errPipe)
+	if system.IsTerminal() {
+		state, err := system.MakeStdinRaw()
+		if err != nil {
+			return err
+		}
+		defer system.ResetStdin(state)
 
-	wg.Wait()
+		system.OnTerminalResize(ctx, func(width, height int) { _ = c.mySession.WindowChange(height, width) })
+		if err = c.mySession.RequestPty(system.GetTerminalType(), 80, 80, ssh.TerminalModes{
+			ssh.ECHO:          1,
+			ssh.IUTF8:         1,
+			ssh.TTY_OP_ISPEED: 14400,
+			ssh.TTY_OP_OSPEED: 14400,
+		}); err != nil {
+			return fmt.Errorf("failed to request pty: %w", err)
+		}
+	} else {
+		logrus.Warnf("current terminal is not a tty, skip setting raw mode")
+	}
+
+	c.mySession.Stdout = os.Stdout
+	c.mySession.Stderr = os.Stderr
+	c.mySession.Stdin = os.Stdin
+
+	if err = c.mySession.Shell(); err != nil {
+		return fmt.Errorf("failed to start ssh command: %w", err)
+	}
+
+	context.AfterFunc(ctx, func() {
+		if c.mySession != nil {
+			logrus.Warnf("send signal %q to %q, cause by %v", c.signal, c.name, context.Cause(ctx))
+			if err := c.mySession.Signal(c.signal); err != nil {
+				logrus.Errorf("send signal %q to %q failed: %v", c.signal, c.name, err)
+			}
+		}
+	})
 
 	if err = c.mySession.Wait(); err != nil {
 		return fmt.Errorf("failed to wait ssh command: %w", err)
@@ -148,7 +153,7 @@ func NewClient(addr, user string, port uint64, keyFile string, cmdline ...string
 		return nil, fmt.Errorf("failed to parse private key")
 	}
 
-	myclient := &client{
+	myClient := &client{
 		config: &Config{
 			Addr: addr,
 			User: user,
@@ -159,6 +164,6 @@ func NewClient(addr, user string, port uint64, keyFile string, cmdline ...string
 		},
 		signal: ssh.SIGKILL,
 	}
-	myclient.setCmdLine(cmdline[0], cmdline[1:])
-	return myclient, nil
+	myClient.setCmdLine(cmdline[0], cmdline[1:])
+	return myClient, nil
 }

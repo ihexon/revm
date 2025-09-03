@@ -57,6 +57,7 @@ func (c *Cmdline) TryGetSystemProxyAndSetToCmdline() error {
 }
 
 func (vmc *VMConfig) GenerateSSHInfo() error {
+	logrus.Infof("generate ssh keypair for host: %q", vmc.HostSSHKeyFile)
 	keyPair, err := ssh.GenerateHostSSHKeyPair(vmc.HostSSHKeyFile)
 	if err != nil {
 		return fmt.Errorf("failed to generate host ssh keypair for host: %w", err)
