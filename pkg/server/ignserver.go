@@ -24,7 +24,7 @@ type Server struct {
 	Ctx        context.Context
 }
 
-func NewServer(ctx context.Context, vmc *vmconfig.VMConfig) *Server {
+func NewAPIServer(ctx context.Context, vmc *vmconfig.VMConfig) *Server {
 	mux := http.NewServeMux()
 	server := &Server{
 		Mux:        mux,

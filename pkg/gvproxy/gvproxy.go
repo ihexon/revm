@@ -191,18 +191,18 @@ func StartNetworking(ctx context.Context, vmc *vmconfig.VMConfig) error {
 	if err := makeDirForUnixSocks(endpoints.ControlEndpoints); err != nil {
 		return fmt.Errorf("failed to create dir for gvproxy control unix socket file %q: %w", endpoints.ControlEndpoints, err)
 	}
+
 	if err := makeDirForUnixSocks(endpoints.VFKitSocketEndpoint); err != nil {
 		return fmt.Errorf("failed to create dir for gvproxy network unix socket file %q: %w", endpoints.VFKitSocketEndpoint, err)
 	}
 
-	hostInfop := fmt.Sprintf("%s:%d", vmc.SSHInfo.HostAddr, vmc.SSHInfo.HostPort)
+	hostInfo := fmt.Sprintf("%s:%d", vmc.SSHInfo.HostAddr, vmc.SSHInfo.HostPort)
 	guestInfo := fmt.Sprintf("%s:%d", vmc.SSHInfo.GuestAddr, vmc.SSHInfo.GuestPort)
 
 	gvpCfg := newGvpConfigure()
 	gvpCfg.Forwards = map[string]string{
-		hostInfop: guestInfo,
+		hostInfo: guestInfo,
 	}
-	logrus.Infof("forward maps: %v", gvpCfg.Forwards)
 
 	return run(ctx, g, gvpCfg, endpoints)
 }

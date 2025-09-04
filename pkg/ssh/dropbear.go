@@ -95,7 +95,7 @@ func (s *SSHServer) WriteAuthorizedkeysFile() error {
 	}(f)
 
 	logrus.Infof("write host public key to %q", s.AuthorizedKeysFile)
-	_, err = f.WriteString(vmc.HostSSHPublicKey)
+	_, err = f.WriteString(vmc.SSHInfo.HostSSHPublicKey)
 	if err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
