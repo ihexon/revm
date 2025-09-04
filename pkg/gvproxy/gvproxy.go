@@ -196,12 +196,16 @@ func StartNetworking(ctx context.Context, vmc *vmconfig.VMConfig) error {
 		return fmt.Errorf("failed to create dir for gvproxy network unix socket file %q: %w", endpoints.VFKitSocketEndpoint, err)
 	}
 
-	hostInfo := fmt.Sprintf("%s:%d", vmc.SSHInfo.HostAddr, vmc.SSHInfo.HostPort)
-	guestInfo := fmt.Sprintf("%s:%d", vmc.SSHInfo.GuestAddr, vmc.SSHInfo.GuestPort)
+	sshAddrPortInHost := fmt.Sprintf("%s:%d", vmc.SSHInfo.HostAddr, vmc.SSHInfo.HostPort)
+	sshAddrPortInGuest := fmt.Sprintf("%s:%d", vmc.SSHInfo.GuestAddr, vmc.SSHInfo.GuestPort)
+
+	podmanAddrPortInHost := fmt.Sprintf("%s:%d", vmc.PodmanInfo.PodmanAPITcpAddressInHost, vmc.PodmanInfo.PodmanAPITcpPortInHost)
+	podmanAddrPortInGuest := fmt.Sprintf("%s:%d", vmc.PodmanInfo.PodmanAPITcpAddressInVM, vmc.PodmanInfo.PodmanAPITcpPortInVM)
 
 	gvpCfg := newGvpConfigure()
 	gvpCfg.Forwards = map[string]string{
-		hostInfo: guestInfo,
+		sshAddrPortInHost:    sshAddrPortInGuest,
+		podmanAddrPortInHost: podmanAddrPortInGuest,
 	}
 
 	return run(ctx, g, gvpCfg, endpoints)
