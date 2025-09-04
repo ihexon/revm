@@ -4,8 +4,15 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"linuxvm/pkg/define"
+	"linuxvm/pkg/filesystem"
+	"linuxvm/pkg/system"
+	"linuxvm/pkg/vm"
+	"linuxvm/pkg/vmconfig"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/sirupsen/logrus"
@@ -47,4 +54,72 @@ func setLogrus() {
 	})
 	logrus.SetOutput(os.Stderr)
 	logrus.SetLevel(logrus.InfoLevel)
+}
+
+func setMaxMemory() int32 {
+	mb, err := system.GetMaxMemoryInMB()
+	if err != nil {
+		logrus.Warnf("failed to get max memory: %v", err)
+		return 512
+	}
+
+	return int32(mb)
+}
+
+func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, error) {
+	vmc := makeVMCfg(command)
+
+	_, err := vmc.Lock()
+	if err != nil {
+		return nil, err
+	}
+
+	if err = vmc.GenerateSSHInfo(); err != nil {
+		return nil, err
+	}
+
+	if command.Bool("system-proxy") {
+		if err = vmc.TryGetSystemProxyAndSetToCmdline(); err != nil {
+			return nil, err
+		}
+	}
+
+	return vm.Get(vmc), nil
+}
+
+func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
+	prefix := filepath.Join(os.TempDir(), system.GenerateRandomID())
+
+	vmc := vmconfig.VMConfig{
+		MemoryInMB: command.Int32("memory"),
+		Cpus:       command.Int8("cpus"),
+		RootFS:     command.String("rootfs"),
+		DataDisk:   command.StringSlice("data-disk"),
+		Mounts:     filesystem.CmdLineMountToMounts(command.StringSlice("mount")),
+
+		GVproxyEndpoint:     fmt.Sprintf("unix://%s/%s", prefix, define.GvProxyControlEndPoint),
+		NetworkStackBackend: fmt.Sprintf("unixgram://%s/%s", prefix, define.GvProxyNetworkEndpoint),
+		SSHInfo: define.SSHInfo{
+			HostSSHKeyPairFile: filepath.Join(prefix, define.SSHKeyPair),
+		},
+
+		Cmdline: define.Cmdline{
+			Bootstrap:     define.BootstrapBinary,
+			BootstrapArgs: []string{},
+			Workspace:     define.DefalutWorkDir,
+			Mode:          define.RunUserCommandLineMode,
+			TargetBin:     command.Args().First(),
+			TargetBinArgs: command.Args().Tail(),
+			Env:           append(command.StringSlice("envs"), define.DefaultPATH),
+		},
+
+		PodmanInfo: define.PodmanInfo{
+			PodmanAPITcpAddressInHost: define.DefaultPodmanTcpAddressInHost,
+			PodmanAPITcpAddressInVM:   define.DefaultPodmanTcpAddressInVM,
+			PodmanAPITcpPortInHost:    define.DefaultPodmanTcpPortInHost,
+			PodmanAPITcpPortInVM:      define.DefaultPodmanTcpPortInVM,
+		},
+	}
+
+	return &vmc
 }

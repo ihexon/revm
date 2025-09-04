@@ -13,9 +13,10 @@ import (
 )
 
 var startDocker = cli.Command{
-	Name:        "docker",
+	Name:        define.FlagDockerMode,
+	Aliases:     []string{"docker", "podman", "podman-mode", "container-mode", "container"},
 	Usage:       "run in Docker-compatible mode",
-	UsageText:   "docker [OPTIONS] [command]",
+	UsageText:   define.FlagDockerMode + " [OPTIONS] [command]",
 	Description: "In Docker compatibility mode, the built-in Docker engine is used and a unix socks file is listened to as the API entry point used by the docker cli.",
 	Flags: []cli.Flag{
 		&cli.Int8Flag{
@@ -48,7 +49,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("failed to get vm configure: %w", err)
 	}
 	vmc.Cmdline.Mode = define.RunDockerEngineMode
-	
+
 	dir, err := system.Get3rdDir()
 	if err != nil {
 		return fmt.Errorf("failed to get 3rd dir: %w", err)

@@ -31,4 +31,15 @@ const (
 	RunUserCommandLineMode = "userCommandLineMode"
 
 	DefaultPATH = "PATH=/3rd:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+	DefaultPodmanTcpAddressInHost = "127.0.0.1"
+	DefaultPodmanTcpPortInHost    = 25883
+
+	DefaultPodmanTcpAddressInVM = "192.168.127.2"
+	DefaultPodmanTcpPortInVM    = DefaultPodmanTcpPortInHost
+)
+
+const (
+	FlagDockerMode = "docker-mode"
+	FlagRootfsMode = "rootfs-mode"
 )
