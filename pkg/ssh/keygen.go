@@ -7,6 +7,7 @@ import (
 	"github.com/pkg/errors"
 )
 
+// GenerateHostSSHKeyPair generates an SSH key pair for the host and writes it to the specified destination directory.
 func GenerateHostSSHKeyPair(dest string) (*keygen.KeyPair, error) {
 	if dest == "" {
 		return nil, errors.New("failed to generate SSH key pair, ssh key pair dest is empty")

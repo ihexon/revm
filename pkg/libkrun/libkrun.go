@@ -53,7 +53,6 @@ func GoString2CString(str string) (*C.char, func()) {
 type AppleHVStubber struct {
 	krunCtxID uint32
 	vmc       *vmconfig.VMConfig
-	cmdline   *vmconfig.Cmdline
 }
 
 func (v *AppleHVStubber) IsSSHReady(ctx context.Context) bool {
@@ -66,9 +65,11 @@ func NewAppleHyperVisor(vmc *vmconfig.VMConfig) *AppleHVStubber {
 	}
 }
 
-func (v *AppleHVStubber) Create(ctx context.Context, cmdline *vmconfig.Cmdline) error {
-	v.cmdline = cmdline
+func StartAPIServer(ctx context.Context) error {
+	return nil
+}
 
+func (v *AppleHVStubber) Create(ctx context.Context) error {
 	id := C.krun_create_ctx()
 	if id < 0 {
 		return fmt.Errorf("failed to create vm ctx id, return %v", id)
@@ -113,7 +114,11 @@ func (v *AppleHVStubber) Create(ctx context.Context, cmdline *vmconfig.Cmdline) 
 }
 
 func (v *AppleHVStubber) Start(ctx context.Context) error {
-	if err := v.setCommandLine(v.cmdline.Workspace, v.cmdline.Env, v.cmdline.TargetBin, v.cmdline.TargetBinArgs...); err != nil {
+	if err := system.Rlimit(); err != nil {
+		return fmt.Errorf("failed to set rlimit: %v", err)
+	}
+
+	if err := v.setCommandLine(v.vmc.Cmdline.Workspace, v.vmc.Cmdline.Env); err != nil {
 		return err
 	}
 
@@ -149,6 +154,13 @@ func (v *AppleHVStubber) setNetworkProvider() error {
 	return nil
 }
 
+func (v *AppleHVStubber) GetVMConfigure() (*vmconfig.VMConfig, error) {
+	if v.vmc == nil {
+		return nil, fmt.Errorf("can not get vm config object, vmconfig is nil")
+	}
+	return v.vmc, nil
+}
+
 const (
 	RLIMIT_NPROC = "6"
 	SoftLimit    = "4096"
@@ -167,7 +179,7 @@ func (v *AppleHVStubber) setRLimited() error {
 	return nil
 }
 
-func (v *AppleHVStubber) setCommandLine(dir string, env []string, bin string, args ...string) error {
+func (v *AppleHVStubber) setCommandLine(dir string, env []string) error {
 	workdir, fn1 := GoString2CString(dir)
 	defer fn1()
 
@@ -175,17 +187,10 @@ func (v *AppleHVStubber) setCommandLine(dir string, env []string, bin string, ar
 		return fmt.Errorf("failed to set workdir, return %v", ret)
 	}
 
-	if bin == "" {
-		return errors.New("target bin is empty")
-	}
-
-	v.cmdline.TargetBin = bin
-	v.cmdline.TargetBinArgs = args
-
-	targetBin, fn2 := GoString2CString(v.cmdline.TargetBin)
+	targetBin, fn2 := GoString2CString(v.vmc.Cmdline.Bootstrap)
 	defer fn2()
 
-	targetBinArgs, fn3 := GoStringList2CStringArray(v.cmdline.TargetBinArgs)
+	targetBinArgs, fn3 := GoStringList2CStringArray([]string{})
 	defer fn3()
 
 	envPassIn, fn4 := GoStringList2CStringArray(env)
@@ -220,7 +225,7 @@ func (v *AppleHVStubber) setGPU() error {
 }
 
 func (v *AppleHVStubber) AttachGuestConsole(ctx context.Context, rootfs string) {
-	
+
 }
 
 func (v *AppleHVStubber) setRootFS() error {
@@ -277,10 +282,6 @@ func (v *AppleHVStubber) NestVirt(ctx context.Context) error {
 }
 
 func stopVM(tx context.Context, vmID uint32) error {
-	return nil
-}
-
-func (v *AppleHVStubber) SyncTime(ctx context.Context) error {
 	return nil
 }
 

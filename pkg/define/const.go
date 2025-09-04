@@ -8,7 +8,7 @@ const (
 const (
 	DefalutWorkDir  = "/"
 	PrefixDir3rd    = "/3rd"
-	BootstrapBinary = PrefixDir3rd + "/bootstrap"
+	BootstrapBinary = "bootstrap"
 
 	GvProxyControlEndPoint = "gvpctl.sock"
 	GvProxyNetworkEndpoint = "gvpnet.sock"
@@ -25,4 +25,10 @@ const (
 	DefaultGuestSSHAddr        = "192.168.127.2"
 
 	LockFile = ".lock"
+
+	BuiltinRootfsDirName   = "rootfs"
+	RunDockerEngineMode    = "dockerEngineMode"
+	RunUserCommandLineMode = "userCommandLineMode"
+
+	DefaultPATH = "PATH=/3rd:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 )
