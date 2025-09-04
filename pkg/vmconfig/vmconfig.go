@@ -18,7 +18,6 @@ import (
 // VMConfig Static virtual machine configuration.
 
 type (
-	Cmdline  define.Cmdline
 	VMConfig define.VMConfig
 )
 
@@ -31,7 +30,7 @@ func (vmc *VMConfig) WriteToJsonFile(file string) error {
 	return os.WriteFile(file, b, 0644)
 }
 
-func (c *Cmdline) TryGetSystemProxyAndSetToCmdline() error {
+func (vmc *VMConfig) TryGetSystemProxyAndSetToCmdline() error {
 	proxyInfo, err := network.GetAndNormalizeSystemProxy()
 	if err != nil {
 		return fmt.Errorf("failed to get and normalize system proxy: %w", err)
@@ -42,7 +41,7 @@ func (c *Cmdline) TryGetSystemProxyAndSetToCmdline() error {
 	} else {
 		httpProxy := fmt.Sprintf("http_proxy=http://%s:%d", proxyInfo.HTTP.Host, proxyInfo.HTTP.Port)
 		logrus.Infof("using system http proxy: %q", httpProxy)
-		c.Env = append(c.Env, httpProxy)
+		vmc.Cmdline.Env = append(vmc.Cmdline.Env, httpProxy)
 	}
 
 	if proxyInfo.HTTPS == nil {
@@ -50,35 +49,35 @@ func (c *Cmdline) TryGetSystemProxyAndSetToCmdline() error {
 	} else {
 		httpsProxy := fmt.Sprintf("https_proxy=http://%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port)
 		logrus.Infof("using system https proxy: %q", httpsProxy)
-		c.Env = append(c.Env, httpsProxy)
+		vmc.Cmdline.Env = append(vmc.Cmdline.Env, httpsProxy)
 	}
 
 	return nil
 }
 
+// GenerateSSHInfo Generate SSH info for the VM, notice the ssh keypair will be written when guest rootfs actually running.
 func (vmc *VMConfig) GenerateSSHInfo() error {
-	logrus.Infof("generate ssh keypair for host: %q", vmc.HostSSHKeyFile)
-	keyPair, err := ssh.GenerateHostSSHKeyPair(vmc.HostSSHKeyFile)
+	keyPair, err := ssh.GenerateHostSSHKeyPair(vmc.SSHInfo.HostSSHKeyPairFile)
 	if err != nil {
 		return fmt.Errorf("failed to generate host ssh keypair for host: %w", err)
 	}
 
-	vmc.HostSSHPrivateKey = string(keyPair.RawProtectedPrivateKey())
-	vmc.HostSSHPublicKey = string(keyPair.AuthorizedKey())
+	// Fill the ssh keypair into vmc.SSHInfo using the keypair in memory
+	vmc.SSHInfo.HostSSHPrivateKey = string(keyPair.RawProtectedPrivateKey())
+	vmc.SSHInfo.HostSSHPublicKey = keyPair.AuthorizedKey()
 
 	// Fill the SSHInfo
+	vmc.SSHInfo.GuestPort = define.DefaultGuestSSHPort
+	vmc.SSHInfo.GuestAddr = define.DefaultGuestSSHAddr
+
 	portInHostSide, err := network.GetAvailablePort()
 	if err != nil {
 		return fmt.Errorf("failed to get avaliable port: %w", err)
 	}
-
-	vmc.SSHInfo.GuestPort = define.DefaultGuestSSHPort
-	vmc.SSHInfo.GuestAddr = define.DefaultGuestSSHAddr
-
 	vmc.SSHInfo.HostPort = portInHostSide
 	vmc.SSHInfo.HostAddr = define.DefaultSSHInHost
+
 	vmc.SSHInfo.User = define.DefaultGuestUser
-	vmc.SSHInfo.AuthorizationKeyFile = vmc.HostSSHKeyFile
 
 	return nil
 }

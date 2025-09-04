@@ -12,15 +12,16 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 )
 
 var startVM = cli.Command{
-	Name:  "run",
-	Usage: "run the rootfs",
+	Name:        "run",
+	Usage:       "run the rootfs",
+	UsageText:   "run [flags] [command]",
+	Description: "run any rootfs with the given command",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:     "rootfs",
@@ -68,88 +69,89 @@ func setMaxMemory() int32 {
 	return int32(mb)
 }
 
+func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, error) {
+	vmc := makeVMCfg(command)
+
+	_, err := vmc.Lock()
+	if err != nil {
+		return nil, err
+	}
+
+	if err = vmc.GenerateSSHInfo(); err != nil {
+		return nil, err
+	}
+
+	if command.Bool("system-proxy") {
+		if err = vmc.TryGetSystemProxyAndSetToCmdline(); err != nil {
+			return nil, err
+		}
+	}
+
+	return vm.Get(vmc), nil
+}
+
 func vmLifeCycle(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() < 1 {
 		return fmt.Errorf("no command specified")
 	}
 
-	if err := system.Rlimit(); err != nil {
-		return fmt.Errorf("failed to set rlimit: %v", err)
-	}
-
-	vmc := makeVMCfg(command)
-
-	lock, err := vmc.Lock()
+	vmp, err := createVMMProvider(ctx, command)
 	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if err := lock.Unlock(); err != nil {
-			logrus.Errorf("failed to unlock: %v", err)
-		}
-	}()
-
-	if err := vmc.GenerateSSHInfo(); err != nil {
-		return err
-	}
-
-	cmdline := makeCmdline(command)
-	if command.Bool("system-proxy") {
-		if err := cmdline.TryGetSystemProxyAndSetToCmdline(); err != nil {
-			return err
-		}
+		return fmt.Errorf("create run configure failed: %w", err)
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return server.NewServer(ctx, vmc).Start()
+		vmc, err := vmp.GetVMConfigure()
+		if err != nil {
+			return err
+		}
+		return server.NewAPIServer(ctx, vmc).Start()
 	})
-
-	vmp := vm.Get(vmc)
 
 	g.Go(func() error {
 		return vmp.StartNetwork(ctx)
 	})
 
 	g.Go(func() error {
-		if err := vmp.Create(ctx, cmdline); err != nil {
+		if err = vmp.Create(ctx); err != nil {
 			return fmt.Errorf("failed to create vm: %w", err)
 		}
 		return vmp.Start(ctx)
-	})
-
-	g.Go(func() error {
-		return vmp.SyncTime(ctx)
 	})
 
 	return g.Wait()
 }
 
 func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
-	prefix := filepath.Join(os.TempDir(), uuid.New().String()[:8])
+	prefix := filepath.Join(os.TempDir(), system.GenerateRandomID())
+
 	vmc := vmconfig.VMConfig{
-		MemoryInMB:          command.Int32("memory"),
-		Cpus:                command.Int8("cpus"),
-		RootFS:              command.String("rootfs"),
-		DataDisk:            command.StringSlice("data-disk"),
-		Mounts:              filesystem.CmdLineMountToMounts(command.StringSlice("mount")),
+		MemoryInMB: command.Int32("memory"),
+		Cpus:       command.Int8("cpus"),
+		RootFS:     command.String("rootfs"),
+		DataDisk:   command.StringSlice("data-disk"),
+		Mounts:     filesystem.CmdLineMountToMounts(command.StringSlice("mount")),
+
 		GVproxyEndpoint:     fmt.Sprintf("unix://%s/%s", prefix, define.GvProxyControlEndPoint),
 		NetworkStackBackend: fmt.Sprintf("unixgram://%s/%s", prefix, define.GvProxyNetworkEndpoint),
-		HostSSHKeyFile:      filepath.Join(os.TempDir(), uuid.New().String()[:8], define.SSHKeyPair),
+		SSHInfo: define.SSHInfo{
+			HostSSHKeyPairFile: filepath.Join(prefix, define.SSHKeyPair),
+		},
+
+		Cmdline: define.Cmdline{
+			Bootstrap:     define.BootstrapBinary,
+			BootstrapArgs: []string{},
+			Workspace:     define.DefalutWorkDir,
+			Mode:          define.RunUserCommandLineMode,
+			TargetBin:     command.Args().First(),
+			TargetBinArgs: command.Args().Tail(),
+			Env:           append(command.StringSlice("envs"), define.DefaultPATH),
+		},
 	}
+
+	logrus.Infof("cmdline: %q, %q", vmc.Cmdline.TargetBin, vmc.Cmdline.TargetBinArgs)
 
 	return &vmc
-}
-
-func makeCmdline(command *cli.Command) *vmconfig.Cmdline {
-	cmdline := vmconfig.Cmdline{
-		Workspace:     define.DefalutWorkDir,
-		TargetBin:     define.BootstrapBinary,
-		TargetBinArgs: append([]string{command.Args().First()}, command.Args().Tail()...),
-		Env:           append(command.StringSlice("envs"), "PATH=/3rd:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"),
-	}
-
-	return &cmdline
 }

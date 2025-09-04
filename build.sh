@@ -27,6 +27,9 @@ log_std() {
 	echo -e "${GREEN}[INFO]${RESET} $*"
 }
 
+# EXPORTED VARS:
+# - ARCH (arm64,amd64)
+# - PLT (darwin,linux)
 detect_platform_arch() {
 	local uname_s uname_m
 	uname_s="$(uname)"
@@ -61,12 +64,16 @@ EOF
 	exit 1
 }
 
+# EXPORTED VARS:
+# - WORKSPACE (the abs path of build.sh)
+# - BUILTIN_DOCKER_RUNTIME (whatever include built-in docker runtime)
 init_func() {
 	WORKSPACE="$(realpath "$(dirname "$0")")"
+	export WORKSPACE
 	if [[ -n "$DIRTY_BUILD" ]]; then
-		log_std "!!DIRTY BUILD!!"
+		log_warn "!!DIRTY BUILD!!"
 	else
-		log_std "DELETE OUTPUT DIR"
+		log_warn "DELETE OUTPUT DIR"
 		rm -rf "$WORKSPACE/out" && mkdir -p ./out/bin && mkdir -p ./out/3rd
 	fi
 
@@ -92,6 +99,7 @@ _downloader() {
 	fi
 }
 
+# Only build for macOS arm64
 _download_libkrun_darwin() {
 	local libkrun_dir="$WORKSPACE/out/3rd/$PLT/lib"
 	mkdir -p "$libkrun_dir"
@@ -138,7 +146,7 @@ _download_busybox_linux() {
 }
 
 _download_dropbear() {
-	dropbear_bin_dir="$WORKSPACE/out/3rd/linux/bin"
+	local dropbear_bin_dir="$WORKSPACE/out/3rd/linux/bin"
 	mkdir -p "$dropbear_bin_dir"
 	local urls=(
 		"https://github.com/ihexon/prebuilds/raw/refs/heads/main/dropbear/arm64/linux/dropbear"
@@ -150,12 +158,33 @@ _download_dropbear() {
 	done
 }
 
+_download_alpine_with_docker_rootfs() {
+	local url="https://dl-cdn.alpinelinux.org/alpine/v3.22/releases/aarch64/alpine-minirootfs-3.22.1-aarch64.tar.gz"
+	local dir="$WORKSPACE/out/3rd/linux/rootfs"
+	case $ARCH in
+		arm64)
+			wget -c "$url" --output-document /tmp/rootfs
+			mkdir -p "$dir"
+			tar -xvf /tmp/rootfs -C "$dir"
+			;;
+		amd64)
+			log_err "unsupport architecture"
+			;;
+		*)
+			log_err "unsupport architecture"
+			;;
+	esac
+}
+
 download_3rd() {
 	case $PLT in
 		darwin)
 			_download_libkrun_darwin
 			_download_busybox_linux
 			_download_dropbear
+			if [[ "$BUILTIN_DOCKER_RUNTIME" == "true" ]]; then
+				_download_alpine_with_docker_rootfs
+			fi
 			;;
 		*)
 			log_err "Unsupported architecture: ${PLT}"

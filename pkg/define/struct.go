@@ -17,12 +17,17 @@ type Mount struct {
 }
 
 type SSHInfo struct {
-	User                 string `json:"user"`
-	HostPort             uint64 `json:"hostPort"`
-	HostAddr             string `json:"hostAddr"`
-	GuestAddr            string `json:"guestAddr"`
-	GuestPort            uint64 `json:"guestPort"`
-	AuthorizationKeyFile string `json:"authorizationKey"`
+	User      string `json:"user"`
+	HostPort  uint64 `json:"hostPort"`
+	HostAddr  string `json:"hostAddr"`
+	GuestAddr string `json:"guestAddr"`
+	GuestPort uint64 `json:"guestPort"`
+
+	// HostSSHKeyPairFile is the path to the host ssh keypair file
+	HostSSHKeyPairFile string `json:"hostSSHKeyFile,omitempty"`
+
+	HostSSHPublicKey  string `json:"sshPublicKey,omitempty"`
+	HostSSHPrivateKey string `json:"sshPrivateKey,omitempty"`
 }
 
 type VMConfig struct {
@@ -39,18 +44,24 @@ type VMConfig struct {
 	NetworkStackBackend string  `json:"networkStackBackend,omitempty"`
 	LogLevel            string  `json:"logLevel,omitempty"`
 	Mounts              []Mount `json:"mounts,omitempty"`
-	SSHInfo             SSHInfo
-	HostSSHKeyFile      string `json:"hostSSHKeyFile,omitempty"`
-	HostSSHPublicKey    string `json:"sshPublicKey,omitempty"`
-	HostSSHPrivateKey   string `json:"sshPrivateKey,omitempty"`
+	SSHInfo             SSHInfo `json:"sshInfo,omitempty"`
+	Cmdline             Cmdline `json:"cmdline,omitempty"`
 }
 
 // Cmdline exec cmdline within rootfs
 type Cmdline struct {
-	Workspace     string   `json:"workspace,omitempty"`
-	TargetBin     string   `json:"targetBin,omitempty"`
+	// Bootstrap is a process that runs under PID 1. As a secondary init, Bootstrap incubates all user child processes.
+	Bootstrap     string   `json:"bootstrap,omitempty"`
+	BootstrapArgs []string `json:"bootstrapArgs,omitempty"`
+	// Support two modes: define.RunUserCommandLineMode and define.RunDockerEngineMode
+	Mode      string `json:"mode,omitempty"`
+	Workspace string `json:"workspace,omitempty"`
+	// TargetBin is the binary to run by bootstrap.
+	TargetBin string `json:"targetBin,omitempty"`
+	// TargetBinArgs is the arguments to pass to the target binary.
 	TargetBinArgs []string `json:"targetBinArgs,omitempty"`
-	Env           []string `json:"env,omitempty"`
+	// Env is the environment variables to set for the bootstrap process and target binary, in the form of KEY=VALUE.
+	Env []string `json:"env,omitempty"`
 }
 
 func LoadVMCFromFile(file string) (*VMConfig, error) {

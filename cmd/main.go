@@ -25,6 +25,7 @@ func main() {
 	app.Commands = []*cli.Command{
 		&AttachConsole,
 		&startVM,
+		&startDocker,
 	}
 
 	if err := app.Run(context.Background(), os.Args); err != nil {

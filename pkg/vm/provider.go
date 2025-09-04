@@ -9,10 +9,10 @@ import (
 
 type Provider interface {
 	StartNetwork(ctx context.Context) error
-	Create(ctx context.Context, cmdline *vmconfig.Cmdline) error
+	Create(ctx context.Context) error
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
 	IsSSHReady(ctx context.Context) bool
-	SyncTime(ctx context.Context) error
 	AttachGuestConsole(ctx context.Context, rootfs string)
+	GetVMConfigure() (*vmconfig.VMConfig, error)
 }
