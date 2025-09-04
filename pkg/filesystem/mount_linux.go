@@ -58,11 +58,21 @@ func LoadVMConfigAndMountVirtioFS(file string) error {
 	}
 
 	for _, mnt := range vmc.Mounts {
-		if err := os.MkdirAll(mnt.Target, 755); err != nil {
+		isMounted, err := mountinfo.Mounted(mnt.Target)
+		if err != nil {
+			return fmt.Errorf("failed to check %q mounted: %w", mnt.Target, err)
+		}
+
+		if isMounted {
+			return fmt.Errorf("can not mount host directory to guest rootfs, %q is already mounted, can not mount again", mnt.Target)
+		}
+
+		if err = os.MkdirAll(mnt.Target, 755); err != nil {
 			return fmt.Errorf("failed to create virtiofs: %w", err)
 		}
 
-		if err := mount.Mount(mnt.Tag, mnt.Target, VirtioFs, ""); err != nil {
+		logrus.Infof("mount host dir %q to guest %q, tag %q", mnt.Source, mnt.Target, mnt.Tag)
+		if err = mount.Mount(mnt.Tag, mnt.Target, VirtioFs, ""); err != nil {
 			return fmt.Errorf("failed to mount virtiofs: %w", err)
 		}
 	}
