@@ -6,7 +6,6 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/server"
 	"linuxvm/pkg/system"
-	"path/filepath"
 
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
@@ -25,14 +24,37 @@ var startDocker = cli.Command{
 			Value: int8(system.GetCPUCores()),
 		},
 		&cli.Int32Flag{
-			Name:  "memory",
-			Usage: "given how many memory in MB",
-			Value: setMaxMemory(),
+			Name:    "memory",
+			Aliases: []string{"m"},
+			Usage:   "given how many memory in MB",
+			Value:   setMaxMemory(),
 		},
 		&cli.BoolFlag{
 			Name:  "system-proxy",
 			Usage: "use system proxy, set environment http(s)_proxy to docker engine",
 			Value: false,
+		},
+		&cli.StringFlag{
+			Name:     "rootfs",
+			Aliases:  []string{"d"},
+			Usage:    "path to Docker rootfs directory (must have Docker engine pre-installed)",
+			Required: true,
+		},
+		&cli.StringFlag{
+			// TODO: listen tcp/unix socket
+			Name:    "listen",
+			Aliases: []string{"l"},
+			Usage:   "listen for Docker API requests on a Unix socket, forwarding them to the guest's Docker engine",
+			Value:   "/tmp/my_docker_api.sock",
+		},
+		&cli.StringSliceFlag{
+			Name:    "output",
+			Aliases: []string{"O"},
+			Usage:   "output all container data to the specified raw disk(a ext4 format image)",
+		},
+		&cli.StringSliceFlag{
+			Name:  "mount",
+			Usage: "mount host dir to guest dir",
 		},
 	},
 	Action: dockerModeLifeCycle,
@@ -49,12 +71,6 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("failed to get vm configure: %w", err)
 	}
 	vmc.Cmdline.Mode = define.RunDockerEngineMode
-
-	dir, err := system.Get3rdDir()
-	if err != nil {
-		return fmt.Errorf("failed to get 3rd dir: %w", err)
-	}
-	vmc.RootFS = filepath.Join(dir, "linux", define.BuiltinRootfsDirName)
 
 	g, ctx := errgroup.WithContext(ctx)
 

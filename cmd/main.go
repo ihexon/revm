@@ -69,6 +69,23 @@ func setMaxMemory() int32 {
 func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, error) {
 	vmc := makeVMCfg(command)
 
+	if command.Name == define.FlagDockerMode {
+		// Fill docker info
+		vmc.PodmanInfo = define.PodmanInfo{
+			PodmanAPITcpAddressInHost: define.DefaultPodmanTcpAddressInHost,
+			PodmanAPITcpAddressInVM:   define.DefaultPodmanTcpAddressInVM,
+			PodmanAPITcpPortInHost:    define.DefaultPodmanTcpPortInHost,
+			PodmanAPITcpPortInVM:      define.DefaultPodmanTcpPortInVM,
+		}
+
+		// In docker-mode, we need mount the host home directory to the guest home directory
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("can not get user home directry: %w", err)
+		}
+		vmc.Mounts = append(vmc.Mounts, filesystem.CmdLineMountToMounts([]string{fmt.Sprintf("%s:%s", homeDir, homeDir)})...)
+	}
+
 	_, err := vmc.Lock()
 	if err != nil {
 		return nil, err
@@ -111,13 +128,6 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 			TargetBin:     command.Args().First(),
 			TargetBinArgs: command.Args().Tail(),
 			Env:           append(command.StringSlice("envs"), define.DefaultPATH),
-		},
-
-		PodmanInfo: define.PodmanInfo{
-			PodmanAPITcpAddressInHost: define.DefaultPodmanTcpAddressInHost,
-			PodmanAPITcpAddressInVM:   define.DefaultPodmanTcpAddressInVM,
-			PodmanAPITcpPortInHost:    define.DefaultPodmanTcpPortInHost,
-			PodmanAPITcpPortInVM:      define.DefaultPodmanTcpPortInVM,
 		},
 	}
 
