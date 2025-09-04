@@ -41,11 +41,24 @@ type VMConfig struct {
 	GVproxyEndpoint string `json:"GVproxyEndpoint,omitempty"`
 	// NetworkStackBackend is the network stack backend to use. which provided
 	// by gvproxy
-	NetworkStackBackend string  `json:"networkStackBackend,omitempty"`
-	LogLevel            string  `json:"logLevel,omitempty"`
-	Mounts              []Mount `json:"mounts,omitempty"`
-	SSHInfo             SSHInfo `json:"sshInfo,omitempty"`
-	Cmdline             Cmdline `json:"cmdline,omitempty"`
+	NetworkStackBackend string     `json:"networkStackBackend,omitempty"`
+	LogLevel            string     `json:"logLevel,omitempty"`
+	Mounts              []Mount    `json:"mounts,omitempty"`
+	SSHInfo             SSHInfo    `json:"sshInfo,omitempty"`
+	Cmdline             Cmdline    `json:"cmdline,omitempty"`
+	PodmanInfo          PodmanInfo `json:"podmanInfo,omitempty"`
+}
+
+type PodmanInfo struct {
+	// Default is define.DefaultPodmanTcpAddressInHost
+	PodmanAPITcpAddressInHost string `json:"podmanAPITcpAddressInHost,omitempty"`
+	// Default is define.DefaultPodmanTcpAddressInVM
+	PodmanAPITcpAddressInVM string `json:"podmanAPITcpAddressInVM,omitempty"`
+
+	// Default is define.DefaultPodmanTcpPortInHost
+	PodmanAPITcpPortInHost uint64 `json:"podmanAPITcpPortInHost,omitempty"`
+	// Default is define.DefaultPodmanTcpPortInVM
+	PodmanAPITcpPortInVM uint64 `json:"podmanAPITcpPortInVM,omitempty"`
 }
 
 // Cmdline exec cmdline within rootfs
