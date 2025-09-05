@@ -41,8 +41,9 @@ const (
 )
 
 const (
-	FlagDockerMode = "docker-mode"
-	FlagRootfsMode = "rootfs-mode"
-	FlagListenUnix = "listen-unix"
-	FlagDiskDisk   = "data-disk"
+	FlagDockerMode     = "docker-mode"
+	FlagRootfsMode     = "rootfs-mode"
+	FlagListenUnix     = "listen-unix"
+	FlagDiskDisk       = "data-disk"
+	FlagCreateDataDisk = "create-disk"
 )

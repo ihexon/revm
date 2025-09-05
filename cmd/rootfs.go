@@ -39,7 +39,12 @@ var startVM = cli.Command{
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagDiskDisk,
-			Usage: "attach one or more data disk and automount into /mnt/<UUID>",
+			Usage: "attach one or more data disk and automount into /var/tmp/data_disk/<UUID>",
+		},
+		&cli.StringSliceFlag{
+			// TODO: support create multiple disks and mount them
+			Name:  define.FlagCreateDataDisk,
+			Usage: "create one or more data disk and automount into /var/tmp/data_disk/<UUID>, by default the disk size is 50GB and format to ext4 filesystem",
 		},
 		&cli.StringSliceFlag{
 			Name:  "mount",
