@@ -4,8 +4,13 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/server"
 	"linuxvm/pkg/system"
+	"linuxvm/pkg/vmconfig"
+	"net/url"
+	"os"
+	"path/filepath"
 
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
@@ -41,14 +46,13 @@ var startDocker = cli.Command{
 			Required: true,
 		},
 		&cli.StringFlag{
-			// TODO: listen tcp/unix socket
-			Name:    "listen",
+			Name:    define.FlagListenUnix,
 			Aliases: []string{"l"},
 			Usage:   "listen for Docker API requests on a Unix socket, forwarding them to the guest's Docker engine",
-			Value:   "/tmp/my_docker_api.sock",
+			Value:   define.DefaultPodmanAPIUnixSocksInHost,
 		},
 		&cli.StringSliceFlag{
-			Name:    "output",
+			Name:    define.FlagDiskDisk,
 			Aliases: []string{"O"},
 			Usage:   "output all container data to the specified raw disk(a ext4 format image)",
 		},
@@ -70,7 +74,19 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return fmt.Errorf("failed to get vm configure: %w", err)
 	}
-	vmc.Cmdline.Mode = define.RunDockerEngineMode
+
+	if err := setDockerModeParameters(vmc, command); err != nil {
+		return fmt.Errorf("failed to set docker mode parameters: %w", err)
+	}
+
+	rawDiskFile, err := filepath.Abs(command.StringSlice(define.FlagDiskDisk)[0])
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	if err = filesystem.CreateDiskAndFormatExt4(ctx, rawDiskFile, false); err != nil {
+		return fmt.Errorf("failed to create raw disk: %w", err)
+	}
 
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -90,4 +106,34 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	})
 
 	return g.Wait()
+}
+
+func setDockerModeParameters(vmc *vmconfig.VMConfig, command *cli.Command) error {
+	// Set docker mode
+	vmc.Cmdline.Mode = define.RunDockerEngineMode
+
+	// Fill docker info
+	path, err := filepath.Abs(command.String(define.FlagListenUnix))
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	unixAddr := &url.URL{
+		Scheme: "unix",
+		Host:   "",
+		Path:   path,
+	}
+
+	vmc.PodmanInfo = define.PodmanInfo{
+		UnixSocksAddr: unixAddr.String(),
+	}
+
+	// In docker-mode, we need to mount the host home directory to the guest home directory
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("can not get user home directry: %w", err)
+	}
+	vmc.Mounts = append(vmc.Mounts, filesystem.CmdLineMountToMounts([]string{fmt.Sprintf("%s:%s", homeDir, homeDir)})...)
+
+	return nil
 }

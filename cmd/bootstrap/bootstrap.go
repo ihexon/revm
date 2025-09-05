@@ -60,7 +60,10 @@ func earlyStage(ctx context.Context, command *cli.Command) (context.Context, err
 		return ctx, err
 	}
 
-	if err := filesystem.LoadVMConfigAndMountVirtioFS(filepath.Join("/", define.VMConfigFile)); err != nil {
+	if err := filesystem.LoadVMConfigAndMountVirtioFS(ctx); err != nil {
+		return ctx, err
+	}
+	if err := filesystem.LoadVMConfigAndMountDataDisk(ctx); err != nil {
 		return ctx, err
 	}
 
