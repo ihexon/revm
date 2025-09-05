@@ -3,9 +3,11 @@
 package filesystem
 
 import (
+	"context"
 	"fmt"
 	"linuxvm/pkg/define"
 	"os"
+	"path/filepath"
 
 	"github.com/moby/sys/mountinfo"
 	"github.com/sirupsen/logrus"
@@ -17,6 +19,7 @@ const (
 	Tmpfs        = "tmpfs"
 	TmpDir       = "/tmp"
 	RunDir       = "/run"
+	VarTmpDir    = "/var/tmp"
 	TmpMountOpts = "rw,nosuid,relatime"
 	VirtioFs     = "virtiofs"
 )
@@ -25,6 +28,7 @@ func MountTmpfs() error {
 	dirs := []string{
 		TmpDir,
 		RunDir,
+		VarTmpDir,
 	}
 
 	for _, dir := range dirs {
@@ -51,8 +55,8 @@ func MountTmpfs() error {
 }
 
 // MountVirtioFS load $rootfs/.vmconfig, and mount the virtiofs mnt
-func LoadVMConfigAndMountVirtioFS(file string) error {
-	vmc, err := define.LoadVMCFromFile(file)
+func LoadVMConfigAndMountVirtioFS(ctx context.Context) error {
+	vmc, err := define.LoadVMCFromFile(filepath.Join("/", define.VMConfigFile))
 	if err != nil {
 		return fmt.Errorf("failed to load vmconfig: %w", err)
 	}

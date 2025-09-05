@@ -8,11 +8,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 )
 
 func Get3rdDir() (string, error) {
+	path := os.Getenv("REVM_3RD_DIR")
+	if path != "" {
+		logrus.Warnf("env REVM_3RD_DIR set %q, use it instead of default", path)
+		return path, nil
+	}
+
 	path, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("failed to get executable path: %w", err)
@@ -38,4 +46,13 @@ func GenerateRandomID() string {
 
 	// Take first 6 chars
 	return encoded[:6]
+}
+
+func Get3rdUtilsPath(name string) (string, error) {
+	dir, err := Get3rdDir()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dir, runtime.GOOS, "bin", name), nil
 }

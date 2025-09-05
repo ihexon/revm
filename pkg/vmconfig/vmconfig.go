@@ -3,9 +3,11 @@
 package vmconfig
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh"
 	"os"
@@ -20,6 +22,20 @@ import (
 type (
 	VMConfig define.VMConfig
 )
+
+// ParseDiskInfo Parse data disk information, get the filesystem type and uuid, save them to vmc.DataDisk
+func (vmc *VMConfig) ParseDiskInfo(ctx context.Context) error {
+	for _, disk := range vmc.DataDisk {
+		info, err := filesystem.GetBlockInfo(ctx, disk.Path)
+		if err != nil {
+			return fmt.Errorf("failed to get block %q info: %w", disk.Path, err)
+		}
+
+		disk.UUID = info.UUID
+		disk.FileSystemType = info.FilesystemType
+	}
+	return nil
+}
 
 func (vmc *VMConfig) WriteToJsonFile(file string) error {
 	b, err := json.Marshal(vmc)

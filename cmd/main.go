@@ -68,22 +68,9 @@ func setMaxMemory() int32 {
 
 func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, error) {
 	vmc := makeVMCfg(command)
-
-	if command.Name == define.FlagDockerMode {
-		// Fill docker info
-		vmc.PodmanInfo = define.PodmanInfo{
-			PodmanAPITcpAddressInHost: define.DefaultPodmanTcpAddressInHost,
-			PodmanAPITcpAddressInVM:   define.DefaultPodmanTcpAddressInVM,
-			PodmanAPITcpPortInHost:    define.DefaultPodmanTcpPortInHost,
-			PodmanAPITcpPortInVM:      define.DefaultPodmanTcpPortInVM,
-		}
-
-		// In docker-mode, we need mount the host home directory to the guest home directory
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("can not get user home directry: %w", err)
-		}
-		vmc.Mounts = append(vmc.Mounts, filesystem.CmdLineMountToMounts([]string{fmt.Sprintf("%s:%s", homeDir, homeDir)})...)
+	
+	if err := vmc.ParseDiskInfo(ctx); err != nil {
+		return nil, fmt.Errorf("failed to parse disk info: %w", err)
 	}
 
 	_, err := vmc.Lock()
@@ -107,13 +94,18 @@ func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, 
 func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 	prefix := filepath.Join(os.TempDir(), system.GenerateRandomID())
 
+	var dataDisks []*define.DataDisk
+	for _, disk := range command.StringSlice(define.FlagDiskDisk) {
+		dataDisks = append(dataDisks, &define.DataDisk{
+			Path: disk,
+		})
+	}
 	vmc := vmconfig.VMConfig{
-		MemoryInMB: command.Int32("memory"),
-		Cpus:       command.Int8("cpus"),
-		RootFS:     command.String("rootfs"),
-		DataDisk:   command.StringSlice("data-disk"),
-		Mounts:     filesystem.CmdLineMountToMounts(command.StringSlice("mount")),
-
+		MemoryInMB:          command.Int32("memory"),
+		Cpus:                command.Int8("cpus"),
+		RootFS:              command.String("rootfs"),
+		DataDisk:            dataDisks,
+		Mounts:              filesystem.CmdLineMountToMounts(command.StringSlice("mount")),
 		GVproxyEndpoint:     fmt.Sprintf("unix://%s/%s", prefix, define.GvProxyControlEndPoint),
 		NetworkStackBackend: fmt.Sprintf("unixgram://%s/%s", prefix, define.GvProxyNetworkEndpoint),
 		SSHInfo: define.SSHInfo{

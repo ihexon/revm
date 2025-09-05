@@ -38,8 +38,8 @@ var startVM = cli.Command{
 			Usage: "set envs for cmdline, e.g. --envs=FOO=bar --envs=BAZ=qux",
 		},
 		&cli.StringSliceFlag{
-			Name:  "data-disk",
-			Usage: "set data disk path, the disk will be map into /dev/vdX",
+			Name:  define.FlagDiskDisk,
+			Usage: "attach one or more data disk and automount into /mnt/<UUID>",
 		},
 		&cli.StringSliceFlag{
 			Name:  "mount",

@@ -36,7 +36,7 @@ type VMConfig struct {
 	RootFS     string `json:"rootFS,omitempty"`
 
 	// data disk will map into /dev/vdX
-	DataDisk []string `json:"dataDisk,omitempty"`
+	DataDisk []*DataDisk `json:"dataDisk,omitempty"`
 	// GVproxy control endpoint
 	GVproxyEndpoint string `json:"GVproxyEndpoint,omitempty"`
 	// NetworkStackBackend is the network stack backend to use. which provided
@@ -47,18 +47,19 @@ type VMConfig struct {
 	SSHInfo             SSHInfo    `json:"sshInfo,omitempty"`
 	Cmdline             Cmdline    `json:"cmdline,omitempty"`
 	PodmanInfo          PodmanInfo `json:"podmanInfo,omitempty"`
+
+	// whatever the guest network is ready
+	NetworkReadyChan chan bool `json:"-"`
+}
+
+type DataDisk struct {
+	UUID           string `json:"uuid"`
+	FileSystemType string `json:"filesystemType"`
+	Path           string `json:"path"`
 }
 
 type PodmanInfo struct {
-	// Default is define.DefaultPodmanTcpAddressInHost
-	PodmanAPITcpAddressInHost string `json:"podmanAPITcpAddressInHost,omitempty"`
-	// Default is define.DefaultPodmanTcpAddressInVM
-	PodmanAPITcpAddressInVM string `json:"podmanAPITcpAddressInVM,omitempty"`
-
-	// Default is define.DefaultPodmanTcpPortInHost
-	PodmanAPITcpPortInHost uint64 `json:"podmanAPITcpPortInHost,omitempty"`
-	// Default is define.DefaultPodmanTcpPortInVM
-	PodmanAPITcpPortInVM uint64 `json:"podmanAPITcpPortInVM,omitempty"`
+	UnixSocksAddr string `json:"unixSocksAddr,omitempty"`
 }
 
 // Cmdline exec cmdline within rootfs

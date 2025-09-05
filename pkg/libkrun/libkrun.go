@@ -240,7 +240,7 @@ func (v *AppleHVStubber) setRootFS() error {
 
 func (v *AppleHVStubber) addRawDisk() error {
 	for _, disk := range v.vmc.DataDisk {
-		if err := addRawDisk(v.krunCtxID, disk); err != nil {
+		if err := addRawDisk(v.krunCtxID, disk.Path); err != nil {
 			return err
 		}
 	}
