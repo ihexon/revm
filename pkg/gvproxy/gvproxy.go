@@ -118,10 +118,10 @@ type EndPoints struct {
 	VFKitSocketEndpoint string
 }
 
-func run(ctx context.Context, g *errgroup.Group, configuration *gvptypes.Configuration, endpoints EndPoints) error {
+func run(ctx context.Context, g *errgroup.Group, configuration *gvptypes.Configuration, endpoints EndPoints, readyFunc func()) error {
 	vn, err := virtualnetwork.New(configuration)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create virtual network: %w", err)
 	}
 
 	{
@@ -177,6 +177,9 @@ func run(ctx context.Context, g *errgroup.Group, configuration *gvptypes.Configu
 		})
 	}
 
+	// notify that the network is ready
+	readyFunc()
+
 	return g.Wait()
 }
 
@@ -199,16 +202,16 @@ func StartNetworking(ctx context.Context, vmc *vmconfig.VMConfig) error {
 	sshAddrPortInHost := fmt.Sprintf("%s:%d", vmc.SSHInfo.HostAddr, vmc.SSHInfo.HostPort)
 	sshAddrPortInGuest := fmt.Sprintf("%s:%d", vmc.SSHInfo.GuestAddr, vmc.SSHInfo.GuestPort)
 
-	podmanAddrPortInHost := fmt.Sprintf("%s:%d", vmc.PodmanInfo.PodmanAPITcpAddressInHost, vmc.PodmanInfo.PodmanAPITcpPortInHost)
-	podmanAddrPortInGuest := fmt.Sprintf("%s:%d", vmc.PodmanInfo.PodmanAPITcpAddressInVM, vmc.PodmanInfo.PodmanAPITcpPortInVM)
-
 	gvpCfg := newGvpConfigure()
 	gvpCfg.Forwards = map[string]string{
-		sshAddrPortInHost:    sshAddrPortInGuest,
-		podmanAddrPortInHost: podmanAddrPortInGuest,
+		sshAddrPortInHost: sshAddrPortInGuest,
 	}
 
-	return run(ctx, g, gvpCfg, endpoints)
+	readyFunc := func() {
+		vmc.NetworkReadyChan <- true
+	}
+
+	return run(ctx, g, gvpCfg, endpoints, readyFunc)
 }
 
 func makeDirForUnixSocks(str string) error {

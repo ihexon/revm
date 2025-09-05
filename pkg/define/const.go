@@ -32,14 +32,17 @@ const (
 
 	DefaultPATH = "PATH=/3rd:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-	DefaultPodmanTcpAddressInHost = "127.0.0.1"
-	DefaultPodmanTcpPortInHost    = 25883
+	DefaultPodmanAPIUnixSocksInHost = "/tmp/my_docker_api.sock"
+	DefaultPodmanAPITcpAddr         = "tcp://192.168.127.2:25883"
 
-	DefaultPodmanTcpAddressInVM = "192.168.127.2"
-	DefaultPodmanTcpPortInVM    = DefaultPodmanTcpPortInHost
+	DiskUUID     = "e4712697-352f-48e0-9a3c-a9f57308081f"
+	DiskSizeInGB = 100
+	DiskFormat   = "ext4"
 )
 
 const (
 	FlagDockerMode = "docker-mode"
 	FlagRootfsMode = "rootfs-mode"
+	FlagListenUnix = "listen-unix"
+	FlagDiskDisk   = "data-disk"
 )
