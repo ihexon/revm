@@ -38,20 +38,20 @@ var startVM = cli.Command{
 			Usage: "set envs for cmdline, e.g. --envs=FOO=bar --envs=BAZ=qux",
 		},
 		&cli.StringSliceFlag{
-			Name:  define.FlagDiskDisk,
-			Usage: "attach one or more data disk and automount into /var/tmp/data_disk/<UUID>",
+			Name:    define.FlagDiskDisk,
+			Aliases: []string{"disk"},
+			Usage:   "attach one or more data disk and automount into /var/tmp/data_disk/<UUID>",
 		},
 		&cli.StringSliceFlag{
-			// TODO: support create multiple disks and mount them
 			Name:  define.FlagCreateDataDisk,
 			Usage: "create one or more data disk and automount into /var/tmp/data_disk/<UUID>, by default the disk size is 50GB and format to ext4 filesystem",
 		},
 		&cli.StringSliceFlag{
-			Name:  "mount",
+			Name:  define.FlagMount,
 			Usage: "mount host dir to guest dir",
 		},
 		&cli.BoolFlag{
-			Name:  "system-proxy",
+			Name:  define.FlagUsingSystemProxy,
 			Usage: "use system proxy, set environment http(s)_proxy to guest",
 			Value: false,
 		},
@@ -63,7 +63,7 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() < 1 {
 		return fmt.Errorf("no command specified")
 	}
-
+	
 	vmp, err := createVMMProvider(ctx, command)
 	if err != nil {
 		return fmt.Errorf("create run configure failed: %w", err)

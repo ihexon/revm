@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -56,15 +57,23 @@ func GetBlockInfo(ctx context.Context, block string) (*Disk, error) {
 	return &DataDiskInfo, nil
 }
 
-func CreateDiskAndFormatExt4(ctx context.Context, path string, overwrite bool) error {
+// CreateDiskAndFormatExt4 creates a raw disk at the specified path and formats it with the ext4 filesystem.
+// If the overwrite flag is false and the disk already exists, it skips creation and formatting.
+// It also allows specifying a custom UUID or generates a new one if none is provided. if myUUID is empty, it generates a new one.
+func CreateDiskAndFormatExt4(ctx context.Context, path string, overwrite bool, myUUID string) error {
 	if !overwrite {
 		if exists, _ := PathExists(path); exists {
-			logrus.Infof("%q disk already exists, skip", path)
+			logrus.Infof("%q disk already exists, skip create and format raw disk", path)
 			return nil
 		}
 	}
 
-	rawDisk, err := NewDisk(define.DiskSizeInGB, path, true, define.DiskFormat, define.DiskUUID).Create()
+	if myUUID == "" {
+		myUUID = uuid.NewString()
+	}
+
+	logrus.Infof("create raw disk at %q with UUID %q", path, myUUID)
+	rawDisk, err := NewDisk(define.DefaultCreateDiskSizeInGB, path, true, define.DiskFormat, myUUID).Create()
 	if err != nil {
 		return fmt.Errorf("failed to create raw disk: %w", err)
 	}
@@ -97,7 +106,7 @@ func (d *Disk) Format(ctx context.Context) error {
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stderr
 	cmd.Stdin = nil
-	logrus.Infof("cmdline: %q", cmd.Args)
+	logrus.Infof("mke2fs cmdline: %q", cmd.Args)
 	return cmd.Run()
 }
 

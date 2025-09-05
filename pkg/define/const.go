@@ -7,7 +7,6 @@ const (
 
 const (
 	DefalutWorkDir  = "/"
-	PrefixDir3rd    = "/3rd"
 	BootstrapBinary = "bootstrap"
 
 	GvProxyControlEndPoint = "gvpctl.sock"
@@ -26,24 +25,24 @@ const (
 
 	LockFile = ".lock"
 
-	BuiltinRootfsDirName   = "rootfs"
 	RunDockerEngineMode    = "dockerEngineMode"
 	RunUserCommandLineMode = "userCommandLineMode"
 
 	DefaultPATH = "PATH=/3rd:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 	DefaultPodmanAPIUnixSocksInHost = "/tmp/my_docker_api.sock"
-	DefaultPodmanAPITcpAddr         = "tcp://192.168.127.2:25883"
 
-	DiskUUID     = "e4712697-352f-48e0-9a3c-a9f57308081f"
-	DiskSizeInGB = 100
-	DiskFormat   = "ext4"
+	DefaultCreateDiskSizeInGB = 100
+	DiskFormat                = "ext4"
 )
 
 const (
-	FlagDockerMode     = "docker-mode"
-	FlagRootfsMode     = "rootfs-mode"
-	FlagListenUnix     = "listen-unix"
-	FlagDiskDisk       = "data-disk"
-	FlagCreateDataDisk = "create-disk"
+	FlagDockerMode       = "docker-mode"
+	FlagRootfsMode       = "rootfs-mode"
+	FlagListenUnix       = "listen-unix"
+	FlagDiskDisk         = "data-disk"
+	FlagCreateDataDisk   = "create-disk"
+	FlagMount            = "mount"
+	FlagRootfs           = "rootfs"
+	FlagUsingSystemProxy = "system-proxy"
 )

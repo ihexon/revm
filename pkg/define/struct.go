@@ -35,7 +35,7 @@ type VMConfig struct {
 	Cpus       int8   `json:"cpus,omitempty"`
 	RootFS     string `json:"rootFS,omitempty"`
 
-	// data disk will map into /dev/vdX
+	// data disk will map into /dev/vdX and automount by bootstrap process
 	DataDisk []*DataDisk `json:"dataDisk,omitempty"`
 	// GVproxy control endpoint
 	GVproxyEndpoint string `json:"GVproxyEndpoint,omitempty"`
@@ -53,6 +53,7 @@ type VMConfig struct {
 }
 
 type DataDisk struct {
+	NeedTruncate   bool   `json:"needTruncate,omitempty"`
 	UUID           string `json:"uuid"`
 	FileSystemType string `json:"filesystemType"`
 	Path           string `json:"path"`

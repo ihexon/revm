@@ -68,7 +68,11 @@ func setMaxMemory() int32 {
 
 func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, error) {
 	vmc := makeVMCfg(command)
-	
+
+	if err := vmc.CreateRawDisk(ctx); err != nil {
+		return nil, fmt.Errorf("failed to parse disk info: %w", err)
+	}
+
 	if err := vmc.ParseDiskInfo(ctx); err != nil {
 		return nil, fmt.Errorf("failed to parse disk info: %w", err)
 	}
@@ -97,9 +101,20 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 	var dataDisks []*define.DataDisk
 	for _, disk := range command.StringSlice(define.FlagDiskDisk) {
 		dataDisks = append(dataDisks, &define.DataDisk{
-			Path: disk,
+			// when a user given an existed raw disk, don't truncate it
+			NeedTruncate: false,
+			Path:         disk,
 		})
 	}
+
+	for _, disk := range command.StringSlice(define.FlagCreateDataDisk) {
+		dataDisks = append(dataDisks, &define.DataDisk{
+			// create a new raw disk means truncate it, whatever it existed or not
+			NeedTruncate: true,
+			Path:         disk,
+		})
+	}
+
 	vmc := vmconfig.VMConfig{
 		MemoryInMB:          command.Int32("memory"),
 		Cpus:                command.Int8("cpus"),
