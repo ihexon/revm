@@ -99,6 +99,24 @@ _downloader() {
 	fi
 }
 
+_download_e2fsprogs_darwin() {
+	local dir="$WORKSPACE/out/3rd/$PLT/bin"
+	mkdir -p "$dir"
+	local urls=()
+	if [[ "$PLT" == "darwin" ]]; then
+		urls+=(
+			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/e2fsprogs/arm64/darwin/blkid"
+			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/e2fsprogs/arm64/darwin/mke2fs"
+		)
+	fi
+
+	for item in "${urls[@]}"; do
+		_downloader "$dir" "$item" "true"
+	done
+
+	cd "$WORKSPACE"
+}
+
 # Only build for macOS arm64
 _download_libkrun_darwin() {
 	local libkrun_dir="$WORKSPACE/out/3rd/$PLT/lib"
@@ -158,33 +176,13 @@ _download_dropbear() {
 	done
 }
 
-_download_alpine_with_docker_rootfs() {
-	local url="https://dl-cdn.alpinelinux.org/alpine/v3.22/releases/aarch64/alpine-minirootfs-3.22.1-aarch64.tar.gz"
-	local dir="$WORKSPACE/out/3rd/linux/rootfs"
-	case $ARCH in
-		arm64)
-			wget -c "$url" --output-document /tmp/rootfs
-			mkdir -p "$dir"
-			tar -xvf /tmp/rootfs -C "$dir"
-			;;
-		amd64)
-			log_err "unsupport architecture"
-			;;
-		*)
-			log_err "unsupport architecture"
-			;;
-	esac
-}
-
 download_3rd() {
 	case $PLT in
 		darwin)
 			_download_libkrun_darwin
 			_download_busybox_linux
 			_download_dropbear
-			if [[ "$BUILTIN_DOCKER_RUNTIME" == "true" ]]; then
-				_download_alpine_with_docker_rootfs
-			fi
+			_download_e2fsprogs_darwin
 			;;
 		*)
 			log_err "Unsupported architecture: ${PLT}"
