@@ -35,12 +35,12 @@ var startDocker = cli.Command{
 			Value:   setMaxMemory(),
 		},
 		&cli.BoolFlag{
-			Name:  "system-proxy",
+			Name:  define.FlagUsingSystemProxy,
 			Usage: "use system proxy, set environment http(s)_proxy to docker engine",
 			Value: false,
 		},
 		&cli.StringFlag{
-			Name:     "rootfs",
+			Name:     define.FlagRootfs,
 			Aliases:  []string{"d"},
 			Usage:    "path to Docker rootfs directory (must have Docker engine pre-installed)",
 			Required: true,
@@ -51,13 +51,14 @@ var startDocker = cli.Command{
 			Usage:   "listen for Docker API requests on a Unix socket, forwarding them to the guest's Docker engine",
 			Value:   define.DefaultPodmanAPIUnixSocksInHost,
 		},
-		&cli.StringSliceFlag{
-			Name:    define.FlagDiskDisk,
-			Aliases: []string{"O"},
-			Usage:   "output all container data to the specified raw disk(a ext4 format image)",
+		&cli.StringFlag{
+			Name:     define.FlagCreateDataDisk,
+			Aliases:  []string{"O", "save"},
+			Usage:    "create a raw data disk, save all container data to the specified raw disk",
+			Required: true,
 		},
 		&cli.StringSliceFlag{
-			Name:  "mount",
+			Name:  define.FlagMount,
 			Usage: "mount host dir to guest dir",
 		},
 	},
@@ -75,17 +76,8 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("failed to get vm configure: %w", err)
 	}
 
-	if err := setDockerModeParameters(vmc, command); err != nil {
+	if err = setDockerModeParameters(vmc, command); err != nil {
 		return fmt.Errorf("failed to set docker mode parameters: %w", err)
-	}
-
-	rawDiskFile, err := filepath.Abs(command.StringSlice(define.FlagDiskDisk)[0])
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path: %w", err)
-	}
-
-	if err = filesystem.CreateDiskAndFormatExt4(ctx, rawDiskFile, false); err != nil {
-		return fmt.Errorf("failed to create raw disk: %w", err)
 	}
 
 	g, ctx := errgroup.WithContext(ctx)

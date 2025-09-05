@@ -37,6 +37,20 @@ func (vmc *VMConfig) ParseDiskInfo(ctx context.Context) error {
 	return nil
 }
 
+func (vmc *VMConfig) CreateRawDisk(ctx context.Context) error {
+	for _, disk := range vmc.DataDisk {
+		// if the disk is not marked as need truncate, we don't need to create it
+		if !disk.NeedTruncate {
+			continue
+		}
+
+		if err := filesystem.CreateDiskAndFormatExt4(ctx, disk.Path, true, ""); err != nil {
+			return fmt.Errorf("failed to create raw disk %q: %w", disk.Path, err)
+		}
+	}
+	return nil
+}
+
 func (vmc *VMConfig) WriteToJsonFile(file string) error {
 	b, err := json.Marshal(vmc)
 	if err != nil {
