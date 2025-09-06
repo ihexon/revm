@@ -34,14 +34,23 @@ const (
 
 	DefaultCreateDiskSizeInGB = 100
 	DiskFormat                = "ext4"
+
+	ContainerStorage                = "ContainerStorage"
+	GeneralStorage                  = "GeneralStorage"
+	DefaultContainerStorageDiskUUID = "783E1C2C-AF2F-47FC-9EB1-0AAD9234D55B"
+	ContainerStorageMountPoint      = "/var/lib/containers"
+	DefaultDataDiskMountDirPrefix   = "/var/tmp/mnt"
 )
 
 const (
-	FlagDockerMode       = "docker-mode"
-	FlagRootfsMode       = "rootfs-mode"
-	FlagListenUnix       = "listen-unix"
-	FlagDiskDisk         = "data-disk"
-	FlagCreateDataDisk   = "create-disk"
+	FlagDockerMode = "docker-mode"
+	FlagRootfsMode = "rootfs-mode"
+	FlagListenUnix = "listen-unix"
+
+	FlagDiskDisk = "data-disk"
+	//FlagCreateDataDisk       = "create-disk"
+	FlagContainerDataStorage = "data-storage"
+
 	FlagMount            = "mount"
 	FlagRootfs           = "rootfs"
 	FlagUsingSystemProxy = "system-proxy"

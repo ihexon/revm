@@ -87,7 +87,7 @@ func Bootstrap(ctx context.Context, command *cli.Command) error {
 }
 
 func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
-	logrus.Infof("run docker engine mode")
+
 	return nil
 }
 

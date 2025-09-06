@@ -52,9 +52,8 @@ var startDocker = cli.Command{
 			Value:   define.DefaultPodmanAPIUnixSocksInHost,
 		},
 		&cli.StringFlag{
-			Name:     define.FlagCreateDataDisk,
-			Aliases:  []string{"O", "save"},
-			Usage:    "create a raw data disk, save all container data to the specified raw disk",
+			Name:     define.FlagContainerDataStorage,
+			Usage:    "An raw data disk that save all container data",
 			Required: true,
 		},
 		&cli.StringSliceFlag{
