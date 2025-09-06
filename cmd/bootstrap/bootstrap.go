@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/moby/sys/mountinfo"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
@@ -36,6 +37,8 @@ func setLogrus() {
 	logrus.SetLevel(logrus.InfoLevel)
 }
 
+var dhcpDoneChan = make(chan struct{}, 1)
+
 func main() {
 	app := cli.Command{
 		Name:                      os.Args[0],
@@ -51,8 +54,9 @@ func main() {
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
 
 	if err := app.Run(ctx, os.Args); err != nil && !errors.Is(err, errProcessExitNormal) {
-		logrus.Fatal(err)
+		logrus.Fatalf("bootstrap exit with error: %v", err)
 	}
+	logrus.Infof("bootstrap exit normally")
 }
 
 func earlyStage(ctx context.Context, command *cli.Command) (context.Context, error) {
@@ -87,8 +91,38 @@ func Bootstrap(ctx context.Context, command *cli.Command) error {
 }
 
 func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
-	logrus.Infof("run docker engine mode")
-	return nil
+	mounted, err := mountinfo.Mounted(define.ContainerStorageMountPoint)
+	if err != nil {
+		return fmt.Errorf("failed to check %q mounted: %w", define.ContainerStorageMountPoint, err)
+	}
+	if !mounted {
+		return fmt.Errorf("container storage %q is not mounted", define.ContainerStorageMountPoint)
+	}
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		return configureNetwork(ctx)
+	})
+
+	g.Go(func() error {
+		return ssh.StartSSHServer(ctx)
+	})
+
+	g.Go(func() error {
+		return system.SyncRTCTime(ctx)
+	})
+
+	g.Go(func() error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-dhcpDoneChan:
+			return system.StartPodmanService(ctx)
+		}
+	})
+
+	return g.Wait()
 }
 
 func userCMDMode(ctx context.Context, vmc *define.VMConfig) error {
@@ -97,7 +131,7 @@ func userCMDMode(ctx context.Context, vmc *define.VMConfig) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return configureNetwork()
+		return configureNetwork(ctx)
 	})
 
 	g.Go(func() error {
@@ -129,16 +163,26 @@ func doExecCmdLine(ctx context.Context, targetBin string, targetBinArgs []string
 	return errProcessExitNormal
 }
 
-func configureNetwork() error {
-	verbose := false
-	if _, find := os.LookupEnv("REVM_DEBUG"); find {
-		verbose = true
-	}
+func configureNetwork(ctx context.Context) error {
+	errChan := make(chan error)
 
-	if err := network.DHClient4(eth0, attempts, verbose); err != nil {
-		logrus.Errorf("failed to get dhcp config: %v", err)
+	go func() {
+		verbose := false
+		if _, find := os.LookupEnv("REVM_DEBUG"); find {
+			verbose = true
+		}
+		errChan <- network.DHClient4(eth0, attempts, verbose)
+		// mark the dhcp operation finished
+		dhcpDoneChan <- struct{}{}
+		close(dhcpDoneChan)
+	}()
+
+	defer close(errChan)
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-errChan:
+
 		return err
 	}
-
-	return nil
 }

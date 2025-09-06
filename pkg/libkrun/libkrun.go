@@ -331,9 +331,19 @@ func addVirtioFS(ctxID uint32, tag, path string) error {
 }
 
 func execCmdlineInVM(ctx context.Context, vmCtxID uint32) error {
-	if ret := C.krun_start_enter(C.uint32_t(vmCtxID)); ret != 0 {
-		return fmt.Errorf("failed to start enter: %v", syscall.Errno(-ret))
-	}
+	errChan := make(chan error, 1)
+	go func() {
+		if ret := C.krun_start_enter(C.uint32_t(vmCtxID)); ret != 0 {
+			errChan <- fmt.Errorf("failed to start enter: %v", syscall.Errno(-ret))
+		} else {
+			errChan <- nil
+		}
+	}()
 
-	return nil
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-errChan:
+		return err
+	}
 }

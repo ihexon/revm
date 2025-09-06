@@ -34,14 +34,20 @@ const (
 
 	DefaultCreateDiskSizeInGB = 100
 	DiskFormat                = "ext4"
+
+	ContainerStorageMountPoint        = "/var/lib/containers"
+	DefaultDataDiskMountDirPrefix     = "/var/tmp/mnt"
+	PodmanDefaultListenTcpAddrInGuest = "tcp://192.168.127.2:25883"
 )
 
 const (
-	FlagDockerMode       = "docker-mode"
-	FlagRootfsMode       = "rootfs-mode"
-	FlagListenUnix       = "listen-unix"
-	FlagDiskDisk         = "data-disk"
-	FlagCreateDataDisk   = "create-disk"
+	FlagDockerMode = "docker-mode"
+	FlagRootfsMode = "rootfs-mode"
+	FlagListenUnix = "listen-unix"
+
+	FlagDiskDisk             = "data-disk"
+	FlagContainerDataStorage = "data-storage"
+
 	FlagMount            = "mount"
 	FlagRootfs           = "rootfs"
 	FlagUsingSystemProxy = "system-proxy"
