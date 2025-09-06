@@ -35,15 +35,14 @@ func main() {
 		&startDocker,
 	}
 
-	if err := app.Run(context.Background(), os.Args); err != nil {
+	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
+	if err := app.Run(ctx, os.Args); err != nil {
 		logrus.Fatal(err)
 	}
 }
 
 func earlyStage(ctx context.Context, command *cli.Command) (context.Context, error) {
 	setLogrus()
-	ctx, _ = signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
-
 	return ctx, nil
 }
 

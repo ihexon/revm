@@ -47,9 +47,6 @@ type VMConfig struct {
 	SSHInfo             SSHInfo    `json:"sshInfo,omitempty"`
 	Cmdline             Cmdline    `json:"cmdline,omitempty"`
 	PodmanInfo          PodmanInfo `json:"podmanInfo,omitempty"`
-
-	// whatever the guest network is ready
-	NetworkReadyChan chan bool `json:"-"`
 }
 
 // DataDisk represents the configuration of a data disk, including its file system type, path, and mount point.

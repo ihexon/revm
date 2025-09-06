@@ -208,7 +208,7 @@ func StartNetworking(ctx context.Context, vmc *vmconfig.VMConfig) error {
 	}
 
 	readyFunc := func() {
-		vmc.NetworkReadyChan <- true
+		// TODO: we should when the gvproxy is ready
 	}
 
 	return run(ctx, g, gvpCfg, endpoints, readyFunc)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/filesystem"
+	"linuxvm/pkg/network"
 	"linuxvm/pkg/server"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
@@ -94,6 +95,15 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 			return fmt.Errorf("failed to create vm: %w", err)
 		}
 		return vmp.Start(ctx)
+	})
+
+	g.Go(func() error {
+		tcpAddr, err := network.ParseTcpAddr(define.PodmanDefaultListenTcpAddrInGuest)
+		if err != nil {
+			return fmt.Errorf("failed to parse tcp addr %q: %w", define.PodmanDefaultListenTcpAddrInGuest, err)
+		}
+
+		return network.ForwardPodmanAPIOverVSock(ctx, vmc.GVproxyEndpoint, vmc.PodmanInfo.UnixSocksAddr, tcpAddr.Host, uint16(tcpAddr.Port))
 	})
 
 	return g.Wait()

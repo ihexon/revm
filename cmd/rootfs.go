@@ -42,10 +42,6 @@ var startVM = cli.Command{
 			Aliases: []string{"disk"},
 			Usage:   "attach one or more data disk and automount into /var/tmp/data_disk/<UUID>",
 		},
-		//&cli.StringSliceFlag{
-		//	Name:  define.FlagCreateDataDisk,
-		//	Usage: "create one or more data disk and automount into /var/tmp/data_disk/<UUID>, by default the disk size is 50GB and format to ext4 filesystem",
-		//},
 		&cli.StringSliceFlag{
 			Name:  define.FlagMount,
 			Usage: "mount host dir to guest dir",
