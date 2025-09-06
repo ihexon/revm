@@ -18,28 +18,48 @@ import (
 // Parameters:
 //
 //   - ctx controls the lifetime of the forwarding loop.
-//   - gvproxyCtlSocks is the path to the gvproxy control socket.
-//   - listenInSocketAddr is the Unix domain socket address where the proxy listens for incoming connections.
+//   - gvpAddr is the unix address to the gvproxy control socket.
+//   - listenAddr is the Unix domain socket address where the proxy listens for incoming connections.
 //   - targetIP and targetPort specify the destination endpoint inside the container.
-func ForwardPodmanAPIOverVSock(ctx context.Context, gvproxyCtlSocks, listenInSocketAddr, targetIP string, targetPort uint16) error {
-	// Ensure old socket is removed if exists
-	if err := os.Remove(listenInSocketAddr); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove old socket %s: %w", listenInSocketAddr, err)
+func ForwardPodmanAPIOverVSock(ctx context.Context, gvproxyCtlUnixAddr, listHostUnixAddr, targetIP string, targetPort uint16) error {
+	gvpAddr, err := ParseUnixAddr(gvproxyCtlUnixAddr)
+	if err != nil {
+		return fmt.Errorf("failed to parse gvproxy socket address: %w", err)
+	}
+	if gvpAddr.Path == "" {
+		return fmt.Errorf("parsed gvproxy control socket address is empty")
 	}
 
-	ln, err := net.Listen("unix", listenInSocketAddr)
+	listenAddr, err := ParseUnixAddr(listHostUnixAddr)
 	if err != nil {
-		return fmt.Errorf("listen on %q: %w", listenInSocketAddr, err)
+		return fmt.Errorf("failed to parse listen socket address: %w", err)
+	}
+
+	if listenAddr.Path == "" {
+		return fmt.Errorf("parsed listen socket address is empty")
+	}
+
+	// Ensure old socket is removed if exists
+	if err := os.Remove(listenAddr.Path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove old socket %s: %w", listenAddr.Path, err)
+	}
+
+	ln, err := net.Listen("unix", listenAddr.Path)
+	if err != nil {
+		return fmt.Errorf("listen on %q: %w", listenAddr.Path, err)
 	}
 	defer func(ln net.Listener) {
-		if err := ln.Close(); err != nil {
-			logrus.Errorf("close unix socket %q: %v", listenInSocketAddr, err)
-		}
+		_ = ln.Close()
 	}(ln)
 
-	if err = os.Chmod(listenInSocketAddr, 0600); err != nil {
-		logrus.Warnf("chmod unix socket %q: %v", listenInSocketAddr, err)
+	if err = os.Chmod(listenAddr.Path, 0600); err != nil {
+		logrus.Warnf("chmod unix socket %q: %v", listenAddr.Path, err)
 	}
+
+	go func(ctx context.Context) {
+		<-ctx.Done()
+		_ = ln.Close()
+	}(ctx)
 
 	// Accept loop
 	for {
@@ -51,20 +71,20 @@ func ForwardPodmanAPIOverVSock(ctx context.Context, gvproxyCtlSocks, listenInSoc
 
 		conn, err := ln.Accept()
 		if err != nil {
-			logrus.Warnf("accept connection error: %v", err)
+			logrus.Debugf("accept connection error: %v", err)
 			continue
 		}
 
-		go handleConn(ctx, conn, gvproxyCtlSocks, targetIP, targetPort)
+		go handleConn(ctx, conn, gvpAddr.Path, targetIP, targetPort)
 	}
 }
 
-func handleConn(ctx context.Context, clientConn net.Conn, gvproxyCtlSocks, targetIP string, targetPort uint16) {
+func handleConn(ctx context.Context, clientConn net.Conn, gvproxyCtlSocksPath, targetIP string, targetPort uint16) {
 	logrus.Infof("accepted new connection from %v", clientConn.RemoteAddr())
 
-	guestConn, err := net.Dial("unix", gvproxyCtlSocks)
+	guestConn, err := net.Dial("unix", gvproxyCtlSocksPath)
 	if err != nil {
-		logrus.Errorf("dial gvproxy socket %q failed: %v", gvproxyCtlSocks, err)
+		logrus.Errorf("dial gvproxy socket %q failed: %v", gvproxyCtlSocksPath, err)
 		clientConn.Close() //nolint:errcheck
 		return
 	}

@@ -47,16 +47,17 @@ type VMConfig struct {
 	SSHInfo             SSHInfo    `json:"sshInfo,omitempty"`
 	Cmdline             Cmdline    `json:"cmdline,omitempty"`
 	PodmanInfo          PodmanInfo `json:"podmanInfo,omitempty"`
-
-	// whatever the guest network is ready
-	NetworkReadyChan chan bool `json:"-"`
 }
 
+// DataDisk represents the configuration of a data disk, including its file system type, path, and mount point.
 type DataDisk struct {
-	NeedTruncate   bool   `json:"needTruncate,omitempty"`
+	IsContainerStorage bool `json:"isContainerStorage,omitempty"`
+	// if truncate the disk
+	ReUse          bool   `json:"reUse,omitempty"`
 	UUID           string `json:"uuid"`
 	FileSystemType string `json:"filesystemType"`
 	Path           string `json:"path"`
+	MountPoint     string `json:"mountPoint"`
 }
 
 type PodmanInfo struct {

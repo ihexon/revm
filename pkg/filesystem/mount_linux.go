@@ -20,6 +20,7 @@ const (
 	TmpDir       = "/tmp"
 	RunDir       = "/run"
 	VarTmpDir    = "/var/tmp"
+	MntTmp       = "/disk_mnt"
 	TmpMountOpts = "rw,nosuid,relatime"
 	VirtioFs     = "virtiofs"
 )

@@ -10,10 +10,12 @@ import (
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh"
+	"linuxvm/pkg/system"
 	"os"
 	"path/filepath"
 
 	"github.com/gofrs/flock"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -23,7 +25,8 @@ type (
 	VMConfig define.VMConfig
 )
 
-// ParseDiskInfo Parse data disk information, get the filesystem type and uuid, save them to vmc.DataDisk
+// ParseDiskInfo Parse data disk information provided by user, get the filesystem type and uuid, save them to vmc.DataDisk
+// and vmc.ContainerStorage.
 func (vmc *VMConfig) ParseDiskInfo(ctx context.Context) error {
 	for _, disk := range vmc.DataDisk {
 		info, err := filesystem.GetBlockInfo(ctx, disk.Path)
@@ -33,22 +36,37 @@ func (vmc *VMConfig) ParseDiskInfo(ctx context.Context) error {
 
 		disk.UUID = info.UUID
 		disk.FileSystemType = info.FilesystemType
+		disk.Path = info.AbsPath
+		disk.MountPoint = filepath.Join(define.DefaultDataDiskMountDirPrefix, info.AbsPath)
+		if disk.IsContainerStorage {
+			disk.MountPoint = define.ContainerStorageMountPoint
+		}
 	}
+
 	return nil
 }
 
-func (vmc *VMConfig) CreateRawDisk(ctx context.Context) error {
+func (vmc *VMConfig) CreateRawDiskWhenNeeded(ctx context.Context) error {
 	for _, disk := range vmc.DataDisk {
-		// if the disk is not marked as need truncate, we don't need to create it
-		if !disk.NeedTruncate {
-			continue
+		if system.IsPathExist(disk.Path) {
+			// if the disk already exist, mark it with truncate false means we want
+			// reuse the disk, not create a new one.
+			disk.ReUse = true
+		} else {
+			// if the disk not exist, mark it with truncate true means we want
+			// create a new disk.
+			disk.ReUse = false
 		}
 
-		if err := filesystem.CreateDiskAndFormatExt4(ctx, disk.Path, true, ""); err != nil {
-			return fmt.Errorf("failed to create raw disk %q: %w", disk.Path, err)
+		// if the disk mark with truncate, recreate it
+		if !disk.ReUse {
+			if err := filesystem.CreateDiskAndFormatExt4(ctx, disk.Path, uuid.NewString(), true); err != nil {
+				return fmt.Errorf("failed to create raw disk %q: %w", disk.Path, err)
+			}
 		}
 	}
-	return nil
+
+	return vmc.ParseDiskInfo(ctx)
 }
 
 func (vmc *VMConfig) WriteToJsonFile(file string) error {

@@ -35,15 +35,14 @@ func main() {
 		&startDocker,
 	}
 
-	if err := app.Run(context.Background(), os.Args); err != nil {
+	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
+	if err := app.Run(ctx, os.Args); err != nil {
 		logrus.Fatal(err)
 	}
 }
 
 func earlyStage(ctx context.Context, command *cli.Command) (context.Context, error) {
 	setLogrus()
-	ctx, _ = signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
-
 	return ctx, nil
 }
 
@@ -69,12 +68,8 @@ func setMaxMemory() int32 {
 func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, error) {
 	vmc := makeVMCfg(command)
 
-	if err := vmc.CreateRawDisk(ctx); err != nil {
-		return nil, fmt.Errorf("failed to parse disk info: %w", err)
-	}
-
-	if err := vmc.ParseDiskInfo(ctx); err != nil {
-		return nil, fmt.Errorf("failed to parse disk info: %w", err)
+	if err := vmc.CreateRawDiskWhenNeeded(ctx); err != nil {
+		return nil, fmt.Errorf("failed setup raw disk: %w", err)
 	}
 
 	_, err := vmc.Lock()
@@ -96,25 +91,14 @@ func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, 
 }
 
 func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
-	prefix := filepath.Join(os.TempDir(), system.GenerateRandomID())
-
 	var dataDisks []*define.DataDisk
 	for _, disk := range command.StringSlice(define.FlagDiskDisk) {
 		dataDisks = append(dataDisks, &define.DataDisk{
-			// when a user given an existed raw disk, don't truncate it
-			NeedTruncate: false,
-			Path:         disk,
+			Path: disk,
 		})
 	}
 
-	for _, disk := range command.StringSlice(define.FlagCreateDataDisk) {
-		dataDisks = append(dataDisks, &define.DataDisk{
-			// create a new raw disk means truncate it, whatever it existed or not
-			NeedTruncate: true,
-			Path:         disk,
-		})
-	}
-
+	prefix := filepath.Join(os.TempDir(), system.GenerateRandomID())
 	vmc := vmconfig.VMConfig{
 		MemoryInMB:          command.Int32("memory"),
 		Cpus:                command.Int8("cpus"),
@@ -136,6 +120,13 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 			TargetBinArgs: command.Args().Tail(),
 			Env:           append(command.StringSlice("envs"), define.DefaultPATH),
 		},
+	}
+
+	if command.Name == define.FlagDockerMode {
+		vmc.DataDisk = append(vmc.DataDisk, &define.DataDisk{
+			IsContainerStorage: true,
+			Path:               command.String(define.FlagContainerDataStorage),
+		})
 	}
 
 	return &vmc

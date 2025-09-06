@@ -32,16 +32,6 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 
-	//f, err := os.Create(vmc.SSHInfo.HostSSHKeyPairFile)
-	//if err != nil {
-	//	return err
-	//}
-	//defer f.Close()
-	//_, err = f.WriteString(vmc.SSHInfo.HostSSHPrivateKey)
-	//if err != nil {
-	//	return err
-	//}
-
 	client, err := ssh.NewClient(define.DefaultGuestSSHAddr, define.DefaultGuestUser, define.DefaultGuestSSHPort, vmc.SSHInfo.HostSSHKeyPairFile, "true")
 	if err != nil {
 		return err
