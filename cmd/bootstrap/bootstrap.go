@@ -110,16 +110,25 @@ func StartSSHServer(ctx context.Context, vmc *define.VMConfig) error {
 		Provider: ssh.TypeDropbear,
 		Addr:     "0.0.0.0",
 	}
+
 	return ssh.StartSSHServer(ctx, cfg)
 }
 
-func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
+func checkContainerStorageMounted() error {
 	mounted, err := mountinfo.Mounted(define.ContainerStorageMountPoint)
 	if err != nil {
 		return fmt.Errorf("failed to check %q mounted: %w", define.ContainerStorageMountPoint, err)
 	}
 	if !mounted {
 		return fmt.Errorf("container storage %q is not mounted", define.ContainerStorageMountPoint)
+	}
+	return nil
+}
+
+func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
+	// docker mode need container storage mounted, so we check it first
+	if err := checkContainerStorageMounted(); err != nil {
+		return fmt.Errorf("failed to check container storage mounted: %w", err)
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -137,10 +146,12 @@ func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
 	})
 
 	g.Go(func() error {
+		logrus.Info("start podman API service in guest")
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-dhcpDoneChan:
+			logrus.Debugf("dhcp done, start podman service")
 			return system.StartPodmanService(ctx)
 		}
 	})
@@ -187,6 +198,7 @@ func doExecCmdLine(ctx context.Context, targetBin string, targetBinArgs []string
 }
 
 func configureNetwork(ctx context.Context) error {
+	logrus.Infof("configure guest network: start")
 	errChan := make(chan error)
 
 	go func() {
@@ -194,10 +206,15 @@ func configureNetwork(ctx context.Context) error {
 		if _, find := os.LookupEnv("REVM_DEBUG"); find {
 			verbose = true
 		}
+		if logrus.IsLevelEnabled(logrus.DebugLevel) {
+			verbose = true
+		}
 		errChan <- network.DHClient4(eth0, attempts, verbose)
 		// mark the dhcp operation finished
 		dhcpDoneChan <- struct{}{}
+		logrus.Debugf("configure guest network: dhcp done")
 		close(dhcpDoneChan)
+		logrus.Infof("configure guest network: done")
 	}()
 
 	defer close(errChan)

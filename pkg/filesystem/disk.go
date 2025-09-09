@@ -160,7 +160,6 @@ func (d *Disk) Format(ctx context.Context) error {
 }
 
 func (d *Disk) Create() (*Disk, error) {
-	logrus.Infof("create disk %q", d.AbsPath)
 	f, err := os.OpenFile(d.AbsPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)

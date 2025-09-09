@@ -10,7 +10,6 @@ import (
 )
 
 func StartPodmanService(ctx context.Context) error {
-	logrus.Info("start podman API service in guest")
 	cmd := exec.CommandContext(ctx, "podman", "system", "service", "--time=0", define.PodmanDefaultListenTcpAddrInGuest)
 	logrus.Debugf("podman service cmdline: %q", cmd.Args)
 	//if logrus.IsLevelEnabled(logrus.DebugLevel) {

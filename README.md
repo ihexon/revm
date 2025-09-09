@@ -1,70 +1,92 @@
-# revm helps you quickly run a lightweight Linux command-line environment
+# revm
 
-You don’t need a bootable Linux image, nor do you need to install an entire distribution from a Linux ISO.  
-All you need is a Linux rootfs to quickly launch a lightweight Linux command-line environment.
+`revm` is a lightweight Linux command-line runtime launcher that helps you quickly prepare a Linux testing/development environment.
 
-The rootfs can be obtained from a `docker export`, and you can even directly launch a statically compiled Linux ELF executable.  
-This makes revm interesting to play with in many scenarios.
+You don’t need a full Linux UEFI image or to install a distribution from an ISO. Just provide a Linux rootfs or a statically compiled ELF program, and you can launch a securely isolated Linux shell in seconds.
 
-## Run a Linux shell in 1 second
-```shell
-# download alpine rootfs
-$ wget https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.3-aarch64.tar.gz
-$ mkdir ~/alpine_rootfs && tar -xvf -C ~/alpine_rootfs
+In addition, `revm` can serve as an alternative to Docker Desktop/Orbstack — faster, lighter, and fully compatible with the existing Docker CLI ecosystem.
 
-# run a shell
-./revm --rootfs ~/alpine_rootfs --  /bin/sh
+---
 
+## ✨ Features
+
+- ⚡ **Instant startup**: enter a Linux shell within a second
+- 🧹 **Clean**: does not modify any configuration on the host
+- 🐳 **Container mode**: 100% compatible with the Docker CLI ecosystem
+- 📦 **Flexible execution**: run a full rootfs or directly run a single ELF program (similar to WSL on macOS)
+- 💽 **Disk mounting**: supports mounting external image files (ext4/btrfs/xfs, etc.), automatically mounted at `/var/tmp/mnt/`
+- 📂 **Directory mounting**: map host directories into the guest
+- 🖥 **Multiple terminals**: attach to a running instance at any time
+
+---
+
+## 🚀 Quick Start
+
+### rootfs mode
+```shell script
+# Download and extract Alpine rootfs
+mkdir alpine_rootfs
+wget -qO- https://dl-cdn.alpinelinux.org/alpine/v3.22/releases/aarch64/alpine-minirootfs-3.22.1-aarch64.tar.gz | tar -xv -C alpine_rootfs
+
+# Start the isolated environment
+revm rootfs-mode --rootfs alpine_rootfs -- /bin/sh
+
+# Attach to a running instance
+revm attach ./alpine_rootfs
 ```
 
 
-## Subcommand help message
-### run 
-```shell
-NAME:
-   ./out/bin/revm run - run the rootfs
+### docker-mode
+docker-mode requires a rootfs with Podman preinstalled. All containers will be stored in the image file specified by `--data-storage` (formatted as ext4).
 
-USAGE:
-   ./out/bin/revm run [command [command options]]
+It’s straightforward to use. Once the docker-engine is running, set the CONTAINER_HOST (for the podman CLI) or DOCKER_HOST (for the docker CLI) to `unix:///tmp/docker_api.sock` and use docker/podman commands as usual.
 
-OPTIONS:
-   --rootfs string                            rootfs path, e.g. /var/lib/libkrun/rootfs/alpine-3.15.0
-   --cpus int                                 given how many cpu cores (default: 8)
-   --memory int                               set memory in MB (default: 24576)
-   --envs string [ --envs string ]            set envs for cmdline, e.g. --envs=FOO=bar --envs=BAZ=qux
-   --data-disk string [ --data-disk string ]  set data disk path, the disk will be map into /dev/vdX
-   --mount string [ --mount string ]          mount host dir to guest dir
-   --system-proxy                             use system proxy, set environment http(s)_proxy to guest (default: false)
-   --help, -h                                 show help
+```textmate
+revm docker-mode --rootfs ~/rootfs --data-storage ~/data.disk
+
+# Docker CLI
+export DOCKER_HOST=unix:///tmp/docker_api.sock
+docker info
+
+# Podman CLI
+export CONTAINER_HOST=unix:///tmp/docker_api.sock
+podman system info
 ```
 
-### attach
-```shell
-NAME:
-   ./out/bin/revm attach - attach to the console of the running guest
 
-USAGE:
-   attach [rootfs]
+# ⚙️ Advanced Usage
 
-OPTIONS:
-   --help, -h  show help
+## Mount image files into the guest
+```textmate
+# Automatically mount data1.disk and data2.disk inside the guest at /var/tmp/mnt/
+revm rootfs-mode --rootfs alpine_rootfs \
+  --data-disk ~/data1.disk \
+  --data-disk ~/data2.disk \
+  -- /bin/sh
+
+# Logs
+INFO[2025-09-09T17:34:27+08:00] mount "/Users/danhexon/data1.disk" -> "/var/tmp/mnt/Users/danhexon/data1.disk"
+INFO[2025-09-09T17:34:27+08:00] mount "/Users/danhexon/data2.disk" -> "/var/tmp/mnt/Users/danhexon/data2.disk"
 ```
 
-# Binary signing issues on MacOS
 
-MacOS does not allow running external binaries, so you have to build re-vm from source code or sign the binary manually. 
-
-For build the binary from the source code. you need to have golang development environment (using [brew](https://brew.sh)), and run the build script:
-```shell
-./build.sh # run build script
+## Mount a host folder into the guest
+```textmate
+# Mount /Users/danhexon from the host to /tmp/hostfs/danhexon inside the guest
+revm rootfs-mode --rootfs alpine_rootfs --mount /Users/danhexon:/tmp/hostfs/danhexon -- /bin/sh
 ```
 
-Or download binaries from release, and remove `com.apple.quarantine` for binaries.
-```shell
-xattr -d com.apple.quarantine ./bin/revm-arm64
-xattr -d com.apple.quarantine ./lib/*
+
+## Inherit the host’s proxy settings
+Use `--system-proxy` to pass proxy settings into the guest:
+```textmate
+revm rootfs-mode --rootfs alpine_rootfs --system-proxy -- /bin/sh
 ```
 
-# Bug report
 
-For bug reports and feature suggestions, please open an [issue](https://github.com/ihexon/revm/issues).
+# BUG Reports
+https://github.com/ihexon/revm/issues
+
+# TODO
+- [ ] Automatically configure a transparent proxy in the guest
+- [ ] Support sending events to upper-layer applications
