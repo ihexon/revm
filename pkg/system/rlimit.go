@@ -17,7 +17,7 @@ func Rlimit() error {
 	if err := syscall.Getrlimit(unix.RLIMIT_NOFILE, &rlimit); err != nil {
 		return fmt.Errorf("getrlimit error: %v", err)
 	}
-	logrus.Info("Current Rlimit.Cur: ", rlimit.Cur, ", Rlimit.Max: ", rlimit.Max)
+	logrus.Debugf("current Rlimit.Cur: %d, Rlimit.Max: %d", rlimit.Cur, rlimit.Max)
 
 	rlimit.Cur = rlimit.Max
 	if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rlimit); err != nil {
@@ -27,7 +27,7 @@ func Rlimit() error {
 	if err := syscall.Getrlimit(unix.RLIMIT_NOFILE, &rlimit); err != nil {
 		return fmt.Errorf("getrlimit error: %v", err)
 	}
-	logrus.Info("Current Rlimit.Cur: ", rlimit.Cur, ", Rlimit.Max: ", rlimit.Max)
+	logrus.Debugf("current Rlimit.Cur: %d, Rlimit.Max: %d", rlimit.Cur, rlimit.Max)
 
 	return nil
 }

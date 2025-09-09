@@ -52,7 +52,7 @@ func dhClient4(ifname string, attempts int, verbose bool) (*netboot.BootConf, er
 	}
 	if verbose {
 		for _, m := range conv {
-			logrus.Info(m.Summary())
+			logrus.Debug(m.Summary())
 		}
 	}
 	if err != nil {

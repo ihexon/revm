@@ -4,6 +4,7 @@ package network
 
 import (
 	"fmt"
+	"linuxvm/pkg/define"
 
 	"github.com/oomol-lab/sysproxy"
 	"github.com/sirupsen/logrus"
@@ -38,13 +39,13 @@ func GetAndNormalizeSystemProxy() (*Proxy, error) {
 	}
 
 	if proxyInfo.HTTP != nil && (proxyInfo.HTTP.Host == "127.0.0.1" || proxyInfo.HTTP.Host == "localhost") {
-		logrus.Warnf("system http proxy is localhost, using gvproxy host ip instead")
-		proxyInfo.HTTP.Host = "host.containers.internal"
+		logrus.Infof("system http proxy is localhost/127.0.0.1, using %q instead", define.HostDNSInGVProxy)
+		proxyInfo.HTTP.Host = define.HostDNSInGVProxy
 	}
 
 	if proxyInfo.HTTPS != nil && (proxyInfo.HTTPS.Host == "127.0.0.1" || proxyInfo.HTTPS.Host == "localhost") {
-		logrus.Warnf("system https proxy is localhost, using gvproxy host ip instead")
-		proxyInfo.HTTPS.Host = "host.containers.internal"
+		logrus.Infof("system https proxy is localhost/127.0.0.1, using %q instead", define.HostDNSInGVProxy)
+		proxyInfo.HTTPS.Host = define.HostDNSInGVProxy
 	}
 
 	return proxyInfo, nil
