@@ -24,7 +24,7 @@
 
 ### 快速安装
 ```shell
-$ wget https://github.com/ihexon/revm/releases/download/latest/revm.tar 
+$ wget https://github.com/ihexon/revm/releases/latest/download/revm.tar
 $ tar -xvf revm.tar
 $ ./out/bin/revm --help
 ```
