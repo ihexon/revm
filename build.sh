@@ -36,7 +36,9 @@ detect_platform_arch() {
 	uname_m="$(uname -m)"
 
 	case "${uname_s}" in
-		Darwin) export PLT="darwin" ;;
+		Darwin)
+		  export PLT="darwin"
+		  ;;
 		Linux) export PLT="linux" ;;
 		*)
 			log_err "Unsupported OS: ${uname_s}" >&2
@@ -107,6 +109,7 @@ _download_e2fsprogs_darwin() {
 		urls+=(
 			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/e2fsprogs/arm64/darwin/blkid"
 			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/e2fsprogs/arm64/darwin/mke2fs"
+			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/e2fsprogs/arm64/darwin/fsck.ext4"
 		)
 	fi
 
@@ -193,7 +196,7 @@ download_3rd() {
 build_revm() {
 	local revm_bin="out/bin/revm"
 	rm -f "$revm_bin"
-	GOOS=$PLT GOARCH=$ARCH go build -v -o "$revm_bin" ./cmd/
+	GOOS=$PLT GOARCH=$ARCH go build -ldflags="-extldflags=-mmacosx-version-min=13.1" -v -o "$revm_bin" ./cmd/
 	if [[ "$PLT" == "darwin" ]]; then
 		log_std "codesign to revm"
 		codesign --force --deep --sign - "$revm_bin"
