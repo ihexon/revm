@@ -22,6 +22,14 @@ In addition, `revm` can serve as an alternative to Docker Desktop/Orbstack — f
 
 ## 🚀 Quick Start
 
+### Quick install
+```shell
+$ wget https://github.com/ihexon/revm/releases/download/latest/revm.tar 
+$ tar -xvf revm.tar
+$ ./out/bin/revm --help
+```
+
+
 ### rootfs mode
 ```shell script
 # Download and extract Alpine rootfs

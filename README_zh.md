@@ -22,6 +22,13 @@
 
 ## 🚀 快速开始
 
+### 快速安装
+```shell
+$ wget https://github.com/ihexon/revm/releases/download/latest/revm.tar 
+$ tar -xvf revm.tar
+$ ./out/bin/revm --help
+```
+
 ### rootfs 模式
 ```bash
 # 下载并解压 Alpine rootfs
