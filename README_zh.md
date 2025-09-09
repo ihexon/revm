@@ -43,10 +43,14 @@ revm attach ./alpine_rootfs
 ```
 ### docker-mode 模式
 docker-mode 需要提供一个已经安装好 podman 的 rootfs，所有的 container 将存储在 `--data-storage` 所指定的镜像文件内（ext4 格式）。
+你可以从 [这里](https://github.com/ihexon/prebuilds/raw/refs/heads/main/rootfs/arm64/alpine/rootfs.tar.zst)下载到一个 podman 安装好的 rootfs 直接使用。
 
 docker-mode 的使用非常简单，一旦运行 docker-engine 跑起来后， 你就可以通过设置 CONTAINER_HOST 变量（podman cli 所使用）或者 DOCKER_HOST（docker cli 所使用的）到 `unix:///tmp/docker_api.sock` 来使用 docker/podman cli 命令。
 
 ```shell
+# get podman preinstalled rootfs
+wget https://github.com/ihexon/prebuilds/raw/refs/heads/main/rootfs/arm64/alpine/rootfs.tar.zst 
+tar -xvf rootfs.tar.zst
 revm docker-mode --rootfs ~/rootfs --data-storage ~/data.disk
 
 # Docker cli 
