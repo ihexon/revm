@@ -14,16 +14,19 @@ import (
 )
 
 func DHClient4(ifName string, attempts int, verbose bool) error {
+	logrus.Debugf("try to bring interface %q up", ifName)
 	_, err := BringInterfaceUp(ifName)
 	if err != nil {
 		return fmt.Errorf("failed to bring interface %q up: %w", ifName, err)
 	}
 
+	logrus.Debugf("get dhcp config for interface %q", ifName)
 	bootConf, err := dhClient4(ifName, attempts, verbose)
 	if err != nil {
 		return fmt.Errorf("failed to get dhcp config: %w", err)
 	}
 
+	logrus.Debugf("configure interface %q", ifName)
 	return netboot.ConfigureInterface(ifName, &bootConf.NetConf)
 }
 
