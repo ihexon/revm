@@ -23,7 +23,7 @@ import (
 
 const (
 	eth0     = "eth0"
-	attempts = 1
+	attempts = 3
 )
 
 var errProcessExitNormal = errors.New("process exit normally")
