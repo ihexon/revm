@@ -50,11 +50,11 @@ func (vmc *VMConfig) ParseDiskInfo(ctx context.Context) error {
 		}
 
 		// Print disk info for debug
-		if jsonData, err := json.Marshal(disk); err != nil {
+		jsonData, err := json.MarshalIndent(disk, "", "  ")
+		if err != nil {
 			return fmt.Errorf("failed to marshal disk info: %w", err)
-		} else {
-			logrus.Debugf("parsed disk info: %s", jsonData)
 		}
+		logrus.Debugf("disk %q info: %s", disk.Path, jsonData)
 
 		logrus.Infof("the disk: %q will be mount into %q", disk.Path, disk.MountPoint)
 	}
@@ -73,7 +73,6 @@ func (vmc *VMConfig) CreateRawDiskWhenNeeded(ctx context.Context) error {
 		}
 
 		if !disk.ReUse {
-			logrus.Debugf("create raw disk %q with UUID %q, overwrte", disk.Path, uuid.NewString())
 			if err := filesystem.CreateDiskAndFormatExt4(ctx, disk.Path, uuid.NewString(), true); err != nil {
 				return fmt.Errorf("failed to create raw disk %q: %w", disk.Path, err)
 			}
