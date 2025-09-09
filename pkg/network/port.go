@@ -10,13 +10,14 @@ import (
 	"strings"
 )
 
-func GetAvailablePort() (uint64, error) {
-	addr, err := net.ResolveTCPAddr("tcp4", "127.0.0.1:0")
+// GetAvailablePort returns a free port on "0.0.0.0", proto is one of "tcp", "tcp4", "tcp6"
+func GetAvailablePort(proto string) (uint64, error) {
+	addr, err := net.ResolveTCPAddr(proto, "0.0.0.0:0")
 	if err != nil {
 		return 0, err
 	}
 
-	l, err := net.ListenTCP("tcp4", addr)
+	l, err := net.ListenTCP(proto, addr)
 	if err != nil {
 		return 0, err
 	}

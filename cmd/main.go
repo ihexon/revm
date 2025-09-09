@@ -27,6 +27,13 @@ func main() {
 		Description:               "run a linux shell in 1 second",
 		Before:                    earlyStage,
 		DisableSliceFlagSeparator: true,
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:   define.FlagVerbose,
+				Hidden: true,
+				Value:  false,
+			},
+		},
 	}
 
 	app.Commands = []*cli.Command{
@@ -42,17 +49,22 @@ func main() {
 }
 
 func earlyStage(ctx context.Context, command *cli.Command) (context.Context, error) {
-	setLogrus()
+	setLogrus(command)
 	return ctx, nil
 }
 
-func setLogrus() {
+func setLogrus(command *cli.Command) {
+	logrus.SetLevel(logrus.InfoLevel)
+	if command.Bool(define.FlagVerbose) {
+		logrus.SetLevel(logrus.DebugLevel)
+	}
+
 	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp: true,
-		ForceColors:   true,
+		FullTimestamp:          true,
+		DisableLevelTruncation: true,
+		ForceColors:            true,
 	})
 	logrus.SetOutput(os.Stderr)
-	logrus.SetLevel(logrus.InfoLevel)
 }
 
 func setMaxMemory() int32 {
@@ -81,7 +93,7 @@ func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, 
 		return nil, err
 	}
 
-	if command.Bool("system-proxy") {
+	if command.Bool(define.FlagUsingSystemProxy) {
 		if err = vmc.TryGetSystemProxyAndSetToCmdline(); err != nil {
 			return nil, err
 		}
@@ -99,6 +111,8 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 	}
 
 	prefix := filepath.Join(os.TempDir(), system.GenerateRandomID())
+	logrus.Debugf("runtime temp directory: %q", prefix)
+
 	vmc := vmconfig.VMConfig{
 		MemoryInMB:          command.Int32("memory"),
 		Cpus:                command.Int8("cpus"),

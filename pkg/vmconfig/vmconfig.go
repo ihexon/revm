@@ -41,6 +41,22 @@ func (vmc *VMConfig) ParseDiskInfo(ctx context.Context) error {
 		if disk.IsContainerStorage {
 			disk.MountPoint = define.ContainerStorageMountPoint
 		}
+
+		if disk.IsContainerStorage {
+			err := filesystem.Fscheck(ctx, disk.Path)
+			if err != nil {
+				return fmt.Errorf("failed to check container storage %q: %w", disk.Path, err)
+			}
+		}
+
+		// Print disk info for debug
+		if jsonData, err := json.Marshal(disk); err != nil {
+			return fmt.Errorf("failed to marshal disk info: %w", err)
+		} else {
+			logrus.Debugf("parsed disk info: %s", jsonData)
+		}
+
+		logrus.Infof("the disk: %q will be mount into %q", disk.Path, disk.MountPoint)
 	}
 
 	return nil
@@ -49,17 +65,15 @@ func (vmc *VMConfig) ParseDiskInfo(ctx context.Context) error {
 func (vmc *VMConfig) CreateRawDiskWhenNeeded(ctx context.Context) error {
 	for _, disk := range vmc.DataDisk {
 		if system.IsPathExist(disk.Path) {
-			// if the disk already exist, mark it with truncate false means we want
-			// reuse the disk, not create a new one.
+			logrus.Debugf("disk %q already exist, mark this disk as reuseable disk", disk.Path)
 			disk.ReUse = true
 		} else {
-			// if the disk not exist, mark it with truncate true means we want
-			// create a new disk.
+			logrus.Debugf("disk %q not exist, mark this disk not reusable", disk.Path)
 			disk.ReUse = false
 		}
 
-		// if the disk mark with truncate, recreate it
 		if !disk.ReUse {
+			logrus.Debugf("create raw disk %q with UUID %q, overwrte", disk.Path, uuid.NewString())
 			if err := filesystem.CreateDiskAndFormatExt4(ctx, disk.Path, uuid.NewString(), true); err != nil {
 				return fmt.Errorf("failed to create raw disk %q: %w", disk.Path, err)
 			}
@@ -88,7 +102,7 @@ func (vmc *VMConfig) TryGetSystemProxyAndSetToCmdline() error {
 		logrus.Warnf("no system http proxy found")
 	} else {
 		httpProxy := fmt.Sprintf("http_proxy=http://%s:%d", proxyInfo.HTTP.Host, proxyInfo.HTTP.Port)
-		logrus.Infof("using system http proxy: %q", httpProxy)
+		logrus.Infof("using http proxy: %q", httpProxy)
 		vmc.Cmdline.Env = append(vmc.Cmdline.Env, httpProxy)
 	}
 
@@ -96,7 +110,7 @@ func (vmc *VMConfig) TryGetSystemProxyAndSetToCmdline() error {
 		logrus.Warnf("no system https proxy found")
 	} else {
 		httpsProxy := fmt.Sprintf("https_proxy=http://%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port)
-		logrus.Infof("using system https proxy: %q", httpsProxy)
+		logrus.Infof("using https proxy: %q", httpsProxy)
 		vmc.Cmdline.Env = append(vmc.Cmdline.Env, httpsProxy)
 	}
 
@@ -114,33 +128,30 @@ func (vmc *VMConfig) GenerateSSHInfo() error {
 	vmc.SSHInfo.HostSSHPrivateKey = string(keyPair.RawProtectedPrivateKey())
 	vmc.SSHInfo.HostSSHPublicKey = keyPair.AuthorizedKey()
 
-	// Fill the SSHInfo
-	vmc.SSHInfo.GuestPort = define.DefaultGuestSSHPort
-	vmc.SSHInfo.GuestAddr = define.DefaultGuestSSHAddr
-
-	portInHostSide, err := network.GetAvailablePort()
+	sshPort, err := network.GetAvailablePort("tcp4")
 	if err != nil {
 		return fmt.Errorf("failed to get avaliable port: %w", err)
 	}
-	vmc.SSHInfo.HostPort = portInHostSide
-	vmc.SSHInfo.HostAddr = define.DefaultSSHInHost
 
+	vmc.SSHInfo.GuestAddr = define.DefaultGuestSSHListenAddr
+	vmc.SSHInfo.Port = sshPort
 	vmc.SSHInfo.User = define.DefaultGuestUser
+	logrus.Debugf("guest ssh listen addr: %q, port %d, user %q", vmc.SSHInfo.GuestAddr, vmc.SSHInfo.Port, vmc.SSHInfo.User)
 
 	return nil
 }
 
 func (vmc *VMConfig) Lock() (*flock.Flock, error) {
-	f := filepath.Join(vmc.RootFS, define.LockFile)
-	fileLock := flock.New(f)
-	logrus.Infof("try to lock file: %s", f)
+	fileLock := flock.New(filepath.Join(vmc.RootFS, define.LockFile))
+
+	logrus.Debugf("try to lock file: %q", fileLock.Path())
 	ifLocked, err := fileLock.TryLock()
 	if err != nil {
 		return nil, fmt.Errorf("failed to lock file: %w", err)
 	}
 
 	if !ifLocked {
-		return nil, fmt.Errorf("try lock file unsuccessful, mybe there is another vm instance running")
+		return nil, fmt.Errorf("file %q is locked by another vm instance", fileLock.Path())
 	}
 
 	return fileLock, nil

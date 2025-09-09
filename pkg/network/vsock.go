@@ -80,7 +80,7 @@ func ForwardPodmanAPIOverVSock(ctx context.Context, gvproxyCtlUnixAddr, listHost
 }
 
 func handleConn(ctx context.Context, clientConn net.Conn, gvproxyCtlSocksPath, targetIP string, targetPort uint16) {
-	logrus.Infof("accepted new connection from %v", clientConn.RemoteAddr())
+	logrus.Debugf("accepted new connection from %v", clientConn.RemoteAddr())
 
 	guestConn, err := net.Dial("unix", gvproxyCtlSocksPath)
 	if err != nil {

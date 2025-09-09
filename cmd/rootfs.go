@@ -70,9 +70,9 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	g.Go(func() error {
 		vmc, err := vmp.GetVMConfigure()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get vm configure: %w", err)
 		}
-		return server.NewAPIServer(ctx, vmc).Start()
+		return server.NewAPIServer(vmc).Start(ctx)
 	})
 
 	g.Go(func() error {

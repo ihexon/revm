@@ -21,26 +21,20 @@ type Server struct {
 	Server     *http.Server
 	Mux        *http.ServeMux
 	ListenAddr url.URL
-	Ctx        context.Context
 }
 
-func NewAPIServer(ctx context.Context, vmc *vmconfig.VMConfig) *Server {
+func NewAPIServer(vmc *vmconfig.VMConfig) *Server {
 	mux := http.NewServeMux()
 	server := &Server{
 		Mux:        mux,
 		Vmc:        vmc,
 		ListenAddr: url.URL{Scheme: "http", Host: define.DefaultRestAddr},
-		Ctx:        ctx,
 	}
 	return server
 }
 
-type GVProxyInfo struct {
-	ControlEndpoints    string `json:"gvproxy_control_endpoint,omitempty"`
-	VFKitSocketEndpoint string `json:"gvproxy_network_endpoint,omitempty"`
-}
-
 func (s *Server) handleVMConfig(w http.ResponseWriter, r *http.Request) {
+	logrus.Debugf("handle /vmconfig request")
 	if r.Method != http.MethodGet {
 		WriteJSON(w, http.StatusMethodNotAllowed, nil)
 		return
@@ -49,17 +43,11 @@ func (s *Server) handleVMConfig(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, s.Vmc)
 }
 
-type GuestInfo struct {
-	MemoryInMb int32  `json:"memory,omitempty"`
-	Cpus       int8   `json:"cpus,omitempty"`
-	RootfsPath string `json:"rootfsPath,omitempty"`
-}
-
 func (s *Server) registerRouter() {
 	s.Mux.HandleFunc("/vmconfig", s.handleVMConfig)
 }
 
-func (s *Server) Start() error {
+func (s *Server) Start(ctx context.Context) error {
 	s.registerRouter()
 
 	s.Server = &http.Server{
@@ -72,7 +60,7 @@ func (s *Server) Start() error {
 	errChan := make(chan error, 1)
 
 	go func() {
-		logrus.Infof("start server on %q", s.ListenAddr.String())
+		logrus.Infof("start revm API server on %q", s.ListenAddr.String())
 		if err := s.Server.ListenAndServe(); err != nil {
 			errChan <- err
 		}
@@ -81,9 +69,9 @@ func (s *Server) Start() error {
 	select {
 	case err := <-errChan:
 		return fmt.Errorf("start rest server error: %w", err)
-	case <-s.Ctx.Done():
+	case <-ctx.Done():
 		logrus.Infof("close rest server on %q", s.ListenAddr.String())
-		return s.Server.Close()
+		return context.Cause(ctx)
 	}
 }
 
@@ -95,6 +83,6 @@ func WriteJSON(w http.ResponseWriter, code int, value interface{}) {
 	coder := json.NewEncoder(w)
 	coder.SetEscapeHTML(true)
 	if err := coder.Encode(value); err != nil {
-		logrus.Errorf("Unable to write json: %q", err)
+		logrus.Errorf("ynable to encode json: %q", err)
 	}
 }

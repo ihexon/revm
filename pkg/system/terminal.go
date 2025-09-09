@@ -51,7 +51,7 @@ func OnTerminalResize(ctx context.Context, setTerminalSize func(int, int)) {
 		for {
 			select {
 			case <-ctx.Done():
-				logrus.Infof("terminal resize context done")
+				logrus.Debugf("terminal resize context done")
 				return
 			case <-ch:
 				if width, height, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
