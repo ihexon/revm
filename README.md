@@ -31,7 +31,7 @@ $ ./out/bin/revm --help
 
 
 ### rootfs mode
-```shell script
+```shell
 # Download and extract Alpine rootfs
 mkdir alpine_rootfs
 wget -qO- https://dl-cdn.alpinelinux.org/alpine/v3.22/releases/aarch64/alpine-minirootfs-3.22.1-aarch64.tar.gz | tar -xv -C alpine_rootfs
@@ -46,10 +46,14 @@ revm attach ./alpine_rootfs
 
 ### docker-mode
 docker-mode requires a rootfs with Podman preinstalled. All containers will be stored in the image file specified by `--data-storage` (formatted as ext4).
+you can get a podman preinstalled rootfs from [here](https://github.com/ihexon/prebuilds/raw/refs/heads/main/rootfs/arm64/alpine/rootfs.tar.zst).
 
-It’s straightforward to use. Once the docker-engine is running, set the CONTAINER_HOST (for the podman CLI) or DOCKER_HOST (for the docker CLI) to `unix:///tmp/docker_api.sock` and use docker/podman commands as usual.
+It’s straightforward to use. Once the docker-engine is running, set the `CONTAINER_HOST` (for the podman CLI) or `DOCKER_HOST` (for the docker CLI) to `unix:///tmp/docker_api.sock` and use docker/podman commands as usual.
 
-```textmate
+```shell
+# get podman preinstalled rootfs
+wget https://github.com/ihexon/prebuilds/raw/refs/heads/main/rootfs/arm64/alpine/rootfs.tar.zst 
+tar -xvf rootfs.tar.zst
 revm docker-mode --rootfs ~/rootfs --data-storage ~/data.disk
 
 # Docker CLI
@@ -79,7 +83,7 @@ INFO[2025-09-09T17:34:27+08:00] mount "/Users/danhexon/data2.disk" -> "/var/tmp/
 
 
 ## Mount a host folder into the guest
-```textmate
+```shell
 # Mount /Users/danhexon from the host to /tmp/hostfs/danhexon inside the guest
 revm rootfs-mode --rootfs alpine_rootfs --mount /Users/danhexon:/tmp/hostfs/danhexon -- /bin/sh
 ```
@@ -87,7 +91,7 @@ revm rootfs-mode --rootfs alpine_rootfs --mount /Users/danhexon:/tmp/hostfs/danh
 
 ## Inherit the host’s proxy settings
 Use `--system-proxy` to pass proxy settings into the guest:
-```textmate
+```shell
 revm rootfs-mode --rootfs alpine_rootfs --system-proxy -- /bin/sh
 ```
 
