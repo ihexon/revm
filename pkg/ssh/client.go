@@ -92,7 +92,7 @@ func (c *client) RunOverGVProxyVSock(ctx context.Context, gvCtl string) error {
 		return fmt.Errorf("failed to create ssh session: %w", err)
 	}
 	defer func() {
-		logrus.Infof("ssh over vsock done, close ssh session")
+		logrus.Debugf("ssh over vsock done, close ssh session")
 		if err := c.mySession.Close(); err != nil && err != io.EOF {
 			logrus.Errorf("failed to close ssh session: %v", err)
 		}

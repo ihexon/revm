@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/vmconfig"
 	"net"
 	"net/http"
 	"net/url"
@@ -30,7 +29,7 @@ const (
 	subNet         = "192.168.127.0/24"
 	gatewayMacAddr = "5a:94:ef:e4:0c:dd"
 	guestMacAddr   = "5a:94:ef:e4:0c:ee"
-	guestIPAddr    = define.DefaultGuestSSHAddr
+	guestIPAddr    = define.DefaultGuestAddr
 )
 
 func newGvpConfigure() *gvptypes.Configuration {
@@ -90,7 +89,7 @@ func httpServe(ctx context.Context, g *errgroup.Group, ln net.Listener, mux http
 	// if ctx is canceled, close the listener
 	g.Go(func() error {
 		<-ctx.Done()
-		logrus.Infof("close gvproxy control endpoint on %q, cause by %v", ln.Addr(), context.Cause(ctx))
+		logrus.Debugf("close gvproxy control endpoint on %q, cause by %v", ln.Addr(), context.Cause(ctx))
 		return ln.Close()
 	})
 
@@ -118,11 +117,12 @@ type EndPoints struct {
 	VFKitSocketEndpoint string
 }
 
-func run(ctx context.Context, g *errgroup.Group, configuration *gvptypes.Configuration, endpoints EndPoints, readyFunc func()) error {
+func run(ctx context.Context, configuration *gvptypes.Configuration, endpoints EndPoints, readyFunc func()) error {
 	vn, err := virtualnetwork.New(configuration)
 	if err != nil {
 		return fmt.Errorf("failed to create virtual network: %w", err)
 	}
+	g, ctx := errgroup.WithContext(ctx)
 
 	{
 		logrus.Infof("listen gvproxy control endpoint: %q", endpoints.ControlEndpoints)
@@ -134,7 +134,9 @@ func run(ctx context.Context, g *errgroup.Group, configuration *gvptypes.Configu
 		httpServe(ctx, g, ln, vn.Mux())
 	}
 
-	ln, err := vn.Listen("tcp", fmt.Sprintf("%s:80", gatewayIP))
+	vnAddr := fmt.Sprintf("%s:80", gatewayIP)
+	logrus.Debugf("listen virtualnetwork on gateway: %q", vnAddr)
+	ln, err := vn.Listen("tcp", vnAddr)
 	if err != nil {
 		return err
 	}
@@ -145,37 +147,34 @@ func run(ctx context.Context, g *errgroup.Group, configuration *gvptypes.Configu
 	mux.Handle("/services/forwarder/unexpose", vn.Mux())
 	httpServe(ctx, g, ln, mux)
 
-	if endpoints.VFKitSocketEndpoint != "" {
-		logrus.Infof("listen gvproxy network backend: %q", endpoints.VFKitSocketEndpoint)
-		conn, err := transport.ListenUnixgram(endpoints.VFKitSocketEndpoint)
-		if err != nil {
-			return fmt.Errorf("failed to listen on %q: %w", endpoints.VFKitSocketEndpoint, err)
+	if endpoints.VFKitSocketEndpoint == "" {
+		return fmt.Errorf("endpoints.VFKitSocketEndpoint can not be empty")
+	}
+
+	logrus.Infof("listen gvproxy network backend: %q", endpoints.VFKitSocketEndpoint)
+	conn, err := transport.ListenUnixgram(endpoints.VFKitSocketEndpoint)
+	if err != nil {
+		return fmt.Errorf("failed to listen on %q: %w", endpoints.VFKitSocketEndpoint, err)
+	}
+
+	g.Go(func() error {
+		<-ctx.Done()
+		logrus.Infof("close gvproxy network backend on %q", endpoints.VFKitSocketEndpoint)
+		if err := conn.Close(); err != nil {
+			logrus.Errorf("error closing gvproxy network backend on %q: %q", endpoints.VFKitSocketEndpoint, err)
 		}
 
-		g.Go(func() error {
-			<-ctx.Done()
-			logrus.Infof("close gvproxy network backend on %q", endpoints.VFKitSocketEndpoint)
-			if err := conn.Close(); err != nil {
-				logrus.Errorf("error closing %s: %q", endpoints.VFKitSocketEndpoint, err)
-			}
+		return nil
+	})
 
-			vfkitSocketURI, err := url.Parse(endpoints.VFKitSocketEndpoint)
-			if err != nil {
-				logrus.Errorf("failed to parse %q: %v", endpoints.VFKitSocketEndpoint, err)
-			}
-
-			return os.Remove(vfkitSocketURI.Path)
-		})
-
-		g.Go(func() error {
-			vfkitConn, err := transport.AcceptVfkit(conn)
-			if err != nil {
-				return fmt.Errorf("failed to accept connection on %q: %w", endpoints.VFKitSocketEndpoint, err)
-			}
-			logrus.Infof("accept connection on %q", endpoints.VFKitSocketEndpoint)
-			return vn.AcceptVfkit(ctx, vfkitConn)
-		})
-	}
+	g.Go(func() error {
+		vfkitConn, err := transport.AcceptVfkit(conn)
+		if err != nil {
+			return fmt.Errorf("failed to accept connection on %q: %w", endpoints.VFKitSocketEndpoint, err)
+		}
+		logrus.Debugf("gvproxy accept connection on %q", endpoints.VFKitSocketEndpoint)
+		return vn.AcceptVfkit(ctx, vfkitConn)
+	})
 
 	// notify that the network is ready
 	readyFunc()
@@ -183,35 +182,22 @@ func run(ctx context.Context, g *errgroup.Group, configuration *gvptypes.Configu
 	return g.Wait()
 }
 
-func StartNetworking(ctx context.Context, vmc *vmconfig.VMConfig) error {
-	g, ctx := errgroup.WithContext(ctx)
-
-	endpoints := EndPoints{
-		ControlEndpoints:    vmc.GVproxyEndpoint,
-		VFKitSocketEndpoint: vmc.NetworkStackBackend,
+func StartNetworking(ctx context.Context, gvpSocks EndPoints) error {
+	if err := makeDirForUnixSocks(gvpSocks.ControlEndpoints); err != nil {
+		return fmt.Errorf("failed to create dir for gvproxy control unix socket file %q: %w", gvpSocks.ControlEndpoints, err)
 	}
 
-	if err := makeDirForUnixSocks(endpoints.ControlEndpoints); err != nil {
-		return fmt.Errorf("failed to create dir for gvproxy control unix socket file %q: %w", endpoints.ControlEndpoints, err)
+	if err := makeDirForUnixSocks(gvpSocks.VFKitSocketEndpoint); err != nil {
+		return fmt.Errorf("failed to create dir for gvproxy network unix socket file %q: %w", gvpSocks.VFKitSocketEndpoint, err)
 	}
-
-	if err := makeDirForUnixSocks(endpoints.VFKitSocketEndpoint); err != nil {
-		return fmt.Errorf("failed to create dir for gvproxy network unix socket file %q: %w", endpoints.VFKitSocketEndpoint, err)
-	}
-
-	sshAddrPortInHost := fmt.Sprintf("%s:%d", vmc.SSHInfo.HostAddr, vmc.SSHInfo.HostPort)
-	sshAddrPortInGuest := fmt.Sprintf("%s:%d", vmc.SSHInfo.GuestAddr, vmc.SSHInfo.GuestPort)
 
 	gvpCfg := newGvpConfigure()
-	gvpCfg.Forwards = map[string]string{
-		sshAddrPortInHost: sshAddrPortInGuest,
-	}
 
 	readyFunc := func() {
-		// TODO: we should when the gvproxy is ready
+		// TODO: we should know when the vm network is ready
 	}
 
-	return run(ctx, g, gvpCfg, endpoints, readyFunc)
+	return run(ctx, gvpCfg, gvpSocks, readyFunc)
 }
 
 func makeDirForUnixSocks(str string) error {
@@ -221,9 +207,5 @@ func makeDirForUnixSocks(str string) error {
 	}
 
 	dir := filepath.Dir(parse.Path)
-	if err = os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-
-	return nil
+	return os.MkdirAll(dir, 0755)
 }

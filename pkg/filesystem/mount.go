@@ -36,7 +36,7 @@ func mountUUIDDevice(ctx context.Context, uuid, mountPoint, fstype string) error
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = nil
-	logrus.Infof("mount disk with uuid %q to %q", uuid, mountPoint)
+	logrus.Debugf("mount disk with uuid %q to %q", uuid, mountPoint)
 	return cmd.Run()
 }
 
@@ -47,6 +47,7 @@ func LoadVMConfigAndMountDataDisk(ctx context.Context) error {
 	}
 
 	for _, disk := range vmc.DataDisk {
+		logrus.Infof("mount disk %q to %q", disk.Path, disk.MountPoint)
 		if err = mountUUIDDevice(ctx, disk.UUID, disk.MountPoint, disk.FileSystemType); err != nil {
 			return fmt.Errorf("failed to mount disk %q: %w", disk.Path, err)
 		}

@@ -75,15 +75,19 @@ func (v *AppleHVStubber) Create(ctx context.Context) error {
 		return fmt.Errorf("failed to create vm ctx id, return %v", id)
 	}
 	v.krunCtxID = uint32(id)
+	logrus.Debugf("created vm ctx id: %d", v.krunCtxID)
 
+	logrus.Debugf("set libkrun log level to info")
 	if ret := C.krun_set_log_level(C.KRUN_LOG_LEVEL_INFO); ret != 0 {
 		return fmt.Errorf("failed to set log level, return %v", ret)
 	}
 
+	logrus.Infof("set vm memory: %d, cpu: %d", v.vmc.MemoryInMB, v.vmc.Cpus)
 	if ret := C.krun_set_vm_config(C.uint32_t(v.krunCtxID), C.uint8_t(v.vmc.Cpus), C.uint32_t(v.vmc.MemoryInMB)); ret != 0 {
 		return fmt.Errorf("failed to set vm config, return %v", ret)
 	}
 
+	logrus.Debugf("set vm rootfs: %q", v.vmc.RootFS)
 	if err := v.setRootFS(); err != nil {
 		return err
 	}
@@ -130,6 +134,7 @@ func (v *AppleHVStubber) Start(ctx context.Context) error {
 }
 
 func (v *AppleHVStubber) writeCfgToRootfs(ctx context.Context) error {
+	logrus.Debugf("write vmconfig.json to rootfs: %q", v.vmc.RootFS)
 	return v.vmc.WriteToJsonFile(filepath.Join(v.vmc.RootFS, define.VMConfigFile))
 }
 
@@ -138,7 +143,6 @@ func (v *AppleHVStubber) Stop(ctx context.Context) error {
 }
 
 func (v *AppleHVStubber) setNetworkProvider() error {
-	logrus.Infof("set vm network backend: %q", v.vmc.NetworkStackBackend)
 	parse, err := url.Parse(v.vmc.NetworkStackBackend)
 	if err != nil {
 		return fmt.Errorf("failed to parse network stack backend: %w", err)
@@ -147,6 +151,7 @@ func (v *AppleHVStubber) setNetworkProvider() error {
 	gvpSocket, fn1 := GoString2CString(parse.Path)
 	defer fn1()
 
+	logrus.Infof("set vm network backend: %q", parse.Path)
 	if ret := C.krun_set_gvproxy_path(C.uint32_t(v.krunCtxID), gvpSocket); ret != 0 {
 		return fmt.Errorf("failed to set gvproxy path, return %v", ret)
 	}
@@ -168,11 +173,13 @@ const (
 )
 
 func (v *AppleHVStubber) setRLimited() error {
+	str := fmt.Sprintf("%s=%s:%s", RLIMIT_NPROC, SoftLimit, HardLimit)
 	limitStr, fn1 := GoStringList2CStringArray(
-		[]string{fmt.Sprintf("%s=%s:%s", RLIMIT_NPROC, SoftLimit, HardLimit)},
+		[]string{str},
 	)
 	defer fn1()
 
+	logrus.Debugf("set vm rlimit: %q", str)
 	if ret := C.krun_set_rlimits(C.uint32_t(v.krunCtxID), &limitStr[0]); ret != 0 {
 		return fmt.Errorf("failed to set rlimits, return %v", ret)
 	}
@@ -183,16 +190,25 @@ func (v *AppleHVStubber) setCommandLine(dir string, env []string) error {
 	workdir, fn1 := GoString2CString(dir)
 	defer fn1()
 
+	logrus.Debugf("set vm workdir: %q", dir)
 	if ret := C.krun_set_workdir(C.uint32_t(v.krunCtxID), workdir); ret != 0 {
 		return fmt.Errorf("failed to set workdir, return %v", ret)
 	}
 
+	logrus.Debugf("guest bootstrap is: %q", v.vmc.Cmdline.Bootstrap)
 	targetBin, fn2 := GoString2CString(v.vmc.Cmdline.Bootstrap)
 	defer fn2()
 
-	targetBinArgs, fn3 := GoStringList2CStringArray([]string{})
+	var bootstrapFlag []string
+	if logrus.IsLevelEnabled(logrus.DebugLevel) {
+		logrus.Debugf("set bootstrap running in verbose")
+		bootstrapFlag = append(bootstrapFlag, "--verbose")
+	}
+
+	targetBinArgs, fn3 := GoStringList2CStringArray(bootstrapFlag)
 	defer fn3()
 
+	logrus.Debugf("pass env to guest: %q", env)
 	envPassIn, fn4 := GoStringList2CStringArray(env)
 	defer fn4()
 
@@ -218,6 +234,7 @@ const (
 )
 
 func (v *AppleHVStubber) setGPU() error {
+	logrus.Debugf("set gpu with %q", "VIRGLRENDERER_VENUS|VIRGLRENDERER_NO_VIRGL")
 	if err := C.krun_set_gpu_options(C.uint32_t(v.krunCtxID), C.uint32_t(VIRGLRENDERER_VENUS|VIRGLRENDERER_NO_VIRGL)); err != 0 {
 		return fmt.Errorf("failed to set gpu options,return %v", err)
 	}
@@ -259,16 +276,23 @@ func (v *AppleHVStubber) addVirtioFS() error {
 }
 
 func (v *AppleHVStubber) StartNetwork(ctx context.Context) error {
-	return gvproxy.StartNetworking(ctx, v.vmc)
+	gvpSocks := gvproxy.EndPoints{
+		ControlEndpoints:    v.vmc.GVproxyEndpoint,
+		VFKitSocketEndpoint: v.vmc.NetworkStackBackend,
+	}
+	return gvproxy.StartNetworking(ctx, gvpSocks)
 }
 
 func (v *AppleHVStubber) NestVirt(ctx context.Context) error {
-	if ret := C.krun_check_nested_virt(); ret == 0 {
-		logrus.Info("current system not support nest virtualization, skip enable nested virtuallization")
+	ret := C.krun_check_nested_virt()
+
+	switch ret {
+	case 0:
+		logrus.Infof("current system not support nest virtualization, skip enable nested virtuallization")
 		return nil
-	} else if ret == 1 {
-		logrus.Info("current system support nested virtuallization")
-	} else {
+	case 1:
+		logrus.Infof("current system support nested virtuallization")
+	default:
 		return fmt.Errorf("failed to check nested virtuallization support, return %v", ret)
 	}
 
@@ -276,7 +300,7 @@ func (v *AppleHVStubber) NestVirt(ctx context.Context) error {
 		return fmt.Errorf("nested virtuallization support, but enable nested virtuallization failed")
 	}
 
-	logrus.Info("enable nested virtualization successful")
+	logrus.Infof("enable nested virtualization successful")
 
 	return nil
 }
@@ -296,6 +320,7 @@ func addRawDisk(ctxID uint32, disk string) error {
 	extDisk, fn2 := GoString2CString(disk)
 	defer fn2()
 
+	logrus.Infof("add raw disk %q to vm", disk)
 	if ret := C.krun_add_disk2(C.uint32_t(ctxID), blockID, extDisk, C.KRUN_DISK_FORMAT_RAW, false); ret != 0 {
 		return fmt.Errorf("failed to add disk, return %v", ret)
 	}
@@ -323,6 +348,7 @@ func addVirtioFS(ctxID uint32, tag, path string) error {
 	cTag, fn2 := GoString2CString(tag)
 	defer fn2()
 
+	logrus.Infof("add virtiofs %q to vm", hostPath)
 	if ret := C.krun_add_virtiofs2(C.uint32_t(ctxID), cTag, cHostPath, C.uint64_t(1<<29)); ret != 0 {
 		return fmt.Errorf("failed to add virtiofs, return: %v", ret)
 	}
@@ -333,6 +359,7 @@ func addVirtioFS(ctxID uint32, tag, path string) error {
 func execCmdlineInVM(ctx context.Context, vmCtxID uint32) error {
 	errChan := make(chan error, 1)
 	go func() {
+		logrus.Debugf("start enter vm with ctx id: %d", vmCtxID)
 		if ret := C.krun_start_enter(C.uint32_t(vmCtxID)); ret != 0 {
 			errChan <- fmt.Errorf("failed to start enter: %v", syscall.Errno(-ret))
 		} else {

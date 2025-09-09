@@ -25,7 +25,7 @@ func Copy3rdFileTo(rootfs string) error {
 	for _, file := range fileList {
 		src := filepath.Join(path, "linux", "bin", file)
 		dst := filepath.Join(rootfs, "3rd", file)
-		logrus.Infof("copy file from %q to %q", src, dst)
+		logrus.Debugf("copy file from %q to %q", src, dst)
 		if err := CopyFile(src, dst); err != nil {
 			return fmt.Errorf("failed to copy file: %w", err)
 		}

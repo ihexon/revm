@@ -28,38 +28,52 @@ const (
 
 var errProcessExitNormal = errors.New("process exit normally")
 
-func setLogrus() {
+func setLogrus(command *cli.Command) {
+	logrus.SetLevel(logrus.InfoLevel)
+	if command.Bool(define.FlagVerbose) {
+		logrus.SetLevel(logrus.DebugLevel)
+	}
+
 	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp: true,
-		ForceColors:   true,
+		FullTimestamp:          true,
+		DisableLevelTruncation: true,
+		ForceColors:            true,
 	})
 	logrus.SetOutput(os.Stderr)
-	logrus.SetLevel(logrus.InfoLevel)
 }
 
 var dhcpDoneChan = make(chan struct{}, 1)
 
 func main() {
 	app := cli.Command{
-		Name:                      os.Args[0],
-		Usage:                     "rootfs guest agent",
-		UsageText:                 os.Args[0] + " [command] [flags]",
-		Description:               "setup the guest environment, and run the command specified by the user.",
+		Name:        os.Args[0],
+		Usage:       "rootfs guest agent",
+		UsageText:   os.Args[0] + " [command] [flags]",
+		Description: "setup the guest environment, and run the command specified by the user.",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:   define.FlagVerbose,
+				Hidden: true,
+				Value:  false,
+			},
+		},
 		Before:                    earlyStage,
 		Action:                    Bootstrap,
 		DisableSliceFlagSeparator: true,
 	}
-	setLogrus()
 
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
 
 	if err := app.Run(ctx, os.Args); err != nil && !errors.Is(err, errProcessExitNormal) {
 		logrus.Fatalf("bootstrap exit with error: %v", err)
 	}
-	logrus.Infof("bootstrap exit normally")
+
+	logrus.Debugf("bootstrap exit normally")
 }
 
 func earlyStage(ctx context.Context, command *cli.Command) (context.Context, error) {
+	setLogrus(command)
+
 	if err := filesystem.MountTmpfs(); err != nil {
 		return ctx, err
 	}
@@ -90,6 +104,15 @@ func Bootstrap(ctx context.Context, command *cli.Command) error {
 	}
 }
 
+func StartSSHServer(ctx context.Context, vmc *define.VMConfig) error {
+	cfg := ssh.SSHServer{
+		Port:     vmc.SSHInfo.Port,
+		Provider: ssh.TypeDropbear,
+		Addr:     "0.0.0.0",
+	}
+	return ssh.StartSSHServer(ctx, cfg)
+}
+
 func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
 	mounted, err := mountinfo.Mounted(define.ContainerStorageMountPoint)
 	if err != nil {
@@ -106,7 +129,7 @@ func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
 	})
 
 	g.Go(func() error {
-		return ssh.StartSSHServer(ctx)
+		return StartSSHServer(ctx, vmc)
 	})
 
 	g.Go(func() error {
@@ -126,7 +149,7 @@ func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
 }
 
 func userCMDMode(ctx context.Context, vmc *define.VMConfig) error {
-	logrus.Infof("run user command line mode")
+	logrus.Debugf("run user command line mode")
 
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -135,7 +158,7 @@ func userCMDMode(ctx context.Context, vmc *define.VMConfig) error {
 	})
 
 	g.Go(func() error {
-		return ssh.StartSSHServer(ctx)
+		return StartSSHServer(ctx, vmc)
 	})
 
 	g.Go(func() error {
@@ -155,7 +178,7 @@ func doExecCmdLine(ctx context.Context, targetBin string, targetBinArgs []string
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 
-	logrus.Infof("full cmdline: %q", cmd.Args)
+	logrus.Debugf("full cmdline: %q", cmd.Args)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("cmdline %q exit with err: %w", cmd.Args, err)
 	}

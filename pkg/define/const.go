@@ -3,6 +3,8 @@ package define
 const (
 	VMConfigFile    = "vmconfig.json"
 	DefaultRestAddr = "127.0.0.1:15731"
+
+	HostDNSInGVProxy = "host.containers.internal"
 )
 
 const (
@@ -17,11 +19,9 @@ const (
 
 	SSHKeyPair = "ssh_keypair"
 
-	DefaultSSHInHost = "127.0.0.1"
-
-	DefaultGuestUser           = "root"
-	DefaultGuestSSHPort uint64 = 22
-	DefaultGuestSSHAddr        = "192.168.127.2"
+	DefaultGuestUser          = "root"
+	DefaultGuestAddr          = "192.168.127.2"
+	DefaultGuestSSHListenAddr = DefaultGuestAddr
 
 	LockFile = ".lock"
 
@@ -30,17 +30,18 @@ const (
 
 	DefaultPATH = "PATH=/3rd:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-	DefaultPodmanAPIUnixSocksInHost = "/tmp/my_docker_api.sock"
+	DefaultPodmanAPIUnixSocksInHost = "/tmp/docker_api.sock"
 
-	DefaultCreateDiskSizeInGB = 100
+	DefaultCreateDiskSizeInGB = 200
 	DiskFormat                = "ext4"
 
 	ContainerStorageMountPoint        = "/var/lib/containers"
 	DefaultDataDiskMountDirPrefix     = "/var/tmp/mnt"
-	PodmanDefaultListenTcpAddrInGuest = "tcp://192.168.127.2:25883"
+	PodmanDefaultListenTcpAddrInGuest = "tcp://" + DefaultGuestAddr + ":25883"
 )
 
 const (
+	FlagVerbose    = "verbose"
 	FlagDockerMode = "docker-mode"
 	FlagRootfsMode = "rootfs-mode"
 	FlagListenUnix = "listen-unix"

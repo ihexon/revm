@@ -83,7 +83,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return server.NewAPIServer(ctx, vmc).Start()
+		return server.NewAPIServer(vmc).Start(ctx)
 	})
 
 	g.Go(func() error {
