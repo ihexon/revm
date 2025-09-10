@@ -3,7 +3,6 @@ package filesystem
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/system"
@@ -131,15 +130,13 @@ func NewDisk(sizeInGB uint64, path string, shouldFormat bool, filesystemType str
 		UUID:           uuid,
 	}
 
-	buffer, _ := json.Marshal(disk)
-	logrus.Debugf("the structure of raw disk: %q", string(buffer))
 	return disk
 }
 
 func (d *Disk) Format(ctx context.Context) error {
 	mke2fs, err := system.Get3rdUtilsPath("mke2fs")
 	if err != nil {
-		return fmt.Errorf("failed to get mke2fs path: %w", err)
+		return fmt.Errorf("search mke2fs path error: %w", err)
 	}
 
 	cmd := exec.CommandContext(ctx, mke2fs, "-t", d.FilesystemType, "-E", "discard", "-F")

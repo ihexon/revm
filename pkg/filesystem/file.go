@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 func PathExists(path string) (bool, error) {
@@ -11,10 +12,10 @@ func PathExists(path string) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	
+
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
-	// Some other error (e.g., permission)
+	logrus.Debugf("os.Stat error: %v", err)
 	return false, err
 }

@@ -52,7 +52,12 @@ func CopyFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
-	defer srcFd.Close() //nolint:errcheck
+	defer func(srcFd *os.File) {
+		if err := srcFd.Close(); err != nil {
+			logrus.Errorf("failed to close file: %v", err)
+		}
+	}(srcFd)
+
 	srcInfo, err := srcFd.Stat()
 	if err != nil {
 		return fmt.Errorf("failed to get file info: %w", err)
@@ -61,7 +66,7 @@ func CopyFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
-	defer dstFd.Close() //nolint:errcheck
+	defer dstFd.Close()
 
 	_, err = io.Copy(dstFd, srcFd)
 	if err != nil {

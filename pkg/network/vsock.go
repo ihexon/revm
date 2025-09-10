@@ -79,20 +79,20 @@ func ForwardPodmanAPIOverVSock(ctx context.Context, gvproxyCtlUnixAddr, listHost
 	}
 }
 
-func handleConn(ctx context.Context, clientConn net.Conn, gvproxyCtlSocksPath, targetIP string, targetPort uint16) {
+func handleConn(_ context.Context, clientConn net.Conn, gvproxyCtlSocksPath, targetIP string, targetPort uint16) {
 	logrus.Debugf("accepted new connection from %v", clientConn.RemoteAddr())
 
 	guestConn, err := net.Dial("unix", gvproxyCtlSocksPath)
 	if err != nil {
 		logrus.Errorf("dial gvproxy socket %q failed: %v", gvproxyCtlSocksPath, err)
-		clientConn.Close() //nolint:errcheck
+		clientConn.Close()
 		return
 	}
 
 	if err := transport.Tunnel(guestConn, targetIP, int(targetPort)); err != nil {
 		logrus.Errorf("setup tunnel to %s:%d failed: %v", targetIP, targetPort, err)
-		guestConn.Close()  //nolint:errcheck
-		clientConn.Close() //nolint:errcheck
+		guestConn.Close()
+		clientConn.Close()
 		return
 	}
 
@@ -102,8 +102,8 @@ func handleConn(ctx context.Context, clientConn net.Conn, gvproxyCtlSocksPath, t
 }
 
 func proxyCopy(dst, src net.Conn, direction string) {
-	defer dst.Close() //nolint:errcheck
-	defer src.Close() //nolint:errcheck
+	defer dst.Close()
+	defer src.Close()
 
 	if _, err := io.Copy(dst, src); err != nil && !isUseOfClosedErr(err) {
 		logrus.Errorf("io copy error (%v): %v", direction, err)
