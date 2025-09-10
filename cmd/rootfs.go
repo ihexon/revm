@@ -28,7 +28,7 @@ var startVM = cli.Command{
 			Usage: "given how many cpu cores",
 			Value: int8(system.GetCPUCores()),
 		},
-		&cli.Int32Flag{
+		&cli.Uint64Flag{
 			Name:  "memory",
 			Usage: "set memory in MB",
 			Value: setMaxMemory(),

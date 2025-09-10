@@ -23,12 +23,12 @@ In addition, `revm` can serve as an alternative to Docker Desktop/Orbstack — f
 ## 🚀 Quick Start
 
 ### Quick install
+
 ```shell
-$ wget https://github.com/ihexon/revm/releases/latest/download/revm.tar 
-$ tar -xvf revm.tar
+$ wget https://github.com/ihexon/revm/releases/latest/download/revm.tar.zst
+$ tar -xvf revm.tar.zst
 $ ./out/bin/revm --help
 ```
-
 
 ### rootfs mode
 ```shell
@@ -43,19 +43,17 @@ revm rootfs-mode --rootfs alpine_rootfs -- /bin/sh
 revm attach ./alpine_rootfs
 ```
 
+see `revm rootfs-mode --help` for more details.
 
 ### docker-mode
-docker-mode requires a rootfs with Podman preinstalled. All containers will be stored in the image file specified by `--data-storage` (formatted as ext4).
-you can get a podman preinstalled rootfs from [here](https://github.com/ihexon/prebuilds/raw/refs/heads/main/rootfs/arm64/alpine/rootfs.tar.zst).
-
-It’s straightforward to use. Once the docker-engine is running, set the `CONTAINER_HOST` (for the podman CLI) or `DOCKER_HOST` (for the docker CLI) to `unix:///tmp/docker_api.sock` and use docker/podman commands as usual.
 
 ```shell
-# get podman preinstalled rootfs
-wget https://github.com/ihexon/prebuilds/raw/refs/heads/main/rootfs/arm64/alpine/rootfs.tar.zst 
-tar -xvf rootfs.tar.zst
-revm docker-mode --rootfs ~/rootfs --data-storage ~/data.disk
+revm docker-mode --data-storage ~/data.disk
+```
 
+Once the docker-engine is running, set the `CONTAINER_HOST` (for the podman CLI) or `DOCKER_HOST` (for the docker CLI) to `unix:///tmp/docker_api.sock` and use docker/podman commands as usual.
+
+```shell
 # Docker CLI
 export DOCKER_HOST=unix:///tmp/docker_api.sock
 docker info
@@ -65,6 +63,7 @@ export CONTAINER_HOST=unix:///tmp/docker_api.sock
 podman system info
 ```
 
+see `revm docker-mode --help` for more details.
 
 # ⚙️ Advanced Usage
 
@@ -98,7 +97,3 @@ revm rootfs-mode --rootfs alpine_rootfs --system-proxy -- /bin/sh
 
 # BUG Reports
 https://github.com/ihexon/revm/issues
-
-# TODO
-- [ ] Automatically configure a transparent proxy in the guest
-- [ ] Support sending events to upper-layer applications

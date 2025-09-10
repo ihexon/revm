@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include <inttypes.h>
+#include <stddef.h>
 #include <stdbool.h>
 #include <unistd.h>
 
@@ -371,6 +372,36 @@ int32_t krun_add_net_unixgram(uint32_t ctx_id,
                               uint32_t flags);
 
 /**
+ * Adds an independent virtio-net device with the tap backend.
+ * Call to this function disables TSI backend.
+
+ * The "krun_add_net_*" functions can be called multiple times for
+ * adding multiple virtio-net devices. In the guest the interfaces
+ * will appear in the same order as they are added (that is, the
+ * first added interface will be "eth0", the second "eth1"...)
+ *
+ * Arguments:
+ *  "ctx_id"      - the configuration context ID.
+ *  "c_tap_name"  - a null-terminated string representing the tap
+ *                  device name.
+ *  "c_mac"       - MAC address as an array of 6 uint8_t entries.
+ *  "features"    - virtio-net features for the network interface.
+ *  "flags"       - generic flags for the network interface.
+ *
+ * Notes:
+ * If no network devices are added, networking uses the TSI backend.
+ * This function should be called before krun_set_port_map.
+ *
+ * Returns:
+ *  Zero on success or a negative error number on failure.
+ */
+int32_t krun_add_net_tap(uint32_t ctx_id,
+                         char *c_tap_name,
+                         uint8_t *const c_mac,
+                         uint32_t features,
+                         uint32_t flags);
+
+/**
  * DEPRECATED. Use krun_add_net_unixstream instead.
  *
  * Configures the networking to use passt.
@@ -487,6 +518,101 @@ int32_t krun_set_gpu_options(uint32_t ctx_id, uint32_t virgl_flags);
 int32_t krun_set_gpu_options2(uint32_t ctx_id,
                               uint32_t virgl_flags,
                               uint64_t shm_size);
+
+/* Maximum number of displays. Same as VIRTIO_GPU_MAX_SCANOUTS defined in the virtio-gpu spec */
+#define KRUN_MAX_DISPLAYS 16
+
+/**
+ * Configure a display output for the VM.
+ *
+ * Note that to have display output a display backend must also be set (see krun_set_display_backend).
+ *
+ * Arguments:
+ *  "ctx_id"      - the configuration context ID.
+ *  "width"       - the width of the window/display
+ *  "height"      - the height of the window/display
+ *
+ * Returns:
+ *  The id of the display (0 to KRUN_MAX_DISPLAYS - 1) on success or a negative error number on failure.
+ */
+int32_t krun_add_display(uint32_t ctx_id, uint32_t width, uint32_t height);
+
+/**
+ * Configure a custom EDID blob for a display
+ *
+ * This replaces the generated EDID with a custom one. Configuring an EDID blob makes all display parameters except
+ * width and height ignored.
+ *
+ * Note that libkrun doesn't do any checks if the EDID matches the width/height specified in krun_add_display().
+ *
+ * Arguments:
+ *  "ctx_id"      - the configuration context ID.
+ *  "display_id"  - the ID of the display (range: 0 to KRUN_MAX_DISPLAYS - 1)
+ *  "edid_blob"   - the EDID blob
+ *  "blob_size"   - the size of the blob in bytes
+ *
+ * Returns:
+ *  Zero on success or a negative error number on failure.
+ */
+int32_t krun_display_set_edid(uint32_t ctx_id, uint32_t display_id, const uint8_t* edid_blob, size_t blob_size);
+
+/**
+ * Configure DPI of the display reported to the guest
+ *
+ * This overrides the DPI set by krun_set_display_dpi()
+ *
+ * Arguments:
+ *  "ctx_id"      - the configuration context ID.
+ *  "display_id"  - the ID of the display (range: 0 to KRUN_MAX_DISPLAYS - 1)
+ *  "dpi"         - DPI (PPI) dots/pixels per inch of the display
+ *
+ * Returns:
+ *  Zero on success or a negative error number on failure.
+ */
+int32_t krun_display_set_dpi(uint32_t ctx_id, uint32_t display_id, uint32_t dpi);
+
+/**
+ * Configure physical size of the display reported to the guest
+ *
+ * This overrides the physical size of the display set by krun_set_display_physical_size()
+ *
+ * Arguments:
+ *  "ctx_id"      - the configuration context ID.
+ *  "display_id"  - the ID of the display (range: 0 to KRUN_MAX_DISPLAYS - 1)
+ *  "width_mm"    - width of the display in millimeters
+ *  "height_mm"   - height of the display in millimeters
+ *
+ * Returns:
+ *  Zero on success or a negative error number on failure.
+ */
+int32_t krun_display_set_physical_size(uint32_t ctx_id, uint32_t display_id, uint16_t width_mm, uint16_t height_mm);
+
+/**
+ * Configure refresh rate for a display
+ *
+ *
+ * Arguments:
+ *  "ctx_id"      - the configuration context ID.
+ *  "display_id"  - the ID of the display (range: 0 to KRUN_MAX_DISPLAYS - 1)
+ *  "refresh_rate" - refresh rate (in Hz)
+ *
+ * Returns:
+ *  Zero on success or a negative error number on failure.
+ */
+int32_t krun_display_set_refresh_rate(uint32_t ctx_id, uint32_t display_id, uint32_t refresh_rate);
+
+/**
+ * Configures a krun_display_backend struct to be used for display output. (see libkrun_display.h)
+ *
+ * Arguments:
+ *  "ctx_id"          - the configuration context ID
+ *  "display_backend" - Pointer to a krun_display_backend struct
+ *  "backend_size"    - sizeof() the krun_display_backend struct
+ *
+ * Returns:
+ *  Zero on success or a negative error number (errno) on failure.
+ */
+int32_t krun_set_display_backend(uint32_t ctx_id, const void *display_backend, size_t backend_size);
 
 /**
  * Enables or disables a virtio-snd device.
@@ -754,6 +880,25 @@ int32_t krun_nitro_set_image(uint32_t ctx_id, const char *image_path,
  *  "start_flags" - Start flags.
  */
 int32_t krun_nitro_set_start_flags(uint32_t ctx_id, uint64_t start_flags);
+
+/**
+ * Configure block device to be used as root filesystem.
+ *
+ * Arguments:
+ *  "ctx_id" - the configuration context ID.
+ *  "device" - a null-terminated string specifying the root device
+ *             (e.g. "/dev/vda1", must refer to a previously configured block device)
+ *  "fstype" - a null-terminated string specifying the filesystem type (e.g. "ext4", can be set to "auto" or NULL)
+ *  "options" - a null-terminated string with a comma-separated list of mount options (can be NULL)
+ *
+ * Notes:
+ *  This function can be used if you want a root filesystem backed by a block device instead of a virtiofs path.
+ *  Because libkrun uses its own built-in init process (implemented as a virtual file in the virtiofs driver),
+ *  you'd normally have to copy the executable into every filesystem image (or partition) you intend to boot from.
+ *  This is obviously difficult to maintain, so instead we can create a dummy virtiofs root behind the scenes,
+ *  execute init from it as usual and then switch to the actual root configured by this function.
+ */
+int32_t krun_set_root_disk_remount(uint32_t ctx_id, const char *device, const char *fstype, const char *options);
 
 /**
  * Starts and enters the microVM with the configured parameters. The VMM will attempt to take over

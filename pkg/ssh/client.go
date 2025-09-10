@@ -137,7 +137,7 @@ func (c *client) RunOverGVProxyVSock(ctx context.Context, gvCtl string) error {
 	})
 
 	if err = c.mySession.Wait(); err != nil {
-		return fmt.Errorf("failed to wait ssh command: %w", err)
+		return fmt.Errorf("ssh session exit with: %w", err)
 	}
 
 	return nil

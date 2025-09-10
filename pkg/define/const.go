@@ -8,7 +8,7 @@ const (
 )
 
 const (
-	DefalutWorkDir  = "/"
+	DefaultWorkDir  = "/"
 	BootstrapBinary = "bootstrap"
 
 	GvProxyControlEndPoint = "gvpctl.sock"
@@ -41,10 +41,10 @@ const (
 )
 
 const (
-	FlagVerbose    = "verbose"
-	FlagDockerMode = "docker-mode"
-	FlagRootfsMode = "rootfs-mode"
-	FlagListenUnix = "listen-unix"
+	FlagVerbose        = "verbose"
+	FlagDockerMode     = "docker-mode"
+	FlagRootfsMode     = "rootfs-mode"
+	FlagListenUnixFile = "listen-unix"
 
 	FlagDiskDisk             = "data-disk"
 	FlagContainerDataStorage = "data-storage"
@@ -52,4 +52,6 @@ const (
 	FlagMount            = "mount"
 	FlagRootfs           = "rootfs"
 	FlagUsingSystemProxy = "system-proxy"
+	FlagMemory           = "memory"
+	FlagCpus             = "cpus"
 )

@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/sirupsen/logrus"
 )
 
 // GetAvailablePort returns a free port on "0.0.0.0", proto is one of "tcp", "tcp4", "tcp6"
@@ -21,7 +23,11 @@ func GetAvailablePort(proto string) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer l.Close() //nolint:errcheck
+	defer func(l *net.TCPListener) {
+		if err := l.Close(); err != nil {
+			logrus.Errorf("failed to close listener: %v", err)
+		}
+	}(l)
 
 	return uint64(l.Addr().(*net.TCPAddr).Port), nil
 }

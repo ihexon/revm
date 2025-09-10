@@ -129,7 +129,7 @@ func (vmc *VMConfig) GenerateSSHInfo() error {
 
 	sshPort, err := network.GetAvailablePort("tcp4")
 	if err != nil {
-		return fmt.Errorf("failed to get avaliable port: %w", err)
+		return fmt.Errorf("failed to get available port: %w", err)
 	}
 
 	vmc.SSHInfo.GuestAddr = define.DefaultGuestSSHListenAddr
@@ -141,6 +141,10 @@ func (vmc *VMConfig) GenerateSSHInfo() error {
 }
 
 func (vmc *VMConfig) Lock() (*flock.Flock, error) {
+	if vmc.RootFS == "" {
+		return nil, fmt.Errorf("root file system is not set")
+	}
+
 	fileLock := flock.New(filepath.Join(vmc.RootFS, define.LockFile))
 
 	logrus.Debugf("try to lock file: %q", fileLock.Path())

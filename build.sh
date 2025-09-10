@@ -37,8 +37,8 @@ detect_platform_arch() {
 
 	case "${uname_s}" in
 		Darwin)
-		  export PLT="darwin"
-		  ;;
+			export PLT="darwin"
+			;;
 		Linux) export PLT="linux" ;;
 		*)
 			log_err "Unsupported OS: ${uname_s}" >&2
@@ -127,9 +127,9 @@ _download_libkrun_darwin() {
 	local urls=()
 	if [[ "$PLT" == "darwin" ]]; then
 		urls+=(
+			"https://github.com/ihexon/prebuilds/raw/f0623b33cb10ac642b901ec9216b28c7df25e8c4/libkrun/arm64/darwin/libkrun.1.15.1.dylib"
+			"https://github.com/ihexon/prebuilds/raw/f0623b33cb10ac642b901ec9216b28c7df25e8c4/libkrun/arm64/darwin/libkrunfw.4.dylib"
 			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/libkrun/arm64/darwin/libepoxy.0.dylib"
-			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/libkrun/arm64/darwin/libkrun.1.14.0.dylib"
-			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/libkrun/arm64/darwin/libkrunfw.4.dylib"
 			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/libkrun/arm64/darwin/libMoltenVK.dylib"
 			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/libkrun/arm64/darwin/libvirglrenderer.1.dylib"
 		)
@@ -141,10 +141,6 @@ _download_libkrun_darwin() {
 
 	log_std "change dir to $libkrun_dir"
 	log_std "create symbol link the libkrun"
-	cd "$libkrun_dir"
-	ln -sf libkrun.1.14.0.dylib libkrun.1.dylib
-	ln -sf libepoxy.0.dylib libepoxy.dylib
-	ln -sf libvirglrenderer.1.dylib libvirglrenderer.dylib
 	cd "$WORKSPACE"
 }
 
@@ -179,6 +175,17 @@ _download_dropbear() {
 	done
 }
 
+_download_podman_rootfs() {
+	if [[ $DIRTY_BUILD == "true" ]]; then
+		log_warn "DIRTY_BUILD set true, skip download alpine rootfs from github lfs"
+		return
+	fi
+	local dir="$WORKSPACE/out/3rd/linux/rootfs"
+	mkdir -p "$dir"
+	local url="https://github.com/ihexon/prebuilds/raw/refs/heads/main/rootfs/arm64/alpine/rootfs.tar.zst"
+	wget -q --output-document - "$url" | tar --strip-components=1 -xv -C "$dir"
+}
+
 download_3rd() {
 	case $PLT in
 		darwin)
@@ -186,6 +193,7 @@ download_3rd() {
 			_download_busybox_linux
 			_download_dropbear
 			_download_e2fsprogs_darwin
+			_download_podman_rootfs
 			;;
 		*)
 			log_err "Unsupported architecture: ${PLT}"
@@ -196,7 +204,7 @@ download_3rd() {
 build_revm() {
 	local revm_bin="out/bin/revm"
 	rm -f "$revm_bin"
-	GOOS=$PLT GOARCH=$ARCH go build -ldflags="-extldflags=-mmacosx-version-min=13.1" -v -o "$revm_bin" ./cmd/
+	CGO_CFLAGS="-mmacosx-version-min=13.1" CGO_LDFLAGS="-mmacosx-version-min=13.1" GOOS=$PLT GOARCH=$ARCH go build -ldflags="-extldflags=-mmacosx-version-min=13.1" -v -o "$revm_bin" ./cmd/
 	if [[ "$PLT" == "darwin" ]]; then
 		log_std "codesign to revm"
 		codesign --force --deep --sign - "$revm_bin"
@@ -217,7 +225,8 @@ build_bootstrap() {
 }
 
 packaging() {
-	tar --zstd -cvf revm.tar out/
+	name=revm.tar.zst
+	tar --zst -cvf "$name" out/
 }
 
 main() {
