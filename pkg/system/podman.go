@@ -11,14 +11,10 @@ import (
 
 func StartPodmanService(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, "podman", "system", "service", "--time=0", define.PodmanDefaultListenTcpAddrInGuest)
-	logrus.Debugf("podman service cmdline: %q", cmd.Args)
-	//if logrus.IsLevelEnabled(logrus.DebugLevel) {
-	//	logrus.Debug("enable podman verbose mode")
-	//	// TODO: enable podman verbose mode
-	//}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = nil
 
+	logrus.Debugf("podman service cmdline: %q", cmd.Args)
 	return cmd.Run()
 }

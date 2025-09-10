@@ -82,7 +82,6 @@ func newGvpConfigure() *gvptypes.Configuration {
 	}
 
 	return &config
-
 }
 
 func httpServe(ctx context.Context, g *errgroup.Group, ln net.Listener, mux http.Handler) {

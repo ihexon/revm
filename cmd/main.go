@@ -42,7 +42,7 @@ func main() {
 		&startDocker,
 	}
 
-	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
+	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
 	if err := app.Run(ctx, os.Args); err != nil {
 		logrus.Fatal(err)
 	}
@@ -67,26 +67,33 @@ func setLogrus(command *cli.Command) {
 	logrus.SetOutput(os.Stderr)
 }
 
-func setMaxMemory() int32 {
+func setMaxMemory() uint64 {
 	mb, err := system.GetMaxMemoryInMB()
 	if err != nil {
 		logrus.Warnf("failed to get max memory: %v", err)
 		return 512
 	}
 
-	return int32(mb)
+	return mb
 }
 
 func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, error) {
 	vmc := makeVMCfg(command)
 
-	if err := vmc.CreateRawDiskWhenNeeded(ctx); err != nil {
-		return nil, fmt.Errorf("failed setup raw disk: %w", err)
+	if command.Name == define.FlagDockerMode {
+		if err := setDockerModeParameters(vmc, command); err != nil {
+			return nil, fmt.Errorf("failed to set docker mode parameters: %w", err)
+		}
 	}
 
+	// BUG: flock does not work on macOS after the system sleeps and wakes up
 	_, err := vmc.Lock()
 	if err != nil {
 		return nil, err
+	}
+
+	if err = vmc.CreateRawDiskWhenNeeded(ctx); err != nil {
+		return nil, fmt.Errorf("failed setup raw disk: %w", err)
 	}
 
 	if err = vmc.GenerateSSHInfo(); err != nil {
@@ -114,9 +121,9 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 	logrus.Debugf("runtime temp directory: %q", prefix)
 
 	vmc := vmconfig.VMConfig{
-		MemoryInMB:          command.Int32("memory"),
-		Cpus:                command.Int8("cpus"),
-		RootFS:              command.String("rootfs"),
+		MemoryInMB:          command.Int32(define.FlagMemory),
+		Cpus:                command.Int8(define.FlagCpus),
+		RootFS:              command.String(define.FlagRootfs),
 		DataDisk:            dataDisks,
 		Mounts:              filesystem.CmdLineMountToMounts(command.StringSlice("mount")),
 		GVproxyEndpoint:     fmt.Sprintf("unix://%s/%s", prefix, define.GvProxyControlEndPoint),
@@ -128,19 +135,12 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 		Cmdline: define.Cmdline{
 			Bootstrap:     define.BootstrapBinary,
 			BootstrapArgs: []string{},
-			Workspace:     define.DefalutWorkDir,
+			Workspace:     define.DefaultWorkDir,
 			Mode:          define.RunUserCommandLineMode,
 			TargetBin:     command.Args().First(),
 			TargetBinArgs: command.Args().Tail(),
 			Env:           append(command.StringSlice("envs"), define.DefaultPATH),
 		},
-	}
-
-	if command.Name == define.FlagDockerMode {
-		vmc.DataDisk = append(vmc.DataDisk, &define.DataDisk{
-			IsContainerStorage: true,
-			Path:               command.String(define.FlagContainerDataStorage),
-		})
 	}
 
 	return &vmc
