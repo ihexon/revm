@@ -32,15 +32,26 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 
-	client, err := ssh.NewClient(vmc.SSHInfo.GuestAddr, vmc.SSHInfo.User, vmc.SSHInfo.Port, vmc.SSHInfo.HostSSHKeyPairFile, "true")
-	if err != nil {
-		return err
-	}
-
 	endpoint, err := url.Parse(vmc.GVproxyEndpoint)
 	if err != nil {
 		return fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
 	}
 
-	return client.RunOverGVProxyVSock(ctx, endpoint.Path)
+	isInteractive := true
+	cmdline := []string{""}
+	if command.Args().Len() > 1 {
+		isInteractive = false
+		cmdline = command.Args().Slice()[1:]
+	}
+
+	client, err := ssh.NewClient(vmc.SSHInfo.GuestAddr, vmc.SSHInfo.User, vmc.SSHInfo.Port, vmc.SSHInfo.HostSSHKeyPairFile, cmdline...)
+	if err != nil {
+		return fmt.Errorf("failed to create ssh client: %w", err)
+	}
+
+	if isInteractive {
+		return client.AttachConsolePTYOverVSock(ctx, endpoint.Path)
+	}
+
+	return client.RunCmdlineOverVSock(ctx, endpoint.Path)
 }

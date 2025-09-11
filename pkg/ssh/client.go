@@ -58,7 +58,7 @@ func (c *client) String() string {
 	return strings.Join(args, " ")
 }
 
-func (c *client) RunOverGVProxyVSock(ctx context.Context, gvCtl string) error {
+func (c *client) AttachConsolePTYOverVSock(ctx context.Context, gvCtl string) error {
 	gvpConn, err := net.DialTimeout("unix", gvCtl, 2*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to connect to gvproxy control endpoint: %w", err)
@@ -124,6 +124,72 @@ func (c *client) RunOverGVProxyVSock(ctx context.Context, gvCtl string) error {
 	c.mySession.Stdin = os.Stdin
 
 	if err = c.mySession.Shell(); err != nil {
+		return fmt.Errorf("failed to start ssh command: %w", err)
+	}
+
+	context.AfterFunc(ctx, func() {
+		if c.mySession != nil {
+			logrus.Warnf("send signal %q to %q, cause by %v", c.signal, c.name, context.Cause(ctx))
+			if err := c.mySession.Signal(c.signal); err != nil {
+				logrus.Errorf("send signal %q to %q failed: %v", c.signal, c.name, err)
+			}
+		}
+	})
+
+	if err = c.mySession.Wait(); err != nil {
+		return fmt.Errorf("ssh session exit with: %w", err)
+	}
+
+	return nil
+}
+
+func (c *client) RunCmdlineOverVSock(ctx context.Context, gvCtl string) error {
+	gvpConn, err := net.DialTimeout("unix", gvCtl, 2*time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to connect to gvproxy control endpoint: %w", err)
+	}
+
+	if err = transport.Tunnel(gvpConn, c.config.Addr, int(c.config.Port)); err != nil {
+		return err
+	}
+
+	conn, chans, reqs, err := ssh.NewClientConn(gvpConn, "", &ssh.ClientConfig{
+		User:            c.config.User,
+		Auth:            c.config.Auth,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	})
+	if err != nil {
+		if err = gvpConn.Close(); err != nil {
+			logrus.Errorf("ssh over vsock failed to close gvpConn: %v", err)
+		}
+		return fmt.Errorf("failed to create ssh client connection: %w", err)
+	}
+
+	sshclient := ssh.NewClient(conn, chans, reqs)
+	defer func() {
+		if err := sshclient.Close(); err != nil {
+			logrus.Errorf("failed to close ssh client: %v", err)
+		}
+	}()
+
+	c.mySession, err = sshclient.NewSession()
+	if err != nil {
+		return fmt.Errorf("failed to create ssh session: %w", err)
+	}
+	defer func() {
+		logrus.Debugf("ssh over vsock done, close ssh session")
+		if err := c.mySession.Close(); err != nil && err != io.EOF {
+			logrus.Errorf("failed to close ssh session: %v", err)
+		}
+		c.mySession = nil
+	}()
+
+	c.mySession.Stdout = os.Stdout
+	c.mySession.Stderr = os.Stderr
+	c.mySession.Stdin = os.Stdin
+
+	logrus.Infof("run command: %s", c.String())
+	if err = c.mySession.Start(c.String()); err != nil {
 		return fmt.Errorf("failed to start ssh command: %w", err)
 	}
 
