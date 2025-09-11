@@ -82,7 +82,7 @@ func (v *AppleHVStubber) Create(ctx context.Context) error {
 		return fmt.Errorf("failed to set log level, return %v", ret)
 	}
 
-	logrus.Infof("set vm memory: %d, cpu: %d", v.vmc.MemoryInMB, v.vmc.Cpus)
+	logrus.Infof("set vm memory: %d MB, cpu: %d", v.vmc.MemoryInMB, v.vmc.Cpus)
 	if ret := C.krun_set_vm_config(C.uint32_t(v.krunCtxID), C.uint8_t(v.vmc.Cpus), C.uint32_t(v.vmc.MemoryInMB)); ret != 0 {
 		return fmt.Errorf("failed to set vm config, return %v", ret)
 	}
