@@ -29,7 +29,7 @@ type SSHInfo struct {
 }
 
 type VMConfig struct {
-	MemoryInMB int32  `json:"memoryInMB,omitempty"`
+	MemoryInMB uint64 `json:"memoryInMB,omitempty"`
 	Cpus       int8   `json:"cpus,omitempty"`
 	RootFS     string `json:"rootFS,omitempty"`
 

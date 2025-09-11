@@ -121,7 +121,7 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 	logrus.Debugf("runtime temp directory: %q", prefix)
 
 	vmc := vmconfig.VMConfig{
-		MemoryInMB:          command.Int32(define.FlagMemory),
+		MemoryInMB:          command.Uint64(define.FlagMemory),
 		Cpus:                command.Int8(define.FlagCpus),
 		RootFS:              command.String(define.FlagRootfs),
 		DataDisk:            dataDisks,
