@@ -3,17 +3,19 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"linuxvm/pkg/define"
 	"linuxvm/pkg/vmconfig"
 	"net/http"
 	"net/url"
-	"time"
+	"sync"
 
-	"linuxvm/pkg/define"
-
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
+	"github.com/tmaxmax/go-sse"
 )
 
 type Server struct {
@@ -43,19 +45,124 @@ func (s *Server) handleVMConfig(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, s.Vmc)
 }
 
+func newSSEServer() *sse.Server {
+	sseServer = &sse.Server{
+		OnSession: func(w http.ResponseWriter, r *http.Request) (topics []string, allowed bool) {
+			topic, ok := r.Context().Value(topicKey).(string)
+
+			if topic == "" || !ok {
+				logrus.Warn("empty topic in OnSession")
+				return nil, false
+			}
+
+			return []string{topic}, true
+		},
+	}
+	return sseServer
+}
+
+func (s *Server) doExec(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if sseServer == nil {
+		sseServer = newSSEServer()
+	}
+
+	var action ExecAction
+	if err := json.NewDecoder(r.Body).Decode(&action); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("invalid json"))
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.WithValue(r.Context(), topicKey, "sess-"+uuid.NewString())) //nolint:staticcheck
+	defer cancel()
+
+	go func() {
+		var (
+			execInfo *ExecInfo
+			err      error
+		)
+		defer cancel()
+
+		topic, ok := ctx.Value(topicKey).(string)
+		if !ok {
+			logrus.Warn("empty topic in go func")
+			return
+		}
+
+		if r.URL.Path == hostexecURL {
+			execInfo, err = LocalExec(ctx, action.Bin, action.Args...)
+			if err != nil {
+				createSSEMsgAndPublish(TypeErr, "local exec failed: "+err.Error(), sseServer, topic)
+				return
+			}
+		}
+
+		if r.URL.Path == guestexecURL {
+			execInfo, err = GuestExec(ctx, s.Vmc, action.Bin, action.Args...)
+			if err != nil {
+				createSSEMsgAndPublish(TypeErr, "local exec failed: "+err.Error(), sseServer, topic)
+				return
+			}
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			sc := bufio.NewScanner(execInfo.outPip)
+			sc.Buffer(make([]byte, 64*1024), 1<<20) // 1MB
+			for sc.Scan() {
+				createSSEMsgAndPublish(TypeOut, sc.Text(), sseServer, topic)
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+			sc := bufio.NewScanner(execInfo.errPip)
+			sc.Buffer(make([]byte, 64*1024), 1<<20) // 1MB
+			for sc.Scan() {
+				createSSEMsgAndPublish(TypeErr, sc.Text(), sseServer, topic)
+			}
+		}()
+
+		wg.Wait()
+
+		if err = <-execInfo.exitChan; err != nil {
+			logrus.Debugf("process exit with %v", err)
+			createSSEMsgAndPublish(TypeErr, "wait: "+err.Error(), sseServer, topic)
+			return
+		}
+
+		createSSEMsgAndPublish("done", "done", sseServer, topic)
+	}()
+
+	sseServer.ServeHTTP(w, r.WithContext(ctx))
+}
+
+const (
+	hostexecURL  = "/hostexec"
+	guestexecURL = "/guestexec"
+	vmconfigURL  = "/vmconfig"
+)
+
 func (s *Server) registerRouter() {
-	s.Mux.HandleFunc("/vmconfig", s.handleVMConfig)
+	s.Mux.HandleFunc(vmconfigURL, s.handleVMConfig)
+	s.Mux.HandleFunc(guestexecURL, s.doExec)
+	s.Mux.HandleFunc(hostexecURL, s.doExec)
 }
 
 func (s *Server) Start(ctx context.Context) error {
 	s.registerRouter()
 
 	s.Server = &http.Server{
-		Addr:         s.ListenAddr.Host,
-		Handler:      s.Mux,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 5 * time.Second,
-		IdleTimeout:  30 * time.Second,
+		Addr:    s.ListenAddr.Host,
+		Handler: s.Mux,
 	}
 	errChan := make(chan error, 1)
 
