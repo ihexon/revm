@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"path/filepath"
 
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 )
 
@@ -52,23 +51,28 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 
 	cmdline := command.Args().Tail()
 
+	// First we maka a ssh client configure, remember it just a configure store the information the ssh client actually needed
 	cfg := ssh.NewCfg(vmc.SSHInfo.GuestAddr, vmc.SSHInfo.User, vmc.SSHInfo.Port, vmc.SSHInfo.HostSSHKeyPairFile)
 	defer cfg.CleanUp.CleanIfErr(&err)
 
+	// Set the cmdline
 	cfg.SetCmdLine(cmdline[0], cmdline[1:])
 
 	if command.Bool(define.FlagPTY) {
 		cfg.SetPty(true)
 	}
 
+	// Connect to the ssh server over gvproxy vsock, we use the gvproxy endpoint to connect to the ssh server
 	if err = cfg.Connect(ctx, endpoint.Path); err != nil {
 		return fmt.Errorf("failed to connect to %s: %w", endpoint.Path, err)
 	}
 
+	// make stdout/stderr pipe, so we can get the output of the cmdline in realtime
 	if err := cfg.MakeStdPipe(); err != nil {
 		return fmt.Errorf("failed to make std pipe: %w", err)
 	}
 
+	// if enable pty, we need to request a pty
 	if cfg.IsPty() {
 		resetFunc, err := cfg.RequestPTY(ctx)
 		if err != nil {
@@ -77,10 +81,6 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 		defer resetFunc()
 	}
 
-	logrus.Infof("run ssh session's cmdline")
-	if err = cfg.Run(ctx); err != nil {
-		return fmt.Errorf("failed to run: %w", err)
-	}
-
-	return nil
+	// in the end, run the cmdline, this is a block function
+	return cfg.Run(ctx)
 }

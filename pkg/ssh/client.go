@@ -148,6 +148,13 @@ func (c *SSHRunConfig) Connect(ctx context.Context, gvCtl string) error {
 	}
 
 	c.SSHClient = ssh.NewClient(conn, chans, reqs)
+
+	go func() {
+		if err = startKeepAlive(ctx, c.SSHClient); err != nil {
+			logrus.Warnf("failed to start keepalive: %v", err)
+		}
+	}()
+
 	c.CleanUp.Add(func() error {
 		return c.SSHClient.Close()
 	})
@@ -218,5 +225,22 @@ func NewCfg(addr, user string, port uint64, keyFile string) *SSHRunConfig {
 		Signal:    ssh.SIGKILL,
 		CleanUp:   system.CleanUp(),
 		OtherFunc: make([]func() error, 1),
+	}
+}
+
+func startKeepAlive(ctx context.Context, conn *ssh.Client) error {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			_, _, err := conn.SendRequest("keepalive@openssh.com", true, nil)
+			if err != nil {
+				return err
+			}
+		}
 	}
 }
