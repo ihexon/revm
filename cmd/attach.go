@@ -68,7 +68,7 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 	}
 
 	// make stdout/stderr pipe, so we can get the output of the cmdline in realtime
-	if err := cfg.MakeStdPipe(); err != nil {
+	if err = cfg.MakeStdPipe(); err != nil {
 		return fmt.Errorf("failed to make std pipe: %w", err)
 	}
 
