@@ -98,12 +98,10 @@ func (s *Server) doExec(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if r.URL.Path == guestexecURL {
-			process, err = GuestExec(ctx, s.Vmc, action.Bin, action.Args...)
-			if err != nil {
-				createSSEMsgAndPublish(TypeErr, "guest exec failed: "+err.Error(), sseServer, topic)
-				return
-			}
+		process, err = GuestExec(ctx, s.Vmc, action.Bin, action.Args...)
+		if err != nil {
+			createSSEMsgAndPublish(TypeErr, "guest exec failed: "+err.Error(), sseServer, topic)
+			return
 		}
 
 		var wg sync.WaitGroup

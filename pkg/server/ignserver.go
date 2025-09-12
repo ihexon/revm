@@ -75,6 +75,7 @@ func (s *Server) Start(ctx context.Context) error {
 		Addr:    s.ListenAddr.Host,
 		Handler: s.Mux,
 	}
+
 	errChan := make(chan error, 1)
 
 	go func() {
@@ -89,6 +90,7 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("start rest server error: %w", err)
 	case <-ctx.Done():
 		logrus.Infof("close rest server on %q", s.ListenAddr.String())
+		_ = s.Server.Close()
 		return context.Cause(ctx)
 	}
 }
