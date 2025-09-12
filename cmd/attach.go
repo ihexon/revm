@@ -10,15 +10,24 @@ import (
 	"net/url"
 	"path/filepath"
 
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 )
 
 var AttachConsole = cli.Command{
 	Name:        "attach",
-	Usage:       "attach to the console of the running rootfs",
-	UsageText:   "attach [OPTIONS] [rootfs]",
+	Usage:       "attach to the guest and running command",
+	UsageText:   "attach [OPTIONS] [rootfs] [cmdline]",
 	Description: "attach to the console of the running rootfs, provide the interactive shell of the rootfs",
 	Action:      attachConsole,
+	Flags: []cli.Flag{
+		&cli.BoolFlag{
+			Name:    define.FlagPTY,
+			Aliases: []string{"tty"},
+			Usage:   "enable pseudo-terminal",
+			Value:   false,
+		},
+	},
 }
 
 func attachConsole(ctx context.Context, command *cli.Command) error {
@@ -37,21 +46,41 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
 	}
 
-	isInteractive := true
-	cmdline := []string{""}
-	if command.Args().Len() > 1 {
-		isInteractive = false
-		cmdline = command.Args().Slice()[1:]
+	if command.Args().Len() < 2 {
+		return fmt.Errorf("no cmdline specified, please provide the cmdline, e.g. %s /path/to/rootfs /bin/bash", command.Name)
 	}
 
-	client, err := ssh.NewClient(vmc.SSHInfo.GuestAddr, vmc.SSHInfo.User, vmc.SSHInfo.Port, vmc.SSHInfo.HostSSHKeyPairFile, cmdline...)
-	if err != nil {
-		return fmt.Errorf("failed to create ssh client: %w", err)
+	cmdline := command.Args().Tail()
+
+	cfg := ssh.NewCfg(vmc.SSHInfo.GuestAddr, vmc.SSHInfo.User, vmc.SSHInfo.Port, vmc.SSHInfo.HostSSHKeyPairFile)
+	defer cfg.CleanUp.CleanIfErr(&err)
+
+	cfg.SetCmdLine(cmdline[0], cmdline[1:])
+
+	if command.Bool(define.FlagPTY) {
+		cfg.SetPty(true)
 	}
 
-	if isInteractive {
-		return client.AttachConsolePTYOverVSock(ctx, endpoint.Path)
+	if err = cfg.Connect(ctx, endpoint.Path); err != nil {
+		return fmt.Errorf("failed to connect to %s: %w", endpoint.Path, err)
 	}
 
-	return client.RunCmdlineOverVSock(ctx, endpoint.Path)
+	if err := cfg.MakeStdPipe(); err != nil {
+		return fmt.Errorf("failed to make std pipe: %w", err)
+	}
+
+	if cfg.IsPty() {
+		resetFunc, err := cfg.RequestPTY(ctx)
+		if err != nil {
+			return err
+		}
+		defer resetFunc()
+	}
+
+	logrus.Infof("run ssh session's cmdline")
+	if err = cfg.Run(ctx); err != nil {
+		return fmt.Errorf("failed to run: %w", err)
+	}
+
+	return nil
 }

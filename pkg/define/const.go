@@ -54,4 +54,5 @@ const (
 	FlagUsingSystemProxy = "system-proxy"
 	FlagMemory           = "memory"
 	FlagCpus             = "cpus"
+	FlagPTY              = "pty"
 )

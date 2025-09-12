@@ -15,14 +15,6 @@ type StdinState struct {
 	State *term.State
 }
 
-func GetTerminalSize() (int, int, error) {
-	width, height, err := term.GetSize(int(os.Stdin.Fd()))
-	if err != nil {
-		return 0, 0, err
-	}
-	return width, height, nil
-}
-
 func MakeStdinRaw() (*StdinState, error) {
 	state, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
