@@ -2,7 +2,10 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"linuxvm/pkg/network"
+	"linuxvm/pkg/ssh"
 	"linuxvm/pkg/vmconfig"
 
 	"os/exec"
@@ -47,7 +50,29 @@ var (
 )
 
 func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...string) (*ExecInfo, error) {
-	// TODO
+	execInfo := &ExecInfo{}
+	addr, err := network.ParseUnixAddr(vmc.GVproxyEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
+	}
+
+	cfg := ssh.NewCfg(vmc.SSHInfo.GuestAddr, vmc.SSHInfo.User, vmc.SSHInfo.Port, vmc.SSHInfo.HostSSHKeyPairFile)
+	defer cfg.CleanUp.CleanIfErr(&err)
+	cfg.SetPty(false)
+	cfg.SetCmdLine(bin, args)
+	err = cfg.Connect(ctx, addr.Path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to gvproxy: %w", err)
+	}
+	if err = cfg.MakeStdPipe(); err != nil {
+		return nil, fmt.Errorf("failed to make std pipe: %w", err)
+	}
+	execInfo.errPip = cfg.Stderr
+	execInfo.outPip = cfg.Stdout
+
+	go func() {
+		execInfo.exitChan <- cfg.Run(ctx)
+	}()
 
 	return nil, nil
 }
