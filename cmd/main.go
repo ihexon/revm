@@ -28,6 +28,11 @@ func main() {
 		Before:                    earlyStage,
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name: define.FlagRestAPIListenAddr,
+				Usage: "listen for REST API requests on the given address, support http or unix socket address," +
+					" e.g. http://127.0.0.1:8080 or unix:///tmp/restapi.sock",
+			},
 			&cli.BoolFlag{
 				Name:   define.FlagVerbose,
 				Hidden: true,
@@ -141,6 +146,7 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 			TargetBinArgs: command.Args().Tail(),
 			Env:           append(command.StringSlice("envs"), define.DefaultPATH),
 		},
+		RestAPIAddress: command.String(define.FlagRestAPIListenAddr),
 	}
 
 	return &vmc

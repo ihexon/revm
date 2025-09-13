@@ -5,30 +5,32 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"linuxvm/pkg/define"
+	"linuxvm/pkg/network"
 	"linuxvm/pkg/vmconfig"
+	"net"
 	"net/http"
-	"net/url"
+	"os"
 
 	"github.com/sirupsen/logrus"
-	"github.com/tmaxmax/go-sse"
 )
 
 type Server struct {
-	Vmc        *vmconfig.VMConfig
-	Server     *http.Server
-	Mux        *http.ServeMux
-	ListenAddr url.URL
+	Vmc      *vmconfig.VMConfig
+	Server   *http.Server
+	Mux      *http.ServeMux
+	UnixAddr string
 }
 
 func NewAPIServer(vmc *vmconfig.VMConfig) *Server {
 	mux := http.NewServeMux()
 	server := &Server{
-		Mux:        mux,
-		Vmc:        vmc,
-		ListenAddr: url.URL{Scheme: "http", Host: define.DefaultRestAddr},
+		Mux:      mux,
+		Vmc:      vmc,
+		UnixAddr: vmc.RestAPIAddress,
 	}
+
 	return server
 }
 
@@ -42,22 +44,6 @@ func (s *Server) handleVMConfig(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, s.Vmc)
 }
 
-func newSSEServer() *sse.Server {
-	sseServer = &sse.Server{
-		OnSession: func(w http.ResponseWriter, r *http.Request) (topics []string, allowed bool) {
-			topic, ok := r.Context().Value(topicKey).(string)
-
-			if topic == "" || !ok {
-				logrus.Warn("empty topic in OnSession")
-				return nil, false
-			}
-
-			return []string{topic}, true
-		},
-	}
-	return sseServer
-}
-
 const (
 	guestexecURL = "/exec"
 	vmconfigURL  = "/vmconfig"
@@ -69,28 +55,46 @@ func (s *Server) registerRouter() {
 }
 
 func (s *Server) Start(ctx context.Context) error {
+	addr, err := network.ParseUnixAddr(s.UnixAddr)
+	if err != nil {
+		return fmt.Errorf("failed to parse unix socket address: %w", err)
+	}
+
+	if err = os.Remove(addr.Path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove old unix socket %q: %w", s.UnixAddr, err)
+	}
+
+	ln, err := net.Listen("unix", addr.Path)
+	if err != nil {
+		return fmt.Errorf("failed to listen on unix socket %q: %w", s.UnixAddr, err)
+	}
+
+	defer func() {
+		_ = os.Remove(addr.Path)
+	}()
+
 	s.registerRouter()
 
 	s.Server = &http.Server{
-		Addr:    s.ListenAddr.Host,
 		Handler: s.Mux,
 	}
 
 	errChan := make(chan error, 1)
 
 	go func() {
-		logrus.Infof("start revm API server on %q", s.ListenAddr.String())
-		if err := s.Server.ListenAndServe(); err != nil {
+		logrus.Infof("start revm API server on %q", ln.Addr().String())
+		if err = s.Server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errChan <- err
 		}
 	}()
 
 	select {
-	case err := <-errChan:
+	case err = <-errChan:
 		return fmt.Errorf("start rest server error: %w", err)
 	case <-ctx.Done():
-		logrus.Infof("close rest server on %q", s.ListenAddr.String())
+		logrus.Infof("close rest server on %q", ln.Addr().String())
 		_ = s.Server.Close()
+		_ = ln.Close()
 		return context.Cause(ctx)
 	}
 }
