@@ -8,6 +8,7 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/ssh"
 	"net/url"
+	"os"
 	"path/filepath"
 
 	"github.com/urfave/cli/v3"
@@ -68,7 +69,7 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 	}
 
 	// make stdout/stderr pipe, so we can get the output of the cmdline in realtime
-	if err = cfg.MakeStdPipe(); err != nil {
+	if err = cfg.WriteOutputTo(os.Stdout, os.Stderr); err != nil {
 		return fmt.Errorf("failed to make std pipe: %w", err)
 	}
 
@@ -76,11 +77,10 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 	if cfg.IsPty() {
 		resetFunc, err := cfg.RequestPTY(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to request pty: %w", err)
 		}
 		defer resetFunc()
 	}
 
-	// in the end, run the cmdline, this is a block function
 	return cfg.Run(ctx)
 }

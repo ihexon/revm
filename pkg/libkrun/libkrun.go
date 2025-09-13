@@ -55,10 +55,6 @@ type AppleHVStubber struct {
 	vmc       *vmconfig.VMConfig
 }
 
-func (v *AppleHVStubber) IsSSHReady(ctx context.Context) bool {
-	return true
-}
-
 func NewAppleHyperVisor(vmc *vmconfig.VMConfig) *AppleHVStubber {
 	return &AppleHVStubber{
 		vmc: vmc,
@@ -239,10 +235,6 @@ func (v *AppleHVStubber) setGPU() error {
 		return fmt.Errorf("failed to set gpu options,return %v", err)
 	}
 	return nil
-}
-
-func (v *AppleHVStubber) AttachGuestConsole(ctx context.Context, rootfs string) {
-
 }
 
 func (v *AppleHVStubber) setRootFS() error {
