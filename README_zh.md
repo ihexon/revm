@@ -1,22 +1,21 @@
 # revm
 
-`revm` 是一个 **轻量级 Linux 命令行运行环境启动器**，帮助你快速准备 Linux 测试 / 开发环境。
+[English](README.md) | 中文
 
-你无需完整的 Linux UEFI 镜像，也不需要从 ISO 安装发行版，只需准备一个 **Linux rootfs** 或一个 **静态编译的 ELF 程序**，即可秒级启动一个安全隔离的 Linux shell。
 
-此外，`revm` 还能作为 **Docker Desktop / Orbstack 的替代品** —— 更快、更轻，并完全兼容现有的 Docker 命令行生态。
+`revm` 帮助你快速启动 Linux 虚拟机 / Container，快如闪电
 
 ---
 
 ## ✨ 特性
 
-- ⚡ **秒级启动**：一秒内进入 Linux shell
-- 🧹 **干净**：不会修改宿主机的任何配置
-- 🐳 **容器模式**：100% 兼容 Docker 命令行生态
-- 📦 **灵活运行**：既能运行完整 rootfs，也能直接运行单个 ELF 程序（类似 macOS 上的 WSL）
-- 💽 **磁盘挂载**：支持挂载外部镜像文件（ext4/btrfs/xfs 等），自动挂载到 `/var/tmp/mnt/`
-- 📂 **目录挂载**：支持将宿主机目录映射到 guest 中
-- 🖥 **多终端支持**：可随时 attach 到已运行的实例
+- ⚡ **轻量级**：一秒内进入 Linux shell，一秒拉起容器引擎（podman）
+- 🧹 **干净**：不会更改你机器的任何配置
+- 🐳 **容器兼容**：100% 兼容 Docker 命令行生态
+- 📦 **灵活运行**：Rootfs模式和 Container 模式
+- 💽 **磁盘挂载**：自动挂载外部虚拟磁盘文件（ext4/btrfs/xfs 多种格式）
+- 📂 **目录挂载**：支持挂载宿主机文件到虚拟机中
+- 🖥 **多终端支持**：随时 attach 到已运行的实例执行任何命令
 
 ---
 
@@ -26,8 +25,28 @@
 ```shell
 $ wget https://github.com/ihexon/revm/releases/latest/download/revm.tar.zst
 $ tar -xvf revm.tar.zst
-$ ./out/bin/revm --help
+$ ./out/bin/revm --help # help message
 ```
+
+### 容器 模式
+容器模式需要指定一块镜像文件作为 container 存储区域，通过 `--data-storage` 复用 & 生成镜像文件（ext4 格式）
+```shell
+revm docker-mode --data-storage ~/data.disk
+```
+
+通过设置 `CONTAINER_HOST` 变量（podman cli 所使用）或者 `DOCKER_HOST`（docker cli 所使用的）到 `unix:///tmp/docker_api.sock` 来使用 docker/podman cli 命令。
+
+```shell
+# Docker cli 
+export DOCKER_HOST=unix:///tmp/docker_api.sock
+docker info
+
+# Podman cli
+export CONTAINER_HOST=unix:///tmp/docker_api.sock 
+podman system info
+```
+
+
 
 ### rootfs 模式
 
@@ -44,23 +63,7 @@ revm rootfs-mode --rootfs alpine_rootfs -- /bin/sh
 revm attach ./alpine_rootfs
 ```
 
-### docker-mode 模式
-快速启动 podman 软件栈
-```shell
-revm docker-mode --data-storage ~/data.disk
-```
 
-docker-mode 的使用非常简单，一旦运行 docker-engine 跑起来后， 你就可以通过设置 `CONTAINER_HOST` 变量（podman cli 所使用）或者 `DOCKER_HOST`（docker cli 所使用的）到 `unix:///tmp/docker_api.sock` 来使用 docker/podman cli 命令。
-
-```shell
-# Docker cli 
-export DOCKER_HOST=unix:///tmp/docker_api.sock
-docker info
-
-# Podman cli
-export CONTAINER_HOST=unix:///tmp/docker_api.sock 
-podman system info
-```
 
 # ⚙️ 高级用法
 
