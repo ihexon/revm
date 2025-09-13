@@ -12,7 +12,5 @@ type Provider interface {
 	Create(ctx context.Context) error
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
-	IsSSHReady(ctx context.Context) bool
-	AttachGuestConsole(ctx context.Context, rootfs string)
 	GetVMConfigure() (*vmconfig.VMConfig, error)
 }

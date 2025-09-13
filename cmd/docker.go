@@ -79,9 +79,11 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	g.Go(func() error {
-		return server.NewAPIServer(vmc).Start(ctx)
-	})
+	if command.IsSet(define.FlagRestAPIListenAddr) && command.String(define.FlagRestAPIListenAddr) != "" {
+		g.Go(func() error {
+			return server.NewAPIServer(vmc).Start(ctx)
+		})
+	}
 
 	g.Go(func() error {
 		return vmp.StartNetwork(ctx)

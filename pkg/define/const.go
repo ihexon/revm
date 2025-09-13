@@ -1,8 +1,7 @@
 package define
 
 const (
-	VMConfigFile    = "vmconfig.json"
-	DefaultRestAddr = "127.0.0.1:15731"
+	VMConfigFile = "vmconfig.json"
 
 	HostDNSInGVProxy = "host.containers.internal"
 )
@@ -41,10 +40,11 @@ const (
 )
 
 const (
-	FlagVerbose        = "verbose"
-	FlagDockerMode     = "docker-mode"
-	FlagRootfsMode     = "rootfs-mode"
-	FlagListenUnixFile = "listen-unix"
+	FlagVerbose           = "verbose"
+	FlagDockerMode        = "docker-mode"
+	FlagRootfsMode        = "rootfs-mode"
+	FlagListenUnixFile    = "listen-unix"
+	FlagRestAPIListenAddr = "rest-api"
 
 	FlagDiskDisk             = "data-disk"
 	FlagContainerDataStorage = "data-storage"

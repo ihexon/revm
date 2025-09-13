@@ -23,9 +23,9 @@ type execAction struct {
 }
 
 type ExecProcess struct {
-	outPipe  io.Reader
-	errPipe  io.Reader
-	exitChan chan error
+	outPipeReader io.Reader
+	errPipeReader io.Reader
+	exitChan      chan error
 }
 
 func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...string) (*ExecProcess, error) {
@@ -48,16 +48,27 @@ func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...
 		return nil, fmt.Errorf("failed to connect to gvproxy: %w", err)
 	}
 
-	if err = cfg.MakeStdPipe(); err != nil {
+	// remember to close the writer when the process exits
+	stdOutReader, stdoutWriter := io.Pipe()
+	stderrOutReader, stderrWriter := io.Pipe()
+
+	cleanFunc := func() {
+		_ = stdoutWriter.Close()
+		_ = stderrWriter.Close()
+	}
+
+	if err = cfg.WriteOutputTo(stdoutWriter, stderrWriter); err != nil {
 		return nil, fmt.Errorf("failed to make std pipe: %w", err)
 	}
 
-	process.errPipe = cfg.Stderr
-	process.outPipe = cfg.Stdout
+	process.outPipeReader = stdOutReader
+	process.errPipeReader = stderrOutReader
 
 	go func() {
 		err := cfg.Run(ctx)
+		logrus.Debugf("process exit with %v", err)
 		defer cfg.CleanUp.CleanIfErr(&err)
+		defer cleanFunc()
 		process.exitChan <- err
 	}()
 
@@ -109,23 +120,26 @@ func (s *Server) doExec(w http.ResponseWriter, r *http.Request) {
 
 		go func() {
 			defer wg.Done()
-			sc := bufio.NewScanner(process.outPipe)
+			sc := bufio.NewScanner(process.outPipeReader)
 			sc.Buffer(make([]byte, 64*1024), 1<<20) // 1MB
 			for sc.Scan() {
 				createSSEMsgAndPublish(TypeOut, sc.Text(), sseServer, topic)
 			}
+			logrus.Debugf("read process.outPipeReader line by line done")
 		}()
 
 		go func() {
 			defer wg.Done()
-			sc := bufio.NewScanner(process.errPipe)
+			sc := bufio.NewScanner(process.errPipeReader)
 			sc.Buffer(make([]byte, 64*1024), 1<<20) // 1MB
 			for sc.Scan() {
 				createSSEMsgAndPublish(TypeErr, sc.Text(), sseServer, topic)
 			}
+			logrus.Debugf("read process.errPipeReader line by line done")
 		}()
 
 		wg.Wait()
+		logrus.Debugf("read process.outPipeReader/process.errPipeReader line by line group done")
 
 		if err = <-process.exitChan; err != nil {
 			logrus.Debugf("process exit with %v", err)
