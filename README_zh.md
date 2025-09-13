@@ -1,5 +1,8 @@
 # revm
 
+[English](README.md) | 中文
+
+
 `revm` 帮助你快速启动 Linux 虚拟机 / Container，快如闪电
 
 ---
@@ -42,6 +45,8 @@ docker info
 export CONTAINER_HOST=unix:///tmp/docker_api.sock 
 podman system info
 ```
+
+
 
 ### rootfs 模式
 
