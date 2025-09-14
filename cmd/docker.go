@@ -72,6 +72,10 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("create run configure failed: %w", err)
 	}
 
+	if err := showVersionAndOSInfo(); err != nil {
+		logrus.Warn("cannot get Build version/OS information")
+	}
+
 	vmc, err := vmp.GetVMConfigure()
 	if err != nil {
 		return fmt.Errorf("failed to get vm configure: %w", err)

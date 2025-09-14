@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/sirupsen/logrus"
@@ -56,6 +57,32 @@ func main() {
 func earlyStage(ctx context.Context, command *cli.Command) (context.Context, error) {
 	setLogrus(command)
 	return ctx, nil
+}
+
+func showVersionAndOSInfo() error {
+	var version strings.Builder
+	if define.Version != "" {
+		version.WriteString(fmt.Sprintf("%s", define.Version))
+	} else {
+		version.WriteString("unknown")
+	}
+
+	if define.CommitID != "" {
+		version.WriteString(fmt.Sprintf(" (%s)", define.CommitID))
+	} else {
+		version.WriteString(" (unknown)")
+	}
+
+	logrus.Infof("%s version: %s", os.Args[0], version.String())
+
+	osInfo, err := system.GetOSVersion()
+	if err != nil {
+		return fmt.Errorf("failed to get os version: %w", err)
+	}
+	
+	logrus.Infof("os version: %+v", osInfo)
+
+	return nil
 }
 
 func setLogrus(command *cli.Command) {
