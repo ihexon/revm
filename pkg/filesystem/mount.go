@@ -32,7 +32,7 @@ func mountUUIDDevice(ctx context.Context, uuid, mountPoint, fstype string) error
 		return fmt.Errorf("target mount point %q is already mounted, skip", mountPoint)
 	}
 
-	cmd := exec.CommandContext(ctx, "busybox.static", "mount", "-t", fstype, "UUID="+uuid, mountPoint)
+	cmd := exec.CommandContext(ctx, "busybox.static", "mount", "-t", fstype, "-o", "data=ordered,discard", "UUID="+uuid, mountPoint)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = nil

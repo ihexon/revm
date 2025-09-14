@@ -40,19 +40,18 @@ const (
 )
 
 const (
-	FlagVerbose           = "verbose"
-	FlagDockerMode        = "docker-mode"
-	FlagRootfsMode        = "rootfs-mode"
-	FlagListenUnixFile    = "listen-unix"
-	FlagRestAPIListenAddr = "rest-api"
-
+	FlagVerbose              = "verbose"
+	FlagDockerMode           = "docker-mode"
+	FlagRootfsMode           = "rootfs-mode"
+	FlagListenUnixFile       = "listen-unix"
+	FlagRestAPIListenAddr    = "rest-api"
+	FlagCPUS                 = "cpus"
 	FlagDiskDisk             = "data-disk"
 	FlagContainerDataStorage = "data-storage"
-
-	FlagMount            = "mount"
-	FlagRootfs           = "rootfs"
-	FlagUsingSystemProxy = "system-proxy"
-	FlagMemory           = "memory"
-	FlagCpus             = "cpus"
-	FlagPTY              = "pty"
+	FlagMount                = "mount"
+	FlagRootfs               = "rootfs"
+	FlagUsingSystemProxy     = "system-proxy"
+	FlagMemory               = "memory"
+	FlagPTY                  = "pty"
+	FlagEnvs                 = "envs"
 )
