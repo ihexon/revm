@@ -7,6 +7,7 @@ import (
 	"linuxvm/pkg/server"
 	"linuxvm/pkg/system"
 
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 )
@@ -58,6 +59,10 @@ var startVM = cli.Command{
 func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() < 1 {
 		return fmt.Errorf("no command specified")
+	}
+
+	if err := showVersionAndOSInfo(); err != nil {
+		logrus.Warn("can not get Build version/OS information")
 	}
 
 	vmp, err := createVMMProvider(ctx, command)

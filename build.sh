@@ -1,6 +1,9 @@
 #! /usr/bin/env bash
 set -e
 
+GIT_COMMIT_ID="$(git rev-parse --short HEAD)"
+GIT_TAG="$(git describe --tags --abbrev=0)"
+
 trace_off() {
 	{ set +x; } 2> /dev/null
 }
@@ -204,7 +207,7 @@ download_3rd() {
 build_revm() {
 	local revm_bin="out/bin/revm"
 	rm -f "$revm_bin"
-	CGO_CFLAGS="-mmacosx-version-min=13.1" CGO_LDFLAGS="-mmacosx-version-min=13.1" GOOS=$PLT GOARCH=$ARCH go build -ldflags="-extldflags=-mmacosx-version-min=13.1" -v -o "$revm_bin" ./cmd/
+	CGO_CFLAGS="-mmacosx-version-min=13.1" CGO_LDFLAGS="-mmacosx-version-min=13.1" GOOS=$PLT GOARCH=$ARCH go build -ldflags="-extldflags=-mmacosx-version-min=13.1 -X linuxvm/pkg/define.Version=$GIT_TAG -X linuxvm/pkg/define.CommitID=$GIT_COMMIT_ID" -v -o "$revm_bin" ./cmd/
 	if [[ "$PLT" == "darwin" ]]; then
 		log_std "codesign to revm"
 		codesign --force --deep --sign - "$revm_bin"
