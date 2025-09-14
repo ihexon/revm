@@ -127,7 +127,7 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 
 	vmc := vmconfig.VMConfig{
 		MemoryInMB:          command.Uint64(define.FlagMemory),
-		Cpus:                command.Int8(define.FlagCpus),
+		Cpus:                command.Int8(define.FlagCPUS),
 		RootFS:              command.String(define.FlagRootfs),
 		DataDisk:            dataDisks,
 		Mounts:              filesystem.CmdLineMountToMounts(command.StringSlice("mount")),

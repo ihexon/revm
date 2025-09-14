@@ -26,7 +26,7 @@ var startDocker = cli.Command{
 	Description: "In Docker compatibility mode, the built-in Docker engine is used and a unix socks file is listened to as the API entry point used by the docker cli.",
 	Flags: []cli.Flag{
 		&cli.Int8Flag{
-			Name:  "cpus",
+			Name:  define.FlagCPUS,
 			Usage: "given how many cpu cores",
 			Value: int8(system.GetCPUCores()),
 		},

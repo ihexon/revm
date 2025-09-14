@@ -19,22 +19,22 @@ var startVM = cli.Command{
 	Description: "run any rootfs with the given command",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
-			Name:     "rootfs",
+			Name:     define.FlagRootfs,
 			Usage:    "rootfs path, e.g. /var/lib/libkrun/rootfs/alpine-3.15.0",
 			Required: true,
 		},
 		&cli.Int8Flag{
-			Name:  "cpus",
+			Name:  define.FlagCPUS,
 			Usage: "given how many cpu cores",
 			Value: int8(system.GetCPUCores()),
 		},
 		&cli.Uint64Flag{
-			Name:  "memory",
+			Name:  define.FlagMemory,
 			Usage: "set memory in MB",
 			Value: setMaxMemory(),
 		},
 		&cli.StringSliceFlag{
-			Name:  "envs",
+			Name:  define.FlagEnvs,
 			Usage: "set envs for cmdline, e.g. --envs=FOO=bar --envs=BAZ=qux",
 		},
 		&cli.StringSliceFlag{
@@ -67,13 +67,16 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	g.Go(func() error {
-		vmc, err := vmp.GetVMConfigure()
-		if err != nil {
-			return fmt.Errorf("failed to get vm configure: %w", err)
-		}
-		return server.NewAPIServer(vmc).Start(ctx)
-	})
+	vmc, err := vmp.GetVMConfigure()
+	if err != nil {
+		return fmt.Errorf("failed to get vm configure: %w", err)
+	}
+
+	if command.IsSet(define.FlagRestAPIListenAddr) && command.String(define.FlagRestAPIListenAddr) != "" {
+		g.Go(func() error {
+			return server.NewAPIServer(vmc).Start(ctx)
+		})
+	}
 
 	g.Go(func() error {
 		return vmp.StartNetwork(ctx)
