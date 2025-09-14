@@ -82,19 +82,22 @@ func (s *Server) Start(ctx context.Context) error {
 	errChan := make(chan error, 1)
 
 	go func() {
-		logrus.Infof("start revm API server on %q", ln.Addr().String())
+		logrus.Infof("start revm RESTAPI server on %q", ln.Addr().String())
 		if err = s.Server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errChan <- err
 		}
+	}()
+
+	defer func() {
+		_ = s.Server.Close()
+		_ = ln.Close()
+		logrus.Debugf("close rest server on %q", ln.Addr().String())
 	}()
 
 	select {
 	case err = <-errChan:
 		return fmt.Errorf("start rest server error: %w", err)
 	case <-ctx.Done():
-		logrus.Infof("close rest server on %q", ln.Addr().String())
-		_ = s.Server.Close()
-		_ = ln.Close()
 		return context.Cause(ctx)
 	}
 }
