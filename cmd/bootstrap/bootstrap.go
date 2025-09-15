@@ -94,13 +94,13 @@ func Bootstrap(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("failed to load vmconfig: %w", err)
 	}
 
-	switch vmc.Cmdline.Mode {
-	case define.RunUserCommandLineMode:
-		return userCMDMode(ctx, vmc)
+	switch vmc.RunMode {
+	case define.RunUserRootfsMode:
+		return userRootfsMode(ctx, vmc)
 	case define.RunDockerEngineMode:
 		return dockerEngineMode(ctx, vmc)
 	default:
-		return fmt.Errorf("unsupported mode %q", vmc.Cmdline.Mode)
+		return fmt.Errorf("unsupported mode %q", vmc.RunMode)
 	}
 }
 
@@ -159,7 +159,7 @@ func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
 	return g.Wait()
 }
 
-func userCMDMode(ctx context.Context, vmc *define.VMConfig) error {
+func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
 	logrus.Debugf("run user command line mode")
 
 	g, ctx := errgroup.WithContext(ctx)

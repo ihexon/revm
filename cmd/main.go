@@ -44,7 +44,7 @@ func main() {
 
 	app.Commands = []*cli.Command{
 		&AttachConsole,
-		&startVM,
+		&startRootfs,
 		&startDocker,
 	}
 
@@ -62,13 +62,13 @@ func earlyStage(ctx context.Context, command *cli.Command) (context.Context, err
 func showVersionAndOSInfo() error {
 	var version strings.Builder
 	if define.Version != "" {
-		version.WriteString(fmt.Sprintf("%s", define.Version))
+		version.WriteString(define.Version)
 	} else {
 		version.WriteString("unknown")
 	}
 
 	if define.CommitID != "" {
-		version.WriteString(fmt.Sprintf(" (%s)", define.CommitID))
+		version.WriteString(define.CommitID)
 	} else {
 		version.WriteString(" (unknown)")
 	}
@@ -79,7 +79,7 @@ func showVersionAndOSInfo() error {
 	if err != nil {
 		return fmt.Errorf("failed to get os version: %w", err)
 	}
-	
+
 	logrus.Infof("os version: %+v", osInfo)
 
 	return nil
@@ -111,6 +111,14 @@ func setMaxMemory() uint64 {
 
 func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, error) {
 	vmc := makeVMCfg(command)
+	switch command.Name {
+	case define.FlagRootfsMode:
+		vmc.RunMode = define.RunUserRootfsMode
+	case define.FlagDockerMode:
+		vmc.RunMode = define.RunDockerEngineMode
+	case define.FlagKernelMode:
+		vmc.RunMode = define.RunDirectBootKernelMode
+	}
 
 	if command.Name == define.FlagDockerMode {
 		if err := setDockerModeParameters(vmc, command); err != nil {
@@ -168,7 +176,6 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 			Bootstrap:     define.BootstrapBinary,
 			BootstrapArgs: []string{},
 			Workspace:     define.DefaultWorkDir,
-			Mode:          define.RunUserCommandLineMode,
 			TargetBin:     command.Args().First(),
 			TargetBinArgs: command.Args().Tail(),
 			Env:           append(command.StringSlice("envs"), define.DefaultPATH),

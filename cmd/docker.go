@@ -67,13 +67,13 @@ var startDocker = cli.Command{
 }
 
 func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
+	if err := showVersionAndOSInfo(); err != nil {
+		logrus.Warn("cannot get Build version/OS information")
+	}
+
 	vmp, err := createVMMProvider(ctx, command)
 	if err != nil {
 		return fmt.Errorf("create run configure failed: %w", err)
-	}
-
-	if err := showVersionAndOSInfo(); err != nil {
-		logrus.Warn("cannot get Build version/OS information")
 	}
 
 	vmc, err := vmp.GetVMConfigure()
@@ -114,9 +114,6 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 }
 
 func setDockerModeParameters(vmc *vmconfig.VMConfig, command *cli.Command) error {
-	// Set docker mode
-	vmc.Cmdline.Mode = define.RunDockerEngineMode
-
 	if err := useBuiltinRootfs(vmc); err != nil {
 		return fmt.Errorf("failed to use builtin podman rootfs: %w", err)
 	}
