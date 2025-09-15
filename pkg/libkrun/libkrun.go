@@ -13,12 +13,14 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -61,10 +63,6 @@ func NewAppleHyperVisor(vmc *vmconfig.VMConfig) *AppleHVStubber {
 	}
 }
 
-func StartAPIServer(ctx context.Context) error {
-	return nil
-}
-
 func (v *AppleHVStubber) Create(ctx context.Context) error {
 	id := C.krun_create_ctx()
 	if id < 0 {
@@ -83,9 +81,20 @@ func (v *AppleHVStubber) Create(ctx context.Context) error {
 		return fmt.Errorf("failed to set vm config, return %v", ret)
 	}
 
-	logrus.Debugf("set vm rootfs: %q", v.vmc.RootFS)
-	if err := v.setRootFS(); err != nil {
-		return err
+	//if v.vmc.RunMode == define.RunDirectBootKernelMode {
+	//	logrus.Debugf("vm run mode is direct boot kernel mode")
+	//	if err := v.SetKernel(ctx); err != nil {
+	//		return err
+	//	}
+	//}
+
+	if v.vmc.RunMode == define.RunDockerEngineMode || v.vmc.RunMode == define.RunUserRootfsMode {
+		logrus.Debugf("vm run mode is rootfs mode")
+		if err := v.setRootFS(); err != nil {
+			return err
+		}
+	} else {
+		return fmt.Errorf("libkrun do not support run mode: %q", v.vmc.RunMode)
 	}
 
 	if err := v.setGPU(); err != nil {
@@ -106,6 +115,7 @@ func (v *AppleHVStubber) Create(ctx context.Context) error {
 	if err := v.addVirtioFS(); err != nil {
 		return err
 	}
+
 	if err := v.NestVirt(ctx); err != nil {
 		return err
 	}
@@ -297,6 +307,10 @@ func (v *AppleHVStubber) NestVirt(ctx context.Context) error {
 	return nil
 }
 
+//func (v *AppleHVStubber) SetKernel(ctx context.Context) error {
+//	return setKernel(ctx, v.krunCtxID, v.vmc.Kernel, v.vmc.Initrd, v.vmc.KernelCmdline...)
+//}
+
 func stopVM(tx context.Context, vmID uint32) error {
 	return nil
 }
@@ -365,4 +379,43 @@ func execCmdlineInVM(ctx context.Context, vmCtxID uint32) error {
 	case err := <-errChan:
 		return err
 	}
+}
+
+func setKernel(ctx context.Context, vmCtxID uint32, KernelImage, initramfs string, kernelCmdline ...string) error {
+	{
+		// do some integrity check
+		if ok, _ := filesystem.PathExists(initramfs); !ok {
+			return fmt.Errorf("initramfs %q not exist", initramfs)
+		}
+
+		if ok, _ := filesystem.PathExists(KernelImage); !ok {
+			return fmt.Errorf("kernel %q not exist", KernelImage)
+		}
+
+		if kernelCmdline != nil && len(kernelCmdline) == 0 {
+			return fmt.Errorf("kernel cmdline is empty")
+		}
+	}
+
+	cKernel, func1 := GoString2CString(KernelImage)
+	defer func1()
+
+	cInitramfsPath, func2 := GoString2CString(initramfs)
+	defer func2()
+
+	var kcmdline strings.Builder
+	for _, cmdline := range kernelCmdline {
+		kcmdline.WriteString(cmdline)
+		kcmdline.WriteString(" ")
+	}
+	cKernelCmdline, func3 := GoString2CString(kcmdline.String())
+	defer func3()
+
+	logrus.Debugf("set kernel: %q, initramfs: %q,  cmdline: %q", KernelImage, initramfs, kcmdline.String())
+
+	if ret := C.krun_set_kernel(C.uint32_t(vmCtxID), cKernel, C.KRUN_KERNEL_FORMAT_RAW, cInitramfsPath, cKernelCmdline); ret != 0 {
+		return fmt.Errorf("failed to set kernel/initramfs/cmdline, return %v", ret)
+	}
+
+	return nil
 }

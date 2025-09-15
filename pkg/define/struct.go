@@ -32,6 +32,9 @@ type VMConfig struct {
 	MemoryInMB uint64 `json:"memoryInMB,omitempty"`
 	Cpus       int8   `json:"cpus,omitempty"`
 	RootFS     string `json:"rootFS,omitempty"`
+	//Kernel        string   `json:"kernel,omitempty"`
+	//Initrd        string   `json:"initrd,omitempty"`
+	//KernelCmdline []string `json:"kernelArgs,omitempty"`
 
 	// data disk will map into /dev/vdX and automount by bootstrap process
 	DataDisk []*DataDisk `json:"dataDisk,omitempty"`
@@ -46,6 +49,8 @@ type VMConfig struct {
 	Cmdline             Cmdline    `json:"cmdline,omitempty"`
 	PodmanInfo          PodmanInfo `json:"podmanInfo,omitempty"`
 	RestAPIAddress      string     `json:"restAPIAddress,omitempty"`
+	// RunMode is the mode of the VM, which can be define.RunUserRootfsMode, define.RunDirectBootKernelMode or define.RunDockerEngineMode
+	RunMode string `json:"runMode,omitempty"`
 }
 
 // DataDisk represents the configuration of a data disk, including its file system type, path, and mount point.
@@ -68,9 +73,7 @@ type Cmdline struct {
 	// Bootstrap is a process that runs under PID 1. As a secondary init, Bootstrap incubates all user child processes.
 	Bootstrap     string   `json:"bootstrap,omitempty"`
 	BootstrapArgs []string `json:"bootstrapArgs,omitempty"`
-	// Support two modes: define.RunUserCommandLineMode and define.RunDockerEngineMode
-	Mode      string `json:"mode,omitempty"`
-	Workspace string `json:"workspace,omitempty"`
+	Workspace     string   `json:"workspace,omitempty"`
 	// TargetBin is the binary to run by bootstrap.
 	TargetBin string `json:"targetBin,omitempty"`
 	// TargetBinArgs is the arguments to pass to the target binary.
