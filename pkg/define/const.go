@@ -24,8 +24,9 @@ const (
 
 	LockFile = ".lock"
 
-	RunDockerEngineMode    = "dockerEngineMode"
-	RunUserCommandLineMode = "userCommandLineMode"
+	RunDockerEngineMode     = "dockerEngineMode"
+	RunUserRootfsMode       = "rootfsMode"
+	RunDirectBootKernelMode = "directBootKernelMode"
 
 	DefaultPATH = "PATH=/3rd:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
@@ -40,9 +41,11 @@ const (
 )
 
 const (
+	FlagDockerMode = "docker-mode"
+	FlagRootfsMode = "rootfs-mode"
+	FlagKernelMode = "kernel-mode"
+
 	FlagVerbose              = "verbose"
-	FlagDockerMode           = "docker-mode"
-	FlagRootfsMode           = "rootfs-mode"
 	FlagListenUnixFile       = "listen-unix"
 	FlagRestAPIListenAddr    = "rest-api"
 	FlagCPUS                 = "cpus"
@@ -54,4 +57,7 @@ const (
 	FlagMemory               = "memory"
 	FlagPTY                  = "pty"
 	FlagEnvs                 = "envs"
+	FlagKernel               = "kernel"
+	FlagInitrd               = "initrd"
+	FlagKernelCmdline        = "kernel-cmdline"
 )

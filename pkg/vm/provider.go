@@ -4,6 +4,9 @@ package vm
 
 import (
 	"context"
+	"errors"
+	"linuxvm/pkg/define"
+	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/vmconfig"
 )
 
@@ -13,4 +16,15 @@ type Provider interface {
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
 	GetVMConfigure() (*vmconfig.VMConfig, error)
+}
+
+func Get(vmc *vmconfig.VMConfig) Provider {
+	switch vmc.RunMode {
+	case define.RunDirectBootKernelMode:
+		// TODO: implement the vfkit provider
+		panic(errors.New("vfkit provider is not implemented yet"))
+		return nil
+	default:
+		return libkrun.NewAppleHyperVisor(vmc)
+	}
 }
