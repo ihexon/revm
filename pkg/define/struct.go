@@ -14,6 +14,8 @@ type Mount struct {
 	Tag      string `json:"tag"`
 	Target   string `json:"target"`
 	Type     string `json:"type"`
+	Opts     string `json:"opts"`
+	UUID     string `json:"uuid"`
 }
 
 type SSHInfo struct {
@@ -29,12 +31,12 @@ type SSHInfo struct {
 }
 
 type VMConfig struct {
-	MemoryInMB uint64 `json:"memoryInMB,omitempty"`
-	Cpus       int8   `json:"cpus,omitempty"`
-	RootFS     string `json:"rootFS,omitempty"`
-	//Kernel        string   `json:"kernel,omitempty"`
-	//Initrd        string   `json:"initrd,omitempty"`
-	//KernelCmdline []string `json:"kernelArgs,omitempty"`
+	MemoryInMB    uint64   `json:"memoryInMB,omitempty"`
+	Cpus          int8     `json:"cpus,omitempty"`
+	RootFS        string   `json:"rootFS,omitempty"`
+	Kernel        string   `json:"kernel,omitempty"`
+	Initrd        string   `json:"initrd,omitempty"`
+	KernelCmdline []string `json:"kernelArgs,omitempty"`
 
 	// data disk will map into /dev/vdX and automount by bootstrap process
 	DataDisk []*DataDisk `json:"dataDisk,omitempty"`

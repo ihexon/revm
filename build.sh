@@ -1,9 +1,6 @@
 #! /usr/bin/env bash
 set -e
 
-GIT_COMMIT_ID="$(git rev-parse --short HEAD)"
-GIT_TAG="$(git describe --tags --abbrev=0)"
-
 trace_off() {
 	{ set +x; } 2> /dev/null
 }
@@ -84,6 +81,8 @@ init_func() {
 
 	log_std "change dir to $WORKSPACE"
 	detect_platform_arch
+	GIT_COMMIT_ID="$(git rev-parse --short HEAD||echo "unknown")"
+	GIT_TAG="$(git describe --tags --abbrev=0||echo "unknown")"
 }
 
 _downloader() {
@@ -244,6 +243,7 @@ main() {
 			go test -v linuxvm/test/system
 			;;
 		build_darwin)
+
 			init_func
 			download_3rd
 			build_revm

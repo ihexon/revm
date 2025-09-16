@@ -23,7 +23,6 @@ func Get(vmc *vmconfig.VMConfig) Provider {
 	case define.RunDirectBootKernelMode:
 		// TODO: implement the vfkit provider
 		panic(errors.New("vfkit provider is not implemented yet"))
-		return nil
 	default:
 		return libkrun.NewAppleHyperVisor(vmc)
 	}
