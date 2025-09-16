@@ -73,15 +73,7 @@ func main() {
 
 func earlyStage(ctx context.Context, command *cli.Command) (context.Context, error) {
 	setLogrus(command)
-
-	if err := filesystem.MountTmpfs(); err != nil {
-		return ctx, err
-	}
-
-	if err := filesystem.LoadVMConfigAndMountVirtioFS(ctx); err != nil {
-		return ctx, err
-	}
-	if err := filesystem.LoadVMConfigAndMountDataDisk(ctx); err != nil {
+	if err := filesystem.MountPseudoFilesystem(ctx); err != nil {
 		return ctx, err
 	}
 
@@ -89,9 +81,20 @@ func earlyStage(ctx context.Context, command *cli.Command) (context.Context, err
 }
 
 func Bootstrap(ctx context.Context, command *cli.Command) error {
+	// TODO: support get vmconfig from vsock
 	vmc, err := define.LoadVMCFromFile(filepath.Join("/", define.VMConfigFile))
 	if err != nil {
 		return fmt.Errorf("failed to load vmconfig: %w", err)
+	}
+
+	// Mount the data disk(virtio-blk)
+	if err = filesystem.MountDataDisk(ctx, vmc); err != nil {
+		return fmt.Errorf("failed to mount data disk: %w", err)
+	}
+
+	// Mount the host dir(virtiofs)
+	if err = filesystem.MountHostDir(ctx, vmc); err != nil {
+		return fmt.Errorf("failed to mount host dir: %w", err)
 	}
 
 	switch vmc.RunMode {
