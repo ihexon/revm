@@ -82,7 +82,7 @@ func (v *AppleHVStubber) Create(ctx context.Context) error {
 		return fmt.Errorf("failed to set vm config, return %v", ret)
 	}
 
-	if v.vmc.RunMode == define.RunDirectBootKernelMode {
+	if v.vmc.RunMode == define.RunKernelBootMode {
 		logrus.Debugf("vm run mode is direct boot kernel mode")
 		if err := v.SetKernel(ctx); err != nil {
 			return err
@@ -137,7 +137,7 @@ func (v *AppleHVStubber) Start(ctx context.Context) error {
 		return err
 	}
 
-	if err := system.Copy3rdFileTo(v.vmc.RootFS); err != nil {
+	if err := system.CopyBootstrapToRooFs(v.vmc.RootFS); err != nil {
 		return fmt.Errorf("failed to copy 3rd files to rootfs: %w", err)
 	}
 
@@ -282,7 +282,7 @@ func (v *AppleHVStubber) StartNetwork(ctx context.Context) error {
 		ControlEndpoints:    v.vmc.GVproxyEndpoint,
 		VFKitSocketEndpoint: v.vmc.NetworkStackBackend,
 	}
-	
+
 	return gvproxy.StartNetworking(ctx, gvpSocks, v.vmc.Stage.GVProxyChan)
 }
 

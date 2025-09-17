@@ -2,26 +2,18 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh"
 	"linuxvm/pkg/system"
-	"path/filepath"
-
-	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"syscall"
-	"time"
 
-	"github.com/mdlayher/vsock"
 	"github.com/moby/sys/mountinfo"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -80,6 +72,20 @@ func main() {
 
 func earlyStage(ctx context.Context, command *cli.Command) (context.Context, error) {
 	setLogrus(command)
+
+	// Serve files from host's $BINDIR/../3rd/linux/bin over vsock HTTP server
+	fileList := []string{
+		"busybox.static",
+		"dropbear",
+		"dropbearkey",
+	}
+
+	for _, fileName := range fileList {
+		if err := network.Download3rdFileFromVSockHttp(ctx, fileName, system.GetGuestLinuxUtilsBinPath(fileName), false); err != nil {
+			return ctx, fmt.Errorf("failed to get %q from vsock: %w", fileName, err)
+		}
+	}
+
 	if err := filesystem.MountPseudoFilesystem(ctx); err != nil {
 		return ctx, err
 	}
@@ -88,65 +94,8 @@ func earlyStage(ctx context.Context, command *cli.Command) (context.Context, err
 	return ctx, nil
 }
 
-func GetVMConfigFromVSockHTTP(ctx context.Context) (*define.VMConfig, error) {
-	// make client support ctx, vsock do not support ctx
-	client := &http.Client{
-		Timeout: 3 * time.Second,
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				result := make(chan struct {
-					c   net.Conn
-					err error
-				}, 1)
-
-				go func() {
-					c, err := vsock.Dial(2, define.DefaultVSockPort, nil)
-					result <- struct {
-						c   net.Conn
-						err error
-					}{c, err}
-				}()
-
-				select {
-				case <-ctx.Done():
-					return nil, ctx.Err()
-				case r := <-result:
-					return r.c, r.err
-				}
-			},
-		},
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://vsock/", nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to GET vsock: %w", err)
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	vmc := &define.VMConfig{}
-	if err = json.Unmarshal(data, vmc); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal vmconfig: %w", err)
-	}
-
-	if err = vmc.WriteToJsonFile(filepath.Join("/", define.VMConfigFile)); err != nil {
-		return nil, fmt.Errorf("failed to write vmconfig to file: %w", err)
-	}
-
-	return vmc, nil
-}
-
 func Bootstrap(ctx context.Context, command *cli.Command) error {
-	vmc, err := GetVMConfigFromVSockHTTP(ctx)
+	vmc, err := network.GetVMConfigFromVSockHTTP(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get vmconfig from vsock: %w", err)
 	}
@@ -166,6 +115,8 @@ func Bootstrap(ctx context.Context, command *cli.Command) error {
 		return userRootfsMode(ctx, vmc)
 	case define.RunDockerEngineMode:
 		return dockerEngineMode(ctx, vmc)
+	case define.RunKernelBootMode:
+		return kernelBootMode(ctx, vmc)
 	default:
 		return fmt.Errorf("unsupported mode %q", vmc.RunMode)
 	}
@@ -245,6 +196,26 @@ func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
 
 	g.Go(func() error {
 		return doExecCmdLine(ctx, vmc.Cmdline.TargetBin, vmc.Cmdline.TargetBinArgs)
+	})
+
+	return g.Wait()
+}
+
+func kernelBootMode(ctx context.Context, _ *define.VMConfig) error {
+	logrus.Infof("run kernel boot mode")
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		return configureNetwork(ctx)
+	})
+
+	// TODO: start ssh server
+	// TODO: sync time
+	// TODO: run user given command line
+
+	g.Go(func() error {
+		return fmt.Errorf("not implemented yet")
 	})
 
 	return g.Wait()

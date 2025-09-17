@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"linuxvm/pkg/define"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -31,7 +32,10 @@ func Get3rdDir() (string, error) {
 		return "", fmt.Errorf("failed to eval symlinks: %w", err)
 	}
 
-	path = filepath.Join(filepath.Dir(filepath.Dir(path)), "3rd")
+	selfDir := filepath.Dir(path)
+	parentDir := filepath.Dir(selfDir)
+
+	path = filepath.Join(parentDir, define.ThirdPartDirPrefix)
 	return path, nil
 }
 
@@ -55,4 +59,17 @@ func Get3rdUtilsPath(name string) (string, error) {
 	}
 
 	return filepath.Join(dir, runtime.GOOS, "bin", name), nil
+}
+
+func Get3rdUtilsPathForLinux(name string) (string, error) {
+	dir, err := Get3rdDir()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dir, "linux", "bin", name), nil
+}
+
+func GetGuestLinuxUtilsBinPath(name string) string {
+	return filepath.Join(define.GuestLinuxUtilsBinDir, name)
 }

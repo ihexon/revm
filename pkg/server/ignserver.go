@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"linuxvm/pkg/network"
+	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
 	"net"
 	"net/http"
+	"path/filepath"
 
 	"github.com/sirupsen/logrus"
 )
@@ -25,13 +27,21 @@ func IgnProvisionerServer(ctx context.Context, vmc *vmconfig.VMConfig, ignServer
 		return fmt.Errorf("failed to marshal vmconfig: %w", err)
 	}
 
+	host3rdDir, err := system.Get3rdDir()
+	if err != nil {
+		return fmt.Errorf("failed to get 3rd dir: %w", err)
+	}
+	linux3rdDir := filepath.Join(host3rdDir, "linux")
+
 	mux := http.NewServeMux()
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		_, err := io.Copy(w, bytes.NewReader(data))
 		if err != nil {
 			logrus.Errorf("failed to serve ignition file: %v", err)
 		}
 	})
+	mux.Handle("/3rd/linux/", http.StripPrefix("/3rd/linux/", http.FileServer(http.Dir(linux3rdDir))))
 
 	logrus.Infof("start ignition server on %q", ignServerAddr)
 	listener, err := net.Listen("unix", addr.Path)
