@@ -150,3 +150,33 @@ func (vmc *VMConfig) Lock() (*flock.Flock, error) {
 
 	return fileLock, nil
 }
+
+func (vmc *VMConfig) WaitGVProxyReady(ctx context.Context) {
+	logrus.Debugf("waiting gvproxy ready")
+	waitGVProxyReady(ctx, vmc)
+	logrus.Debugf("gvproxy ready")
+}
+
+func (vmc *VMConfig) WaitIgnServerReady(ctx context.Context) {
+	logrus.Debugf("waiting Ignition server ready")
+	waitIgnServerReady(ctx, vmc)
+	logrus.Debugf("Ignition server ready")
+}
+
+func waitGVProxyReady(ctx context.Context, vmc *VMConfig) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-vmc.Stage.GVProxyChan:
+		return
+	}
+}
+
+func waitIgnServerReady(ctx context.Context, vmc *VMConfig) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-vmc.Stage.IgnServerChan:
+		return
+	}
+}

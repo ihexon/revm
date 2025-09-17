@@ -162,7 +162,7 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 
 	// a stage struct to hold the state of the vm service status
 	stage := define.Stage{
-		//GVProxyChan:   make(chan struct{}, 1),
+		GVProxyChan:   make(chan struct{}, 1),
 		IgnServerChan: make(chan struct{}, 1),
 	}
 
