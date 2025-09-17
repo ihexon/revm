@@ -77,6 +77,10 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("failed to get vm configure: %w", err)
 	}
 
+	g.Go(func() error {
+		return server.IgnProvisionerServer(ctx, vmc, vmc.IgnProvisionerAddr)
+	})
+
 	if command.IsSet(define.FlagRestAPIListenAddr) && command.String(define.FlagRestAPIListenAddr) != "" {
 		g.Go(func() error {
 			return server.NewAPIServer(vmc).Start(ctx)
@@ -91,6 +95,9 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 		if err = vmp.Create(ctx); err != nil {
 			return fmt.Errorf("failed to create vm: %w", err)
 		}
+
+		<-vmc.Stage.IgnServerChan
+		logrus.Debugf("start vm after ign server is ready")
 		return vmp.Start(ctx)
 	})
 
