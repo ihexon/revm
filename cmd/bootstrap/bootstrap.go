@@ -2,19 +2,26 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh"
 	"linuxvm/pkg/system"
+	"path/filepath"
+
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"syscall"
+	"time"
 
+	"github.com/mdlayher/vsock"
 	"github.com/moby/sys/mountinfo"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -35,9 +42,9 @@ func setLogrus(command *cli.Command) {
 	}
 
 	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp:          true,
-		DisableLevelTruncation: true,
-		ForceColors:            true,
+		FullTimestamp:   true,
+		ForceColors:     true,
+		TimestampFormat: "2006-01-02 15:04:05.000",
 	})
 	logrus.SetOutput(os.Stderr)
 }
@@ -76,15 +83,72 @@ func earlyStage(ctx context.Context, command *cli.Command) (context.Context, err
 	if err := filesystem.MountPseudoFilesystem(ctx); err != nil {
 		return ctx, err
 	}
+	logrus.Infof("start guest bootstrap")
 
 	return ctx, nil
 }
 
-func Bootstrap(ctx context.Context, command *cli.Command) error {
-	// TODO: support get vmconfig from vsock
-	vmc, err := define.LoadVMCFromFile(filepath.Join("/", define.VMConfigFile))
+func GetVMConfigFromVSockHTTP(ctx context.Context) (*define.VMConfig, error) {
+	// make client support ctx, vsock do not support ctx
+	client := &http.Client{
+		Timeout: 3 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				result := make(chan struct {
+					c   net.Conn
+					err error
+				}, 1)
+
+				go func() {
+					c, err := vsock.Dial(2, define.DefaultVSockPort, nil)
+					result <- struct {
+						c   net.Conn
+						err error
+					}{c, err}
+				}()
+
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case r := <-result:
+					return r.c, r.err
+				}
+			},
+		},
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://vsock/", nil)
 	if err != nil {
-		return fmt.Errorf("failed to load vmconfig: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to GET vsock: %w", err)
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	vmc := &define.VMConfig{}
+	if err = json.Unmarshal(data, vmc); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal vmconfig: %w", err)
+	}
+
+	if err = vmc.WriteToJsonFile(filepath.Join("/", define.VMConfigFile)); err != nil {
+		return nil, fmt.Errorf("failed to write vmconfig to file: %w", err)
+	}
+
+	return vmc, nil
+}
+
+func Bootstrap(ctx context.Context, command *cli.Command) error {
+	vmc, err := GetVMConfigFromVSockHTTP(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get vmconfig from vsock: %w", err)
 	}
 
 	// Mount the data disk(virtio-blk)
@@ -215,7 +279,6 @@ func configureNetwork(ctx context.Context) error {
 		errChan <- network.DHClient4(eth0, attempts, verbose)
 		// mark the dhcp operation finished
 		dhcpDoneChan <- struct{}{}
-		logrus.Debugf("configure guest network: dhcp done")
 		close(dhcpDoneChan)
 		logrus.Infof("configure guest network: done")
 	}()
@@ -225,7 +288,6 @@ func configureNetwork(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case err := <-errChan:
-
 		return err
 	}
 }

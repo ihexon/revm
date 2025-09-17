@@ -11,11 +11,12 @@ import (
 	"github.com/insomniacslk/dhcp/dhcpv4/client4"
 	"github.com/insomniacslk/dhcp/netboot"
 	"github.com/sirupsen/logrus"
+	"github.com/vishvananda/netlink"
 )
 
 func DHClient4(ifName string, attempts int, verbose bool) error {
 	logrus.Debugf("try to bring interface %q up", ifName)
-	_, err := BringInterfaceUp(ifName)
+	_, err := BringInterfaceUpFast(ifName)
 	if err != nil {
 		return fmt.Errorf("failed to bring interface %q up: %w", ifName, err)
 	}
@@ -30,14 +31,34 @@ func DHClient4(ifName string, attempts int, verbose bool) error {
 	return netboot.ConfigureInterface(ifName, &bootConf.NetConf)
 }
 
+// BringInterfaceUp is slower than BringInterfaceUpFast
 func BringInterfaceUp(ifName string) (_ *net.Interface, err error) {
 	return netboot.IfUp(ifName, 2*time.Second)
+}
+
+func BringInterfaceUpFast(ifName string) (*net.Interface, error) {
+	link, err := netlink.LinkByName(ifName)
+	if err != nil {
+		return nil, fmt.Errorf("cannot find interface %q: %w", ifName, err)
+	}
+
+	if err := netlink.LinkSetUp(link); err != nil {
+		return nil, fmt.Errorf("failed to set interface %q up: %w", ifName, err)
+	}
+
+	// 返回 net.Interface
+	iface, err := net.InterfaceByName(ifName)
+	if err != nil {
+		return nil, fmt.Errorf("cannot get net.Interface for %q: %w", ifName, err)
+	}
+	return iface, nil
 }
 
 func dhClient4(ifname string, attempts int, verbose bool) (*netboot.BootConf, error) {
 	if attempts < 1 {
 		attempts = 1
 	}
+
 	client := client4.NewClient()
 
 	var (
