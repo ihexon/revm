@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/filesystem"
+	"net/url"
+	"os"
 
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh"
@@ -179,4 +181,164 @@ func waitIgnServerReady(ctx context.Context, vmc *VMConfig) {
 	case <-vmc.Stage.IgnServerChan:
 		return
 	}
+}
+
+func (vmc *VMConfig) WithUserProvidedDataDisk(disks []string) error {
+	if len(disks) == 0 || disks == nil {
+		return fmt.Errorf("data disk list is empty, please check your input")
+	}
+
+	var dataDisks []*define.DataDisk
+	for _, disk := range disks {
+		diskPath, err := filepath.Abs(disk)
+		if err != nil {
+			return fmt.Errorf("failed to get abs path: %w", err)
+		}
+
+		dataDisks = append(dataDisks, &define.DataDisk{
+			Path: diskPath,
+		})
+	}
+	vmc.DataDisk = dataDisks
+
+	return nil
+}
+
+func (vmc *VMConfig) WithUserProvidedCmdline(bin string, args, envs []string) {
+	vmc.Cmdline = define.Cmdline{
+		Bootstrap:     system.GetGuestLinuxUtilsBinPath(define.BoostrapFileName),
+		BootstrapArgs: []string{},
+		Workspace:     define.DefaultWorkDir,
+		TargetBin:     bin,
+		TargetBinArgs: args,
+		Env:           append(envs, define.DefaultPATHInBootstrap),
+	}
+}
+
+func (vmc *VMConfig) WithResources(memory uint64, cpus int8) {
+	vmc.MemoryInMB = memory
+	vmc.Cpus = cpus
+}
+
+func (vmc *VMConfig) WithUserProvidedMounts(dirs []string) error {
+	if len(dirs) == 0 || dirs == nil {
+		return fmt.Errorf("mount dirs is empty, please check your input")
+	}
+
+	var absDirs []string
+	for _, dir := range dirs {
+		p, err := filepath.Abs(dir)
+		if err != nil {
+			return fmt.Errorf("failed to get abs path: %w", err)
+		}
+		absDirs = append(absDirs, p)
+	}
+
+	vmc.Mounts = append(vmc.Mounts, filesystem.CmdLineMountToMounts(absDirs)...)
+	return nil
+}
+
+func (vmc *VMConfig) WithUserProvidedRootFS(rootfsPath string) error {
+	if rootfsPath == "" {
+		return fmt.Errorf("rootfs path is empty")
+	}
+	rootfsPath, err := filepath.Abs(rootfsPath)
+	if err != nil {
+		return err
+	}
+
+	vmc.RootFS = rootfsPath
+	return nil
+}
+
+func (vmc *VMConfig) WithBuiltInRootfs() error {
+	path, err := system.GetBuiltinRootfsPath()
+	if err != nil {
+		return fmt.Errorf("failed to get builtin rootfs path: %w", err)
+	}
+	vmc.RootFS = path
+
+	return nil
+}
+
+func (vmc *VMConfig) WithContainerDataDisk(disk string) error {
+	if disk == "" {
+		return fmt.Errorf("container storage disk is empty")
+	}
+
+	disk, err := filepath.Abs(disk)
+	if err != nil {
+		return fmt.Errorf("failed to get abs path: %w", err)
+	}
+
+	logrus.Infof("in docker mode, container storage disk will be %q", disk)
+	vmc.DataDisk = append(vmc.DataDisk, &define.DataDisk{
+		IsContainerStorage: true,
+		Path:               disk,
+	})
+
+	return nil
+}
+
+func (vmc *VMConfig) WithPodmanListenAPIInHost(listenAPIPath string) error {
+	if listenAPIPath == "" {
+		return fmt.Errorf("listen api path is empty")
+	}
+
+	listenAPIPath, err := filepath.Abs(listenAPIPath)
+	if err != nil {
+		return err
+	}
+
+	unixAddr := &url.URL{
+		Scheme: "unix",
+		Host:   "",
+		Path:   listenAPIPath,
+	}
+
+	vmc.PodmanInfo = define.PodmanInfo{
+		UnixSocksAddr: unixAddr.String(),
+	}
+	return nil
+}
+
+// WithRESTAPIAddress set the REST API address for the VM. only support unix socket
+func (vmc *VMConfig) WithRESTAPIAddress(listenAPIPath string) error {
+	if listenAPIPath == "" {
+		return fmt.Errorf("listen api path is empty")
+	}
+
+	listenAPIPath, err := filepath.Abs(listenAPIPath)
+	if err != nil {
+		return err
+	}
+
+	unixAddr := &url.URL{
+		Scheme: "unix",
+		Host:   "",
+		Path:   listenAPIPath,
+	}
+
+	vmc.RestAPIAddress = unixAddr.String()
+	return nil
+}
+
+func NewVMConfig() *VMConfig {
+	vmc := &VMConfig{}
+
+	prefix := filepath.Join(os.TempDir(), system.GenerateRandomID())
+	logrus.Debugf("runtime temp directory: %q", prefix)
+
+	vmc.GVproxyEndpoint = fmt.Sprintf("unix://%s/%s", prefix, define.GvProxyControlEndPoint)
+	vmc.NetworkStackBackend = fmt.Sprintf("unixgram://%s/%s", prefix, define.GvProxyNetworkEndpoint)
+	vmc.SSHInfo = define.SSHInfo{
+		HostSSHKeyPairFile: filepath.Join(prefix, define.SSHKeyPair),
+	}
+	vmc.IgnProvisionerAddr = fmt.Sprintf("unix://%s/%s", prefix, define.IgnServerSocketName)
+	vmc.Stage = define.Stage{
+		GVProxyChan:   make(chan struct{}, 1),
+		IgnServerChan: make(chan struct{}, 1),
+	}
+
+	return vmc
 }

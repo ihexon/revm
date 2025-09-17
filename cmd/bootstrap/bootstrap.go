@@ -237,24 +237,25 @@ func doExecCmdLine(ctx context.Context, targetBin string, targetBinArgs []string
 
 func configureNetwork(ctx context.Context) error {
 	logrus.Infof("configure guest network: start")
-	errChan := make(chan error)
+	errChan := make(chan error, 1)
 
 	go func() {
 		verbose := false
 		if _, find := os.LookupEnv("REVM_DEBUG"); find {
 			verbose = true
 		}
+
 		if logrus.IsLevelEnabled(logrus.DebugLevel) {
 			verbose = true
 		}
+
 		errChan <- network.DHClient4(eth0, attempts, verbose)
-		// mark the dhcp operation finished
-		dhcpDoneChan <- struct{}{}
+		// close dhcpDoneChan to notify podman service
 		close(dhcpDoneChan)
+
 		logrus.Infof("configure guest network: done")
 	}()
 
-	defer close(errChan)
 	select {
 	case <-ctx.Done():
 		return ctx.Err()

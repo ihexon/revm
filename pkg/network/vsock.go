@@ -34,7 +34,7 @@ func ForwardPodmanAPIOverVSock(ctx context.Context, gvproxyCtlUnixAddr, listHost
 
 	listenAddr, err := ParseUnixAddr(listHostUnixAddr)
 	if err != nil {
-		return fmt.Errorf("failed to parse listen socket address: %w", err)
+		return fmt.Errorf("failed to parse listen socket address %q: %w", listHostUnixAddr, err)
 	}
 
 	if listenAddr.Path == "" {
