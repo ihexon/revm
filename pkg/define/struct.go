@@ -60,7 +60,7 @@ type VMConfig struct {
 
 type Stage struct {
 	// when gvproxy is running, this channel will be closed
-	// GVProxyChan chan struct{}
+	GVProxyChan chan struct{}
 	// when ignition server is running, this channel will be closed
 	IgnServerChan chan struct{}
 }

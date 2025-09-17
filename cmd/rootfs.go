@@ -96,8 +96,9 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 			return fmt.Errorf("failed to create vm: %w", err)
 		}
 
-		<-vmc.Stage.IgnServerChan
-		logrus.Debugf("start vm after ign server is ready")
+		vmc.WaitIgnServerReady(ctx)
+		vmc.WaitGVProxyReady(ctx)
+
 		return vmp.Start(ctx)
 	})
 

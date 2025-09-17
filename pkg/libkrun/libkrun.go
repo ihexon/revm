@@ -282,7 +282,8 @@ func (v *AppleHVStubber) StartNetwork(ctx context.Context) error {
 		ControlEndpoints:    v.vmc.GVproxyEndpoint,
 		VFKitSocketEndpoint: v.vmc.NetworkStackBackend,
 	}
-	return gvproxy.StartNetworking(ctx, gvpSocks)
+	
+	return gvproxy.StartNetworking(ctx, gvpSocks, v.vmc.Stage.GVProxyChan)
 }
 
 func (v *AppleHVStubber) NestVirt(ctx context.Context) error {

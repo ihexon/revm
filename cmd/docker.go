@@ -102,8 +102,8 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 			return fmt.Errorf("failed to create vm: %w", err)
 		}
 
-		<-vmc.Stage.IgnServerChan
-		logrus.Debugf("start vm after ignServer is ready")
+		vmc.WaitIgnServerReady(ctx)
+		vmc.WaitGVProxyReady(ctx)
 
 		return vmp.Start(ctx)
 	})
@@ -114,6 +114,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 			return fmt.Errorf("failed to parse tcp addr %q: %w", define.PodmanDefaultListenTcpAddrInGuest, err)
 		}
 
+		vmc.WaitGVProxyReady(ctx)
 		return network.ForwardPodmanAPIOverVSock(ctx, vmc.GVproxyEndpoint, vmc.PodmanInfo.UnixSocksAddr, tcpAddr.Host, uint16(tcpAddr.Port))
 	})
 

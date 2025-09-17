@@ -116,7 +116,7 @@ type EndPoints struct {
 	VFKitSocketEndpoint string
 }
 
-func run(ctx context.Context, configuration *gvptypes.Configuration, endpoints EndPoints, readyFunc func()) error {
+func run(ctx context.Context, configuration *gvptypes.Configuration, endpoints EndPoints, doneChan chan struct{}) error {
 	vn, err := virtualnetwork.New(configuration)
 	if err != nil {
 		return fmt.Errorf("failed to create virtual network: %w", err)
@@ -175,13 +175,13 @@ func run(ctx context.Context, configuration *gvptypes.Configuration, endpoints E
 		return vn.AcceptVfkit(ctx, vfkitConn)
 	})
 
-	// notify that the network is ready
-	readyFunc()
+	// notify the caller that the gvproxy is ready
+	close(doneChan)
 
 	return g.Wait()
 }
 
-func StartNetworking(ctx context.Context, gvpSocks EndPoints) error {
+func StartNetworking(ctx context.Context, gvpSocks EndPoints, doneChan chan struct{}) error {
 	if err := makeDirForUnixSocks(gvpSocks.ControlEndpoints); err != nil {
 		return fmt.Errorf("failed to create dir for gvproxy control unix socket file %q: %w", gvpSocks.ControlEndpoints, err)
 	}
@@ -192,11 +192,7 @@ func StartNetworking(ctx context.Context, gvpSocks EndPoints) error {
 
 	gvpCfg := newGvpConfigure()
 
-	readyFunc := func() {
-		// TODO: we should know when the vm network is ready
-	}
-
-	return run(ctx, gvpCfg, gvpSocks, readyFunc)
+	return run(ctx, gvpCfg, gvpSocks, doneChan)
 }
 
 func makeDirForUnixSocks(str string) error {
