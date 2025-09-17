@@ -3,35 +3,20 @@ package system
 import (
 	"fmt"
 	"io"
+	"linuxvm/pkg/define"
 	"os"
 	"path/filepath"
 
 	"github.com/sirupsen/logrus"
 )
 
-func Copy3rdFileTo(rootfs string) error {
-	path, err := Get3rdDir()
+func CopyBootstrapToRooFs(rootfs string) error {
+	bootstrapPath, err := Get3rdUtilsPathForLinux(define.BoostrapFileName)
 	if err != nil {
-		return fmt.Errorf("failed to get 3rd dir: %w", err)
+		return fmt.Errorf("failed to get thirdPart directory: %w", err)
 	}
 
-	fileList := []string{
-		"bootstrap",
-		"busybox.static",
-		"dropbear",
-		"dropbearkey",
-	}
-
-	for _, file := range fileList {
-		src := filepath.Join(path, "linux", "bin", file)
-		dst := filepath.Join(rootfs, "3rd", file)
-		logrus.Debugf("copy file from %q to %q", src, dst)
-		if err := CopyFile(src, dst); err != nil {
-			return fmt.Errorf("failed to copy file: %w", err)
-		}
-	}
-
-	return nil
+	return CopyFile(bootstrapPath, filepath.Join(rootfs, define.GuestLinuxUtilsBinDir, define.BoostrapFileName))
 }
 
 func CopyFile(src, dst string) error {

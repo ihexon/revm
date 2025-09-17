@@ -1,14 +1,18 @@
 package define
 
 const (
-	VMConfigFile = "vmconfig.json"
-
+	VMConfigFile     = "vmconfig.json"
 	HostDNSInGVProxy = "host.containers.internal"
 )
 
 const (
-	DefaultWorkDir  = "/"
-	BootstrapBinary = "bootstrap"
+	GuestLinuxUtilsBinDir = "/3rd/linux/bin/"
+)
+
+const (
+	DefaultWorkDir     = "/"
+	ThirdPartDirPrefix = "3rd"
+	BoostrapFileName   = "bootstrap"
 
 	IgnServerSocketName    = "ignition.sock"
 	GvProxyControlEndPoint = "gvpctl.sock"
@@ -26,11 +30,11 @@ const (
 
 	LockFile = ".lock"
 
-	RunDockerEngineMode     = "dockerEngineMode"
-	RunUserRootfsMode       = "rootfsMode"
-	RunDirectBootKernelMode = "directBootKernelMode"
+	RunDockerEngineMode = "dockerEngineMode"
+	RunUserRootfsMode   = "rootfsMode"
+	RunKernelBootMode   = "directBootKernelMode"
 
-	DefaultPATH = "PATH=/3rd:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+	DefaultPATHInBootstrap = "PATH=" + GuestLinuxUtilsBinDir + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 	DefaultPodmanAPIUnixSocksInHost = "/tmp/docker_api.sock"
 

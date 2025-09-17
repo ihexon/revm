@@ -1,3 +1,5 @@
+//go:build darwin && (arm64 || amd64)
+
 package network
 
 import (
