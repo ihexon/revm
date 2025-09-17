@@ -52,7 +52,17 @@ type VMConfig struct {
 	PodmanInfo          PodmanInfo `json:"podmanInfo,omitempty"`
 	RestAPIAddress      string     `json:"restAPIAddress,omitempty"`
 	// RunMode is the mode of the VM, which can be define.RunUserRootfsMode, define.RunDirectBootKernelMode or define.RunDockerEngineMode
-	RunMode string `json:"runMode,omitempty"`
+	RunMode            string `json:"runMode,omitempty"`
+	IgnProvisionerAddr string `json:"ignProvisionerAddr,omitempty"`
+
+	Stage Stage `json:"-"`
+}
+
+type Stage struct {
+	// when gvproxy is running, this channel will be closed
+	// GVProxyChan chan struct{}
+	// when ignition server is running, this channel will be closed
+	IgnServerChan chan struct{}
 }
 
 // DataDisk represents the configuration of a data disk, including its file system type, path, and mount point.
@@ -102,4 +112,13 @@ func LoadVMCFromFile(file string) (*VMConfig, error) {
 		return nil, fmt.Errorf("failed to decode file %s: %w", file, err)
 	}
 	return vmc, nil
+}
+
+func (vmc *VMConfig) WriteToJsonFile(file string) error {
+	b, err := json.Marshal(vmc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal vmconfig: %v", err)
+	}
+
+	return os.WriteFile(file, b, 0644)
 }

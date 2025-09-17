@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/filesystem"
+
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh"
 	"linuxvm/pkg/system"
-	"os"
 	"path/filepath"
 
 	"github.com/gofrs/flock"
@@ -80,15 +80,6 @@ func (vmc *VMConfig) CreateRawDiskWhenNeeded(ctx context.Context) error {
 	}
 
 	return vmc.ParseDiskInfo(ctx)
-}
-
-func (vmc *VMConfig) WriteToJsonFile(file string) error {
-	b, err := json.Marshal(vmc)
-	if err != nil {
-		return fmt.Errorf("failed to marshal vmconfig: %v", err)
-	}
-
-	return os.WriteFile(file, b, 0644)
 }
 
 func (vmc *VMConfig) TryGetSystemProxyAndSetToCmdline() error {

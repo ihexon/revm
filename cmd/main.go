@@ -92,9 +92,9 @@ func setLogrus(command *cli.Command) {
 	}
 
 	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp:          true,
-		DisableLevelTruncation: true,
-		ForceColors:            true,
+		FullTimestamp:   true,
+		ForceColors:     true,
+		TimestampFormat: "2006-01-02 15:04:05.000",
 	})
 	logrus.SetOutput(os.Stderr)
 }
@@ -160,6 +160,12 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 	prefix := filepath.Join(os.TempDir(), system.GenerateRandomID())
 	logrus.Debugf("runtime temp directory: %q", prefix)
 
+	// a stage struct to hold the state of the vm service status
+	stage := define.Stage{
+		//GVProxyChan:   make(chan struct{}, 1),
+		IgnServerChan: make(chan struct{}, 1),
+	}
+
 	vmc := vmconfig.VMConfig{
 		MemoryInMB:          command.Uint64(define.FlagMemory),
 		Cpus:                command.Int8(define.FlagCPUS),
@@ -180,7 +186,9 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 			TargetBinArgs: command.Args().Tail(),
 			Env:           append(command.StringSlice("envs"), define.DefaultPATH),
 		},
-		RestAPIAddress: command.String(define.FlagRestAPIListenAddr),
+		RestAPIAddress:     command.String(define.FlagRestAPIListenAddr),
+		IgnProvisionerAddr: fmt.Sprintf("unix://%s/%s", prefix, define.IgnServerSocketName),
+		Stage:              stage,
 	}
 
 	return &vmc

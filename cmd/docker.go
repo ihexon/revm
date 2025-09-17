@@ -90,6 +90,10 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	}
 
 	g.Go(func() error {
+		return server.IgnProvisionerServer(ctx, vmc, vmc.IgnProvisionerAddr)
+	})
+
+	g.Go(func() error {
 		return vmp.StartNetwork(ctx)
 	})
 
@@ -97,6 +101,9 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		if err = vmp.Create(ctx); err != nil {
 			return fmt.Errorf("failed to create vm: %w", err)
 		}
+
+		<-vmc.Stage.IgnServerChan
+		logrus.Debugf("start vm after ignServer is ready")
 
 		return vmp.Start(ctx)
 	})
@@ -139,11 +146,13 @@ func addContainerStorageDisk(vmc *vmconfig.VMConfig, command *cli.Command) error
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path: %w", err)
 	}
+
 	logrus.Infof("in docker mode, container storage disk will be %q", containerStorageDisk)
 	vmc.DataDisk = append(vmc.DataDisk, &define.DataDisk{
 		IsContainerStorage: true,
 		Path:               containerStorageDisk,
 	})
+
 	return nil
 }
 

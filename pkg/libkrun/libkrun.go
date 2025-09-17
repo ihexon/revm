@@ -15,6 +15,7 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/gvproxy"
+	"linuxvm/pkg/network"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
 	"net/url"
@@ -120,7 +121,11 @@ func (v *AppleHVStubber) Create(ctx context.Context) error {
 		return err
 	}
 
-	return v.writeCfgToRootfs(ctx)
+	if err := v.addVSockListenInHost(ctx, v.krunCtxID); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (v *AppleHVStubber) Start(ctx context.Context) error {
@@ -137,11 +142,6 @@ func (v *AppleHVStubber) Start(ctx context.Context) error {
 	}
 
 	return execCmdlineInVM(ctx, v.krunCtxID)
-}
-
-func (v *AppleHVStubber) writeCfgToRootfs(ctx context.Context) error {
-	logrus.Debugf("write vmconfig.json to rootfs: %q", v.vmc.RootFS)
-	return v.vmc.WriteToJsonFile(filepath.Join(v.vmc.RootFS, define.VMConfigFile))
 }
 
 func (v *AppleHVStubber) Stop(ctx context.Context) error {
@@ -357,6 +357,26 @@ func addVirtioFS(ctxID uint32, tag, path string) error {
 	logrus.Infof("add virtiofs %q to vm", hostPath)
 	if ret := C.krun_add_virtiofs2(C.uint32_t(ctxID), cTag, cHostPath, C.uint64_t(1<<29)); ret != 0 {
 		return fmt.Errorf("failed to add virtiofs, return: %v", ret)
+	}
+
+	return nil
+}
+
+func (v *AppleHVStubber) addVSockListenInHost(ctx context.Context, vmCtxID uint32) error {
+	return addVSockListenInHost(ctx, vmCtxID, uint32(define.DefaultVSockPort), v.vmc.IgnProvisionerAddr)
+}
+
+func addVSockListenInHost(ctx context.Context, vmCtxID uint32, vsockPort uint32, ignServerAddr string) error {
+	addr, err := network.ParseUnixAddr(ignServerAddr)
+	if err != nil {
+		return fmt.Errorf("failed to parse unix addr: %w", err)
+	}
+
+	cIgnServerListenPath, fn1 := GoString2CString(addr.Path)
+	defer fn1()
+
+	if ret := C.krun_add_vsock_port2(C.uint32_t(vmCtxID), C.uint32_t(vsockPort), cIgnServerListenPath, false); ret != 0 {
+		return fmt.Errorf("failed to add vsock port listened on host, return: %v", ret)
 	}
 
 	return nil

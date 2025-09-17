@@ -10,6 +10,7 @@ const (
 	DefaultWorkDir  = "/"
 	BootstrapBinary = "bootstrap"
 
+	IgnServerSocketName    = "ignition.sock"
 	GvProxyControlEndPoint = "gvpctl.sock"
 	GvProxyNetworkEndpoint = "gvpnet.sock"
 	DropBearRuntimeDir     = "/run/dropbear"
@@ -21,6 +22,7 @@ const (
 	DefaultGuestUser          = "root"
 	DefaultGuestAddr          = "192.168.127.2"
 	DefaultGuestSSHListenAddr = DefaultGuestAddr
+	DefaultVSockPort          = 1984
 
 	LockFile = ".lock"
 
