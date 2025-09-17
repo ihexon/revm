@@ -111,13 +111,14 @@ func setMaxMemory() uint64 {
 
 func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, error) {
 	vmc := makeVMCfg(command)
+
 	switch command.Name {
 	case define.FlagRootfsMode:
 		vmc.RunMode = define.RunUserRootfsMode
 	case define.FlagDockerMode:
 		vmc.RunMode = define.RunDockerEngineMode
 	case define.FlagKernelMode:
-		vmc.RunMode = define.RunDirectBootKernelMode
+		vmc.RunMode = define.RunKernelBootMode
 	}
 
 	if command.Name == define.FlagDockerMode {
@@ -179,12 +180,12 @@ func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
 		},
 
 		Cmdline: define.Cmdline{
-			Bootstrap:     define.BootstrapBinary,
+			Bootstrap:     system.GetGuestLinuxUtilsBinPath(define.BoostrapFileName),
 			BootstrapArgs: []string{},
 			Workspace:     define.DefaultWorkDir,
 			TargetBin:     command.Args().First(),
 			TargetBinArgs: command.Args().Tail(),
-			Env:           append(command.StringSlice("envs"), define.DefaultPATH),
+			Env:           append(command.StringSlice("envs"), define.DefaultPATHInBootstrap),
 		},
 		RestAPIAddress:     command.String(define.FlagRestAPIListenAddr),
 		IgnProvisionerAddr: fmt.Sprintf("unix://%s/%s", prefix, define.IgnServerSocketName),

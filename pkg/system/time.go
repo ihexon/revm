@@ -27,7 +27,7 @@ func SyncRTCTime(ctx context.Context) error {
 
 func syncTimeFromNtpServer(ctx context.Context) {
 	for i := 0; i < 3; i++ {
-		if err := exec.CommandContext(ctx, "/3rd/busybox.static", "ntpd", "-q", "-n", "-p", NTPServer).Run(); err != nil {
+		if err := exec.CommandContext(ctx, GetGuestLinuxUtilsBinPath("busybox.static"), "ntpd", "-q", "-n", "-p", NTPServer).Run(); err != nil {
 			logrus.Warnf("failed to sync time: %v, try again", err)
 			continue
 		}

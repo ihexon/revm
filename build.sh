@@ -223,7 +223,7 @@ build_bootstrap() {
 	local boostrap_bin="out/3rd/linux/bin/bootstrap"
 	log_std "Build bootstrap for guest"
 	rm -f "$boostrap_bin"
-	GOOS=linux GOARCH=$ARCH go build -v -o "$boostrap_bin" ./cmd/bootstrap
+	CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH go build -v -ldflags="-s -w" -o "$boostrap_bin" ./cmd/bootstrap
 }
 
 packaging() {
@@ -243,7 +243,6 @@ main() {
 			go test -v linuxvm/test/system
 			;;
 		build_darwin)
-
 			init_func
 			download_3rd
 			build_revm
