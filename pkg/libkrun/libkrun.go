@@ -41,7 +41,9 @@ func GoStringList2CStringArray(stringList []string) ([]*C.char, func()) {
 
 	return list, func() {
 		for _, str := range list {
-			C.free(unsafe.Pointer(str))
+			if str != nil {
+				C.free(unsafe.Pointer(str))
+			}
 		}
 	}
 }
@@ -49,7 +51,9 @@ func GoStringList2CStringArray(stringList []string) ([]*C.char, func()) {
 func GoString2CString(str string) (*C.char, func()) {
 	cStr := C.CString(str)
 	return cStr, func() {
-		C.free(unsafe.Pointer(cStr))
+		if cStr != nil {
+			C.free(unsafe.Pointer(cStr))
+		}
 	}
 }
 
@@ -109,7 +113,7 @@ func (v *AppleHVStubber) Create(ctx context.Context) error {
 	if err := v.setNetworkProvider(); err != nil {
 		return err
 	}
-	if err := v.addRawDisk(); err != nil {
+	if err := v.addRawDisk(ctx); err != nil {
 		return err
 	}
 
@@ -193,8 +197,14 @@ func (v *AppleHVStubber) setRLimited() error {
 }
 
 func (v *AppleHVStubber) setCommandLine(dir string, env []string) error {
+	cleanUp := system.CleanUp()
+	defer cleanUp.DoClean()
+
 	workdir, fn1 := GoString2CString(dir)
-	defer fn1()
+	cleanUp.Add(func() error {
+		fn1()
+		return nil
+	})
 
 	logrus.Debugf("set vm workdir: %q", dir)
 	if ret := C.krun_set_workdir(C.uint32_t(v.krunCtxID), workdir); ret != 0 {
@@ -202,23 +212,27 @@ func (v *AppleHVStubber) setCommandLine(dir string, env []string) error {
 	}
 
 	logrus.Debugf("guest bootstrap is: %q", v.vmc.Cmdline.Bootstrap)
-	targetBin, fn2 := GoString2CString(v.vmc.Cmdline.Bootstrap)
-	defer fn2()
+	cBootstrapBinPath, fn2 := GoString2CString(v.vmc.Cmdline.Bootstrap)
+	cleanUp.Add(func() error {
+		fn2()
+		return nil
+	})
 
-	var bootstrapFlag []string
-	if logrus.IsLevelEnabled(logrus.DebugLevel) {
-		logrus.Debugf("set bootstrap running in verbose")
-		bootstrapFlag = append(bootstrapFlag, "--verbose")
-	}
-
-	targetBinArgs, fn3 := GoStringList2CStringArray(bootstrapFlag)
-	defer fn3()
+	logrus.Debugf("guest bootstrap args is: %q", v.vmc.Cmdline.BootstrapArgs)
+	cBootstrapBinArgs, fn3 := GoStringList2CStringArray(v.vmc.Cmdline.BootstrapArgs)
+	cleanUp.Add(func() error {
+		fn3()
+		return nil
+	})
 
 	logrus.Debugf("pass env to guest: %q", env)
-	envPassIn, fn4 := GoStringList2CStringArray(env)
-	defer fn4()
+	cEnvPassIn, fn4 := GoStringList2CStringArray(env)
+	cleanUp.Add(func() error {
+		fn4()
+		return nil
+	})
 
-	if ret := C.krun_set_exec(C.uint32_t(v.krunCtxID), targetBin, &targetBinArgs[0], &envPassIn[0]); ret != 0 {
+	if ret := C.krun_set_exec(C.uint32_t(v.krunCtxID), cBootstrapBinPath, &cBootstrapBinArgs[0], &cEnvPassIn[0]); ret != 0 {
 		return fmt.Errorf("failed to set exec, return %v", ret)
 	}
 
@@ -257,7 +271,7 @@ func (v *AppleHVStubber) setRootFS() error {
 	return nil
 }
 
-func (v *AppleHVStubber) addRawDisk() error {
+func (v *AppleHVStubber) addRawDisk(ctx context.Context) error {
 	for _, disk := range v.vmc.DataDisk {
 		if err := addRawDisk(v.krunCtxID, disk.Path); err != nil {
 			return err

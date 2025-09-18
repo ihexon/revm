@@ -11,46 +11,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
-type Disk struct {
-	size           StorageUnits
-	shouldFormat   bool
-	FilesystemType string
+type DiskInfo struct {
 	UUID           string
+	FilesystemType string
 	AbsPath        string
 }
 
-func Fscheck(ctx context.Context, diskFile string) error {
-	info, err := GetBlockInfo(ctx, diskFile)
-	if err != nil {
-		return fmt.Errorf("failed to get disk info: %w", err)
-	}
-
-	if info.FilesystemType != "ext4" {
-		return fmt.Errorf("filesystem integrity check only support ext4 filesystem, but got %q", info.FilesystemType)
-	}
-
-	fsckExt4, err := system.Get3rdUtilsPath("fsck.ext4")
-	if err != nil {
-		return fmt.Errorf("failed to get mke2fs path: %w", err)
-	}
-
-	cmd := exec.CommandContext(ctx, fsckExt4, "-p", info.AbsPath)
-
-	if logrus.GetLevel() == logrus.DebugLevel {
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stderr
-	}
-	cmd.Stdin = nil
-	logrus.Debugf("fsck cmdline: %q", cmd.Args)
-
-	return cmd.Run()
-}
-
-func GetBlockInfo(ctx context.Context, path string) (*Disk, error) {
+func getBlockInfo(ctx context.Context, path string) (*RawDisk, error) {
 	block, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
@@ -61,18 +31,19 @@ func GetBlockInfo(ctx context.Context, path string) (*Disk, error) {
 		return nil, fmt.Errorf("failed to get blkid path: %w", err)
 	}
 	// blkid -s UUID -o value /dev/sda1
-	cmd := exec.CommandContext(ctx, blkid, "-s", "UUID", "-o", "value", block)
+	cmd := exec.CommandContext(ctx, blkid, "-c", "/dev/null", "-s", "UUID", "-o", "value", block)
 	cmd.Stdin = nil
 	cmd.Stderr = os.Stderr
 	var uuid bytes.Buffer
 	cmd.Stdout = &uuid
+
 	logrus.Debugf("blkid UUID cmdline: %q", cmd.Args)
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("failed to get disk UUID: %w", err)
 	}
 
 	logrus.Debugf("blkid UUID output: %q", strings.TrimSpace(uuid.String()))
-	cmd = exec.CommandContext(ctx, blkid, "-s", "TYPE", "-o", "value", block)
+	cmd = exec.CommandContext(ctx, blkid, "-c", "/dev/null", "-s", "TYPE", "-o", "value", block)
 	cmd.Stdin = nil
 	cmd.Stderr = os.Stderr
 	var fsType bytes.Buffer
@@ -83,67 +54,83 @@ func GetBlockInfo(ctx context.Context, path string) (*Disk, error) {
 	}
 	logrus.Debugf("blkid fs type output: %q", strings.TrimSpace(fsType.String()))
 
-	DataDiskInfo := Disk{
-		UUID:           strings.TrimSpace(uuid.String()),
-		FilesystemType: strings.TrimSpace(fsType.String()),
-		AbsPath:        block,
+	DataDiskInfo := RawDisk{
+		UUID:   strings.TrimSpace(uuid.String()),
+		FsType: strings.TrimSpace(fsType.String()),
+		Path:   block,
 	}
 
 	return &DataDiskInfo, nil
 }
 
-// CreateDiskAndFormatExt4 creates a raw disk at the specified path and formats it with the ext4 filesystem.
-// If the overwrite flag is false and the disk already exists, it skips creation and formatting.
-// It also allows specifying a custom UUID or generates a new one if none is provided, if myUUID is empty, it generates a new one.
-func CreateDiskAndFormatExt4(ctx context.Context, path string, myUUID string, overwrite bool) error {
-	if !overwrite {
-		exists, err := PathExists(path)
-		if err != nil {
-			return fmt.Errorf("failed to check raw disk %q exists: %w", path, err)
-		}
-
-		if exists {
-			logrus.Debugf("raw disk %q already exists, skip create and format raw disk", path)
-			return nil
-		}
-	}
-
-	_, err := uuid.Parse(myUUID)
-	if err != nil {
-		return fmt.Errorf("failed to parse UUID: %w", err)
-	}
-
-	rawDisk, err := NewDisk(define.DefaultCreateDiskSizeInGB, path, true, define.DiskFormat, myUUID).Create()
-	if err != nil {
-		return fmt.Errorf("failed to create raw disk: %w", err)
-	}
-
-	return rawDisk.Format(ctx)
-}
-
-func NewDisk(sizeInGB uint64, path string, shouldFormat bool, filesystemType string, uuid string) *Disk {
-	disk := &Disk{
-		size:           GiB(sizeInGB),
-		AbsPath:        path,
-		shouldFormat:   shouldFormat,
-		FilesystemType: filesystemType,
-		UUID:           uuid,
+func NewDisk(path string) RawDisk {
+	disk := RawDisk{
+		SizeInGB: define.DefaultCreateDiskSizeInGB,
+		Path:     path,
 	}
 
 	return disk
 }
 
-func (d *Disk) Format(ctx context.Context) error {
+type RawDisk define.DataDisk
+
+func (disk *RawDisk) FsCheck(ctx context.Context) error {
+	info, err := getBlockInfo(ctx, disk.Path)
+	if err != nil {
+		return fmt.Errorf("get disk %q info error: %w", disk.Path, err)
+	}
+
+	if info.FsType != "ext4" {
+		return fmt.Errorf("filesystem integrity check only support ext4 filesystem, but got %q", info.FsType)
+	}
+
+	fsckExt4, err := system.Get3rdUtilsPath("fsck.ext4")
+	if err != nil {
+		return fmt.Errorf("failed to get mke2fs path: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, fsckExt4, "-p", disk.Path)
+
+	if logrus.GetLevel() == logrus.DebugLevel {
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stderr
+	}
+	cmd.Stdin = nil
+
+	logrus.Debugf("fsck cmdline: %q", cmd.Args)
+
+	return cmd.Run()
+}
+
+func (disk *RawDisk) SetUUID(uuid string) {
+	disk.UUID = uuid
+}
+
+func (disk *RawDisk) SetFileSystemType(fsType string) {
+	disk.FsType = fsType
+}
+
+func (disk *RawDisk) SetSizeInGB(sizeInGB uint64) {
+	disk.SizeInGB = sizeInGB
+}
+
+func (disk *RawDisk) Format(ctx context.Context) error {
 	mke2fs, err := system.Get3rdUtilsPath("mke2fs")
 	if err != nil {
 		return fmt.Errorf("search mke2fs path error: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, mke2fs, "-t", d.FilesystemType, "-E", "discard", "-F")
-	if d.UUID != "" {
-		cmd.Args = append(cmd.Args, "-U", d.UUID)
+	if disk.FsType == "" {
+		return fmt.Errorf("filesystem type is empty")
 	}
-	cmd.Args = append(cmd.Args, d.AbsPath)
+
+	cmd := exec.CommandContext(ctx, mke2fs, "-t", disk.FsType, "-E", "discard", "-F")
+
+	if disk.UUID != "" {
+		cmd.Args = append(cmd.Args, "-U", disk.UUID)
+	}
+
+	cmd.Args = append(cmd.Args, disk.Path)
 
 	if logrus.GetLevel() == logrus.DebugLevel {
 		cmd.Stderr = os.Stderr
@@ -152,22 +139,43 @@ func (d *Disk) Format(ctx context.Context) error {
 	cmd.Stdin = nil
 
 	logrus.Debugf("mke2fs cmdline: %q", cmd.Args)
-	logrus.Infof("format disk %q with filesystem %q UUID: %q", d.AbsPath, d.FilesystemType, d.UUID)
 	return cmd.Run()
 }
 
-func (d *Disk) Create() (*Disk, error) {
-	f, err := os.OpenFile(d.AbsPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
+func (disk *RawDisk) Create() error {
+	f, err := os.OpenFile(disk.Path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
+		return fmt.Errorf("failed to open file: %w", err)
 	}
 
 	defer func(f *os.File) {
-		if err = f.Close(); err != nil {
+		if err := f.Close(); err != nil {
 			logrus.Errorf("failed to close file: %v", err)
 		}
 	}(f)
 
-	logrus.Infof("truncate disk %q to %d GB", d.AbsPath, d.size)
-	return d, f.Truncate(int64(d.size.ToBytes()))
+	logrus.Infof("truncate disk %q to %d GB", disk.Path, disk.SizeInGB)
+
+	return f.Truncate(int64(GiB(disk.SizeInGB).ToBytes()))
+}
+
+func (disk *RawDisk) Inspect(ctx context.Context) error {
+	info, err := getBlockInfo(ctx, disk.Path)
+	if err != nil {
+		return fmt.Errorf("failed to get block %q info: %w", disk.Path, err)
+	}
+	disk.UUID = info.UUID
+	disk.FsType = info.FsType
+	disk.Path = info.Path
+
+	disk.MountTo = filepath.Join(define.DefaultDataDiskMountDirPrefix, info.Path)
+	if disk.IsContainerStorage {
+		disk.MountTo = define.ContainerStorageMountPoint
+	}
+
+	return nil
+}
+
+func (disk *RawDisk) GetFileSystemType() string {
+	return disk.FsType
 }

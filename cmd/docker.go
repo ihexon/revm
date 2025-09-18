@@ -4,14 +4,9 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/server"
 	"linuxvm/pkg/system"
-	"linuxvm/pkg/vmconfig"
-	"net/url"
-	"os"
-	"path/filepath"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -119,94 +114,4 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	})
 
 	return g.Wait()
-}
-
-func setDockerModeParameters(vmc *vmconfig.VMConfig, command *cli.Command) error {
-	if err := useBuiltinRootfs(vmc); err != nil {
-		return fmt.Errorf("failed to use builtin podman rootfs: %w", err)
-	}
-
-	if err := addContainerStorageDisk(vmc, command); err != nil {
-		return fmt.Errorf("failed to add container storage disk: %w", err)
-	}
-
-	if err := addPodmanInfo(vmc, command); err != nil {
-		return fmt.Errorf("failed to add podman info: %w", err)
-	}
-
-	// add user home mount point
-	if err := addUserHomeMountPoint(vmc); err != nil {
-		return fmt.Errorf("failed to add user home mount point: %w", err)
-	}
-
-	return nil
-}
-
-func addContainerStorageDisk(vmc *vmconfig.VMConfig, command *cli.Command) error {
-	containerStorageDisk, err := filepath.Abs(command.String(define.FlagContainerDataStorage))
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path: %w", err)
-	}
-
-	logrus.Infof("in docker mode, container storage disk will be %q", containerStorageDisk)
-	vmc.DataDisk = append(vmc.DataDisk, &define.DataDisk{
-		IsContainerStorage: true,
-		Path:               containerStorageDisk,
-	})
-
-	return nil
-}
-
-func addPodmanInfo(vmc *vmconfig.VMConfig, command *cli.Command) error {
-	path, err := filepath.Abs(command.String(define.FlagListenUnixFile))
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path: %w", err)
-	}
-
-	unixAddr := &url.URL{
-		Scheme: "unix",
-		Host:   "",
-		Path:   path,
-	}
-
-	vmc.PodmanInfo = define.PodmanInfo{
-		UnixSocksAddr: unixAddr.String(),
-	}
-	return nil
-}
-
-func addUserHomeMountPoint(vmc *vmconfig.VMConfig) error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("can not get user home directry: %w", err)
-	}
-
-	mntStr := fmt.Sprintf("%s:%s", homeDir, homeDir)
-
-	logrus.Infof("in docker-mode, add user home mount point information: %q", mntStr)
-	vmc.Mounts = append(vmc.Mounts, filesystem.CmdLineMountToMounts([]string{mntStr})...)
-
-	return nil
-}
-
-func useBuiltinRootfs(vmc *vmconfig.VMConfig) error {
-	if vmc.RootFS != "" {
-		// when vm.RootFS is set, use it directly
-		path, err := filepath.Abs(vmc.RootFS)
-		if err != nil {
-			return err
-		}
-		vmc.RootFS = path
-		logrus.Infof("in docker-mode, use user set rootfs: %q", vmc.RootFS)
-		return nil
-	}
-
-	dir, err := system.Get3rdDir()
-	if err != nil {
-		return fmt.Errorf("failed to get 3rd dir: %w", err)
-	}
-	podmanRootfs := filepath.Join(dir, "linux", "rootfs")
-	vmc.RootFS = podmanRootfs
-	logrus.Infof("in docker-mode, use builtin podman rootfs: %q", vmc.RootFS)
-	return nil
 }

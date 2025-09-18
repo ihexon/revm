@@ -72,7 +72,7 @@ func (s *SSHServer) Start(ctx context.Context) error {
 			return errors.New("ssh port is not set")
 		}
 
-		logrus.Infof("start guest built-in server in %s:%d", s.Addr, s.Port)
+		logrus.Infof("start guest built-in ssh server in %s:%d", s.Addr, s.Port)
 		cmd := exec.CommandContext(ctx, "dropbear", "-p", strconv.Itoa(int(s.Port)), "-r", s.KeyFile, "-D",
 			s.RunTimeDir, "-F", "-B", "-P", s.PidFile)
 		cmd.Stdin = nil
