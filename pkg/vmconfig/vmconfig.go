@@ -17,7 +17,6 @@ import (
 	"path/filepath"
 
 	"github.com/gofrs/flock"
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -127,10 +126,6 @@ func waitIgnServerReady(ctx context.Context, vmc *VMConfig) {
 }
 
 func (vmc *VMConfig) WithDataDisk(ctx context.Context, disks []string) error {
-	var createError error
-	cleanup := system.CleanUp()
-	defer cleanup.CleanIfErr(&createError)
-
 	for _, disk := range disks {
 		diskAbsPath, err := filepath.Abs(disk)
 		if err != nil {
@@ -140,20 +135,8 @@ func (vmc *VMConfig) WithDataDisk(ctx context.Context, disks []string) error {
 		rawDisk := filesystem.NewDisk(diskAbsPath)
 
 		if !system.IsPathExist(diskAbsPath) {
-			rawDisk.SetFileSystemType(define.Ext4)
-			rawDisk.SetUUID(uuid.New().String())
-			rawDisk.SetSizeInGB(define.DefaultCreateDiskSizeInGB)
-
-			cleanup.Add(func() error {
-				return os.Remove(rawDisk.Path)
-			})
-
-			if createError = rawDisk.Create(); createError != nil {
-				return createError
-			}
-
-			if createError = rawDisk.Format(ctx); createError != nil {
-				return createError
+			if err := rawDisk.CreateExt4DiskAndFormat(ctx); err != nil {
+				return fmt.Errorf("failed to create ext4 disk: %w", err)
 			}
 		}
 
@@ -265,28 +248,13 @@ func (vmc *VMConfig) WithContainerDataDisk(ctx context.Context, disk string) err
 	if vmc.DataDisk == nil {
 		return fmt.Errorf("vmc.DataDisk is nil")
 	}
-	var createError error
-	cleanup := system.CleanUp()
-	defer cleanup.CleanIfErr(&createError)
 
 	containerDisk := filesystem.NewDisk(disk)
 	containerDisk.IsContainerStorage = true
 
 	if !system.IsPathExist(containerDisk.Path) {
-		containerDisk.SetFileSystemType(define.Ext4)
-		containerDisk.SetUUID(uuid.New().String())
-		containerDisk.SetSizeInGB(define.DefaultCreateDiskSizeInGB)
-
-		cleanup.Add(func() error {
-			return os.Remove(containerDisk.Path)
-		})
-
-		if createError = containerDisk.Create(); createError != nil {
-			return createError
-		}
-
-		if createError = containerDisk.Format(ctx); createError != nil {
-			return createError
+		if err := containerDisk.CreateExt4DiskAndFormat(ctx); err != nil {
+			return fmt.Errorf("failed to create container ext4 disk: %w", err)
 		}
 	}
 
