@@ -46,7 +46,6 @@ func BringInterfaceUpFast(ifName string) (*net.Interface, error) {
 		return nil, fmt.Errorf("failed to set interface %q up: %w", ifName, err)
 	}
 
-	// 返回 net.Interface
 	iface, err := net.InterfaceByName(ifName)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get net.Interface for %q: %w", ifName, err)

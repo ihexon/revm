@@ -127,10 +127,8 @@ func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, 
 		}
 	}
 
-	if command.IsSet(define.FlagDiskDisk) {
-		if err := vmc.WithUserProvidedDataDisk(command.StringSlice(define.FlagDiskDisk)); err != nil {
-			return nil, fmt.Errorf("failed to set user provided data disk: %w", err)
-		}
+	if err := vmc.WithDataDisk(ctx, command.StringSlice(define.FlagDiskDisk)); err != nil {
+		return nil, fmt.Errorf("failed to set user provided data disk: %w", err)
 	}
 
 	if command.IsSet(define.FlagMount) {
@@ -139,11 +137,23 @@ func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, 
 		}
 	}
 
-	vmc.WithUserProvidedCmdline(command.Args().First(), command.Args().Tail(), command.StringSlice("envs"))
+	vmc.SetGuestBootstrapRunArgs()
+
+	if vmc.RunMode != define.RunDockerEngineMode {
+		if err := vmc.WithUserProvidedCmdline(command.Args().First(), command.Args().Tail(), command.StringSlice(define.FlagEnvs)); err != nil {
+			return nil, fmt.Errorf("failed to set user provided cmdline: %w", err)
+		}
+	}
 
 	if command.IsSet(define.FlagRestAPIListenAddr) {
 		if err := vmc.WithRESTAPIAddress(command.String(define.FlagRestAPIListenAddr)); err != nil {
 			return nil, fmt.Errorf("failed to set rest api address: %w", err)
+		}
+	}
+
+	if command.Bool(define.FlagUsingSystemProxy) {
+		if err := vmc.WithSystemProxy(); err != nil {
+			return nil, fmt.Errorf("failed to use system proxy: %w", err)
 		}
 	}
 
@@ -152,7 +162,7 @@ func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, 
 			return nil, fmt.Errorf("failed to use builtin rootfs: %w", err)
 		}
 
-		if err := vmc.WithContainerDataDisk(command.String(define.FlagContainerDataStorage)); err != nil {
+		if err := vmc.WithContainerDataDisk(ctx, command.String(define.FlagContainerDataStorage)); err != nil {
 			return nil, err
 		}
 
@@ -176,18 +186,8 @@ func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, 
 		return nil, err
 	}
 
-	if err = vmc.CreateRawDiskWhenNeeded(ctx); err != nil {
-		return nil, fmt.Errorf("failed setup raw disk: %w", err)
-	}
-
 	if err = vmc.GenerateSSHInfo(); err != nil {
 		return nil, err
-	}
-
-	if command.Bool(define.FlagUsingSystemProxy) {
-		if err = vmc.TryGetSystemProxyAndSetToCmdline(); err != nil {
-			return nil, err
-		}
 	}
 
 	return vm.Get(vmc), nil
