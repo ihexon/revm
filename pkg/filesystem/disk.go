@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -178,4 +179,28 @@ func (disk *RawDisk) Inspect(ctx context.Context) error {
 
 func (disk *RawDisk) GetFileSystemType() string {
 	return disk.FsType
+}
+
+func (disk *RawDisk) CreateExt4DiskAndFormat(ctx context.Context) error {
+	var err error
+	cleanup := system.CleanUp()
+	defer cleanup.CleanIfErr(&err)
+
+	disk.SetFileSystemType(define.Ext4)
+	disk.SetUUID(uuid.New().String())
+	disk.SetSizeInGB(define.DefaultCreateDiskSizeInGB)
+
+	cleanup.Add(func() error {
+		return os.Remove(disk.Path)
+	})
+
+	if err = disk.Create(); err != nil {
+		return err
+	}
+
+	if err = disk.Format(ctx); err != nil {
+		return err
+	}
+
+	return nil
 }
