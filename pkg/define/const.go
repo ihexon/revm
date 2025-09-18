@@ -30,10 +30,6 @@ const (
 
 	LockFile = ".lock"
 
-	RunDockerEngineMode = "dockerEngineMode"
-	RunUserRootfsMode   = "rootfsMode"
-	RunKernelBootMode   = "directBootKernelMode"
-
 	DefaultPATHInBootstrap = "PATH=" + GuestLinuxUtilsBinDir + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 	DefaultPodmanAPIUnixSocksInHost = "/tmp/docker_api.sock"
@@ -67,3 +63,24 @@ const (
 	FlagInitrd               = "initrd"
 	FlagKernelCmdline        = "kernel-cmdline"
 )
+
+type RunMode int
+
+const (
+	DockerMode RunMode = iota
+	RootFsMode
+	KernelMode
+)
+
+func (m RunMode) String() string {
+	switch m {
+	case DockerMode:
+		return "docker"
+	case RootFsMode:
+		return "rootfs"
+	case KernelMode:
+		return "kernel"
+	default:
+		return "unknown"
+	}
+}

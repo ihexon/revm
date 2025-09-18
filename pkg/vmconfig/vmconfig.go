@@ -57,6 +57,7 @@ func (vmc *VMConfig) GenerateSSHInfo() error {
 	if err != nil {
 		return fmt.Errorf("failed to generate host ssh keypair for host: %w", err)
 	}
+	logrus.Infof("ssh keypair write to: %q", vmc.SSHInfo.HostSSHKeyPairFile)
 
 	// Fill the ssh keypair into vmc.SSHInfo using the keypair in memory
 	vmc.SSHInfo.HostSSHPrivateKey = string(keyPair.RawProtectedPrivateKey())
@@ -64,13 +65,13 @@ func (vmc *VMConfig) GenerateSSHInfo() error {
 
 	sshPort, err := network.GetAvailablePort("tcp4")
 	if err != nil {
-		return fmt.Errorf("failed to get available port: %w", err)
+		return fmt.Errorf("failed to get available port for ssh: %w", err)
 	}
 
 	vmc.SSHInfo.GuestAddr = define.DefaultGuestSSHListenAddr
 	vmc.SSHInfo.Port = sshPort
 	vmc.SSHInfo.User = define.DefaultGuestUser
-	logrus.Debugf("guest ssh listen addr: %q, port %d, user %q", vmc.SSHInfo.GuestAddr, vmc.SSHInfo.Port, vmc.SSHInfo.User)
+	logrus.Infof("guest ssh running on %s@%s:%d", vmc.SSHInfo.User, vmc.SSHInfo.GuestAddr, vmc.SSHInfo.Port)
 
 	return nil
 }
@@ -126,6 +127,11 @@ func waitIgnServerReady(ctx context.Context, vmc *VMConfig) {
 }
 
 func (vmc *VMConfig) WithDataDisk(ctx context.Context, disks []string) error {
+	if len(disks) == 0 || disks == nil {
+		logrus.Debugf("the data disk information provided by the user is empty, so the data disk will not be mounted to the guest")
+		return nil
+	}
+
 	for _, disk := range disks {
 		diskAbsPath, err := filepath.Abs(disk)
 		if err != nil {
@@ -191,29 +197,50 @@ func (vmc *VMConfig) WithUserProvidedCmdline(bin string, args, envs []string) er
 }
 
 func (vmc *VMConfig) WithResources(memory uint64, cpus int8) {
+	if cpus <= 0 {
+		logrus.Warnf("1 cpu cores is the minimum value and has been enforced")
+		cpus = 1
+	}
+
+	if memory <= 512 {
+		logrus.Warnf("512MB of memory is the minimum value and has been enforced")
+		memory = 512
+	}
+
 	vmc.MemoryInMB = memory
 	vmc.Cpus = cpus
 }
 
+func (vmc *VMConfig) WithShareUserHomeDir() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("can not get user home directory: %w", err)
+
+	}
+
+	return vmc.WithUserProvidedMounts([]string{fmt.Sprintf("%s:%s", homeDir, homeDir)})
+}
+
 func (vmc *VMConfig) WithUserProvidedMounts(dirs []string) error {
 	if len(dirs) == 0 || dirs == nil {
-		return fmt.Errorf("mount dirs is empty, please check your input")
+		logrus.Debugf("the directory mount information provided by the user is empty, so the host directory will not be mounted to the guest")
+		return nil
 	}
 
 	if vmc.Mounts == nil {
 		return fmt.Errorf("vmc.Mount is nil")
 	}
 
-	var absDirs []string
+	var hostDirs []string
 	for _, dir := range dirs {
 		p, err := filepath.Abs(dir)
 		if err != nil {
-			return fmt.Errorf("failed to get abs path: %w", err)
+			return err
 		}
-		absDirs = append(absDirs, p)
+		hostDirs = append(hostDirs, p)
 	}
 
-	vmc.Mounts = append(vmc.Mounts, filesystem.CmdLineMountToMounts(absDirs)...)
+	vmc.Mounts = append(vmc.Mounts, filesystem.CmdLineMountToMounts(hostDirs)...)
 	return nil
 }
 
@@ -227,6 +254,11 @@ func (vmc *VMConfig) WithUserProvidedRootFS(rootfsPath string) error {
 	}
 
 	vmc.RootFS = rootfsPath
+
+	if _, err = vmc.Lock(); err != nil {
+		return fmt.Errorf("failed to acquire lock for rootfs: %v", err)
+	}
+
 	return nil
 }
 
@@ -235,9 +267,8 @@ func (vmc *VMConfig) WithBuiltInRootfs() error {
 	if err != nil {
 		return fmt.Errorf("failed to get builtin rootfs path: %w", err)
 	}
-	vmc.RootFS = path
 
-	return nil
+	return vmc.WithUserProvidedRootFS(path)
 }
 
 func (vmc *VMConfig) WithContainerDataDisk(ctx context.Context, disk string) error {
@@ -295,12 +326,12 @@ func (vmc *VMConfig) WithPodmanListenAPIInHost(listenAPIPath string) error {
 }
 
 // WithRESTAPIAddress set the REST API address for the VM. only support unix socket
-func (vmc *VMConfig) WithRESTAPIAddress(listenAPIPath string) error {
-	if listenAPIPath == "" {
-		return fmt.Errorf("listen api path is empty")
+func (vmc *VMConfig) WithRESTAPIAddress(path string) error {
+	if path == "" {
+		return fmt.Errorf("restapi listening path is empty")
 	}
 
-	listenAPIPath, err := filepath.Abs(listenAPIPath)
+	listenAPIPath, err := filepath.Abs(path)
 	if err != nil {
 		return err
 	}
