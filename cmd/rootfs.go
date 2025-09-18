@@ -6,6 +6,8 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/server"
 	"linuxvm/pkg/system"
+	"linuxvm/pkg/vm"
+	"linuxvm/pkg/vmconfig"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -56,6 +58,38 @@ var startRootfs = cli.Command{
 	Action: rootfsLifeCycle,
 }
 
+func setupRootfsMode(ctx context.Context, vmc *vmconfig.VMConfig, command *cli.Command) (vmp vm.Provider, err error) {
+	vmc.RunMode = define.RootFsMode.String()
+
+	if err = vmc.WithUserProvidedRootFS(command.String(define.FlagRootfs)); err != nil {
+		err = fmt.Errorf("failed to setup rootfs: %w", err)
+		return
+	}
+
+	if command.IsSet(define.FlagDiskDisk) {
+		if err = vmc.WithDataDisk(ctx, command.StringSlice(define.FlagDiskDisk)); err != nil {
+			err = fmt.Errorf("failed to set user provided data disk: %w", err)
+			return
+		}
+	}
+
+	if command.IsSet(define.FlagMount) {
+		if err = vmc.WithUserProvidedMounts(command.StringSlice(define.FlagMount)); err != nil {
+			err = fmt.Errorf("failed to set user provided mounts: %w", err)
+			return
+		}
+	}
+
+	err = vmc.WithUserProvidedCmdline(command.Args().First(), command.Args().Tail(), command.StringSlice(define.FlagEnvs))
+	if err != nil {
+		err = fmt.Errorf("failed to set run command and args: %w", err)
+		return
+	}
+
+	vmp = vm.Get(vmc)
+	return
+}
+
 func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	if err := showVersionAndOSInfo(); err != nil {
 		logrus.Warn("can not get Build version/OS information")
@@ -65,7 +99,7 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("no command specified")
 	}
 
-	vmp, err := createVMMProvider(ctx, command)
+	vmp, err := VMMProviderFactory(ctx, define.RootFsMode, command)
 	if err != nil {
 		return fmt.Errorf("create run configure failed: %w", err)
 	}

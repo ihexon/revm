@@ -20,7 +20,7 @@ type Provider interface {
 
 func Get(vmc *vmconfig.VMConfig) Provider {
 	switch vmc.RunMode {
-	case define.RunKernelBootMode:
+	case define.KernelMode.String():
 		// TODO: implement the vfkit provider
 		panic(errors.New("vfkit provider is not implemented yet"))
 	default:

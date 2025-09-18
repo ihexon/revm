@@ -86,14 +86,14 @@ func (v *AppleHVStubber) Create(ctx context.Context) error {
 		return fmt.Errorf("failed to set vm config, return %v", ret)
 	}
 
-	if v.vmc.RunMode == define.RunKernelBootMode {
+	if v.vmc.RunMode == define.KernelMode.String() {
 		logrus.Debugf("vm run mode is direct boot kernel mode")
 		if err := v.SetKernel(ctx); err != nil {
 			return err
 		}
 	}
 
-	if v.vmc.RunMode == define.RunDockerEngineMode || v.vmc.RunMode == define.RunUserRootfsMode {
+	if v.vmc.RunMode == define.DockerMode.String() || v.vmc.RunMode == define.RootFsMode.String() {
 		logrus.Debugf("vm run mode is rootfs mode")
 		if err := v.setRootFS(); err != nil {
 			return err

@@ -7,6 +7,8 @@ import (
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/server"
 	"linuxvm/pkg/system"
+	"linuxvm/pkg/vm"
+	"linuxvm/pkg/vmconfig"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -61,12 +63,46 @@ var startDocker = cli.Command{
 	Action: dockerModeLifeCycle,
 }
 
+func setupContainerMode(ctx context.Context, vmc *vmconfig.VMConfig, command *cli.Command) (vmp vm.Provider, err error) {
+	vmc.RunMode = define.DockerMode.String()
+
+	if err = vmc.WithBuiltInRootfs(); err != nil {
+		err = fmt.Errorf("failed to use builtin rootfs: %w", err)
+		return
+	}
+
+	if err = vmc.WithContainerDataDisk(ctx, command.String(define.FlagContainerDataStorage)); err != nil {
+		err = fmt.Errorf("failed to set container data disk: %w", err)
+		return
+	}
+
+	if err = vmc.WithPodmanListenAPIInHost(command.String(define.FlagListenUnixFile)); err != nil {
+		err = fmt.Errorf("failed to set podman listen unix file: %w", err)
+		return
+	}
+
+	if command.IsSet(define.FlagMount) {
+		if err = vmc.WithUserProvidedMounts(command.StringSlice(define.FlagMount)); err != nil {
+			err = fmt.Errorf("failed to set user provided mounts: %w", err)
+			return
+		}
+	}
+
+	if err = vmc.WithShareUserHomeDir(); err != nil {
+		err = fmt.Errorf("failed to add user home directory to mounts: %w", err)
+		return
+	}
+
+	vmp = vm.Get(vmc)
+	return
+}
+
 func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	if err := showVersionAndOSInfo(); err != nil {
 		logrus.Warn("cannot get Build version/OS information")
 	}
 
-	vmp, err := createVMMProvider(ctx, command)
+	vmp, err := VMMProviderFactory(ctx, define.DockerMode, command)
 	if err != nil {
 		return fmt.Errorf("create run configure failed: %w", err)
 	}

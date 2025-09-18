@@ -111,12 +111,10 @@ func Bootstrap(ctx context.Context, command *cli.Command) error {
 	}
 
 	switch vmc.RunMode {
-	case define.RunUserRootfsMode:
+	case define.RootFsMode.String():
 		return userRootfsMode(ctx, vmc)
-	case define.RunDockerEngineMode:
+	case define.DockerMode.String():
 		return dockerEngineMode(ctx, vmc)
-	case define.RunKernelBootMode:
-		return kernelBootMode(ctx, vmc)
 	default:
 		return fmt.Errorf("unsupported mode %q", vmc.RunMode)
 	}
@@ -196,26 +194,6 @@ func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
 
 	g.Go(func() error {
 		return doExecCmdLine(ctx, vmc.Cmdline.TargetBin, vmc.Cmdline.TargetBinArgs)
-	})
-
-	return g.Wait()
-}
-
-func kernelBootMode(ctx context.Context, _ *define.VMConfig) error {
-	logrus.Infof("run kernel boot mode")
-
-	g, ctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		return configureNetwork(ctx)
-	})
-
-	// TODO: start ssh server
-	// TODO: sync time
-	// TODO: run user given command line
-
-	g.Go(func() error {
-		return fmt.Errorf("not implemented yet")
 	})
 
 	return g.Wait()
