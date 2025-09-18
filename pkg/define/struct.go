@@ -39,7 +39,7 @@ type VMConfig struct {
 	KernelCmdline []string `json:"kernelArgs,omitempty"`
 
 	// data disk will map into /dev/vdX and automount by bootstrap process
-	DataDisk []*DataDisk `json:"dataDisk,omitempty"`
+	DataDisk []DataDisk `json:"dataDisk,omitempty"`
 	// GVproxy control endpoint
 	GVproxyEndpoint string `json:"GVproxyEndpoint,omitempty"`
 	// NetworkStackBackend is the network stack backend to use. which provided
@@ -67,13 +67,12 @@ type Stage struct {
 
 // DataDisk represents the configuration of a data disk, including its file system type, path, and mount point.
 type DataDisk struct {
-	IsContainerStorage bool `json:"isContainerStorage,omitempty"`
-	// if truncate the disk
-	ReUse          bool   `json:"reUse,omitempty"`
-	UUID           string `json:"uuid"`
-	FileSystemType string `json:"filesystemType"`
-	Path           string `json:"path"`
-	MountPoint     string `json:"mountPoint"`
+	IsContainerStorage bool   `json:"isContainerStorage,omitempty"`
+	FsType             string `json:"fsType,omitempty"`
+	UUID               string `json:"UUID,omitempty"`
+	Path               string `json:"path,omitempty"`
+	MountTo            string `json:"mountTo,omitempty"`
+	SizeInGB           uint64 `json:"sizeInGB,omitempty"`
 }
 
 type PodmanInfo struct {

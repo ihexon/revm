@@ -70,6 +70,16 @@ func Get3rdUtilsPathForLinux(name string) (string, error) {
 	return filepath.Join(dir, "linux", "bin", name), nil
 }
 
+func GetBuiltinRootfsPath() (string, error) {
+	dir, err := Get3rdDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get 3rd dir: %w", err)
+	}
+
+	podmanRootfs := filepath.Join(dir, "linux", "rootfs")
+	return podmanRootfs, nil
+}
+
 func GetGuestLinuxUtilsBinPath(name string) string {
 	return filepath.Join(define.GuestLinuxUtilsBinDir, name)
 }

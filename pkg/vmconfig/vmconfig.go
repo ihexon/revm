@@ -4,10 +4,12 @@ package vmconfig
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/filesystem"
+	"net/url"
+	"os"
+	"strings"
 
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh"
@@ -25,64 +27,7 @@ type (
 	VMConfig define.VMConfig
 )
 
-// ParseDiskInfo Parse data disk information provided by user, get the filesystem type and uuid, save them to vmc.DataDisk
-// and vmc.ContainerStorage.
-func (vmc *VMConfig) ParseDiskInfo(ctx context.Context) error {
-	for _, disk := range vmc.DataDisk {
-		info, err := filesystem.GetBlockInfo(ctx, disk.Path)
-		if err != nil {
-			return fmt.Errorf("failed to get block %q info: %w", disk.Path, err)
-		}
-
-		disk.UUID = info.UUID
-		disk.FileSystemType = info.FilesystemType
-		disk.Path = info.AbsPath
-		disk.MountPoint = filepath.Join(define.DefaultDataDiskMountDirPrefix, info.AbsPath)
-		if disk.IsContainerStorage {
-			disk.MountPoint = define.ContainerStorageMountPoint
-		}
-
-		if disk.IsContainerStorage {
-			err := filesystem.Fscheck(ctx, disk.Path)
-			if err != nil {
-				return fmt.Errorf("failed to check container storage %q: %w", disk.Path, err)
-			}
-		}
-
-		// Print disk info for debug
-		jsonData, err := json.MarshalIndent(disk, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal disk info: %w", err)
-		}
-		logrus.Debugf("disk %q info: %s", disk.Path, jsonData)
-
-		logrus.Infof("the disk: %q will be mount into %q", disk.Path, disk.MountPoint)
-	}
-
-	return nil
-}
-
-func (vmc *VMConfig) CreateRawDiskWhenNeeded(ctx context.Context) error {
-	for _, disk := range vmc.DataDisk {
-		if system.IsPathExist(disk.Path) {
-			logrus.Debugf("disk %q already exist, mark this disk as reuseable disk", disk.Path)
-			disk.ReUse = true
-		} else {
-			logrus.Debugf("disk %q not exist, mark this disk not reusable", disk.Path)
-			disk.ReUse = false
-		}
-
-		if !disk.ReUse {
-			if err := filesystem.CreateDiskAndFormatExt4(ctx, disk.Path, uuid.NewString(), true); err != nil {
-				return fmt.Errorf("failed to create raw disk %q: %w", disk.Path, err)
-			}
-		}
-	}
-
-	return vmc.ParseDiskInfo(ctx)
-}
-
-func (vmc *VMConfig) TryGetSystemProxyAndSetToCmdline() error {
+func (vmc *VMConfig) WithSystemProxy() error {
 	proxyInfo, err := network.GetAndNormalizeSystemProxy()
 	if err != nil {
 		return fmt.Errorf("failed to get and normalize system proxy: %w", err)
@@ -179,4 +124,248 @@ func waitIgnServerReady(ctx context.Context, vmc *VMConfig) {
 	case <-vmc.Stage.IgnServerChan:
 		return
 	}
+}
+
+func (vmc *VMConfig) WithDataDisk(ctx context.Context, disks []string) error {
+	var createError error
+	cleanup := system.CleanUp()
+	defer cleanup.CleanIfErr(&createError)
+
+	for _, disk := range disks {
+		diskAbsPath, err := filepath.Abs(disk)
+		if err != nil {
+			return fmt.Errorf("failed to get abs path: %w", err)
+		}
+
+		rawDisk := filesystem.NewDisk(diskAbsPath)
+
+		if !system.IsPathExist(diskAbsPath) {
+			rawDisk.SetFileSystemType(define.Ext4)
+			rawDisk.SetUUID(uuid.New().String())
+			rawDisk.SetSizeInGB(define.DefaultCreateDiskSizeInGB)
+
+			cleanup.Add(func() error {
+				return os.Remove(rawDisk.Path)
+			})
+
+			if createError = rawDisk.Create(); createError != nil {
+				return createError
+			}
+
+			if createError = rawDisk.Format(ctx); createError != nil {
+				return createError
+			}
+		}
+
+		if err := rawDisk.Inspect(ctx); err != nil {
+			return fmt.Errorf("failed to inspect raw disk %q, %w", diskAbsPath, err)
+		}
+
+		if err := rawDisk.FsCheck(ctx); err != nil {
+			return fmt.Errorf("failed to run fsck to raw disk %q, %w", diskAbsPath, err)
+		}
+
+		vmc.DataDisk = append(vmc.DataDisk, define.DataDisk(rawDisk))
+	}
+
+	return nil
+}
+
+func validateArgs(args []string) error {
+	for _, arg := range args {
+		if strings.Contains(arg, ";") || strings.Contains(arg, "|") ||
+			strings.Contains(arg, "&") || strings.Contains(arg, "`") {
+			return fmt.Errorf("dangerous shell metacharacters in argument: %s", arg)
+		}
+	}
+	return nil
+}
+
+func (vmc *VMConfig) SetGuestBootstrapRunArgs() {
+	vmc.Cmdline.Bootstrap = system.GetGuestLinuxUtilsBinPath(define.BoostrapFileName)
+	vmc.Cmdline.Env = []string{define.DefaultPATHInBootstrap}
+
+	if logrus.IsLevelEnabled(logrus.DebugLevel) {
+		vmc.Cmdline.BootstrapArgs = append(vmc.Cmdline.BootstrapArgs, "--verbose")
+	}
+}
+
+func (vmc *VMConfig) WithUserProvidedCmdline(bin string, args, envs []string) error {
+	if strings.TrimSpace(bin) == "" {
+		return fmt.Errorf("target binary is empty")
+	}
+
+	if err := validateArgs(args); err != nil {
+		return fmt.Errorf("invalid args: %w", err)
+	}
+
+	vmc.Cmdline.Workspace = define.DefaultWorkDir
+	vmc.Cmdline.TargetBin = bin
+	vmc.Cmdline.TargetBinArgs = args
+	vmc.Cmdline.Env = append(vmc.Cmdline.Env, envs...)
+
+	return nil
+}
+
+func (vmc *VMConfig) WithResources(memory uint64, cpus int8) {
+	vmc.MemoryInMB = memory
+	vmc.Cpus = cpus
+}
+
+func (vmc *VMConfig) WithUserProvidedMounts(dirs []string) error {
+	if len(dirs) == 0 || dirs == nil {
+		return fmt.Errorf("mount dirs is empty, please check your input")
+	}
+
+	if vmc.Mounts == nil {
+		return fmt.Errorf("vmc.Mount is nil")
+	}
+
+	var absDirs []string
+	for _, dir := range dirs {
+		p, err := filepath.Abs(dir)
+		if err != nil {
+			return fmt.Errorf("failed to get abs path: %w", err)
+		}
+		absDirs = append(absDirs, p)
+	}
+
+	vmc.Mounts = append(vmc.Mounts, filesystem.CmdLineMountToMounts(absDirs)...)
+	return nil
+}
+
+func (vmc *VMConfig) WithUserProvidedRootFS(rootfsPath string) error {
+	if rootfsPath == "" {
+		return fmt.Errorf("rootfs path is empty")
+	}
+	rootfsPath, err := filepath.Abs(rootfsPath)
+	if err != nil {
+		return err
+	}
+
+	vmc.RootFS = rootfsPath
+	return nil
+}
+
+func (vmc *VMConfig) WithBuiltInRootfs() error {
+	path, err := system.GetBuiltinRootfsPath()
+	if err != nil {
+		return fmt.Errorf("failed to get builtin rootfs path: %w", err)
+	}
+	vmc.RootFS = path
+
+	return nil
+}
+
+func (vmc *VMConfig) WithContainerDataDisk(ctx context.Context, disk string) error {
+	if disk == "" {
+		return fmt.Errorf("container storage disk is empty")
+	}
+
+	if vmc.DataDisk == nil {
+		return fmt.Errorf("vmc.DataDisk is nil")
+	}
+	var createError error
+	cleanup := system.CleanUp()
+	defer cleanup.CleanIfErr(&createError)
+
+	containerDisk := filesystem.NewDisk(disk)
+	containerDisk.IsContainerStorage = true
+
+	if !system.IsPathExist(containerDisk.Path) {
+		containerDisk.SetFileSystemType(define.Ext4)
+		containerDisk.SetUUID(uuid.New().String())
+		containerDisk.SetSizeInGB(define.DefaultCreateDiskSizeInGB)
+
+		cleanup.Add(func() error {
+			return os.Remove(containerDisk.Path)
+		})
+
+		if createError = containerDisk.Create(); createError != nil {
+			return createError
+		}
+
+		if createError = containerDisk.Format(ctx); createError != nil {
+			return createError
+		}
+	}
+
+	if err := containerDisk.Inspect(ctx); err != nil {
+		return fmt.Errorf("failed to inspect container disk %q, %w", disk, err)
+	}
+
+	if err := containerDisk.FsCheck(ctx); err != nil {
+		return fmt.Errorf("failed to run fscheck container disk %q, %w", disk, err)
+	}
+
+	logrus.Infof("in docker mode, container storage disk will be %q", disk)
+	vmc.DataDisk = append(vmc.DataDisk, define.DataDisk(containerDisk))
+
+	return nil
+}
+
+func (vmc *VMConfig) WithPodmanListenAPIInHost(listenAPIPath string) error {
+	if listenAPIPath == "" {
+		return fmt.Errorf("listen api path is empty")
+	}
+
+	listenAPIPath, err := filepath.Abs(listenAPIPath)
+	if err != nil {
+		return err
+	}
+
+	unixAddr := &url.URL{
+		Scheme: "unix",
+		Host:   "",
+		Path:   listenAPIPath,
+	}
+
+	vmc.PodmanInfo = define.PodmanInfo{
+		UnixSocksAddr: unixAddr.String(),
+	}
+	return nil
+}
+
+// WithRESTAPIAddress set the REST API address for the VM. only support unix socket
+func (vmc *VMConfig) WithRESTAPIAddress(listenAPIPath string) error {
+	if listenAPIPath == "" {
+		return fmt.Errorf("listen api path is empty")
+	}
+
+	listenAPIPath, err := filepath.Abs(listenAPIPath)
+	if err != nil {
+		return err
+	}
+
+	unixAddr := &url.URL{
+		Scheme: "unix",
+		Host:   "",
+		Path:   listenAPIPath,
+	}
+
+	vmc.RestAPIAddress = unixAddr.String()
+	return nil
+}
+
+func NewVMConfig() *VMConfig {
+	vmc := &VMConfig{}
+
+	prefix := filepath.Join(os.TempDir(), system.GenerateRandomID())
+	logrus.Debugf("runtime temp directory: %q", prefix)
+
+	vmc.GVproxyEndpoint = fmt.Sprintf("unix://%s/%s", prefix, define.GvProxyControlEndPoint)
+	vmc.NetworkStackBackend = fmt.Sprintf("unixgram://%s/%s", prefix, define.GvProxyNetworkEndpoint)
+	vmc.SSHInfo = define.SSHInfo{
+		HostSSHKeyPairFile: filepath.Join(prefix, define.SSHKeyPair),
+	}
+	vmc.IgnProvisionerAddr = fmt.Sprintf("unix://%s/%s", prefix, define.IgnServerSocketName)
+	vmc.Stage = define.Stage{
+		GVProxyChan:   make(chan struct{}, 1),
+		IgnServerChan: make(chan struct{}, 1),
+	}
+
+	vmc.DataDisk = []define.DataDisk{}
+	vmc.Mounts = []define.Mount{}
+
+	return vmc
 }

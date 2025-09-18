@@ -197,8 +197,8 @@ func MountDataDisk(ctx context.Context, vmc *define.VMConfig) error {
 	for _, dataDiskMnt := range vmc.DataDisk {
 		mnt := &Mnt{
 			UUID:   dataDiskMnt.UUID,
-			Type:   dataDiskMnt.FileSystemType,
-			Target: dataDiskMnt.MountPoint,
+			Type:   dataDiskMnt.FsType,
+			Target: dataDiskMnt.MountTo,
 		}
 
 		if err := mnt.Mount(ctx, DataDiskAction); err != nil {

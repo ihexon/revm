@@ -39,7 +39,7 @@ const (
 	DefaultPodmanAPIUnixSocksInHost = "/tmp/docker_api.sock"
 
 	DefaultCreateDiskSizeInGB = 200
-	DiskFormat                = "ext4"
+	Ext4                      = "ext4"
 
 	ContainerStorageMountPoint        = "/var/lib/containers"
 	DefaultDataDiskMountDirPrefix     = "/var/tmp/mnt"

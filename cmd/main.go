@@ -6,13 +6,11 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vm"
 	"linuxvm/pkg/vmconfig"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -110,7 +108,7 @@ func setMaxMemory() uint64 {
 }
 
 func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, error) {
-	vmc := makeVMCfg(command)
+	vmc := vmconfig.NewVMConfig()
 
 	switch command.Name {
 	case define.FlagRootfsMode:
@@ -121,9 +119,64 @@ func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, 
 		vmc.RunMode = define.RunKernelBootMode
 	}
 
+	vmc.WithResources(command.Uint64(define.FlagMemory), command.Int8(define.FlagCPUS))
+
+	if vmc.RunMode == define.RunUserRootfsMode {
+		if err := vmc.WithUserProvidedRootFS(command.String(define.FlagRootfs)); err != nil {
+			return nil, fmt.Errorf("failed to set user provided rootfs: %w", err)
+		}
+	}
+
+	if err := vmc.WithDataDisk(ctx, command.StringSlice(define.FlagDiskDisk)); err != nil {
+		return nil, fmt.Errorf("failed to set user provided data disk: %w", err)
+	}
+
+	if command.IsSet(define.FlagMount) {
+		if err := vmc.WithUserProvidedMounts(command.StringSlice(define.FlagMount)); err != nil {
+			return nil, fmt.Errorf("failed to set user provided mounts: %w", err)
+		}
+	}
+
+	vmc.SetGuestBootstrapRunArgs()
+
+	if vmc.RunMode != define.RunDockerEngineMode {
+		if err := vmc.WithUserProvidedCmdline(command.Args().First(), command.Args().Tail(), command.StringSlice(define.FlagEnvs)); err != nil {
+			return nil, fmt.Errorf("failed to set user provided cmdline: %w", err)
+		}
+	}
+
+	if command.IsSet(define.FlagRestAPIListenAddr) {
+		if err := vmc.WithRESTAPIAddress(command.String(define.FlagRestAPIListenAddr)); err != nil {
+			return nil, fmt.Errorf("failed to set rest api address: %w", err)
+		}
+	}
+
+	if command.Bool(define.FlagUsingSystemProxy) {
+		if err := vmc.WithSystemProxy(); err != nil {
+			return nil, fmt.Errorf("failed to use system proxy: %w", err)
+		}
+	}
+
 	if command.Name == define.FlagDockerMode {
-		if err := setDockerModeParameters(vmc, command); err != nil {
-			return nil, fmt.Errorf("failed to set docker mode parameters: %w", err)
+		if err := vmc.WithBuiltInRootfs(); err != nil {
+			return nil, fmt.Errorf("failed to use builtin rootfs: %w", err)
+		}
+
+		if err := vmc.WithContainerDataDisk(ctx, command.String(define.FlagContainerDataStorage)); err != nil {
+			return nil, err
+		}
+
+		if err := vmc.WithPodmanListenAPIInHost(command.String(define.FlagListenUnixFile)); err != nil {
+			return nil, err
+		}
+
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("can not get user home directry: %w", err)
+		}
+
+		if err = vmc.WithUserProvidedMounts([]string{fmt.Sprintf("%s:%s", homeDir, homeDir)}); err != nil {
+			return nil, fmt.Errorf("failed to add user home mount point information: %w", err)
 		}
 	}
 
@@ -133,64 +186,9 @@ func createVMMProvider(ctx context.Context, command *cli.Command) (vm.Provider, 
 		return nil, err
 	}
 
-	if err = vmc.CreateRawDiskWhenNeeded(ctx); err != nil {
-		return nil, fmt.Errorf("failed setup raw disk: %w", err)
-	}
-
 	if err = vmc.GenerateSSHInfo(); err != nil {
 		return nil, err
 	}
 
-	if command.Bool(define.FlagUsingSystemProxy) {
-		if err = vmc.TryGetSystemProxyAndSetToCmdline(); err != nil {
-			return nil, err
-		}
-	}
-
 	return vm.Get(vmc), nil
-}
-
-func makeVMCfg(command *cli.Command) *vmconfig.VMConfig {
-	var dataDisks []*define.DataDisk
-	for _, disk := range command.StringSlice(define.FlagDiskDisk) {
-		dataDisks = append(dataDisks, &define.DataDisk{
-			Path: disk,
-		})
-	}
-
-	prefix := filepath.Join(os.TempDir(), system.GenerateRandomID())
-	logrus.Debugf("runtime temp directory: %q", prefix)
-
-	// a stage struct to hold the state of the vm service status
-	stage := define.Stage{
-		GVProxyChan:   make(chan struct{}, 1),
-		IgnServerChan: make(chan struct{}, 1),
-	}
-
-	vmc := vmconfig.VMConfig{
-		MemoryInMB:          command.Uint64(define.FlagMemory),
-		Cpus:                command.Int8(define.FlagCPUS),
-		RootFS:              command.String(define.FlagRootfs),
-		DataDisk:            dataDisks,
-		Mounts:              filesystem.CmdLineMountToMounts(command.StringSlice("mount")),
-		GVproxyEndpoint:     fmt.Sprintf("unix://%s/%s", prefix, define.GvProxyControlEndPoint),
-		NetworkStackBackend: fmt.Sprintf("unixgram://%s/%s", prefix, define.GvProxyNetworkEndpoint),
-		SSHInfo: define.SSHInfo{
-			HostSSHKeyPairFile: filepath.Join(prefix, define.SSHKeyPair),
-		},
-
-		Cmdline: define.Cmdline{
-			Bootstrap:     system.GetGuestLinuxUtilsBinPath(define.BoostrapFileName),
-			BootstrapArgs: []string{},
-			Workspace:     define.DefaultWorkDir,
-			TargetBin:     command.Args().First(),
-			TargetBinArgs: command.Args().Tail(),
-			Env:           append(command.StringSlice("envs"), define.DefaultPATHInBootstrap),
-		},
-		RestAPIAddress:     command.String(define.FlagRestAPIListenAddr),
-		IgnProvisionerAddr: fmt.Sprintf("unix://%s/%s", prefix, define.IgnServerSocketName),
-		Stage:              stage,
-	}
-
-	return &vmc
 }

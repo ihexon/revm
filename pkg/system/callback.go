@@ -35,6 +35,10 @@ func (c *CleanupCallback) CleanOnSignal() {
 	os.Exit(1)
 }
 
+func (c *CleanupCallback) DoClean() {
+	c.clean()
+}
+
 func (c *CleanupCallback) clean() {
 	c.mu.Lock()
 	// Claim exclusive usage by copy and resetting to nil
