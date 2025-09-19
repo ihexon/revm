@@ -23,11 +23,6 @@ const (
 
 	SSHKeyPair = "ssh_keypair"
 
-	DefaultGuestUser          = "root"
-	DefaultGuestAddr          = "192.168.127.2"
-	DefaultGuestSSHListenAddr = DefaultGuestAddr
-	DefaultVSockPort          = 1984
-
 	LockFile = ".lock"
 
 	DefaultPATHInBootstrap = "PATH=" + GuestLinuxUtilsBinDir + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -37,9 +32,20 @@ const (
 	DefaultCreateDiskSizeInGB = 200
 	Ext4                      = "ext4"
 
-	ContainerStorageMountPoint        = "/var/lib/containers"
-	DefaultDataDiskMountDirPrefix     = "/var/tmp/mnt"
-	PodmanDefaultListenTcpAddrInGuest = "tcp://" + DefaultGuestAddr + ":25883"
+	ContainerStorageMountPoint    = "/var/lib/containers"
+	DefaultDataDiskMountDirPrefix = "/var/tmp/mnt"
+
+	DefaultGuestUser                  = "root"
+	DefaultGuestSSHListenAddr         = "0.0.0.0"
+	PodmanDefaultListenTcpAddrInGuest = "tcp://0.0.0.0:25883"
+	DefaultGuestAddr                  = "192.168.127.2"
+	DefaultVSockPort                  = 1984
+
+	// RestAPI const var
+	RestAPIPodmanReadyURL   = "/ready/podman"
+	RestAPISSHReadyURL      = "/ready/sshd"
+	RestAPI3rdFileServerURL = "/fileserver/"
+	RestAPIVMConfigURL      = "/vmconfig"
 )
 
 const (

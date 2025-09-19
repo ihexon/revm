@@ -81,8 +81,8 @@ init_func() {
 
 	log_std "change dir to $WORKSPACE"
 	detect_platform_arch
-	GIT_COMMIT_ID="$(git rev-parse --short HEAD||echo "unknown")"
-	GIT_TAG="$(git describe --tags --abbrev=0||echo "unknown")"
+	GIT_COMMIT_ID="$(git rev-parse --short HEAD || echo "unknown")"
+	GIT_TAG="$(git describe --tags --abbrev=0 || echo "unknown")"
 }
 
 _downloader() {
@@ -228,7 +228,11 @@ build_bootstrap() {
 
 packaging() {
 	name=revm.tar.zst
-	tar --zst -cvf "$name" out/
+	if [[ -n $DIRTY_BUILD ]]; then
+		log_warn "SKIP PACKING"
+	else
+		tar --zst -cvf "$name" out/
+	fi
 }
 
 main() {

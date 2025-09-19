@@ -79,7 +79,7 @@ func VMMProviderFactory(ctx context.Context, mode define.RunMode, command *cli.C
 			return
 		}
 	}
-	
+
 	if command.IsSet(define.FlagUsingSystemProxy) {
 		if err = vmc.WithSystemProxy(); err != nil {
 			err = fmt.Errorf("failed to use system proxy: %w", err)
