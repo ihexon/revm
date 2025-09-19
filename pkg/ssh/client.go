@@ -149,12 +149,6 @@ func (c *RunConfig) Connect(ctx context.Context, gvCtl string) error {
 		return c.SSHClient.Close()
 	})
 
-	go func() {
-		if err = startKeepAlive(ctx, c.SSHClient); err != nil {
-			logrus.Debugf("failed to start keepalive: %v", err)
-		}
-	}()
-
 	c.MySession, err = c.SSHClient.NewSession()
 	if err != nil {
 		return fmt.Errorf("failed to create ssh session: %w", err)
@@ -231,19 +225,20 @@ func NewCfg(addr, user string, port uint64, keyFile string) *RunConfig {
 	}
 }
 
-func startKeepAlive(ctx context.Context, conn *ssh.Client) error {
+func StartKeepAlive(ctx context.Context, conn *ssh.Client) {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			logrus.Debugf("stop sending keepalive signal to ssh")
+			return
 		case <-ticker.C:
-			_, _, err := conn.SendRequest("keepalive@openssh.com", true, nil)
-			if err != nil {
-				return err
+			if _, _, err := conn.SendRequest("keepalive@openssh.com", true, nil); err != nil {
+				logrus.Debugf("failed to send keepalive: %v", err)
 			}
+			continue
 		}
 	}
 }

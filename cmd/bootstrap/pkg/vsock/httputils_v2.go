@@ -46,14 +46,6 @@ type VSockTransport struct {
 	port uint32
 }
 
-// NewVSockTransport creates a new VSock transport
-func NewVSockTransport(cid, port uint32) *VSockTransport {
-	return &VSockTransport{
-		cid:  cid,
-		port: port,
-	}
-}
-
 func (t *VSockTransport) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	result := make(chan struct {
 		c   net.Conn
@@ -166,18 +158,6 @@ func (c *HTTPClient) GetJSON(ctx context.Context, path string) ([]byte, error) {
 // Close closes the HTTP client
 func (c *HTTPClient) Close() error {
 	return nil
-}
-
-// Convenience factory functions
-
-// NewUnixHTTPClientV2 creates an HTTP client for Unix socket communication
-func NewUnixHTTPClientV2(socketPath string, timeout time.Duration) *HTTPClient {
-	return NewHTTPClient(ClientConfig{
-		Transport: &UnixSocketTransport{
-			socketPath: socketPath,
-		},
-		Timeout: timeout,
-	})
 }
 
 // NewVSockHTTPClientV2 creates an HTTP client for VSock communication
