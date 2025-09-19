@@ -16,11 +16,7 @@ import (
 )
 
 func testSSH(ctx context.Context, vmc *vmconfig.VMConfig) error {
-	var err error
-
 	cfg := ssh.NewCfg(define.DefaultGuestAddr, vmc.SSHInfo.User, vmc.SSHInfo.Port, vmc.SSHInfo.HostSSHKeyPairFile)
-	defer cfg.CleanUp.CleanIfErr(&err)
-
 	endpoint, err := url.Parse(vmc.GVproxyEndpoint)
 	if err != nil {
 		return fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
@@ -29,6 +25,7 @@ func testSSH(ctx context.Context, vmc *vmconfig.VMConfig) error {
 	if err = cfg.Connect(ctx, endpoint.Path); err != nil {
 		return fmt.Errorf("failed to connect to ssh server: %w", err)
 	}
+	defer cfg.CleanUp.DoClean()
 
 	return nil
 }
