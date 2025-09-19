@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package filesystem
+package services
 
 import (
 	"context"
@@ -218,7 +218,7 @@ func MountHostDir(ctx context.Context, vmc *define.VMConfig) error {
 		}
 
 		if err := mnt.Mount(ctx, VirtioFsAction); err != nil {
-			return err
+			return fmt.Errorf("mount %q: %w", mnt.Target, err)
 		}
 	}
 	return nil

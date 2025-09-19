@@ -1,9 +1,10 @@
 //go:build (linux || darwin) && (arm64 || amd64)
 
-package system
+package services
 
 import (
 	"context"
+	"linuxvm/cmd/bootstrap/pkg/path"
 	"os/exec"
 	"time"
 
@@ -27,7 +28,7 @@ func SyncRTCTime(ctx context.Context) error {
 
 func syncTimeFromNtpServer(ctx context.Context) {
 	for i := 0; i < 3; i++ {
-		if err := exec.CommandContext(ctx, GetGuestLinuxUtilsBinPath("busybox.static"), "ntpd", "-q", "-n", "-p", NTPServer).Run(); err != nil {
+		if err := exec.CommandContext(ctx, path.GetGuestLinuxUtilsBinPath("busybox.static"), "ntpd", "-q", "-n", "-p", NTPServer).Run(); err != nil {
 			logrus.Warnf("failed to sync time: %v, try again", err)
 			continue
 		}

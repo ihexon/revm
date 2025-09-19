@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
@@ -31,17 +32,33 @@ func IgnProvisionerServer(ctx context.Context, vmc *vmconfig.VMConfig, ignServer
 	if err != nil {
 		return fmt.Errorf("failed to get 3rd dir: %w", err)
 	}
-	linux3rdDir := filepath.Join(host3rdDir, "linux")
+	linux3rdBinDir := filepath.Join(host3rdDir, "linux", "bin")
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+	// default return the vmconfig.json
+	mux.HandleFunc(define.RestAPIVMConfigURL, func(w http.ResponseWriter, _ *http.Request) {
 		_, err := io.Copy(w, bytes.NewReader(data))
 		if err != nil {
 			logrus.Errorf("failed to serve ignition file: %v", err)
 		}
 	})
-	mux.Handle("/3rd/linux/", http.StripPrefix("/3rd/linux/", http.FileServer(http.Dir(linux3rdDir))))
+
+	// 3rd utils for guest file server /
+	logrus.Debugf("file server path: %q", linux3rdBinDir)
+
+	mux.Handle(define.RestAPI3rdFileServerURL, http.StripPrefix(define.RestAPI3rdFileServerURL, http.FileServer(http.Dir(linux3rdBinDir))))
+
+	// inform the guest podman ready
+	mux.HandleFunc(define.RestAPIPodmanReadyURL, func(w http.ResponseWriter, _ *http.Request) {
+		logrus.Debugf("rest api recved the podman api ready request")
+		close(vmc.Stage.PodmanReadyChan)
+	})
+	// inform the guest sshd ready
+	mux.HandleFunc(define.RestAPISSHReadyURL, func(w http.ResponseWriter, _ *http.Request) {
+		logrus.Debugf("rest api recved the ssh api ready request")
+		close(vmc.Stage.SSHDReadyChan)
+	})
 
 	logrus.Infof("start ignition server on %q", ignServerAddr)
 	listener, err := net.Listen("unix", addr.Path)
