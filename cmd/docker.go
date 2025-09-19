@@ -6,6 +6,7 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/server"
+	"linuxvm/pkg/service"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vm"
 	"linuxvm/pkg/vmconfig"
@@ -97,6 +98,26 @@ func setupContainerMode(ctx context.Context, vmc *vmconfig.VMConfig, command *cl
 	return
 }
 
+func ProbeServersAvailability(ctx context.Context, vmc *vmconfig.VMConfig) error {
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		service.ProbeAndWaitingSSHService(ctx, vmc)
+		logrus.Infof("guest ssh service available now")
+		close(vmc.Stage.SSHDReadyChan)
+		return nil
+	})
+
+	g.Go(func() error {
+		service.ProbeAndWaitingPodmanService(ctx, vmc)
+		logrus.Infof("guest podman service available now")
+		close(vmc.Stage.PodmanReadyChan)
+		return nil
+	})
+
+	return g.Wait()
+}
+
 func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	if err := showVersionAndOSInfo(); err != nil {
 		logrus.Warn("cannot get Build version/OS information")
@@ -147,6 +168,14 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 
 		vmc.WaitGVProxyReady(ctx)
 		return network.ForwardPodmanAPIOverVSock(ctx, vmc.GVproxyEndpoint, vmc.PodmanInfo.UnixSocksAddr, define.DefaultGuestAddr, uint16(tcpAddr.Port))
+	})
+
+	g.Go(func() error {
+		vmc.WaitGVProxyReady(ctx)
+		if err = ProbeServersAvailability(ctx, vmc); err != nil {
+			return fmt.Errorf("failed to get server availability: %w", err)
+		}
+		return nil
 	})
 
 	return g.Wait()

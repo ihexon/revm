@@ -48,6 +48,12 @@ func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...
 		return nil, fmt.Errorf("failed to connect to gvproxy: %w", err)
 	}
 
+	keepAliveCtx, keepAliveCancel := context.WithCancel(ctx)
+	defer keepAliveCancel()
+	go func() {
+		ssh.StartKeepAlive(keepAliveCtx, cfg.SSHClient)
+	}()
+
 	// remember to close the writer when the process exits
 	stdOutReader, stdoutWriter := io.Pipe()
 	stderrOutReader, stderrWriter := io.Pipe()
