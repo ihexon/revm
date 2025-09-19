@@ -62,7 +62,9 @@ type Stage struct {
 	// when gvproxy is running, this channel will be closed
 	GVProxyChan chan struct{}
 	// when ignition server is running, this channel will be closed
-	IgnServerChan chan struct{}
+	IgnServerChan   chan struct{}
+	PodmanReadyChan chan struct{}
+	SSHDReadyChan   chan struct{}
 }
 
 // DataDisk represents the configuration of a data disk, including its file system type, path, and mount point.

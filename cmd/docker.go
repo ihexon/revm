@@ -146,7 +146,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		}
 
 		vmc.WaitGVProxyReady(ctx)
-		return network.ForwardPodmanAPIOverVSock(ctx, vmc.GVproxyEndpoint, vmc.PodmanInfo.UnixSocksAddr, tcpAddr.Host, uint16(tcpAddr.Port))
+		return network.ForwardPodmanAPIOverVSock(ctx, vmc.GVproxyEndpoint, vmc.PodmanInfo.UnixSocksAddr, define.DefaultGuestAddr, uint16(tcpAddr.Port))
 	})
 
 	return g.Wait()

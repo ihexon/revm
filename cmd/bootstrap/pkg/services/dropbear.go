@@ -1,17 +1,16 @@
 //go:build (darwin && (arm64 || amd64)) || (linux && (arm64 || amd64))
 
-package ssh
+package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"linuxvm/pkg/define"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -32,7 +31,7 @@ const (
 // GetProvider get ssh server provider. A struct of SSHServer contains KeyFile, RunTimeDir, AuthorizedKeysFile, PidFile
 // and Provider. all fields are initialed by default.
 func GetProvider(cfg SSHServer) *SSHServer {
-	sshServer := &SSHServer{
+	return &SSHServer{
 		Provider: cfg.Provider,
 		// the port will be assigned from vmc.SSHInfo.Port, which is randomly assigned.
 		Port:               cfg.Port,
@@ -42,7 +41,6 @@ func GetProvider(cfg SSHServer) *SSHServer {
 		AuthorizedKeysFile: filepath.Join(define.DropBearRuntimeDir, "authorized_keys"),
 		PidFile:            define.DropBearPidFile,
 	}
-	return sshServer
 }
 
 func (s *SSHServer) GenerateSSHKeyFile(ctx context.Context) error {
@@ -73,7 +71,7 @@ func (s *SSHServer) Start(ctx context.Context) error {
 		}
 
 		logrus.Infof("start guest built-in ssh server in %s:%d", s.Addr, s.Port)
-		cmd := exec.CommandContext(ctx, "dropbear", "-p", strconv.Itoa(int(s.Port)), "-r", s.KeyFile, "-D",
+		cmd := exec.CommandContext(ctx, "dropbear", "-p", fmt.Sprintf("%s:%d", s.Addr, s.Port), "-r", s.KeyFile, "-D",
 			s.RunTimeDir, "-F", "-B", "-P", s.PidFile)
 		cmd.Stdin = nil
 		cmd.Env = append(os.Environ(), "PASS_FILEPEM_CHECK=1")
@@ -83,6 +81,7 @@ func (s *SSHServer) Start(ctx context.Context) error {
 		}
 
 		logrus.Debugf("dropbear cmdline: %q", cmd.Args)
+
 		return cmd.Run()
 	default:
 		return errors.New("no ssh server provider found")
@@ -117,8 +116,13 @@ func (s *SSHServer) WriteAuthorizedkeysFile() error {
 	return nil
 }
 
-func StartSSHServer(ctx context.Context, cfg SSHServer) error {
-	p := GetProvider(cfg)
+func StartGuestSSHServer(ctx context.Context, vmc *define.VMConfig) error {
+	p := GetProvider(SSHServer{
+		Port:     vmc.SSHInfo.Port,
+		Provider: TypeDropbear,
+		Addr:     vmc.SSHInfo.GuestAddr,
+	})
+
 	if err := p.GenerateSSHKeyFile(ctx); err != nil {
 		return fmt.Errorf("failed to create ssh key: %w", err)
 	}
@@ -127,5 +131,17 @@ func StartSSHServer(ctx context.Context, cfg SSHServer) error {
 		return err
 	}
 
-	return p.Start(ctx)
+	errChan := make(chan error, 1)
+
+	go func() {
+		errChan <- p.Start(ctx)
+		close(errChan)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case err := <-errChan:
+		return err
+	}
 }

@@ -215,7 +215,6 @@ func (vmc *VMConfig) WithShareUserHomeDir() error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("can not get user home directory: %w", err)
-
 	}
 
 	return vmc.WithUserProvidedMounts([]string{fmt.Sprintf("%s:%s", homeDir, homeDir)})
@@ -359,8 +358,10 @@ func NewVMConfig() *VMConfig {
 	}
 	vmc.IgnProvisionerAddr = fmt.Sprintf("unix://%s/%s", prefix, define.IgnServerSocketName)
 	vmc.Stage = define.Stage{
-		GVProxyChan:   make(chan struct{}, 1),
-		IgnServerChan: make(chan struct{}, 1),
+		GVProxyChan:     make(chan struct{}, 1),
+		IgnServerChan:   make(chan struct{}, 1),
+		PodmanReadyChan: make(chan struct{}, 1),
+		SSHDReadyChan:   make(chan struct{}, 1),
 	}
 
 	vmc.DataDisk = []define.DataDisk{}
