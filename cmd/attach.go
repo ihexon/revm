@@ -68,6 +68,12 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("failed to connect to %s: %w", endpoint.Path, err)
 	}
 
+	keepAliveCtx, keepAliveCancel := context.WithCancel(ctx)
+	defer keepAliveCancel()
+	go func() {
+		ssh.StartKeepAlive(keepAliveCtx, cfg.SSHClient)
+	}()
+
 	// make stdout/stderr pipe, so we can get the output of the cmdline in realtime
 	if err = cfg.WriteOutputTo(os.Stdout, os.Stderr); err != nil {
 		return fmt.Errorf("failed to make std pipe: %w", err)
