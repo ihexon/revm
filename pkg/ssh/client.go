@@ -115,10 +115,13 @@ func (c *RunConfig) Connect(ctx context.Context, gvCtl string) error {
 		return fmt.Errorf("failed to connect to gvproxy control endpoint: %w", err)
 	}
 
-	c.CleanUp.Add(func() error {
-		_ = gvpConn.Close()
-		return nil
-	})
+	defer func() {
+		// Once c.SSHClient is created, calling c.SSHClient.Close will also close gvpConn.
+		// Before c.SSHClient is created, gvpConn must be closed manually.
+		if c.SSHClient == nil {
+			_ = gvpConn.Close()
+		}
+	}()
 
 	if err = transport.Tunnel(gvpConn, c.Addr, int(c.Port)); err != nil {
 		return err
