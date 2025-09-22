@@ -53,7 +53,7 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 	cmdline := command.Args().Tail()
 
 	// First we maka a ssh client configure, remember it just a configure store the information the ssh client actually needed
-	cfg := ssh.NewCfg(define.DefaultGuestAddr, vmc.SSHInfo.User, vmc.SSHInfo.Port, vmc.SSHInfo.HostSSHKeyPairFile)
+	cfg := ssh.NewCfg(define.DefaultGuestAddr, define.DefaultGuestUser, define.DefaultGuestSSHDPort, vmc.SSHInfo.HostSSHKeyPairFile)
 	defer cfg.CleanUp.CleanIfErr(&err)
 
 	// Set the cmdline

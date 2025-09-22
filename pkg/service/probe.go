@@ -16,7 +16,7 @@ import (
 )
 
 func testSSH(ctx context.Context, vmc *vmconfig.VMConfig) error {
-	cfg := ssh.NewCfg(define.DefaultGuestAddr, vmc.SSHInfo.User, vmc.SSHInfo.Port, vmc.SSHInfo.HostSSHKeyPairFile)
+	cfg := ssh.NewCfg(define.DefaultGuestAddr, define.DefaultGuestUser, define.DefaultGuestSSHDPort, vmc.SSHInfo.HostSSHKeyPairFile)
 	endpoint, err := url.Parse(vmc.GVproxyEndpoint)
 	if err != nil {
 		return fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
