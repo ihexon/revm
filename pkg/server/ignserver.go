@@ -49,17 +49,6 @@ func IgnProvisionerServer(ctx context.Context, vmc *vmconfig.VMConfig, ignServer
 
 	mux.Handle(define.RestAPI3rdFileServerURL, http.StripPrefix(define.RestAPI3rdFileServerURL, http.FileServer(http.Dir(linux3rdBinDir))))
 
-	// inform the guest podman ready
-	// mux.HandleFunc(define.RestAPIPodmanReadyURL, func(w http.ResponseWriter, _ *http.Request) {
-	//	logrus.Debugf("rest api recved the podman api ready request")
-	//	close(vmc.Stage.PodmanReadyChan)
-	//})
-	// inform the guest sshd ready
-	//mux.HandleFunc(define.RestAPISSHReadyURL, func(w http.ResponseWriter, _ *http.Request) {
-	//	logrus.Debugf("rest api recved the ssh api ready request")
-	//	close(vmc.Stage.SSHDReadyChan)
-	//})
-
 	logrus.Infof("start ignition server on %q", ignServerAddr)
 	listener, err := net.Listen("unix", addr.Path)
 	if err != nil {

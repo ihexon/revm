@@ -35,13 +35,15 @@ const (
 	ContainerStorageMountPoint    = "/var/lib/containers"
 	DefaultDataDiskMountDirPrefix = "/var/tmp/mnt"
 
-	DefaultGuestUser                  = "root"
-	DefaultGuestSSHListenAddr         = "0.0.0.0"
-	PodmanDefaultListenTcpAddrInGuest = "tcp://0.0.0.0:25883"
-	DefaultGuestAddr                  = "192.168.127.2"
-	DefaultVSockPort                  = 1984
+	DefaultGuestUser = "root"
 
-	// RestAPI const var
+	UnspecifiedAddress = "0.0.0.0"
+	DefaultGuestAddr   = "192.168.127.2"
+
+	DefaultVSockPort          = 25882
+	DefaultGuestSSHDPort      = 25883
+	DefaultGuestPodmanAPIPort = 25884
+
 	RestAPIPodmanReadyURL   = "/ready/podman"
 	RestAPISSHReadyURL      = "/ready/sshd"
 	RestAPI3rdFileServerURL = "/fileserver/"

@@ -19,10 +19,6 @@ type Mount struct {
 }
 
 type SSHInfo struct {
-	User      string `json:"user"`
-	GuestAddr string `json:"guestAddr"`
-	Port      uint64 `json:"guestAndHostPort"`
-
 	// HostSSHKeyPairFile is the path to the host ssh keypair file
 	HostSSHKeyPairFile string `json:"hostSSHKeyFile,omitempty"`
 

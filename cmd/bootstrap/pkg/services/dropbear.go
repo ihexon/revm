@@ -118,9 +118,9 @@ func (s *SSHServer) WriteAuthorizedkeysFile() error {
 
 func StartGuestSSHServer(ctx context.Context, vmc *define.VMConfig) error {
 	p := GetProvider(SSHServer{
-		Port:     vmc.SSHInfo.Port,
+		Port:     define.DefaultGuestSSHDPort,
 		Provider: TypeDropbear,
-		Addr:     vmc.SSHInfo.GuestAddr,
+		Addr:     define.UnspecifiedAddress,
 	})
 
 	if err := p.GenerateSSHKeyFile(ctx); err != nil {

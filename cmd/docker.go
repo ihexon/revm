@@ -161,13 +161,8 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	})
 
 	g.Go(func() error {
-		tcpAddr, err := network.ParseTcpAddr(define.PodmanDefaultListenTcpAddrInGuest)
-		if err != nil {
-			return fmt.Errorf("failed to parse tcp addr %q: %w", define.PodmanDefaultListenTcpAddrInGuest, err)
-		}
-
 		vmc.WaitGVProxyReady(ctx)
-		return network.ForwardPodmanAPIOverVSock(ctx, vmc.GVproxyEndpoint, vmc.PodmanInfo.UnixSocksAddr, define.DefaultGuestAddr, uint16(tcpAddr.Port))
+		return network.ForwardPodmanAPIOverVSock(ctx, vmc.GVproxyEndpoint, vmc.PodmanInfo.UnixSocksAddr, define.DefaultGuestAddr, uint16(define.DefaultGuestPodmanAPIPort))
 	})
 
 	g.Go(func() error {
