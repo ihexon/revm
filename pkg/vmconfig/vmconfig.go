@@ -63,16 +63,6 @@ func (vmc *VMConfig) GenerateSSHInfo() error {
 	vmc.SSHInfo.HostSSHPrivateKey = string(keyPair.RawProtectedPrivateKey())
 	vmc.SSHInfo.HostSSHPublicKey = keyPair.AuthorizedKey()
 
-	sshPort, err := network.GetAvailablePort("tcp4")
-	if err != nil {
-		return fmt.Errorf("failed to get available port for ssh: %w", err)
-	}
-
-	vmc.SSHInfo.GuestAddr = define.DefaultGuestSSHListenAddr
-	vmc.SSHInfo.Port = sshPort
-	vmc.SSHInfo.User = define.DefaultGuestUser
-	logrus.Infof("guest ssh running on %s@%s:%d", vmc.SSHInfo.User, vmc.SSHInfo.GuestAddr, vmc.SSHInfo.Port)
-
 	return nil
 }
 
@@ -97,15 +87,11 @@ func (vmc *VMConfig) Lock() (*flock.Flock, error) {
 }
 
 func (vmc *VMConfig) WaitGVProxyReady(ctx context.Context) {
-	logrus.Debugf("waiting gvproxy ready")
 	waitGVProxyReady(ctx, vmc)
-	logrus.Debugf("gvproxy ready")
 }
 
 func (vmc *VMConfig) WaitIgnServerReady(ctx context.Context) {
-	logrus.Debugf("waiting Ignition server ready")
 	waitIgnServerReady(ctx, vmc)
-	logrus.Debugf("Ignition server ready")
 }
 
 func waitGVProxyReady(ctx context.Context, vmc *VMConfig) {

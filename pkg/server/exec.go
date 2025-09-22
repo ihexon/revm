@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh"
 	"linuxvm/pkg/vmconfig"
@@ -38,7 +39,7 @@ func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...
 		return nil, fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
 	}
 
-	cfg := ssh.NewCfg(vmc.SSHInfo.GuestAddr, vmc.SSHInfo.User, vmc.SSHInfo.Port, vmc.SSHInfo.HostSSHKeyPairFile)
+	cfg := ssh.NewCfg(define.DefaultGuestAddr, define.DefaultGuestUser, define.DefaultGuestSSHDPort, vmc.SSHInfo.HostSSHKeyPairFile)
 	defer cfg.CleanUp.CleanIfErr(&err)
 
 	cfg.SetPty(false)
