@@ -28,6 +28,11 @@ $ tar -xvf revm.tar.zst
 $ ./out/bin/revm --help # help message
 ```
 
+if you download tar from release or github action(head build), remember to:
+```shell
+ xattr -d com.apple.quarantine revm.tar.zst
+```
+
 ### Container mode
 Container mode requires specifying an image file as the container storage area. Use `--data-storage` to reuse & generate image files (ext4 format)
 ```shell
