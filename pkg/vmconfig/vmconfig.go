@@ -157,7 +157,7 @@ func validateArgs(args []string) error {
 }
 
 func (vmc *VMConfig) SetGuestBootstrapRunArgs() {
-	vmc.Cmdline.Bootstrap = system.GetGuestLinuxUtilsBinPath(define.BoostrapFileName)
+	vmc.Cmdline.Bootstrap = system.BootstrapPathInGuestView()
 	vmc.Cmdline.Env = []string{define.DefaultPATHInBootstrap}
 
 	if logrus.IsLevelEnabled(logrus.DebugLevel) {

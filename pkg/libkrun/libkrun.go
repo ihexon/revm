@@ -4,7 +4,7 @@ package libkrun
 
 /*
 #cgo CFLAGS: -I ../../include
-#cgo LDFLAGS: -L  ../../out/3rd/darwin/lib  -lkrun.1.15.1 -lkrunfw.4
+#cgo LDFLAGS: -L  ../../out/lib/  -lkrun.1.15.1 -lkrunfw.4
 #include <libkrun.h>
 #include <stdlib.h>
 */

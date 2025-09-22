@@ -9,19 +9,11 @@ import (
 	"linuxvm/pkg/define"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
 )
 
-func Get3rdDir() (string, error) {
-	path := os.Getenv("REVM_3RD_DIR")
-	if path != "" {
-		logrus.Warnf("env REVM_3RD_DIR set %q, use it instead of default", path)
-		return path, nil
-	}
-
+func getExecutableDir() (string, error) {
 	path, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("failed to get executable path: %w", err)
@@ -33,10 +25,8 @@ func Get3rdDir() (string, error) {
 	}
 
 	selfDir := filepath.Dir(path)
-	parentDir := filepath.Dir(selfDir)
 
-	path = filepath.Join(parentDir, define.ThirdPartDirPrefix)
-	return path, nil
+	return selfDir, nil
 }
 
 func GenerateRandomID() string {
@@ -52,34 +42,27 @@ func GenerateRandomID() string {
 	return encoded[:6]
 }
 
-func Get3rdUtilsPath(name string) (string, error) {
-	dir, err := Get3rdDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, runtime.GOOS, "bin", name), nil
-}
-
-func Get3rdUtilsPathForLinux(name string) (string, error) {
-	dir, err := Get3rdDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "linux", "bin", name), nil
+func BootstrapPathInGuestView() string {
+	return filepath.Join("/", define.BoostrapFileName)
 }
 
 func GetBuiltinRootfsPath() (string, error) {
-	dir, err := Get3rdDir()
+	binDir, err := getExecutableDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to get 3rd dir: %w", err)
+		return "", fmt.Errorf("failed to get executable dir: %w", err)
 	}
+	parentDir := filepath.Dir(binDir)
 
-	podmanRootfs := filepath.Join(dir, "linux", "rootfs")
-	return podmanRootfs, nil
+	rootfsDir := filepath.Join(parentDir, define.RootfsDirName)
+	return rootfsDir, nil
 }
 
-func GetGuestLinuxUtilsBinPath(name string) string {
-	return filepath.Join(define.GuestLinuxUtilsBinDir, name)
+func GetLibexecNamePath(name string) (string, error) {
+	binDir, err := getExecutableDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get executable dir: %w", err)
+	}
+	parentDir := filepath.Dir(binDir)
+	libexecDirPath := filepath.Join(parentDir, define.LibexecDirName)
+	return filepath.Join(libexecDirPath, name), nil
 }

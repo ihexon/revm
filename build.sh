@@ -72,17 +72,20 @@ EOF
 init_func() {
 	WORKSPACE="$(realpath "$(dirname "$0")")"
 	export WORKSPACE
+	cd "$WORKSPACE" || { echo "Failed to change to workspace directory"; exit 1; }
+
 	if [[ -n "$DIRTY_BUILD" ]]; then
 		log_warn "!!DIRTY BUILD!!"
 	else
-		log_warn "DELETE OUTPUT DIR"
-		rm -rf "$WORKSPACE/out" && mkdir -p ./out/bin && mkdir -p ./out/3rd
+		log_warn "CLEAN BUILD"
+		 rm -rf ./out
 	fi
 
 	log_std "change dir to $WORKSPACE"
 	detect_platform_arch
 	GIT_COMMIT_ID="$(git rev-parse --short HEAD || echo "unknown")"
 	GIT_TAG="$(git describe --tags --abbrev=0 || echo "unknown")"
+	export OUTDIR="$WORKSPACE/out"
 }
 
 _downloader() {
@@ -103,29 +106,10 @@ _downloader() {
 	fi
 }
 
-_download_e2fsprogs_darwin() {
-	local dir="$WORKSPACE/out/3rd/$PLT/bin"
-	mkdir -p "$dir"
-	local urls=()
-	if [[ "$PLT" == "darwin" ]]; then
-		urls+=(
-			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/e2fsprogs/arm64/darwin/blkid"
-			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/e2fsprogs/arm64/darwin/mke2fs"
-			"https://github.com/ihexon/prebuilds/raw/refs/heads/main/e2fsprogs/arm64/darwin/fsck.ext4"
-		)
-	fi
-
-	for item in "${urls[@]}"; do
-		_downloader "$dir" "$item" "true"
-	done
-
-	cd "$WORKSPACE"
-}
-
 # Only build for macOS arm64
 _download_libkrun_darwin() {
-	local libkrun_dir="$WORKSPACE/out/3rd/$PLT/lib"
-	mkdir -p "$libkrun_dir"
+	local dir="$OUTDIR/lib"
+	mkdir -p "$dir"
 	local urls=()
 	if [[ "$PLT" == "darwin" ]]; then
 		urls+=(
@@ -138,51 +122,32 @@ _download_libkrun_darwin() {
 	fi
 
 	for item in "${urls[@]}"; do
-		_downloader "$libkrun_dir" "$item" "true"
+		_downloader "$dir" "$item" "true"
 	done
 
-	log_std "change dir to $libkrun_dir"
-	log_std "create symbol link the libkrun"
 	cd "$WORKSPACE"
 }
 
-_download_busybox_linux() {
-	local busybox_bindir="$WORKSPACE/out/3rd/linux/bin"
-	mkdir -p "$busybox_bindir"
-	local urls=(
-		"https://github.com/ihexon/prebuilds/raw/refs/heads/main/busybox/arm64/linux/busybox.static"
-	)
+_download_darwin_tools(){
+  local dir="$OUTDIR/libexec"
+  	mkdir -p "$dir"
+  	local urls=(
+  		"https://github.com/ihexon/prebuilds/raw/refs/heads/main/e2fsprogs/arm64/darwin/blkid"
+  		"https://github.com/ihexon/prebuilds/raw/refs/heads/main/e2fsprogs/arm64/darwin/mke2fs"
+  		"https://github.com/ihexon/prebuilds/raw/refs/heads/main/e2fsprogs/arm64/darwin/fsck.ext4"
+  	)
 
-	for item in "${urls[@]}"; do
-		_downloader "$busybox_bindir" "$item" "false"
-	done
-
-	log_std "create symbol link the busybox"
-	cd "$busybox_bindir"
-	chmod +x busybox.static
-	ln -sf busybox.static busybox
-	cd "$WORKSPACE"
+  	for item in "${urls[@]}"; do
+  		_downloader "$dir" "$item" "true"
+  	done
 }
 
-_download_dropbear() {
-	local dropbear_bin_dir="$WORKSPACE/out/3rd/linux/bin"
-	mkdir -p "$dropbear_bin_dir"
-	local urls=(
-		"https://github.com/ihexon/prebuilds/raw/refs/heads/main/dropbear/arm64/linux/dropbear"
-		"https://github.com/ihexon/prebuilds/raw/refs/heads/main/dropbear/arm64/linux/dropbearkey"
-	)
-
-	for item in "${urls[@]}"; do
-		_downloader "$dropbear_bin_dir" "$item" "false"
-	done
-}
-
-_download_podman_rootfs() {
+_download_builtin_rootfs() {
 	if [[ $DIRTY_BUILD == "true" ]]; then
 		log_warn "DIRTY_BUILD set true, skip download alpine rootfs from github lfs"
 		return
 	fi
-	local dir="$WORKSPACE/out/3rd/linux/rootfs"
+	local dir="$OUTDIR/rootfs"
 	mkdir -p "$dir"
 	local url="https://github.com/ihexon/prebuilds/raw/refs/heads/main/rootfs/arm64/alpine/rootfs.tar.zst"
 	wget -q --output-document - "$url" | tar --strip-components=1 -xv -C "$dir"
@@ -192,10 +157,8 @@ download_3rd() {
 	case $PLT in
 		darwin)
 			_download_libkrun_darwin
-			_download_busybox_linux
-			_download_dropbear
-			_download_e2fsprogs_darwin
-			_download_podman_rootfs
+			_download_darwin_tools
+			_download_builtin_rootfs
 			;;
 		*)
 			log_err "Unsupported architecture: ${PLT}"
@@ -204,15 +167,22 @@ download_3rd() {
 }
 
 build_revm() {
-	local revm_bin="out/bin/revm"
+	local revm_bin="$OUTDIR/bin/revm"
 	rm -f "$revm_bin"
-	CGO_CFLAGS="-mmacosx-version-min=13.1" CGO_LDFLAGS="-mmacosx-version-min=13.1" GOOS=$PLT GOARCH=$ARCH go build -ldflags="-extldflags=-mmacosx-version-min=13.1 -X linuxvm/pkg/define.Version=$GIT_TAG -X linuxvm/pkg/define.CommitID=$GIT_COMMIT_ID" -v -o "$revm_bin" ./cmd/
+	CGO_CFLAGS="-mmacosx-version-min=13.1" \
+	CGO_LDFLAGS="-mmacosx-version-min=13.1" \
+	GOOS=$PLT \
+	GOARCH=$ARCH \
+	go build \
+	-ldflags="-extldflags=-mmacosx-version-min=13.1 -X linuxvm/pkg/define.Version=$GIT_TAG -X linuxvm/pkg/define.CommitID=$GIT_COMMIT_ID" \
+	-v -o "$revm_bin" ./cmd/
+
 	if [[ "$PLT" == "darwin" ]]; then
 		log_std "codesign to revm"
 		codesign --force --deep --sign - "$revm_bin"
 
 		log_std "add rpath to revm"
-		install_name_tool -add_rpath "@executable_path/../3rd/$PLT/lib" "$revm_bin"
+		install_name_tool -add_rpath "@executable_path/../lib/" "$revm_bin"
 
 		log_std "codesign revm with revm.entitlements"
 		codesign --entitlements revm.entitlements --force -s - "$revm_bin"
@@ -220,7 +190,7 @@ build_revm() {
 }
 
 build_bootstrap() {
-	local boostrap_bin="out/3rd/linux/bin/bootstrap"
+	local boostrap_bin="$OUTDIR/bin/bootstrap"
 	log_std "Build bootstrap for guest"
 	rm -f "$boostrap_bin"
 	CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH go build -v -ldflags="-s -w" -o "$boostrap_bin" ./cmd/bootstrap

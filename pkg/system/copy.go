@@ -10,13 +10,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func CopyBootstrapToRooFs(rootfs string) error {
-	bootstrapPath, err := Get3rdUtilsPathForLinux(define.BoostrapFileName)
+func CopyBootstrapToRooFs(rootfsPath string) error {
+	binDir, err := getExecutableDir()
 	if err != nil {
-		return fmt.Errorf("failed to get thirdPart directory: %w", err)
+		return fmt.Errorf("failed to get executable dir: %w", err)
 	}
 
-	return CopyFile(bootstrapPath, filepath.Join(rootfs, define.GuestLinuxUtilsBinDir, define.BoostrapFileName))
+	// bin/bootstrap
+	src := filepath.Join(binDir, define.BoostrapFileName)
+	// $ROOTFS/bootstrap
+	dst := filepath.Join(rootfsPath, define.BoostrapFileName)
+
+	return CopyFile(src, dst)
 }
 
 func CopyFile(src, dst string) error {
