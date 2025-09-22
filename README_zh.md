@@ -27,6 +27,10 @@ $ wget https://github.com/ihexon/revm/releases/latest/download/revm.tar.zst
 $ tar -xvf revm.tar.zst
 $ ./out/bin/revm --help # help message
 ```
+如果你是从 release 或 GitHub Action（head build）下载的 tar 包，请记得执行：
+```shell
+xattr -d com.apple.quarantine revm.tar.zst
+```
 
 ### 容器 模式
 容器模式需要指定一块镜像文件作为 container 存储区域，通过 `--data-storage` 复用 & 生成镜像文件（ext4 格式）
