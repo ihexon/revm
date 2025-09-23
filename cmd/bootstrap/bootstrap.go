@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"linuxvm/cmd/bootstrap/pkg/resources"
 	"linuxvm/cmd/bootstrap/pkg/services"
 	"linuxvm/pkg/define"
 	"os"
@@ -60,7 +61,7 @@ func main() {
 func earlyStage(ctx context.Context, command *cli.Command) (context.Context, error) {
 	setLogrus(command)
 
-	err := services.DownloadLinuxUtils(ctx)
+	err := resources.DownloadLinuxTools(ctx)
 	if err != nil {
 		return ctx, err
 	}

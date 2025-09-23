@@ -9,7 +9,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func GetGuestLinuxUtilsBinPath(name string) string {
+// GetToolsPath3rd given a program name, return the absolute path of the program in the 3rd rootfs.
+//
+//	for example, if the program name is "myproj":
+//		the absolute path will be "/3rd/usr/bin/myproj" in guest view.
+func GetToolsPath3rd(name string) string {
 	return filepath.Join(define.GuestLinuxUtilsBinDir, name)
 }
 
