@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/filesystem"
+	"linuxvm/pkg/path"
 	"net/url"
 	"os"
 	"strings"
@@ -157,7 +158,8 @@ func validateArgs(args []string) error {
 }
 
 func (vmc *VMConfig) SetGuestBootstrapRunArgs() {
-	vmc.Cmdline.Bootstrap = system.GetGuestLinuxUtilsBinPath(define.BoostrapFileName)
+	bootstrapGuestPath, _ := path.GetToolsPath3rd(define.BoostrapFileName, path.GuestView)
+	vmc.Cmdline.Bootstrap = bootstrapGuestPath
 	vmc.Cmdline.Env = []string{define.DefaultPATHInBootstrap}
 
 	if logrus.IsLevelEnabled(logrus.DebugLevel) {
@@ -248,12 +250,12 @@ func (vmc *VMConfig) WithUserProvidedRootFS(rootfsPath string) error {
 }
 
 func (vmc *VMConfig) WithBuiltInRootfs() error {
-	path, err := system.GetBuiltinRootfsPath()
+	rootfsPath, err := path.GetBuiltinRootfsPath()
 	if err != nil {
 		return fmt.Errorf("failed to get builtin rootfs path: %w", err)
 	}
 
-	return vmc.WithUserProvidedRootFS(path)
+	return vmc.WithUserProvidedRootFS(rootfsPath)
 }
 
 func (vmc *VMConfig) WithContainerDataDisk(ctx context.Context, disk string) error {

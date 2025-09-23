@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/path"
 	"linuxvm/pkg/system"
 	"os"
 	"os/exec"
@@ -21,16 +22,17 @@ type DiskInfo struct {
 	AbsPath        string
 }
 
-func getBlockInfo(ctx context.Context, path string) (*RawDisk, error) {
-	block, err := filepath.Abs(path)
+func getBlockInfo(ctx context.Context, filePath string) (*RawDisk, error) {
+	block, err := filepath.Abs(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	blkid, err := system.Get3rdUtilsPath("blkid")
+	blkid, err := path.GetDarwinToolsPath("blkid")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get blkid path: %w", err)
 	}
+
 	// blkid -s UUID -o value /dev/sda1
 	cmd := exec.CommandContext(ctx, blkid, "-c", "/dev/null", "-s", "UUID", "-o", "value", block)
 	cmd.Stdin = nil
@@ -85,9 +87,9 @@ func (disk *RawDisk) FsCheck(ctx context.Context) error {
 		return fmt.Errorf("filesystem integrity check only support ext4 filesystem, but got %q", info.FsType)
 	}
 
-	fsckExt4, err := system.Get3rdUtilsPath("fsck.ext4")
+	fsckExt4, err := path.GetDarwinToolsPath("fsck.ext4")
 	if err != nil {
-		return fmt.Errorf("failed to get mke2fs path: %w", err)
+		return fmt.Errorf("failed to get fsck.ext4 path: %w", err)
 	}
 
 	cmd := exec.CommandContext(ctx, fsckExt4, "-p", disk.Path)
@@ -96,6 +98,7 @@ func (disk *RawDisk) FsCheck(ctx context.Context) error {
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stderr
 	}
+
 	cmd.Stdin = nil
 
 	logrus.Debugf("fsck cmdline: %q", cmd.Args)
@@ -116,9 +119,9 @@ func (disk *RawDisk) SetSizeInGB(sizeInGB uint64) {
 }
 
 func (disk *RawDisk) Format(ctx context.Context) error {
-	mke2fs, err := system.Get3rdUtilsPath("mke2fs")
+	mke2fs, err := path.GetDarwinToolsPath("mke2fs")
 	if err != nil {
-		return fmt.Errorf("search mke2fs path error: %w", err)
+		return fmt.Errorf("failed to get mke2fs path: %w", err)
 	}
 
 	if disk.FsType == "" {

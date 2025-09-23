@@ -36,32 +36,31 @@ const (
 	configfsType     = "configfs"
 	bpfFsType        = "bpf"
 	binfmtMiscFsType = "binfmt_misc"
+	fusectl          = "fusectl"
 )
 
+const Busybox = "busybox.static"
+
 var (
-	ErrMounted = errors.New("mount point is already mounted")
+	errMounted = fmt.Errorf("the target dir is is already mounted")
 )
 
 func (mnt *Mnt) makeMountCmdline(ctx context.Context, action MountActionType) (*exec.Cmd, error) {
-	if err := os.MkdirAll(mnt.Target, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create dir for mount point: %w", err)
-	}
-
 	mounted, err := mountinfo.Mounted(mnt.Target)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check %q mounted: %w", mnt.Target, err)
 	}
 
 	if mounted {
-		logrus.Debugf("mount point %q is already mounted", mnt.Target)
-		return nil, ErrMounted
+		logrus.Debugf("target dir %q is already mounted, skip", mnt.Target)
+		return nil, errMounted
 	}
 
 	if mnt.Target == "" {
 		return nil, fmt.Errorf("mount point is empty")
 	}
 
-	mounter := exec.CommandContext(ctx, "busybox.static", "mount")
+	mounter := exec.CommandContext(ctx, Busybox, "mount")
 	mounter.Stdout = os.Stdout
 	mounter.Stderr = os.Stderr
 	mounter.Stdin = nil
@@ -71,6 +70,7 @@ func (mnt *Mnt) makeMountCmdline(ctx context.Context, action MountActionType) (*
 	}
 
 	switch action {
+	// DataDiskAction mount by UUID
 	case DataDiskAction:
 		if mnt.UUID == "" {
 			return nil, fmt.Errorf("UUID is empty")
@@ -80,6 +80,7 @@ func (mnt *Mnt) makeMountCmdline(ctx context.Context, action MountActionType) (*
 		}
 		mounter.Args = append(mounter.Args, "-t", mnt.Type, "UUID="+mnt.UUID, mnt.Target)
 	case VirtioFsAction:
+		// virtiofs mount by tag, but also require filesystem type is virtiofs
 		if mnt.Type != virtiofsType {
 			return nil, fmt.Errorf("filesystem type is not virtiofs")
 		}
@@ -88,6 +89,7 @@ func (mnt *Mnt) makeMountCmdline(ctx context.Context, action MountActionType) (*
 		}
 		mounter.Args = append(mounter.Args, "-t", mnt.Type, mnt.Tag, mnt.Target)
 	case PseudoFsAction:
+		// pseudo filesystem mount by type
 		if mnt.Type == "" {
 			return nil, fmt.Errorf("pseudo filesystem type is empty")
 		}
@@ -101,6 +103,9 @@ func (mnt *Mnt) makeMountCmdline(ctx context.Context, action MountActionType) (*
 }
 
 func (mnt *Mnt) Mount(ctx context.Context, action MountActionType) error {
+	if err := os.MkdirAll(mnt.Target, 0755); err != nil {
+		return fmt.Errorf("failed to create dir for mount point: %w", err)
+	}
 	mounter, err := mnt.makeMountCmdline(ctx, action)
 	if err != nil {
 		return err
@@ -109,7 +114,7 @@ func (mnt *Mnt) Mount(ctx context.Context, action MountActionType) error {
 }
 
 func (mnt *Mnt) Unmount(ctx context.Context) error {
-	mounter := exec.CommandContext(ctx, "busybox.static", "umount", "-l", "-d", mnt.Target)
+	mounter := exec.CommandContext(ctx, Busybox, "umount", "-l", "-d", mnt.Target)
 	mounter.Stderr = os.Stderr
 	mounter.Stdout = os.Stdout
 	mounter.Stdin = nil
@@ -117,7 +122,7 @@ func (mnt *Mnt) Unmount(ctx context.Context) error {
 }
 
 func MountPseudoFilesystem(ctx context.Context) error {
-	tmpMnts := []*Mnt{
+	pseudoMnts := []*Mnt{
 		{
 			Target: "/tmp",
 			Type:   tmpfsType,
@@ -165,7 +170,7 @@ func MountPseudoFilesystem(ctx context.Context) error {
 		{
 			Target: "/sys/fs/fuse/connections",
 			Opts:   "rw,nosuid,nodev,noexec,relatime",
-			Type:   "fusectl",
+			Type:   fusectl,
 		},
 		{
 			Target: "/sys/fs/cgroup",
@@ -184,8 +189,8 @@ func MountPseudoFilesystem(ctx context.Context) error {
 		},
 	}
 
-	for _, mnt := range tmpMnts {
-		if err := mnt.Mount(ctx, PseudoFsAction); err != nil && !errors.Is(err, ErrMounted) {
+	for _, mnt := range pseudoMnts {
+		if err := mnt.Mount(ctx, PseudoFsAction); err != nil && !errors.Is(err, errMounted) {
 			return err
 		}
 	}

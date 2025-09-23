@@ -4,7 +4,7 @@ package libkrun
 
 /*
 #cgo CFLAGS: -I ../../include
-#cgo LDFLAGS: -L  ../../out/3rd/darwin/lib  -lkrun.1.15.1 -lkrunfw.4
+#cgo LDFLAGS: -L  ../../out/lib/  -lkrun.1.15.1 -lkrunfw.4
 #include <libkrun.h>
 #include <stdlib.h>
 */
@@ -141,7 +141,7 @@ func (v *AppleHVStubber) Start(ctx context.Context) error {
 		return err
 	}
 
-	if err := system.CopyBootstrapToRooFs(v.vmc.RootFS); err != nil {
+	if err := system.WriteBootstrapToRooFs(); err != nil {
 		return fmt.Errorf("failed to copy 3rd files to rootfs: %w", err)
 	}
 

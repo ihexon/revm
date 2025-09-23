@@ -1,0 +1,11 @@
+cmd/bootstrap/pkg/resources/.bin/busybox.static filter=lfs diff=lfs merge=lfs -text
+cmd/bootstrap/pkg/resources/.bin/dropbear filter=lfs diff=lfs merge=lfs -text
+cmd/bootstrap/pkg/resources/.bin/dropbearkey filter=lfs diff=lfs merge=lfs -text
+libkrun/libepoxy.0.dylib filter=lfs diff=lfs merge=lfs -text
+libkrun/libkrun.1.15.1.dylib filter=lfs diff=lfs merge=lfs -text
+libkrun/libkrunfw.4.dylib filter=lfs diff=lfs merge=lfs -text
+libkrun/libMoltenVK.dylib filter=lfs diff=lfs merge=lfs -text
+libkrun/libvirglrenderer.1.dylib filter=lfs diff=lfs merge=lfs -text
+libexec/blkid filter=lfs diff=lfs merge=lfs -text
+libexec/fsck.ext4 filter=lfs diff=lfs merge=lfs -text
+libexec/mke2fs filter=lfs diff=lfs merge=lfs -text
