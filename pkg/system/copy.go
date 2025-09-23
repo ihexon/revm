@@ -4,19 +4,26 @@ import (
 	"fmt"
 	"io"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/path"
 	"os"
 	"path/filepath"
 
 	"github.com/sirupsen/logrus"
 )
 
-func CopyBootstrapToRooFs(rootfs string) error {
-	bootstrapPath, err := Get3rdUtilsPathForLinux(define.BoostrapFileName)
+// WriteBootstrapToRooFs copy bootstrap to builtin rootfs
+func WriteBootstrapToRooFs() error {
+	src, err := path.GetBinNamePath(define.BoostrapFileName)
 	if err != nil {
-		return fmt.Errorf("failed to get thirdPart directory: %w", err)
+		return err
 	}
 
-	return CopyFile(bootstrapPath, filepath.Join(rootfs, define.GuestLinuxUtilsBinDir, define.BoostrapFileName))
+	dst, err := path.GetToolsPath3rd(define.BoostrapFileName, path.HostView)
+	if err != nil {
+		return err
+	}
+
+	return CopyFile(src, dst)
 }
 
 func CopyFile(src, dst string) error {

@@ -6,13 +6,14 @@ const (
 )
 
 const (
-	GuestLinuxUtilsBinDir = "/3rd/linux/bin/"
+	GuestLinuxUtilsBinDir = "/3rd/bin/"
 )
 
 const (
-	DefaultWorkDir     = "/"
-	ThirdPartDirPrefix = "3rd"
-	BoostrapFileName   = "bootstrap"
+	DefaultWorkDir   = "/"
+	BoostrapFileName = "bootstrap"
+	RootfsDirName    = "rootfs"
+	LibexecDirName   = "libexec"
 
 	IgnServerSocketName    = "ignition.sock"
 	GvProxyControlEndPoint = "gvpctl.sock"
