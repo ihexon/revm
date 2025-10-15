@@ -1,9 +1,9 @@
-package services
+package service
 
 import (
 	"context"
 	"fmt"
-	"linuxvm/pkg/define"
+	"guestAgent/pkg/define"
 	"os"
 	"os/exec"
 
@@ -13,9 +13,12 @@ import (
 func startGuestPodmanService(ctx context.Context) error {
 	addr := fmt.Sprintf("tcp://%s:%d", define.UnspecifiedAddress, define.DefaultGuestPodmanAPIPort) //nolint:nosprintfhostport
 	cmd := exec.CommandContext(ctx, "podman", "system", "service", "--time=0", addr)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	cmd.Stdin = nil
+
+	if logrus.IsLevelEnabled(logrus.DebugLevel) {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
 
 	logrus.Debugf("podman service cmdline: %q", cmd.Args)
 	return cmd.Run()

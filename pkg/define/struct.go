@@ -34,8 +34,8 @@ type VMConfig struct {
 	Initrd        string   `json:"initrd,omitempty"`
 	KernelCmdline []string `json:"kernelArgs,omitempty"`
 
-	// data disk will map into /dev/vdX and automount by bootstrap process
-	DataDisk []DataDisk `json:"dataDisk,omitempty"`
+	// data disk will map into /dev/vdX and automount by guest-agent process
+	BlkDevs []BlkDev `json:"blkDevs,omitempty"`
 	// GVproxy control endpoint
 	GVproxyEndpoint string `json:"GVproxyEndpoint,omitempty"`
 	// NetworkStackBackend is the network stack backend to use. which provided
@@ -47,11 +47,32 @@ type VMConfig struct {
 	Cmdline             Cmdline    `json:"cmdline,omitempty"`
 	PodmanInfo          PodmanInfo `json:"podmanInfo,omitempty"`
 	RestAPIAddress      string     `json:"restAPIAddress,omitempty"`
-	// RunMode is the mode of the VM, which can be define.RunUserRootfsMode, define.RunDirectBootKernelMode or define.RunDockerEngineMode
+
 	RunMode            string `json:"runMode,omitempty"`
 	IgnProvisionerAddr string `json:"ignProvisionerAddr,omitempty"`
 
+	ExternalTools ExternalTools `json:"externalTools,omitempty"`
+
 	Stage Stage `json:"-"`
+}
+
+type LinuxTools struct {
+	Busybox     string `json:"busybox,omitempty"`
+	DropBear    string `json:"dropbear,omitempty"`
+	DropBearKey string `json:"dropbearkey,omitempty"`
+	GuestAgent  string `json:"guestAgent,omitempty"`
+}
+
+type DarwinTools struct {
+	MkfsExt4   string `json:"mkfs.ext4,omitempty"`
+	FsckExt4   string `json:"fsck.ext4,omitempty"`
+	Blkid      string `json:"blkid,omitempty"`
+	GuestAgent string `json:"guestAgent,omitempty"`
+}
+
+type ExternalTools struct {
+	LinuxTools  LinuxTools  `json:"linuxTools,omitempty"`
+	DarwinTools DarwinTools `json:"darwinTools,omitempty"`
 }
 
 type Stage struct {
@@ -63,14 +84,14 @@ type Stage struct {
 	SSHDReadyChan   chan struct{}
 }
 
-// DataDisk represents the configuration of a data disk, including its file system type, path, and mount point.
-type DataDisk struct {
+// BlkDev represents the configuration of a data disk, including its file system type, path, and mount point.
+type BlkDev struct {
 	IsContainerStorage bool   `json:"isContainerStorage,omitempty"`
 	FsType             string `json:"fsType,omitempty"`
 	UUID               string `json:"UUID,omitempty"`
 	Path               string `json:"path,omitempty"`
 	MountTo            string `json:"mountTo,omitempty"`
-	SizeInGB           uint64 `json:"sizeInGB,omitempty"`
+	SizeInMib          uint64 `json:"sizeInMIB,omitempty"`
 }
 
 type PodmanInfo struct {
@@ -79,15 +100,15 @@ type PodmanInfo struct {
 
 // Cmdline exec cmdline within rootfs
 type Cmdline struct {
-	// Bootstrap is a process that runs under PID 1. As a secondary init, Bootstrap incubates all user child processes.
-	Bootstrap     string   `json:"bootstrap,omitempty"`
-	BootstrapArgs []string `json:"bootstrapArgs,omitempty"`
-	Workspace     string   `json:"workspace,omitempty"`
-	// TargetBin is the binary to run by bootstrap.
+	// GuestAgent is a process that runs under PID 1. As a secondary init, GuestAgent incubates all user child processes.
+	GuestAgent     string   `json:"guestagent,omitempty"`
+	GuestAgentArgs []string `json:"guestAgentArgs,omitempty"`
+	Workspace      string   `json:"workspace,omitempty"`
+	// TargetBin is the binary to run by guest-agent.
 	TargetBin string `json:"targetBin,omitempty"`
 	// TargetBinArgs is the arguments to pass to the target binary.
 	TargetBinArgs []string `json:"targetBinArgs,omitempty"`
-	// Env is the environment variables to set for the bootstrap process and target binary, in the form of KEY=VALUE.
+	// Env is the environment variables to set for the guest-agent process and target binary, in the form of KEY=VALUE.
 	Env []string `json:"env,omitempty"`
 }
 

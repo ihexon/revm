@@ -9,3 +9,5 @@ libkrun/libvirglrenderer.1.dylib filter=lfs diff=lfs merge=lfs -text
 libexec/blkid filter=lfs diff=lfs merge=lfs -text
 libexec/fsck.ext4 filter=lfs diff=lfs merge=lfs -text
 libexec/mke2fs filter=lfs diff=lfs merge=lfs -text
+kernel/initramfs.cpio filter=lfs diff=lfs merge=lfs -text
+kernel/Image filter=lfs diff=lfs merge=lfs -text
