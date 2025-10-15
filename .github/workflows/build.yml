@@ -9,10 +9,12 @@ on:
     branches:
       - main
       - dev
+      - refactor
   pull_request:
     branches:
       - main
       - dev
+      - refactor
 
 jobs:
   build:
