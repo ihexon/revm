@@ -44,7 +44,7 @@ jobs:
         uses: 'actions/upload-artifact@v4'
         with:
           name: revm
-          path: out/
+          path: revm-*.tar.zst
           if-no-files-found: error
           overwrite: true
       - name: Release
@@ -53,7 +53,7 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            revm.tar.zst
+            revm-*.tar.zst
           append_body: true
           draft: false
           prerelease: false
