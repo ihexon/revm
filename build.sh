@@ -9,7 +9,9 @@ readonly YELLOW="\033[33m"
 readonly GREEN="\033[32m"
 readonly RESET="\033[0m"
 
-readonly ROOTFS_URL="https://github.com/ihexon/revm-assets/releases/download/v1.0/rootfs.tar.zst"
+readonly ROOTFS_LINUX_ARM64_URL="https://github.com/ihexon/revm-assets/releases/download/v1.0/rootfs-linux-arm64.tar.zst"
+readonly LIBKRUN_DARWIN_ARM64_URL="https://github.com/ihexon/revm-assets/releases/download/v1.0/libkrun-darwin-arm64.tar.zst"
+readonly LIBEXEC_DARWIN_ARM64_URL="https://github.com/ihexon/revm-assets/releases/download/v1.0/libexec-darwin-arm64.tar.zst"
 readonly MIN_MACOS_VERSION="13.1"
 
 # ============================================================================
@@ -133,7 +135,7 @@ init_workspace() {
 
 # Validates required dependencies
 check_dependencies() {
-	local deps=("git" "go")
+	local deps=("git" "go" "zstd" "tar" "wget")
 
 	case "$PLT" in
 		darwin)
@@ -153,55 +155,55 @@ check_dependencies() {
 # ============================================================================
 # Download and Setup Functions
 # ============================================================================
-# Copies libkrun library files to output directory
+# Download libkrun library files to output directory
 download_libkrun() {
-	local src="$WORKSPACE/libkrun"
+	local tarball="/tmp/$(basename "$LIBKRUN_DARWIN_ARM64_URL")"
 	local dest="$OUTDIR/lib"
+	ensure_dir $dest
 
-	if [[ ! -d "$src" ]]; then
-		log_err "libkrun directory not found: $src"
+	if ! wget -c -q --show-progress --output-document="$tarball" "$LIBKRUN_DARWIN_ARM64_URL"; then
+		log_err "Failed to download libkrun from $LIBKRUN_DARWIN_ARM64_URL"
 	fi
 
-	ensure_dir "$dest"
-	log_info "Copying libkrun from $src to $dest"
-	cp "$src"/* "$dest" || log_err "Failed to copy libkrun files"
+	if ! tar --strip-components=1 -xf "$tarball" -C "$dest"; then
+		log_err "Failed to extract libkrun"
+	fi
+	log_info "$tarball downloaded and extracted successfully"
+
 }
 
 # Copies Darwin-specific tools to output directory
 download_darwin_tools() {
-	local src="$WORKSPACE/libexec"
+	local tarball="/tmp/$(basename "$LIBEXEC_DARWIN_ARM64_URL")"
 	local dest="$OUTDIR/libexec"
+	ensure_dir $dest
 
-	if [[ ! -d "$src" ]]; then
-		log_err "libexec directory not found: $src"
+	if ! wget -c -q --show-progress --output-document="$tarball" "$LIBEXEC_DARWIN_ARM64_URL"; then
+		log_err "Failed to download libexec from $LIBEXEC_DARWIN_ARM64_URL"
 	fi
 
-	ensure_dir "$dest"
-	log_info "Copying Darwin tools from $src to $dest"
-	cp "$src"/* "$dest" || log_err "Failed to copy libexec files"
+	if ! tar --strip-components=1 -xf "$tarball" -C "$dest"; then
+		log_err "Failed to extract libexec"
+	fi
+	log_info "$tarball downloaded and extracted successfully"
+
 }
 
 # Downloads and extracts the built-in rootfs
 download_builtin_rootfs() {
+	local tarball="/tmp/$(basename "$ROOTFS_LINUX_ARM64_URL")"
 	local dest="$OUTDIR/rootfs"
-	local tarball="/tmp/rootfs.tar.zst"
-
-	require_command "wget"
-	require_command "tar"
-
 	ensure_dir "$dest"
 
-	log_info "Downloading rootfs from $ROOTFS_URL"
-	if ! wget -c -q --show-progress --output-document="$tarball" "$ROOTFS_URL"; then
-		log_err "Failed to download rootfs from $ROOTFS_URL"
+	if ! wget -c -q --show-progress --output-document="$tarball" "$ROOTFS_LINUX_ARM64_URL"; then
+		log_err "Failed to download rootfs from $ROOTFS_LINUX_ARM64_URL"
 	fi
 
-	log_info "Extracting rootfs to $dest"
 	if ! tar --strip-components=1 -xf "$tarball" -C "$dest"; then
 		log_err "Failed to extract rootfs"
 	fi
 
-	log_info "Rootfs downloaded and extracted successfully"
+	log_info "$tarball downloaded and extracted successfully"
 }
 
 # Downloads all third-party dependencies based on platform
@@ -270,11 +272,12 @@ build_guest_agent() {
 # Builds the main revm binary for the target platform
 build_revm() {
 	local bin_dir="$OUTDIR/bin"
-	local revm_bin="$bin_dir/revm"
-	local ldflags="-X linuxvm/pkg/define.Version=$GIT_TAG -X linuxvm/pkg/define.CommitID=$GIT_COMMIT_ID"
-
 	ensure_dir "$bin_dir"
+
+	local revm_bin="$bin_dir/revm"
 	rm -f "$revm_bin"
+
+	local ldflags="-X linuxvm/pkg/define.Version=$GIT_TAG -X linuxvm/pkg/define.CommitID=$GIT_COMMIT_ID"
 
 	log_info "Building revm for ${PLT}/${ARCH}"
 
@@ -293,11 +296,7 @@ build_revm() {
 	fi
 
 	# Build the binary
-	if ! env "${build_env[@]}" go build \
-		-ldflags="$ldflags" \
-		-v \
-		-o "$revm_bin" \
-		./cmd/; then
+	if ! env "${build_env[@]}" go build -ldflags="$ldflags" -v -o "$revm_bin" ./cmd; then
 		log_err "Failed to build revm binary"
 	fi
 
@@ -351,7 +350,7 @@ create_package() {
 
 	log_info "Creating package: $archive_name"
 
-	if ! tar --zst -cf "$output_path" -C "$WORKSPACE" out/; then
+	if ! tar --zst -cf "$output_path" -C "$WORKSPACE" "$(basename "$OUTDIR")"; then
 		log_err "Failed to create package"
 	fi
 
