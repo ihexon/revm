@@ -8,7 +8,6 @@ import (
 	"linuxvm/pkg/server"
 	"linuxvm/pkg/service"
 	"linuxvm/pkg/system"
-	"linuxvm/pkg/vm"
 	"linuxvm/pkg/vmconfig"
 
 	"github.com/sirupsen/logrus"
@@ -64,41 +63,7 @@ var startDocker = cli.Command{
 	Action: dockerModeLifeCycle,
 }
 
-func setupContainerMode(ctx context.Context, vmc *vmconfig.VMConfig, command *cli.Command) (vmp vm.Provider, err error) {
-	vmc.RunMode = define.DockerMode.String()
-
-	if err = vmc.WithBuiltInRootfs(); err != nil {
-		err = fmt.Errorf("failed to use builtin rootfs: %w", err)
-		return
-	}
-
-	if err = vmc.WithContainerDataDisk(ctx, command.String(define.FlagContainerDataStorage)); err != nil {
-		err = fmt.Errorf("failed to set container data disk: %w", err)
-		return
-	}
-
-	if err = vmc.WithPodmanListenAPIInHost(command.String(define.FlagListenUnixFile)); err != nil {
-		err = fmt.Errorf("failed to set podman listen unix file: %w", err)
-		return
-	}
-
-	if command.IsSet(define.FlagMount) {
-		if err = vmc.WithUserProvidedMounts(command.StringSlice(define.FlagMount)); err != nil {
-			err = fmt.Errorf("failed to set user provided mounts: %w", err)
-			return
-		}
-	}
-
-	if err = vmc.WithShareUserHomeDir(); err != nil {
-		err = fmt.Errorf("failed to add user home directory to mounts: %w", err)
-		return
-	}
-
-	vmp = vm.Get(vmc)
-	return
-}
-
-func ProbeServersAvailability(ctx context.Context, vmc *vmconfig.VMConfig) error {
+func probeServersAvailability(ctx context.Context, vmc *vmconfig.VMConfig) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
@@ -123,7 +88,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		logrus.Warn("cannot get Build version/OS information")
 	}
 
-	vmp, err := VMMProviderFactory(ctx, define.DockerMode, command)
+	vmp, err := vmProviderFactory(ctx, define.ContainerMode, command)
 	if err != nil {
 		return fmt.Errorf("create run configure failed: %w", err)
 	}
@@ -167,7 +132,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	g.Go(func() error {
 		vmc.WaitGVProxyReady(ctx)
-		if err = ProbeServersAvailability(ctx, vmc); err != nil {
+		if err = probeServersAvailability(ctx, vmc); err != nil {
 			return fmt.Errorf("failed to get server availability: %w", err)
 		}
 		return nil

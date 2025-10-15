@@ -1,11 +1,20 @@
 #! /usr/bin/env bash
 set -e
 
-RED="\033[31m"
-YELLOW="\033[33m"
-GREEN="\033[32m"
-RESET="\033[0m"
+# ============================================================================
+# Constants and Configuration
+# ============================================================================
+readonly RED="\033[31m"
+readonly YELLOW="\033[33m"
+readonly GREEN="\033[32m"
+readonly RESET="\033[0m"
 
+readonly ROOTFS_URL="https://github.com/ihexon/revm-assets/releases/download/v1.0/rootfs.tar.zst"
+readonly MIN_MACOS_VERSION="13.1"
+
+# ============================================================================
+# Logging Functions
+# ============================================================================
 log_err() {
 	echo -e "${RED}[ERROR]${RESET} $*" >&2
 	exit 100
@@ -15,13 +24,17 @@ log_warn() {
 	echo -e "${YELLOW}[WARN]${RESET} $*" >&2
 }
 
-log_std() {
+log_info() {
 	echo -e "${GREEN}[INFO]${RESET} $*"
 }
 
-# EXPORTED VARS:
-# - ARCH (arm64,amd64)
-# - PLT (darwin,linux)
+# ============================================================================
+# Platform Detection
+# ============================================================================
+# Detects and exports platform and architecture variables
+# Exports:
+#   - PLT: Platform (darwin, linux)
+#   - ARCH: Architecture (arm64, amd64)
 detect_platform_arch() {
 	local uname_s uname_m
 	uname_s="$(uname)"
@@ -31,158 +44,381 @@ detect_platform_arch() {
 		Darwin)
 			export PLT="darwin"
 			;;
-		Linux) export PLT="linux" ;;
+		Linux)
+			export PLT="linux"
+			;;
 		*)
-			log_err "Unsupported OS: ${uname_s}" >&2
+			log_err "Unsupported OS: ${uname_s}"
 			;;
 	esac
 
 	case "${uname_m}" in
-		arm64 | aarch64) export ARCH="arm64" ;;
-		x86_64 | X86_64 | amd64 | AMD64) export ARCH="amd64" ;;
+		arm64 | aarch64)
+			export ARCH="arm64"
+			;;
+		x86_64 | X86_64 | amd64 | AMD64)
+			export ARCH="amd64"
+			;;
 		*)
-			log_err "Unsupported architecture: ${uname_m}" >&2
+			log_err "Unsupported architecture: ${uname_m}"
 			;;
 	esac
+
+	log_info "Detected platform: ${PLT}, architecture: ${ARCH}"
 }
 
+# ============================================================================
+# Utility Functions
+# ============================================================================
 usage() {
 	cat << EOF
 Usage: $(basename "$0") <action>
 
 Actions:
   test           Run tests
-  build_linux    Build binaries for Linux
+  build_linux    Build binaries for Linux (Not yet implemented)
   build_darwin   Build binaries for macOS (Darwin)
 EOF
 	exit 1
 }
 
-# EXPORTED VARS:
-# - WORKSPACE (the abs path of build.sh)
-# - BUILTIN_DOCKER_RUNTIME (whatever include built-in docker runtime)
-init_func() {
+# Ensures directory exists, creating it if necessary
+ensure_dir() {
+	local dir="$1"
+	if [[ ! -d "$dir" ]]; then
+		log_info "Creating directory: $dir"
+		mkdir -p "$dir"
+	fi
+}
+
+# Changes to directory with error handling
+safe_cd() {
+	local dir="$1"
+	cd "$dir" || log_err "Failed to change to directory: $dir"
+}
+
+# Checks if required command exists
+require_command() {
+	local cmd="$1"
+	if ! command -v "$cmd" &> /dev/null; then
+		log_err "Required command not found: $cmd"
+	fi
+}
+
+# ============================================================================
+# Initialization
+# ============================================================================
+# Initializes workspace and environment variables
+# Exports:
+#   - WORKSPACE: Absolute path of build.sh directory
+#   - OUTDIR: Output directory path
+#   - GIT_COMMIT_ID: Current git commit short hash
+#   - GIT_TAG: Current git tag
+init_workspace() {
 	WORKSPACE="$(realpath "$(dirname "$0")")"
 	export WORKSPACE
 	export OUTDIR="$WORKSPACE/out"
 
-	log_std "change workspace to $WORKSPACE"
-	cd "$WORKSPACE" || {
-		echo "Failed to change to workspace directory"
-		exit 1
-	}
+	log_info "Workspace: $WORKSPACE"
+	safe_cd "$WORKSPACE"
+
 	detect_platform_arch
-	GIT_COMMIT_ID="$(git rev-parse --short HEAD || echo "unknown")"
-	GIT_TAG="$(git describe --tags --abbrev=0 || echo "unknown")"
 
-	if ! git lfs version > /dev/null 2>&1; then
-		log_err "Git LFS is required but not installed"
-	fi
+	GIT_COMMIT_ID="$(git rev-parse --short HEAD 2> /dev/null || echo "unknown")"
+	GIT_TAG="$(git describe --tags --abbrev=0 2> /dev/null || echo "unknown")"
+	export GIT_COMMIT_ID GIT_TAG
+
+	log_info "Version: ${GIT_TAG}, Commit: ${GIT_COMMIT_ID}"
 }
 
-# Only build for macOS arm64
-_download_libkrun() {
-	local dir="$OUTDIR/lib"
-	mkdir -p "$dir"
+# Validates required dependencies
+check_dependencies() {
+	local deps=("git" "go")
 
-	log_std "copy $WORKSPACE/libkrun/* to $dir"
-	cp "$WORKSPACE"/libkrun/* "$dir"
-}
-
-_download_darwin_tools() {
-	local dir="$OUTDIR/libexec"
-	mkdir -p "$dir"
-
-	log_std "copy $WORKSPACE/libexec/* to $dir"
-	cp "$WORKSPACE"/libexec/* "$dir"
-}
-
-_download_builtin_rootfs() {
-	local dir="$OUTDIR/rootfs"
-	mkdir -p "$dir"
-	local tarbar="/tmp/rootfs.tar.zst"
-	local url="https://github.com/ihexon/prebuilds/raw/refs/heads/main/rootfs/arm64/alpine/rootfs.tar.zst"
-
-	log_std "download the rootfs from $url"
-	wget -c -q --output-document="$tarbar" "$url"
-
-	log_std "extract the $tarbar to $dir"
-	tar --strip-components=1 -xf "$tarbar" -C "$dir"
-}
-
-download_3rd() {
-	case $PLT in
+	case "$PLT" in
 		darwin)
-			_download_libkrun
-			_download_darwin_tools
-			_download_builtin_rootfs
+			deps+=("codesign" "install_name_tool")
+			require_command "git-lfs"
+			;;
+		linux) ;;
+	esac
+
+	for cmd in "${deps[@]}"; do
+		require_command "$cmd"
+	done
+
+	log_info "All required dependencies are available"
+}
+
+# ============================================================================
+# Download and Setup Functions
+# ============================================================================
+# Copies libkrun library files to output directory
+download_libkrun() {
+	local src="$WORKSPACE/libkrun"
+	local dest="$OUTDIR/lib"
+
+	if [[ ! -d "$src" ]]; then
+		log_err "libkrun directory not found: $src"
+	fi
+
+	ensure_dir "$dest"
+	log_info "Copying libkrun from $src to $dest"
+	cp "$src"/* "$dest" || log_err "Failed to copy libkrun files"
+}
+
+# Copies Darwin-specific tools to output directory
+download_darwin_tools() {
+	local src="$WORKSPACE/libexec"
+	local dest="$OUTDIR/libexec"
+
+	if [[ ! -d "$src" ]]; then
+		log_err "libexec directory not found: $src"
+	fi
+
+	ensure_dir "$dest"
+	log_info "Copying Darwin tools from $src to $dest"
+	cp "$src"/* "$dest" || log_err "Failed to copy libexec files"
+}
+
+# Downloads and extracts the built-in rootfs
+download_builtin_rootfs() {
+	local dest="$OUTDIR/rootfs"
+	local tarball="/tmp/rootfs.tar.zst"
+
+	require_command "wget"
+	require_command "tar"
+
+	ensure_dir "$dest"
+
+	log_info "Downloading rootfs from $ROOTFS_URL"
+	if ! wget -c -q --show-progress --output-document="$tarball" "$ROOTFS_URL"; then
+		log_err "Failed to download rootfs from $ROOTFS_URL"
+	fi
+
+	log_info "Extracting rootfs to $dest"
+	if ! tar --strip-components=1 -xf "$tarball" -C "$dest"; then
+		log_err "Failed to extract rootfs"
+	fi
+
+	log_info "Rootfs downloaded and extracted successfully"
+}
+
+# Downloads all third-party dependencies based on platform
+download_dependencies() {
+	log_info "Downloading dependencies for platform: $PLT"
+
+	case "$PLT" in
+		darwin)
+			download_libkrun
+			download_darwin_tools
+			download_builtin_rootfs
+			;;
+		linux)
+			log_warn "Linux dependency download not yet implemented"
 			;;
 		*)
-			log_err "Unsupported architecture: ${PLT}"
+			log_err "Unsupported platform: ${PLT}"
 			;;
 	esac
+
+	log_info "Dependencies downloaded successfully"
 }
 
-build_revm() {
-	local revm_bin="$OUTDIR/bin/revm"
-	rm -f "$revm_bin"
-	CGO_CFLAGS="-mmacosx-version-min=13.1" \
-		CGO_LDFLAGS="-mmacosx-version-min=13.1" \
-		GOOS=$PLT \
-		GOARCH=$ARCH \
+# ============================================================================
+# Build Functions
+# ============================================================================
+# Builds the guest agent binary directly
+# Guest agent always targets Linux ARM64 as it runs inside the VM
+build_guest_agent() {
+	local src_dir="$WORKSPACE/guest-agent"
+	local output_dir="$OUTDIR/libexec"
+	local output_binary="$output_dir/guest-agent"
+
+	# Guest agent is always built for Linux ARM64 (runs inside VM)
+	local target_os="linux"
+	local target_arch="arm64"
+
+	if [[ ! -d "$src_dir" ]]; then
+		log_err "Guest agent source directory not found: $src_dir"
+	fi
+
+	if [[ ! -f "$src_dir/main.go" ]]; then
+		log_err "Guest agent main.go not found: $src_dir/main.go"
+	fi
+
+	ensure_dir "$output_dir"
+
+	log_info "Building guest agent (${target_os}/${target_arch})"
+
+	# First change to guest-agent source dir
+	safe_cd $src_dir
+
+	if ! GOOS="$target_os" GOARCH="$target_arch" \
 		go build \
-		-ldflags="-extldflags=-mmacosx-version-min=13.1 -X linuxvm/pkg/define.Version=$GIT_TAG -X linuxvm/pkg/define.CommitID=$GIT_COMMIT_ID" \
-		-v -o "$revm_bin" ./cmd/
+		-ldflags="-s -w" \
+		-o "$output_binary" \
+		"$src_dir/main.go"; then
+		log_err "Failed to build guest agent"
+	fi
 
+	safe_cd $WORKSPACE
+
+	log_info "Guest agent built successfully: $output_binary"
+}
+
+# Builds the main revm binary for the target platform
+build_revm() {
+	local bin_dir="$OUTDIR/bin"
+	local revm_bin="$bin_dir/revm"
+	local ldflags="-X linuxvm/pkg/define.Version=$GIT_TAG -X linuxvm/pkg/define.CommitID=$GIT_COMMIT_ID"
+
+	ensure_dir "$bin_dir"
+	rm -f "$revm_bin"
+
+	log_info "Building revm for ${PLT}/${ARCH}"
+
+	local build_env=(
+		"GOOS=$PLT"
+		"GOARCH=$ARCH"
+	)
+
+	# Add macOS-specific build flags
 	if [[ "$PLT" == "darwin" ]]; then
-		log_std "codesign to $revm_bin"
-		codesign --force --deep --sign - "$revm_bin"
+		build_env+=(
+			"CGO_CFLAGS=-mmacosx-version-min=${MIN_MACOS_VERSION}"
+			"CGO_LDFLAGS=-mmacosx-version-min=${MIN_MACOS_VERSION}"
+		)
+		ldflags="-extldflags=-mmacosx-version-min=${MIN_MACOS_VERSION} ${ldflags}"
+	fi
 
-		local rpath_str="@executable_path/../lib/"
-		log_std "add rpath $rpath_str to $revm_bin"
+	# Build the binary
+	if ! env "${build_env[@]}" go build \
+		-ldflags="$ldflags" \
+		-v \
+		-o "$revm_bin" \
+		./cmd/; then
+		log_err "Failed to build revm binary"
+	fi
 
-		install_name_tool -add_rpath "$rpath_str" "$revm_bin"
+	# Post-build processing for macOS
+	if [[ "$PLT" == "darwin" ]]; then
+		sign_and_configure_macos_binary "$revm_bin"
+	fi
 
-		log_std "codesign revm with revm.entitlements"
-		codesign --entitlements revm.entitlements --force -s - "$revm_bin"
+	log_info "revm binary built successfully: $revm_bin"
+}
+
+# Signs and configures macOS binary with entitlements and rpath
+sign_and_configure_macos_binary() {
+	local binary="$1"
+	local rpath="@executable_path/../lib/"
+	local entitlements="$WORKSPACE/revm.entitlements"
+
+	if [[ ! -f "$binary" ]]; then
+		log_err "Binary not found: $binary"
+	fi
+
+	log_info "Codesigning binary (initial)"
+	if ! codesign --force --deep --sign - "$binary"; then
+		log_err "Failed to codesign binary"
+	fi
+
+	log_info "Adding rpath: $rpath"
+	if ! install_name_tool -add_rpath "$rpath" "$binary" 2> /dev/null; then
+		log_warn "Failed to add rpath (may already exist)"
+	fi
+
+	if [[ -f "$entitlements" ]]; then
+		log_info "Codesigning with entitlements"
+		if ! codesign --entitlements "$entitlements" --force -s - "$binary"; then
+			log_err "Failed to codesign with entitlements"
+		fi
+	else
+		log_warn "Entitlements file not found: $entitlements"
 	fi
 }
 
-build_bootstrap() {
-	local bootstrap_bin="$OUTDIR/bin/bootstrap"
-	log_std "Build bootstrap for guest"
-	rm -f "$bootstrap_bin"
-	CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH go build -v -ldflags="-s -w" -o "$bootstrap_bin" ./cmd/bootstrap
+# ============================================================================
+# Packaging Functions
+# ============================================================================
+# Creates a compressed archive of the build output
+create_package() {
+	local archive_name="revm-${PLT}-${ARCH}-${GIT_TAG}.tar.zst"
+	local output_path="$WORKSPACE/$archive_name"
+
+	require_command "tar"
+
+	log_info "Creating package: $archive_name"
+
+	if ! tar --zst -cf "$output_path" -C "$WORKSPACE" out/; then
+		log_err "Failed to create package"
+	fi
+
+	local size
+	size=$(du -h "$output_path" | cut -f1)
+	log_info "Package created successfully: $output_path (${size})"
 }
 
-packaging() {
-	name=revm.tar.zst
-	log_std "packaging all files"
-	tar --zst -cf "$name" out/
+# ============================================================================
+# Build Orchestration
+# ============================================================================
+# Runs the complete build process for Darwin
+build_darwin() {
+	log_info "Starting Darwin build process"
+
+	init_workspace
+	check_dependencies
+	download_dependencies
+	build_revm
+	build_guest_agent
+	create_package
+
+	log_info "Darwin build completed successfully"
 }
 
+# Runs the complete build process for Linux
+build_linux() {
+	log_err "Linux build is not yet implemented"
+}
+
+# Runs test suite
+run_tests() {
+	log_info "Running tests"
+
+	if ! go test -v linuxvm/test/system; then
+		log_err "Tests failed"
+	fi
+
+	log_info "All tests passed"
+}
+
+# ============================================================================
+# Main Entry Point
+# ============================================================================
 main() {
 	local action="${1:-}"
+
 	if [[ -z "${action}" ]]; then
 		usage
 	fi
 
 	case "${action}" in
 		test)
-			log_std "$0: run tests..."
-			go test -v linuxvm/test/system
+			run_tests
 			;;
 		build_darwin)
-			init_func
-			download_3rd
-			build_revm
-			build_bootstrap
-			packaging
+			build_darwin
+			;;
+		build_linux)
+			build_linux
 			;;
 		*)
+			log_err "Unknown action: ${action}"
 			usage
 			;;
 	esac
 }
 
+# Run main function with all arguments
 main "$@"

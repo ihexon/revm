@@ -23,6 +23,11 @@ func main() {
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
+				Name:   define.FlagVMMProvider,
+				Usage:  "vmm provider, support libkrun and vfkit for now, default is libkrun",
+				Hidden: true,
+			},
+			&cli.StringFlag{
 				Name: define.FlagRestAPIListenAddr,
 				Usage: "listen for REST API requests on the given address, support http or unix socket address," +
 					" e.g. http://127.0.0.1:8080 or unix:///tmp/restapi.sock",

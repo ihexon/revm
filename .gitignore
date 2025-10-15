@@ -4,3 +4,4 @@ out/**
 revm.tar.zst
 CLAUDE.md
 
+revm-*.tar.*

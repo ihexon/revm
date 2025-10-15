@@ -1,14 +1,10 @@
 //go:build (linux || darwin) && (arm64 || amd64)
 
-package services
+package service
 
 import (
 	"context"
-	"linuxvm/cmd/bootstrap/pkg/path"
-	"os/exec"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 const NTPServer = "time.cloudflare.com"
@@ -27,11 +23,5 @@ func SyncRTCTime(ctx context.Context) error {
 }
 
 func syncTimeFromNtpServer(ctx context.Context) {
-	for i := 0; i < 3; i++ {
-		if err := exec.CommandContext(ctx, path.GetToolsPath3rd("busybox.static"), "ntpd", "-q", "-n", "-p", NTPServer).Run(); err != nil {
-			logrus.Warnf("failed to sync time: %v, try again", err)
-			continue
-		}
-		break
-	}
+	_ = Busybox.Exec(ctx, "ntpd", "-q", "-n", "-p", NTPServer)
 }

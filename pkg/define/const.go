@@ -6,14 +6,13 @@ const (
 )
 
 const (
-	GuestLinuxUtilsBinDir = "/3rd/bin/"
+	KernelPrefixDir = "kernel"
 )
 
 const (
-	DefaultWorkDir   = "/"
-	BoostrapFileName = "bootstrap"
-	RootfsDirName    = "rootfs"
-	LibexecDirName   = "libexec"
+	DefaultWorkDir = "/"
+	RootfsDirName  = "rootfs"
+	LibexecDirName = "libexec"
 
 	IgnServerSocketName    = "ignition.sock"
 	GvProxyControlEndPoint = "gvpctl.sock"
@@ -26,15 +25,11 @@ const (
 
 	LockFile = ".lock"
 
-	DefaultPATHInBootstrap = "PATH=" + GuestLinuxUtilsBinDir + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-
 	DefaultPodmanAPIUnixSocksInHost = "/tmp/docker_api.sock"
 
 	DefaultCreateDiskSizeInGB = 200
-	Ext4                      = "ext4"
 
-	ContainerStorageMountPoint    = "/var/lib/containers"
-	DefaultDataDiskMountDirPrefix = "/var/tmp/mnt"
+	ContainerStorageMountPoint = "/var/lib/containers"
 
 	DefaultGuestUser = "root"
 
@@ -68,6 +63,7 @@ const (
 	FlagMemory               = "memory"
 	FlagPTY                  = "pty"
 	FlagEnvs                 = "envs"
+	FlagVMMProvider          = "vmm-provider"
 	FlagKernel               = "kernel"
 	FlagInitrd               = "initrd"
 	FlagKernelCmdline        = "kernel-cmdline"
@@ -76,19 +72,16 @@ const (
 type RunMode int
 
 const (
-	DockerMode RunMode = iota
+	ContainerMode RunMode = iota
 	RootFsMode
-	KernelMode
 )
 
 func (m RunMode) String() string {
 	switch m {
-	case DockerMode:
-		return "docker"
+	case ContainerMode:
+		return "container"
 	case RootFsMode:
 		return "rootfs"
-	case KernelMode:
-		return "kernel"
 	default:
 		return "unknown"
 	}

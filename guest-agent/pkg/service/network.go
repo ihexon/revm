@@ -1,8 +1,8 @@
-package services
+package service
 
 import (
 	"context"
-	"linuxvm/pkg/network"
+	"guestAgent/pkg/network"
 	"os"
 
 	"github.com/sirupsen/logrus"

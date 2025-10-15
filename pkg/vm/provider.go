@@ -4,10 +4,11 @@ package vm
 
 import (
 	"context"
-	"errors"
-	"linuxvm/pkg/define"
+	"fmt"
 	"linuxvm/pkg/libkrun"
+	"linuxvm/pkg/vfkit"
 	"linuxvm/pkg/vmconfig"
+	"runtime"
 )
 
 type Provider interface {
@@ -18,12 +19,14 @@ type Provider interface {
 	GetVMConfigure() (*vmconfig.VMConfig, error)
 }
 
-func Get(vmc *vmconfig.VMConfig) Provider {
-	switch vmc.RunMode {
-	case define.KernelMode.String():
-		// TODO: implement the vfkit provider
-		panic(errors.New("vfkit provider is not implemented yet"))
-	default:
-		return libkrun.NewAppleHyperVisor(vmc)
+func Get(vmc *vmconfig.VMConfig) (Provider, error) {
+	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
+		return libkrun.NewStubber(vmc), nil
 	}
+
+	if runtime.GOOS == "darwin" && runtime.GOARCH == "amd64" {
+		return vfkit.NewStubber(vmc), nil
+	}
+
+	return nil, fmt.Errorf("not support this platform")
 }

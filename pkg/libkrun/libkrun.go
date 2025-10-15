@@ -57,18 +57,18 @@ func GoString2CString(str string) (*C.char, func()) {
 	}
 }
 
-type AppleHVStubber struct {
+type Stubber struct {
 	krunCtxID uint32
 	vmc       *vmconfig.VMConfig
 }
 
-func NewAppleHyperVisor(vmc *vmconfig.VMConfig) *AppleHVStubber {
-	return &AppleHVStubber{
+func NewStubber(vmc *vmconfig.VMConfig) *Stubber {
+	return &Stubber{
 		vmc: vmc,
 	}
 }
 
-func (v *AppleHVStubber) Create(ctx context.Context) error {
+func (v *Stubber) Create(ctx context.Context) error {
 	id := C.krun_create_ctx()
 	if id < 0 {
 		return fmt.Errorf("failed to create vm ctx id, return %v", id)
@@ -86,14 +86,7 @@ func (v *AppleHVStubber) Create(ctx context.Context) error {
 		return fmt.Errorf("failed to set vm config, return %v", ret)
 	}
 
-	if v.vmc.RunMode == define.KernelMode.String() {
-		logrus.Debugf("vm run mode is direct boot kernel mode")
-		if err := v.SetKernel(ctx); err != nil {
-			return err
-		}
-	}
-
-	if v.vmc.RunMode == define.DockerMode.String() || v.vmc.RunMode == define.RootFsMode.String() {
+	if v.vmc.RunMode == define.ContainerMode.String() || v.vmc.RunMode == define.RootFsMode.String() {
 		logrus.Debugf("vm run mode is rootfs mode")
 		if err := v.setRootFS(); err != nil {
 			return err
@@ -132,7 +125,7 @@ func (v *AppleHVStubber) Create(ctx context.Context) error {
 	return nil
 }
 
-func (v *AppleHVStubber) Start(ctx context.Context) error {
+func (v *Stubber) Start(ctx context.Context) error {
 	if err := system.Rlimit(); err != nil {
 		return fmt.Errorf("failed to set rlimit: %v", err)
 	}
@@ -141,18 +134,14 @@ func (v *AppleHVStubber) Start(ctx context.Context) error {
 		return err
 	}
 
-	if err := system.WriteBootstrapToRooFs(); err != nil {
-		return fmt.Errorf("failed to copy 3rd files to rootfs: %w", err)
-	}
-
 	return execCmdlineInVM(ctx, v.krunCtxID)
 }
 
-func (v *AppleHVStubber) Stop(ctx context.Context) error {
+func (v *Stubber) Stop(ctx context.Context) error {
 	return stopVM(ctx, v.krunCtxID)
 }
 
-func (v *AppleHVStubber) setNetworkProvider() error {
+func (v *Stubber) setNetworkProvider() error {
 	parse, err := url.Parse(v.vmc.NetworkStackBackend)
 	if err != nil {
 		return fmt.Errorf("failed to parse network stack backend: %w", err)
@@ -169,7 +158,7 @@ func (v *AppleHVStubber) setNetworkProvider() error {
 	return nil
 }
 
-func (v *AppleHVStubber) GetVMConfigure() (*vmconfig.VMConfig, error) {
+func (v *Stubber) GetVMConfigure() (*vmconfig.VMConfig, error) {
 	if v.vmc == nil {
 		return nil, fmt.Errorf("can not get vm config object, vmconfig is nil")
 	}
@@ -182,7 +171,7 @@ const (
 	HardLimit    = "8192"
 )
 
-func (v *AppleHVStubber) setRLimited() error {
+func (v *Stubber) setRLimited() error {
 	str := fmt.Sprintf("%s=%s:%s", RLIMIT_NPROC, SoftLimit, HardLimit)
 	limitStr, fn1 := GoStringList2CStringArray(
 		[]string{str},
@@ -196,7 +185,7 @@ func (v *AppleHVStubber) setRLimited() error {
 	return nil
 }
 
-func (v *AppleHVStubber) setCommandLine(dir string, env []string) error {
+func (v *Stubber) setCommandLine(dir string, env []string) error {
 	cleanUp := system.CleanUp()
 	defer cleanUp.DoClean()
 
@@ -211,15 +200,15 @@ func (v *AppleHVStubber) setCommandLine(dir string, env []string) error {
 		return fmt.Errorf("failed to set workdir, return %v", ret)
 	}
 
-	logrus.Debugf("guest bootstrap is: %q", v.vmc.Cmdline.Bootstrap)
-	cBootstrapBinPath, fn2 := GoString2CString(v.vmc.Cmdline.Bootstrap)
+	logrus.Debugf("guest bootstrap is: %q", v.vmc.Cmdline.GuestAgent)
+	cBootstrapBinPath, fn2 := GoString2CString(v.vmc.Cmdline.GuestAgent)
 	cleanUp.Add(func() error {
 		fn2()
 		return nil
 	})
 
-	logrus.Debugf("guest bootstrap args is: %q", v.vmc.Cmdline.BootstrapArgs)
-	cBootstrapBinArgs, fn3 := GoStringList2CStringArray(v.vmc.Cmdline.BootstrapArgs)
+	logrus.Debugf("guest bootstrap args is: %q", v.vmc.Cmdline.GuestAgentArgs)
+	cBootstrapBinArgs, fn3 := GoStringList2CStringArray(v.vmc.Cmdline.GuestAgentArgs)
 	cleanUp.Add(func() error {
 		fn3()
 		return nil
@@ -253,7 +242,7 @@ const (
 	VIRGLRENDERER_DRM                = 1 << 10
 )
 
-func (v *AppleHVStubber) setGPU() error {
+func (v *Stubber) setGPU() error {
 	logrus.Debugf("set gpu with %q", "VIRGLRENDERER_VENUS|VIRGLRENDERER_NO_VIRGL")
 	if err := C.krun_set_gpu_options(C.uint32_t(v.krunCtxID), C.uint32_t(VIRGLRENDERER_VENUS|VIRGLRENDERER_NO_VIRGL)); err != 0 {
 		return fmt.Errorf("failed to set gpu options,return %v", err)
@@ -261,7 +250,7 @@ func (v *AppleHVStubber) setGPU() error {
 	return nil
 }
 
-func (v *AppleHVStubber) setRootFS() error {
+func (v *Stubber) setRootFS() error {
 	rootfs, fn1 := GoString2CString(v.vmc.RootFS)
 	defer fn1()
 
@@ -271,8 +260,8 @@ func (v *AppleHVStubber) setRootFS() error {
 	return nil
 }
 
-func (v *AppleHVStubber) addRawDisk(ctx context.Context) error {
-	for _, disk := range v.vmc.DataDisk {
+func (v *Stubber) addRawDisk(ctx context.Context) error {
+	for _, disk := range v.vmc.BlkDevs {
 		if err := addRawDisk(v.krunCtxID, disk.Path); err != nil {
 			return err
 		}
@@ -281,7 +270,7 @@ func (v *AppleHVStubber) addRawDisk(ctx context.Context) error {
 	return nil
 }
 
-func (v *AppleHVStubber) addVirtioFS() error {
+func (v *Stubber) addVirtioFS() error {
 	for _, mount := range v.vmc.Mounts {
 		if err := addVirtioFS(v.krunCtxID, mount.Tag, mount.Source); err != nil {
 			return fmt.Errorf("failed to add virtiofs: %w", err)
@@ -291,7 +280,7 @@ func (v *AppleHVStubber) addVirtioFS() error {
 	return nil
 }
 
-func (v *AppleHVStubber) StartNetwork(ctx context.Context) error {
+func (v *Stubber) StartNetwork(ctx context.Context) error {
 	gvpSocks := gvproxy.EndPoints{
 		ControlEndpoints:    v.vmc.GVproxyEndpoint,
 		VFKitSocketEndpoint: v.vmc.NetworkStackBackend,
@@ -300,7 +289,7 @@ func (v *AppleHVStubber) StartNetwork(ctx context.Context) error {
 	return gvproxy.StartNetworking(ctx, gvpSocks, v.vmc.Stage.GVProxyChan)
 }
 
-func (v *AppleHVStubber) NestVirt(ctx context.Context) error {
+func (v *Stubber) NestVirt(ctx context.Context) error {
 	ret := C.krun_check_nested_virt()
 
 	switch ret {
@@ -322,7 +311,7 @@ func (v *AppleHVStubber) NestVirt(ctx context.Context) error {
 	return nil
 }
 
-func (v *AppleHVStubber) SetKernel(ctx context.Context) error {
+func (v *Stubber) SetKernel(ctx context.Context) error {
 	return setKernel(ctx, v.krunCtxID, v.vmc.Kernel, v.vmc.Initrd, v.vmc.KernelCmdline...)
 }
 
@@ -377,7 +366,7 @@ func addVirtioFS(ctxID uint32, tag, path string) error {
 	return nil
 }
 
-func (v *AppleHVStubber) addVSockListenInHost(ctx context.Context, vmCtxID uint32) error {
+func (v *Stubber) addVSockListenInHost(ctx context.Context, vmCtxID uint32) error {
 	return addVSockListenInHost(ctx, vmCtxID, uint32(define.DefaultVSockPort), v.vmc.IgnProvisionerAddr)
 }
 
