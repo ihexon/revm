@@ -3,28 +3,11 @@ package system
 import (
 	"fmt"
 	"io"
-	"linuxvm/pkg/define"
-	"linuxvm/pkg/path"
 	"os"
 	"path/filepath"
 
 	"github.com/sirupsen/logrus"
 )
-
-// WriteBootstrapToRooFs copy bootstrap to builtin rootfs
-func WriteBootstrapToRooFs() error {
-	src, err := path.GetBinNamePath(define.BoostrapFileName)
-	if err != nil {
-		return err
-	}
-
-	dst, err := path.GetToolsPath3rd(define.BoostrapFileName, path.HostView)
-	if err != nil {
-		return err
-	}
-
-	return CopyFile(src, dst)
-}
 
 func CopyFile(src, dst string) error {
 	src, err := filepath.Abs(src)

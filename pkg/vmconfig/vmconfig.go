@@ -5,14 +5,16 @@ package vmconfig
 import (
 	"context"
 	"fmt"
-	"linuxvm/pkg/define"
-	"linuxvm/pkg/filesystem"
-	"linuxvm/pkg/path"
+
 	"net/url"
 	"os"
 	"strings"
 
+	"linuxvm/pkg/define"
+	"linuxvm/pkg/disk"
+	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
+	"linuxvm/pkg/path"
 	"linuxvm/pkg/ssh"
 	"linuxvm/pkg/system"
 	"path/filepath"
@@ -20,8 +22,6 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/sirupsen/logrus"
 )
-
-// VMConfig Static virtual machine configuration.
 
 type (
 	VMConfig define.VMConfig
@@ -54,11 +54,11 @@ func (vmc *VMConfig) WithSystemProxy() error {
 
 // GenerateSSHInfo Generate SSH info for the VM, notice the ssh keypair will be written when guest rootfs actually running.
 func (vmc *VMConfig) GenerateSSHInfo() error {
+	logrus.Infof("ssh keypair write to: %q", vmc.SSHInfo.HostSSHKeyPairFile)
 	keyPair, err := ssh.GenerateHostSSHKeyPair(vmc.SSHInfo.HostSSHKeyPairFile)
 	if err != nil {
 		return fmt.Errorf("failed to generate host ssh keypair for host: %w", err)
 	}
-	logrus.Infof("ssh keypair write to: %q", vmc.SSHInfo.HostSSHKeyPairFile)
 
 	// Fill the ssh keypair into vmc.SSHInfo using the keypair in memory
 	vmc.SSHInfo.HostSSHPrivateKey = string(keyPair.RawProtectedPrivateKey())
@@ -113,38 +113,65 @@ func waitIgnServerReady(ctx context.Context, vmc *VMConfig) {
 	}
 }
 
-func (vmc *VMConfig) WithDataDisk(ctx context.Context, disks []string) error {
-	if len(disks) == 0 || disks == nil {
-		logrus.Debugf("the data disk information provided by the user is empty, so the data disk will not be mounted to the guest")
-		return nil
-	}
+func (vmc *VMConfig) WithBlkDisk(ctx context.Context, blocks []string, isContainerDisk bool) error {
+	diskMgr := disk.NewBlkManager(
+		vmc.ExternalTools.DarwinTools.MkfsExt4,
+		vmc.ExternalTools.DarwinTools.Blkid,
+		vmc.ExternalTools.DarwinTools.FsckExt4,
+	)
 
-	for _, disk := range disks {
-		diskAbsPath, err := filepath.Abs(disk)
+	for _, blk := range blocks {
+		absPath, err := filepath.Abs(blk)
 		if err != nil {
-			return fmt.Errorf("failed to get abs path: %w", err)
+			return err
 		}
 
-		rawDisk := filesystem.NewDisk(diskAbsPath)
+		if !system.IsPathExist(absPath) {
+			logrus.Infof("create ext4 block %q with size %d", absPath, define.DefaultCreateDiskSizeInGB)
 
-		if !system.IsPathExist(diskAbsPath) {
-			if err := rawDisk.CreateExt4DiskAndFormat(ctx); err != nil {
+			if err := diskMgr.Create(ctx, absPath, define.DefaultCreateDiskSizeInGB*1024); err != nil {
 				return fmt.Errorf("failed to create ext4 disk: %w", err)
 			}
 		}
 
-		if err := rawDisk.Inspect(ctx); err != nil {
-			return fmt.Errorf("failed to inspect raw disk %q, %w", diskAbsPath, err)
+		info, err := diskMgr.Inspect(ctx, absPath)
+		if err != nil {
+			return fmt.Errorf("failed to inspect raw disk %q, %w", absPath, err)
 		}
 
-		if err := rawDisk.FsCheck(ctx); err != nil {
-			return fmt.Errorf("failed to run fsck to raw disk %q, %w", diskAbsPath, err)
+		if err := diskMgr.FsCheck(ctx, absPath); err != nil {
+			return fmt.Errorf("filesystem integrity check %q error %w", absPath, err)
 		}
 
-		vmc.DataDisk = append(vmc.DataDisk, define.DataDisk(rawDisk))
+		blkDev := define.BlkDev{
+			UUID:               info.UUID,
+			FsType:             info.FsType,
+			IsContainerStorage: isContainerDisk,
+			Path:               absPath,
+			MountTo:            filepath.Join("/mnt", absPath),
+		}
+
+		if isContainerDisk {
+			logrus.Infof("container storage disk will be mount to %q", define.ContainerStorageMountPoint)
+			blkDev.MountTo = define.ContainerStorageMountPoint
+		}
+
+		vmc.BlkDevs = append(vmc.BlkDevs, blkDev)
 	}
 
 	return nil
+}
+
+func (vmc *VMConfig) WithUncompressedKernel(kernelPath string) {
+	vmc.Kernel = kernelPath
+}
+
+func (vmc *VMConfig) WithInitramfs(initrdPath string) {
+	vmc.Initrd = initrdPath
+}
+
+func (vmc *VMConfig) WithKernelCmdline(cmdline []string) {
+	vmc.KernelCmdline = cmdline
 }
 
 func validateArgs(args []string) error {
@@ -157,14 +184,28 @@ func validateArgs(args []string) error {
 	return nil
 }
 
-func (vmc *VMConfig) SetGuestBootstrapRunArgs() {
-	bootstrapGuestPath, _ := path.GetToolsPath3rd(define.BoostrapFileName, path.GuestView)
-	vmc.Cmdline.Bootstrap = bootstrapGuestPath
-	vmc.Cmdline.Env = []string{define.DefaultPATHInBootstrap}
+func (vmc *VMConfig) WithGuestAgentConfigure() error {
+	if vmc.RootFS == "" {
+		return fmt.Errorf("root file system is not set")
+	}
+
+	src := vmc.ExternalTools.DarwinTools.GuestAgent
+	dest := vmc.RootFS + "/3rd/bin/" + guestAgent
+
+	if err := system.CopyFile(src, dest); err != nil {
+		return fmt.Errorf("failed to copy guest-agent file to rootfs: %w", err)
+	}
+
+	vmc.Cmdline.GuestAgent = vmc.ExternalTools.LinuxTools.GuestAgent
+
+	vmc.Cmdline.Env = []string{"PATH=/3rd/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"}
 
 	if logrus.IsLevelEnabled(logrus.DebugLevel) {
-		vmc.Cmdline.BootstrapArgs = append(vmc.Cmdline.BootstrapArgs, "--verbose")
+		vmc.Cmdline.GuestAgentArgs = append(vmc.Cmdline.GuestAgentArgs, "--verbose")
 	}
+
+	logrus.Debugf("guest-agent %q args is: %q", vmc.Cmdline.GuestAgent, vmc.Cmdline.GuestAgentArgs)
+	return nil
 }
 
 func (vmc *VMConfig) WithUserProvidedCmdline(bin string, args, envs []string) error {
@@ -173,7 +214,7 @@ func (vmc *VMConfig) WithUserProvidedCmdline(bin string, args, envs []string) er
 	}
 
 	if err := validateArgs(args); err != nil {
-		return fmt.Errorf("invalid args: %w", err)
+		return err
 	}
 
 	vmc.Cmdline.Workspace = define.DefaultWorkDir
@@ -210,12 +251,7 @@ func (vmc *VMConfig) WithShareUserHomeDir() error {
 
 func (vmc *VMConfig) WithUserProvidedMounts(dirs []string) error {
 	if len(dirs) == 0 || dirs == nil {
-		logrus.Debugf("the directory mount information provided by the user is empty, so the host directory will not be mounted to the guest")
 		return nil
-	}
-
-	if vmc.Mounts == nil {
-		return fmt.Errorf("vmc.Mount is nil")
 	}
 
 	var hostDirs []string
@@ -249,6 +285,10 @@ func (vmc *VMConfig) WithUserProvidedRootFS(rootfsPath string) error {
 	return nil
 }
 
+func (vmc *VMConfig) WithRunMode(runMode define.RunMode) {
+	vmc.RunMode = runMode.String()
+}
+
 func (vmc *VMConfig) WithBuiltInRootfs() error {
 	rootfsPath, err := path.GetBuiltinRootfsPath()
 	if err != nil {
@@ -258,36 +298,8 @@ func (vmc *VMConfig) WithBuiltInRootfs() error {
 	return vmc.WithUserProvidedRootFS(rootfsPath)
 }
 
-func (vmc *VMConfig) WithContainerDataDisk(ctx context.Context, disk string) error {
-	if disk == "" {
-		return fmt.Errorf("container storage disk is empty")
-	}
-
-	if vmc.DataDisk == nil {
-		return fmt.Errorf("vmc.DataDisk is nil")
-	}
-
-	containerDisk := filesystem.NewDisk(disk)
-	containerDisk.IsContainerStorage = true
-
-	if !system.IsPathExist(containerDisk.Path) {
-		if err := containerDisk.CreateExt4DiskAndFormat(ctx); err != nil {
-			return fmt.Errorf("failed to create container ext4 disk: %w", err)
-		}
-	}
-
-	if err := containerDisk.Inspect(ctx); err != nil {
-		return fmt.Errorf("failed to inspect container disk %q, %w", disk, err)
-	}
-
-	if err := containerDisk.FsCheck(ctx); err != nil {
-		return fmt.Errorf("failed to run fscheck container disk %q, %w", disk, err)
-	}
-
-	logrus.Infof("in docker mode, container storage disk will be %q", disk)
-	vmc.DataDisk = append(vmc.DataDisk, define.DataDisk(containerDisk))
-
-	return nil
+func (vmc *VMConfig) WithContainerDataDisk(ctx context.Context, containerDataDiskPath string) error {
+	return vmc.WithBlkDisk(ctx, []string{containerDataDiskPath}, true)
 }
 
 func (vmc *VMConfig) WithPodmanListenAPIInHost(listenAPIPath string) error {
@@ -333,6 +345,29 @@ func (vmc *VMConfig) WithRESTAPIAddress(path string) error {
 	return nil
 }
 
+const guestAgent = "guest-agent"
+
+func (vmc *VMConfig) WithExternalTools() error {
+	libexecPath, err := path.GetLibexecPath()
+	if err != nil {
+		return fmt.Errorf("failed to get libexec path: %w", err)
+	}
+
+	vmc.ExternalTools.DarwinTools.MkfsExt4 = filepath.Join(libexecPath, "mkfs.ext4")
+	vmc.ExternalTools.DarwinTools.Blkid = filepath.Join(libexecPath, "blkid")
+	vmc.ExternalTools.DarwinTools.FsckExt4 = filepath.Join(libexecPath, "fsck.ext4")
+
+	vmc.ExternalTools.DarwinTools.GuestAgent = filepath.Join(libexecPath, guestAgent)
+
+	vmc.ExternalTools.LinuxTools.Busybox = "/3rd/bin/busybox"
+	vmc.ExternalTools.LinuxTools.DropBear = "/3rd/bin/dropbear"
+	vmc.ExternalTools.LinuxTools.DropBearKey = "/3rd/bin/dropbearkey"
+
+	vmc.ExternalTools.LinuxTools.GuestAgent = "/3rd/bin/" + guestAgent
+
+	return nil
+}
+
 func NewVMConfig() *VMConfig {
 	vmc := &VMConfig{}
 
@@ -352,7 +387,7 @@ func NewVMConfig() *VMConfig {
 		SSHDReadyChan:   make(chan struct{}, 1),
 	}
 
-	vmc.DataDisk = []define.DataDisk{}
+	vmc.BlkDevs = []define.BlkDev{}
 	vmc.Mounts = []define.Mount{}
 
 	return vmc

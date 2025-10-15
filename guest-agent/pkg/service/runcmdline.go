@@ -1,9 +1,10 @@
-package services
+package service
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"guestAgent/pkg/define"
 	"os"
 	"os/exec"
 
@@ -12,8 +13,9 @@ import (
 
 var ErrProcessExitNormal = errors.New("process exit normally")
 
-func DoExecCmdLine(ctx context.Context, targetBin string, targetBinArgs []string) error {
-	cmd := exec.CommandContext(ctx, targetBin, targetBinArgs...)
+func DoExecCmdLine(ctx context.Context, vmc *define.VMConfig) error {
+
+	cmd := exec.CommandContext(ctx, vmc.Cmdline.TargetBin, vmc.Cmdline.TargetBinArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
