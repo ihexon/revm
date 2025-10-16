@@ -6,9 +6,7 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/server"
-	"linuxvm/pkg/service"
 	"linuxvm/pkg/system"
-	"linuxvm/pkg/vmconfig"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -63,26 +61,6 @@ var startDocker = cli.Command{
 	Action: dockerModeLifeCycle,
 }
 
-func probeServersAvailability(ctx context.Context, vmc *vmconfig.VMConfig) error {
-	g, ctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		service.ProbeAndWaitingSSHService(ctx, vmc)
-		logrus.Infof("guest ssh service available now")
-		close(vmc.Stage.SSHDReadyChan)
-		return nil
-	})
-
-	g.Go(func() error {
-		service.ProbeAndWaitingPodmanService(ctx, vmc)
-		logrus.Infof("guest podman service available now")
-		close(vmc.Stage.PodmanReadyChan)
-		return nil
-	})
-
-	return g.Wait()
-}
-
 func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	if err := showVersionAndOSInfo(); err != nil {
 		logrus.Warn("cannot get Build version/OS information")
@@ -102,40 +80,50 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	if command.IsSet(define.FlagRestAPIListenAddr) && command.String(define.FlagRestAPIListenAddr) != "" {
 		g.Go(func() error {
-			return server.NewAPIServer(vmc).Start(ctx)
+			return server.NewAPIServer(vmc, server.RestAPIMode).Start(ctx)
 		})
 	}
 
+	// Start service probers
 	g.Go(func() error {
-		return server.IgnProvisionerServer(ctx, vmc, vmc.IgnProvisionerAddr)
+		defer logrus.Debugf("vmconfig.CloseChannelWhenServiceReady(ctx, vmc) exit")
+		return vmc.CloseChannelWhenServiceReady(ctx)
+	})
+
+	// Start Ignition server (no dependencies)
+	g.Go(func() error {
+		defer logrus.Debugf("server.NewAPIServer(vmc, server.IgnServerMode).Start(ctx) exit")
+		return server.NewAPIServer(vmc, server.IgnServerMode).Start(ctx)
 	})
 
 	g.Go(func() error {
+		defer logrus.Debugf("vmp.StartNetwork(ctx) exit")
 		return vmp.StartNetwork(ctx)
 	})
 
+	// VM Create and Start requires both GVProxy and IgnServer to be ready
 	g.Go(func() error {
+		defer logrus.Debugf("vmp.Start(ctx) exit")
+
+		if err := vmc.WaitForServices(ctx, define.ServiceGVProxy, define.ServiceIgnServer); err != nil {
+			return err
+		}
+
 		if err = vmp.Create(ctx); err != nil {
 			return fmt.Errorf("failed to create vm: %w", err)
 		}
-
-		vmc.WaitIgnServerReady(ctx)
-		vmc.WaitGVProxyReady(ctx)
 
 		return vmp.Start(ctx)
 	})
 
 	g.Go(func() error {
-		vmc.WaitGVProxyReady(ctx)
-		return network.ForwardPodmanAPIOverVSock(ctx, vmc.GVproxyEndpoint, vmc.PodmanInfo.UnixSocksAddr, define.DefaultGuestAddr, uint16(define.DefaultGuestPodmanAPIPort))
-	})
+		defer logrus.Warnf("network.ForwardPodmanAPIOverVSock exit")
 
-	g.Go(func() error {
-		vmc.WaitGVProxyReady(ctx)
-		if err = probeServersAvailability(ctx, vmc); err != nil {
-			return fmt.Errorf("failed to get server availability: %w", err)
+		if err := vmc.WaitForServices(ctx, define.ServiceGVProxy); err != nil {
+			return err
 		}
-		return nil
+
+		return network.ForwardPodmanAPIOverVSock(ctx, vmc.GVproxyEndpoint, vmc.PodmanInfo.UnixSocksAddr, define.DefaultGuestAddr, uint16(define.DefaultGuestPodmanAPIPort))
 	})
 
 	return g.Wait()

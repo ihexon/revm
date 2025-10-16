@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/sirupsen/logrus"
 )
@@ -64,7 +65,7 @@ type LinuxTools struct {
 }
 
 type DarwinTools struct {
-	MkfsExt4   string `json:"mkfs.ext4,omitempty"`
+	Mke2fs     string `json:"mkfs.ext4,omitempty"`
 	FsckExt4   string `json:"fsck.ext4,omitempty"`
 	Blkid      string `json:"blkid,omitempty"`
 	GuestAgent string `json:"guestAgent,omitempty"`
@@ -75,13 +76,40 @@ type ExternalTools struct {
 	DarwinTools DarwinTools `json:"darwinTools,omitempty"`
 }
 
+type ServiceType int
+
+const (
+	ServiceGVProxy ServiceType = iota
+	ServiceIgnServer
+	ServiceGuestPodman
+	ServiceGuestSSHServer
+)
+
 type Stage struct {
-	// when gvproxy is running, this channel will be closed
-	GVProxyChan chan struct{}
-	// when ignition server is running, this channel will be closed
-	IgnServerChan   chan struct{}
-	PodmanReadyChan chan struct{}
-	SSHDReadyChan   chan struct{}
+	GVProxyChan              chan struct{}
+	GVProxyChanCloseOnce     sync.Once
+	GuestSSHServerReadyChan  chan struct{}
+	GuestSSHChanCloseOnce    sync.Once
+	GuestPodmanReadyChan     chan struct{}
+	GuestPodmanChanCloseOnce sync.Once
+	IgnServerChan            chan struct{}
+	IgnServerChanCloseOnce   sync.Once
+}
+
+// GetReadyChannel returns the ready channel and close once function for a given service type
+func (s *Stage) GetReadyChannel(serviceType ServiceType) (chan struct{}, func(func())) {
+	switch serviceType {
+	case ServiceGVProxy:
+		return s.GVProxyChan, s.GVProxyChanCloseOnce.Do
+	case ServiceIgnServer:
+		return s.IgnServerChan, s.IgnServerChanCloseOnce.Do
+	case ServiceGuestPodman:
+		return s.GuestPodmanReadyChan, s.GuestPodmanChanCloseOnce.Do
+	case ServiceGuestSSHServer:
+		return s.GuestSSHServerReadyChan, s.GuestSSHChanCloseOnce.Do
+	default:
+		panic(fmt.Sprintf("unknown service type: %d", serviceType))
+	}
 }
 
 // BlkDev represents the configuration of a data disk, including its file system type, path, and mount point.
