@@ -16,19 +16,37 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type serverMode int
+
+const (
+	RestAPIMode serverMode = iota
+	IgnServerMode
+)
+
 type Server struct {
-	Vmc      *vmconfig.VMConfig
-	Server   *http.Server
-	Mux      *http.ServeMux
-	UnixAddr string
+	ServerMode serverMode
+	Vmc        *vmconfig.VMConfig
+	Server     *http.Server
+	Mux        *http.ServeMux
+	UnixAddr   string
 }
 
-func NewAPIServer(vmc *vmconfig.VMConfig) *Server {
+func NewAPIServer(vmc *vmconfig.VMConfig, mode serverMode) *Server {
 	mux := http.NewServeMux()
 	server := &Server{
-		Mux:      mux,
-		Vmc:      vmc,
-		UnixAddr: vmc.RestAPIAddress,
+		ServerMode: mode,
+		Mux:        mux,
+		Vmc:        vmc,
+	}
+
+	switch mode {
+	case RestAPIMode:
+		server.UnixAddr = vmc.RestAPIAddress
+	case IgnServerMode:
+		server.UnixAddr = vmc.IgnProvisionerAddr
+	default:
+		logrus.Warnf("unknown server mode %d, use default restapi unix socket address", mode)
+		server.UnixAddr = vmc.RestAPIAddress
 	}
 
 	return server
@@ -44,14 +62,28 @@ func (s *Server) handleVMConfig(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, s.Vmc)
 }
 
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	logrus.Debugf("handle /healthz request")
+	if r.Method != http.MethodGet {
+		WriteJSON(w, http.StatusMethodNotAllowed, nil)
+		return
+	}
+	WriteJSON(w, http.StatusOK, nil)
+}
+
 const (
 	guestexecURL = "/exec"
 	vmconfigURL  = "/vmconfig"
+	healthURL    = "/healthz"
 )
 
 func (s *Server) registerRouter() {
+	s.Mux.HandleFunc(healthURL, s.handleHealth)
 	s.Mux.HandleFunc(vmconfigURL, s.handleVMConfig)
-	s.Mux.HandleFunc(guestexecURL, s.doExec)
+
+	if s.ServerMode == RestAPIMode {
+		s.Mux.HandleFunc(guestexecURL, s.doExec)
+	}
 }
 
 func (s *Server) Start(ctx context.Context) error {

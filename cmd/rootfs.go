@@ -77,28 +77,37 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("failed to get vm configure: %w", err)
 	}
 
-	g.Go(func() error {
-		return server.IgnProvisionerServer(ctx, vmc, vmc.IgnProvisionerAddr)
-	})
-
 	if command.IsSet(define.FlagRestAPIListenAddr) && command.String(define.FlagRestAPIListenAddr) != "" {
 		g.Go(func() error {
-			return server.NewAPIServer(vmc).Start(ctx)
+			return server.NewAPIServer(vmc, server.RestAPIMode).Start(ctx)
 		})
 	}
 
+	// Start service probers
 	g.Go(func() error {
-		return vmp.StartNetwork(ctx)
+		return vmc.CloseChannelWhenServiceReady(ctx)
+	})
+
+	// Start Ignition server (no dependencies)
+	g.Go(func() error {
+		return server.NewAPIServer(vmc, server.IgnServerMode).Start(ctx)
 	})
 
 	g.Go(func() error {
+		defer logrus.Debugf("vmp.StartNetwork(ctx) exit")
+		return vmp.StartNetwork(ctx)
+	})
+
+	// VM Create and Start requires both GVProxy and IgnServer to be ready
+	g.Go(func() error {
+		defer logrus.Debugf("vmp.Start(ctx) exit")
+
+		if err := vmc.WaitForServices(ctx, define.ServiceGVProxy, define.ServiceIgnServer); err != nil {
+			return err
+		}
 		if err = vmp.Create(ctx); err != nil {
 			return fmt.Errorf("failed to create vm: %w", err)
 		}
-
-		vmc.WaitIgnServerReady(ctx)
-		vmc.WaitGVProxyReady(ctx)
-
 		return vmp.Start(ctx)
 	})
 

@@ -74,7 +74,6 @@ func vmProviderFactory(ctx context.Context, mode define.RunMode, command *cli.Co
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base vm config: %w", err)
 	}
-
 	switch mode {
 	case define.ContainerMode:
 		if err = generateContainerVMConfig(ctx, vmc, command); err != nil {
@@ -87,7 +86,7 @@ func vmProviderFactory(ctx context.Context, mode define.RunMode, command *cli.Co
 	default:
 		return nil, fmt.Errorf("invalid run mode: %s", mode.String())
 	}
-
+	
 	vmProvider, err := vm.Get(vmc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get vm provider: %w", err)
