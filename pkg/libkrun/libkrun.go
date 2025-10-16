@@ -214,7 +214,7 @@ func (v *Stubber) setCommandLine(dir string, env []string) error {
 		return nil
 	})
 
-	logrus.Debugf("pass env to guest: %q", env)
+	logrus.Infof("pass env to guest: %q", env)
 	cEnvPassIn, fn4 := GoStringList2CStringArray(env)
 	cleanUp.Add(func() error {
 		fn4()
@@ -280,13 +280,9 @@ func (v *Stubber) addVirtioFS() error {
 	return nil
 }
 
+// StartNetwork start gvproxy in go routine for guest network
 func (v *Stubber) StartNetwork(ctx context.Context) error {
-	gvpSocks := gvproxy.EndPoints{
-		ControlEndpoints:    v.vmc.GVproxyEndpoint,
-		VFKitSocketEndpoint: v.vmc.NetworkStackBackend,
-	}
-
-	return gvproxy.StartNetworking(ctx, gvpSocks, v.vmc.Stage.GVProxyChan)
+	return gvproxy.Run(ctx, v.vmc)
 }
 
 func (v *Stubber) NestVirt(ctx context.Context) error {

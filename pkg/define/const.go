@@ -40,10 +40,7 @@ const (
 	DefaultGuestSSHDPort      = 25883
 	DefaultGuestPodmanAPIPort = 25884
 
-	RestAPIPodmanReadyURL   = "/ready/podman"
-	RestAPISSHReadyURL      = "/ready/sshd"
-	RestAPI3rdFileServerURL = "/fileserver/"
-	RestAPIVMConfigURL      = "/vmconfig"
+	RestAPIVMConfigURL = "/vmconfig"
 )
 
 const (

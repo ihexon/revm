@@ -40,7 +40,7 @@ type Addr struct {
 }
 
 func ParseUnixAddr(raw string) (*Addr, error) {
-	if !strings.Contains(raw, "unix://") {
+	if !strings.Contains(raw, "unix://") && !strings.Contains(raw, "unixgram://") {
 		return nil, fmt.Errorf("scheme missing, expected format: unix://")
 	}
 

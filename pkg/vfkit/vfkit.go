@@ -28,10 +28,7 @@ func NewStubber(vmc *vmconfig.VMConfig) *Stubber {
 }
 
 func (v *Stubber) StartNetwork(ctx context.Context) error {
-	return gvproxy.StartNetworking(ctx, gvproxy.EndPoints{
-		ControlEndpoints:    v.vmc.GVproxyEndpoint,
-		VFKitSocketEndpoint: v.vmc.NetworkStackBackend,
-	}, v.vmc.Stage.GVProxyChan)
+	return gvproxy.Run(ctx, v.vmc)
 }
 
 func (v *Stubber) Create(ctx context.Context) error {
@@ -102,7 +99,7 @@ func newVirtualMachine(vmc *vmconfig.VMConfig) (*config.VirtualMachine, error) {
 	// add virtio-balloon
 	devices = append(devices, "virtio-balloon")
 
-	// add virtio-vsock
+	// add virtio-vsock, expecting the host to listen on the port, guest to connect to it
 	devices = append(devices, fmt.Sprintf("virtio-vsock,port=%d,socketURL=%s,listen", define.DefaultVSockPort, vmc.IgnProvisionerAddr))
 
 	// virtio-fs is the backend device for the host shared directory

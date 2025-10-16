@@ -1,141 +1,113 @@
-//go:build (darwin && arm64) || (linux && (arm64 || amd64))
-
 package gvproxy
 
 import (
 	"context"
+	_ "embed"
+	"errors"
 	"fmt"
-	"linuxvm/pkg/define"
+	"linuxvm/pkg/vmconfig"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
-	gvptypes "github.com/containers/gvisor-tap-vsock/pkg/types"
+	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
+	yaml "gopkg.in/yaml.v3"
 )
 
 const (
-	gatewayIP      = "192.168.127.1"
-	hostIP         = "192.168.127.254"
-	host           = "host"
-	gateway        = "gateway"
-	subNet         = "192.168.127.0/24"
-	gatewayMacAddr = "5a:94:ef:e4:0c:dd"
-	guestMacAddr   = "5a:94:ef:e4:0c:ee"
-	guestIPAddr    = define.DefaultGuestAddr
+	sshHostPort = "192.168.127.2:22"
 )
 
-func newGvpConfigure() *gvptypes.Configuration {
-	config := gvptypes.Configuration{
-		Debug:             false,
-		MTU:               1500,
-		Subnet:            subNet,
-		GatewayIP:         gatewayIP,
-		GatewayMacAddress: gatewayMacAddr,
-		DHCPStaticLeases: map[string]string{
-			guestIPAddr: guestMacAddr,
-		},
-		DNS: []gvptypes.Zone{
-			{
-				Name: "containers.internal.",
-				Records: []gvptypes.Record{
-					{
-						Name: gateway,
-						IP:   net.ParseIP(gatewayIP),
-					},
-					{
-						Name: host,
-						IP:   net.ParseIP(hostIP),
-					},
-				},
-			},
-			{
-				Name: "docker.internal.",
-				Records: []gvptypes.Record{
-					{
-						Name: gateway,
-						IP:   net.ParseIP(gatewayIP),
-					},
-					{
-						Name: host,
-						IP:   net.ParseIP(hostIP),
-					},
-				},
-			},
-		},
-		// by default, we forward host:2222 to 192.168.127.2:22
-		NAT: map[string]string{
-			hostIP: "127.0.0.1",
-		},
-		GatewayVirtualIPs: []string{hostIP},
-		VpnKitUUIDMacAddresses: map[string]string{
-			"c3d68012-0208-11ea-9fd7-f2189899ab08": guestMacAddr,
-		},
-		Protocol: gvptypes.VfkitProtocol,
+type GvproxyConfig struct {
+	Listen     []string            `yaml:"listen,omitempty"`
+	Stack      types.Configuration `yaml:"stack,omitempty"`
+	Interfaces struct {
+		VPNKit string `yaml:"vpnkit,omitempty"`
+		Qemu   string `yaml:"qemu,omitempty"`
+		Bess   string `yaml:"bess,omitempty"`
+		Stdio  string `yaml:"stdio,omitempty"`
+		Vfkit  string `yaml:"vfkit,omitempty"`
+	} `yaml:"interfaces,omitempty"`
+	Forwards []GvproxyConfigForward `yaml:"forwards,omitempty"`
+	Services string                 `yaml:"services,omitempty"`
+}
+
+type GvproxyConfigForward struct {
+	Socket   string `yaml:"socket,omitempty"`
+	Dest     string `yaml:"dest,omitempty"`
+	User     string `yaml:"user,omitempty"`
+	Identity string `yaml:"identity,omitempty"`
+}
+
+//go:embed config.yaml
+var configYaml []byte
+
+func InitCfg(vmc *vmconfig.VMConfig) (*GvproxyConfig, error) {
+	var config GvproxyConfig
+
+	if err := yaml.Unmarshal(configYaml, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse configuration: %w", err)
 	}
 
-	return &config
+	config.Listen = append(config.Listen, vmc.GVproxyEndpoint)
+	config.Interfaces.Vfkit = vmc.NetworkStackBackend
+
+	uri, err := url.Parse(config.Interfaces.Vfkit)
+	if err != nil || uri == nil {
+		return nil, fmt.Errorf("invalid value for vfkit listen address: %w", err)
+	}
+	if uri.Scheme != "unixgram" {
+		return nil, errors.New("vfkit listen address must be unixgram:// address")
+	}
+
+	_ = os.Remove(uri.Path)
+
+	config.Stack.Protocol = types.VfkitProtocol
+
+	return &config, nil
 }
 
-func httpServe(ctx context.Context, g *errgroup.Group, ln net.Listener, mux http.Handler) {
-	// if ctx is canceled, close the listener
-	g.Go(func() error {
-		<-ctx.Done()
-		logrus.Debugf("close gvproxy control endpoint on %q, cause by %v", ln.Addr(), context.Cause(ctx))
-		return ln.Close()
-	})
-
-	// if the ctx is canceled, the server will return an error immediately. so there is no
-	// need to pass the ctx to the server.
-	g.Go(func() error {
-		server := &http.Server{
-			Handler:      mux,
-			ReadTimeout:  10 * time.Second,
-			WriteTimeout: 10 * time.Second,
-		}
-
-		err := server.Serve(ln)
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return err
-	})
-}
-
-type EndPoints struct {
-	// export the http api which control gvproxy
-	ControlEndpoints string
-	// the unix socket file that provides network to vm
-	VFKitSocketEndpoint string
-}
-
-func run(ctx context.Context, configuration *gvptypes.Configuration, endpoints EndPoints, doneChan chan struct{}) error {
-	vn, err := virtualnetwork.New(configuration)
+func Run(ctx context.Context, vmc *vmconfig.VMConfig) error {
+	config, err := InitCfg(vmc)
 	if err != nil {
-		return fmt.Errorf("failed to create virtual network: %w", err)
+		return err
 	}
+
 	g, ctx := errgroup.WithContext(ctx)
 
-	{
-		logrus.Infof("listen gvproxy control endpoint: %q", endpoints.ControlEndpoints)
-		ln, err := transport.Listen(endpoints.ControlEndpoints)
-		if err != nil {
-			return fmt.Errorf("failed to listen on %q: %w", endpoints.ControlEndpoints, err)
-		}
+	vn, err := virtualnetwork.New(&config.Stack)
+	if err != nil {
+		return err
+	}
+	logrus.Info("gvproxy virtual network waiting for clients...")
 
-		httpServe(ctx, g, ln, vn.Mux())
+	for _, endpoint := range config.Listen {
+		logrus.Infof("listening %s", endpoint)
+		ln, err := transport.Listen(endpoint)
+		if err != nil {
+			return fmt.Errorf("cannot listen: %w", err)
+		}
+		httpServe(ctx, g, ln, withProfiler(vn))
 	}
 
-	vnAddr := fmt.Sprintf("%s:80", gatewayIP)
-	logrus.Debugf("listen virtualnetwork on gateway: %q", vnAddr)
-	ln, err := vn.Listen("tcp", vnAddr)
+	if config.Services != "" {
+		logrus.Infof("enabling services API. Listening %s", config.Services)
+		ln, err := transport.Listen(config.Services)
+		if err != nil {
+			return fmt.Errorf("cannot listen: %w", err)
+		}
+		httpServe(ctx, g, ln, vn.ServicesMux())
+	}
+
+	ln, err := vn.Listen("tcp", fmt.Sprintf("%s:80", config.Stack.GatewayIP))
 	if err != nil {
 		return err
 	}
@@ -146,61 +118,106 @@ func run(ctx context.Context, configuration *gvptypes.Configuration, endpoints E
 	mux.Handle("/services/forwarder/unexpose", vn.Mux())
 	httpServe(ctx, g, ln, mux)
 
-	if endpoints.VFKitSocketEndpoint == "" {
-		return fmt.Errorf("endpoints.VFKitSocketEndpoint can not be empty")
-	}
-
-	logrus.Infof("listen gvproxy network backend: %q", endpoints.VFKitSocketEndpoint)
-	conn, err := transport.ListenUnixgram(endpoints.VFKitSocketEndpoint)
-	if err != nil {
-		return fmt.Errorf("failed to listen on %q: %w", endpoints.VFKitSocketEndpoint, err)
-	}
-
-	g.Go(func() error {
-		<-ctx.Done()
-		logrus.Infof("close gvproxy network backend on %q", endpoints.VFKitSocketEndpoint)
-		if err := conn.Close(); err != nil {
-			logrus.Errorf("error closing gvproxy network backend on %q: %q", endpoints.VFKitSocketEndpoint, err)
-		}
-
-		return nil
-	})
-
-	g.Go(func() error {
-		vfkitConn, err := transport.AcceptVfkit(conn)
+	if config.Interfaces.Vfkit != "" {
+		conn, err := transport.ListenUnixgram(config.Interfaces.Vfkit)
 		if err != nil {
-			return fmt.Errorf("failed to accept connection on %q: %w", endpoints.VFKitSocketEndpoint, err)
+			return fmt.Errorf("vfkit listen error: %w", err)
 		}
-		logrus.Debugf("gvproxy accept connection on %q", endpoints.VFKitSocketEndpoint)
-		return vn.AcceptVfkit(ctx, vfkitConn)
-	})
 
-	// notify the caller that the gvproxy is ready
-	close(doneChan)
+		g.Go(func() error {
+			<-ctx.Done()
+			if err := conn.Close(); err != nil {
+				logrus.Errorf("error closing %s: %q", config.Interfaces.Vfkit, err)
+			}
+			vfkitSocketURI, _ := url.Parse(config.Interfaces.Vfkit)
+			return os.Remove(vfkitSocketURI.Path)
+		})
+
+		g.Go(func() error {
+			vfkitConn, err := transport.AcceptVfkit(conn)
+			if err != nil {
+				return fmt.Errorf("vfkit accept error: %w", err)
+			}
+			return vn.AcceptVfkit(ctx, vfkitConn)
+		})
+	}
+
+	for i := range config.Forwards {
+		var (
+			src *url.URL
+			err error
+		)
+		if strings.Contains(config.Forwards[i].Socket, "://") {
+			src, err = url.Parse(config.Forwards[i].Socket)
+			if err != nil {
+				return err
+			}
+		} else {
+			src = &url.URL{
+				Scheme: "unix",
+				Path:   config.Forwards[i].Socket,
+			}
+		}
+
+		dest := &url.URL{
+			Scheme: "ssh",
+			User:   url.User(config.Forwards[i].User),
+			Host:   sshHostPort,
+			Path:   config.Forwards[i].Dest,
+		}
+		j := i
+		g.Go(func() error {
+			defer os.Remove(config.Forwards[j].Socket)
+			forward, err := sshclient.CreateSSHForward(ctx, src, dest, config.Forwards[j].Identity, vn)
+			if err != nil {
+				return err
+			}
+			go func() {
+				<-ctx.Done()
+				// Abort pending accepts
+				forward.Close()
+			}()
+		loop:
+			for {
+				select {
+				case <-ctx.Done():
+					break loop
+				default:
+					// proceed
+				}
+				err := forward.AcceptAndTunnel(ctx)
+				if err != nil {
+					logrus.Debugf("Error occurred handling ssh forwarded connection: %q", err)
+				}
+			}
+			return nil
+		})
+	}
 
 	return g.Wait()
 }
 
-func StartNetworking(ctx context.Context, gvpSocks EndPoints, doneChan chan struct{}) error {
-	if err := makeDirForUnixSocks(gvpSocks.ControlEndpoints); err != nil {
-		return fmt.Errorf("failed to create dir for gvproxy control unix socket file %q: %w", gvpSocks.ControlEndpoints, err)
-	}
+func httpServe(ctx context.Context, g *errgroup.Group, ln net.Listener, mux http.Handler) {
+	g.Go(func() error {
+		<-ctx.Done()
+		return ln.Close()
+	})
 
-	if err := makeDirForUnixSocks(gvpSocks.VFKitSocketEndpoint); err != nil {
-		return fmt.Errorf("failed to create dir for gvproxy network unix socket file %q: %w", gvpSocks.VFKitSocketEndpoint, err)
-	}
+	g.Go(func() error {
+		s := &http.Server{
+			Handler:      mux,
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+		}
+		if err := s.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
 
-	gvpCfg := newGvpConfigure()
-
-	return run(ctx, gvpCfg, gvpSocks, doneChan)
+		return nil
+	})
 }
 
-func makeDirForUnixSocks(str string) error {
-	parse, err := url.Parse(str)
-	if err != nil {
-		return err
-	}
-
-	dir := filepath.Dir(parse.Path)
-	return os.MkdirAll(dir, 0755)
+func withProfiler(vn *virtualnetwork.VirtualNetwork) http.Handler {
+	mux := vn.Mux()
+	return mux
 }
