@@ -12,6 +12,7 @@ formatters:
 linters:
   disable:
     - prealloc
+    - unparam
   enable:
     - asasalint
     - asciicheck

@@ -86,7 +86,7 @@ func vmProviderFactory(ctx context.Context, mode define.RunMode, command *cli.Co
 	default:
 		return nil, fmt.Errorf("invalid run mode: %s", mode.String())
 	}
-	
+
 	vmProvider, err := vm.Get(vmc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get vm provider: %w", err)
