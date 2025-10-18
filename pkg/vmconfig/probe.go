@@ -85,8 +85,8 @@ func (p *unixSocketStatusProber) Probe(ctx context.Context) error {
 	defer resp.Body.Close()
 
 	// Drain response body
-	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-		logrus.Debugf("failed to drain response body: %v", err)
+	if _, err = io.Copy(io.Discard, resp.Body); err != nil {
+		logrus.Warnf("failed to drain response body: %v", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -126,7 +126,7 @@ func (p *sshProber) Probe(ctx context.Context) error {
 }
 
 // probeUntilReady runs a continuous probe loop until the service is ready
-// or the context is cancelled. When ready, it notifies via the prober's channel.
+// or the context is canceled. When ready, it notifies via the prober's channel.
 func probeUntilReady(ctx context.Context, prober ServiceProber, interval time.Duration) {
 	if interval == 0 {
 		interval = 50 * time.Millisecond

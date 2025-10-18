@@ -21,7 +21,7 @@ type Provider interface {
 
 func Get(vmc *vmconfig.VMConfig) (Provider, error) {
 	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
-		return libkrun.NewStubber(vmc), nil
+		return libkrun.NewLibkrunVM(vmc), nil
 	}
 
 	if runtime.GOOS == "darwin" && runtime.GOARCH == "amd64" {
