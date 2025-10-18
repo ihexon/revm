@@ -14,7 +14,7 @@ import (
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/path"
-	"linuxvm/pkg/ssh"
+	ssh "linuxvm/pkg/ssh"
 	"linuxvm/pkg/system"
 	"path/filepath"
 
@@ -54,7 +54,7 @@ func (v *VMConfig) WithSystemProxy() error {
 // GenerateSSHInfo Generate SSH info for the VM, notice the ssh keypair will be written when guest rootfs actually running.
 func (v *VMConfig) GenerateSSHInfo() error {
 	logrus.Infof("ssh keypair write to: %q", v.SSHInfo.HostSSHKeyPairFile)
-	keyPair, err := ssh.GenerateHostSSHKeyPair(v.SSHInfo.HostSSHKeyPairFile)
+	keyPair, err := ssh.GenerateKeyPair(v.SSHInfo.HostSSHKeyPairFile, ssh.DefaultKeyGenOptions())
 	if err != nil {
 		return fmt.Errorf("failed to generate host ssh keypair for host: %w", err)
 	}

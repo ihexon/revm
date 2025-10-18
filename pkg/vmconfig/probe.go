@@ -6,7 +6,7 @@ import (
 	"io"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
-	"linuxvm/pkg/ssh"
+	ssh "linuxvm/pkg/ssh"
 	"linuxvm/pkg/system"
 	"net/http"
 	"net/url"
@@ -85,8 +85,8 @@ func (p *unixSocketStatusProber) Probe(ctx context.Context) error {
 	defer resp.Body.Close()
 
 	// Drain response body
-	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-		logrus.Debugf("failed to drain response body: %v", err)
+	if _, err = io.Copy(io.Discard, resp.Body); err != nil {
+		logrus.Warnf("failed to drain response body: %v", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -101,7 +101,7 @@ func (p *unixSocketStatusProber) Probe(ctx context.Context) error {
 type sshProber struct {
 	baseProber
 	gvproxyCtlSocketFile string
-	sshKeyPairFile       string
+	sshPrivateKey        string
 }
 
 func (p *sshProber) Name() string {
@@ -109,24 +109,29 @@ func (p *sshProber) Name() string {
 }
 
 func (p *sshProber) Probe(ctx context.Context) error {
-	cfg := ssh.NewCfg(
+	// ssh.NewClient will connect to the SSH server and close the connection immediately
+	cfg := ssh.NewClientConfig(
 		define.DefaultGuestAddr,
+		uint16(define.DefaultGuestSSHDPort),
 		define.DefaultGuestUser,
-		define.DefaultGuestSSHDPort,
-		p.sshKeyPairFile,
-	)
+		p.sshPrivateKey).WithGVProxySocket(p.gvproxyCtlSocketFile)
 
-	if err := cfg.Connect(ctx, p.gvproxyCtlSocketFile); err != nil {
-		return fmt.Errorf("failed to connect to ssh server: %w", err)
+	client, err := ssh.NewClient(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("probe the ssh server with %s has error: %w", p.gvproxyCtlSocketFile, err)
 	}
 
-	defer cfg.CleanUp.DoClean()
+	defer func(client *ssh.Client) {
+		if err := client.Close(); err != nil {
+			logrus.Errorf("failed to close ssh client: %v", err)
+		}
+	}(client)
 
 	return nil
 }
 
 // probeUntilReady runs a continuous probe loop until the service is ready
-// or the context is cancelled. When ready, it notifies via the prober's channel.
+// or the context is canceled. When ready, it notifies via the prober's channel.
 func probeUntilReady(ctx context.Context, prober ServiceProber, interval time.Duration) {
 	if interval == 0 {
 		interval = 50 * time.Millisecond
@@ -223,7 +228,7 @@ func waiteSSHTunnelAlive(ctx context.Context, vmc *VMConfig) error {
 	prober := &sshProber{
 		baseProber:           newBaseProber(&vmc.Stage, define.ServiceGuestSSHServer),
 		gvproxyCtlSocketFile: addr.Path,
-		sshKeyPairFile:       vmc.SSHInfo.HostSSHKeyPairFile,
+		sshPrivateKey:        vmc.SSHInfo.HostSSHKeyPairFile,
 	}
 
 	probeUntilReady(ctx, prober, 0)
