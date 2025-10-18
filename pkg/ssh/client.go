@@ -1,14 +1,9 @@
-//  SPDX-FileCopyrightText: 2024-2025 OOMOL, Inc. <https://www.oomol.com>
-//  SPDX-License-Identifier: MPL-2.0
-
 package ssh
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"linuxvm/pkg/system"
 	"net"
 	"os"
 	"strings"
@@ -20,233 +15,285 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-type RunConfig struct {
-	SSHClient *ssh.Client
-	// SSH session.
-	MySession *ssh.Session
-	// Signal send when the context is canceled
-	Signal ssh.Signal
+var (
+	// ErrClientClosed is returned when operations are attempted on a closed client
+	ErrClientClosed = errors.New("SSH client is closed")
+	// ErrConnectionFailed is returned when the SSH connection cannot be established
+	ErrConnectionFailed = errors.New("failed to establish SSH connection")
+	// ErrAuthenticationFailed is returned when SSH authentication fails
+	ErrAuthenticationFailed = errors.New("SSH authentication failed")
+)
 
-	Pty bool
+// Client represents an SSH client connection with automatic resource management
+type Client struct {
+	config *ClientConfig
+	client *ssh.Client
+	conn   net.Conn
 
-	StdoutWriterFn func() error
-	StderrWriterFn func() error
-
-	// Path to command executable filename
-	Bin string
-	// Command args.
-	Args []string
-
-	Addr string
-	Port uint64
-	User string
-	Key  string
-
-	// callback
-	CleanUp system.CleanupCallback
+	// Lifecycle management
+	closeOnce sync.Once
+	closed    chan struct{}
+	mu        sync.RWMutex
 }
 
-// SetStopSignal sets the signal to send when the context is canceled.
-func (c *RunConfig) SetStopSignal(signal ssh.Signal) {
-	c.Signal = signal
-}
-
-// SetCmdLine sets the command line to execute.
-func (c *RunConfig) SetCmdLine(name string, args []string) {
-	c.Bin = name
-	c.Args = args
-}
-
-func (c *RunConfig) SetPty(pty bool) {
-	c.Pty = pty
-}
-
-func (c *RunConfig) IsPty() bool {
-	return c.Pty
-}
-
-// CmdString returns the command line string, with each parameter wrapped in ""
-func (c *RunConfig) CmdString() string {
-	args := append([]string{c.Bin}, c.Args...)
-	for i, s := range args {
-		args[i] = fmt.Sprintf("\"%s\"", s)
-	}
-	return strings.Join(args, " ")
-}
-
-func (c *RunConfig) Run(ctx context.Context) error {
-	context.AfterFunc(ctx, func() {
-		if c.MySession != nil {
-			logrus.Debugf("send signal %q to %q, cause by %v", c.Signal, c.Bin, context.Cause(ctx))
-			if err := c.MySession.Signal(c.Signal); err != nil {
-				logrus.Debugf("send signal %q to %q failed: %v", c.Signal, c.Bin, err)
-			}
-		}
-	})
-
-	var wg sync.WaitGroup
-
-	if err := c.MySession.Start(c.CmdString()); err != nil {
-		return fmt.Errorf("failed to run shell: %w", err)
+// NewClient creates a new SSH client using the provided configuration.
+// The client must be explicitly closed by calling Close() when done.
+//
+// Example:
+//
+//	cfg := ssh.NewClientConfig("192.168.127.2", "root", "/path/to/key")
+//	client, err := ssh.NewClient(ctx, cfg)
+//	if err != nil {
+//	    return err
+//	}
+//	defer client.Close()
+func NewClient(ctx context.Context, config *ClientConfig) (*Client, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
 	}
 
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		_ = c.StdoutWriterFn()
-		logrus.Debugf("StdoutWriterFn done")
-	}()
+	client := &Client{
+		config: config,
+		closed: make(chan struct{}),
+	}
 
-	go func() {
-		defer wg.Done()
-		_ = c.StderrWriterFn()
-		logrus.Debugf("StderrWriterFn done")
-	}()
+	if err := client.connect(ctx); err != nil {
+		return nil, err
+	}
 
-	wg.Wait()
-	logrus.Debugf("StderrWriterFn/StdoutWriterFn group done")
+	// Start keepalive if interval is configured
+	if config.KeepaliveInterval > 0 {
+		client.startKeepalive()
+	}
 
-	return c.MySession.Wait()
+	return client, nil
 }
 
-func (c *RunConfig) Connect(ctx context.Context, gvCtl string) error {
-	gvpConn, err := net.DialTimeout("unix", gvCtl, 2*time.Second)
+// connect establishes the SSH connection
+func (c *Client) connect(ctx context.Context) error {
+	// Read private key
+	privateKeyBytes, err := os.ReadFile(c.config.PrivateKeyPath)
 	if err != nil {
-		return fmt.Errorf("failed to connect to gvproxy control endpoint: %w", err)
+		return fmt.Errorf("failed to read private key from %q: %w", c.config.PrivateKeyPath, err)
 	}
 
-	go func() {
-		<-ctx.Done()
-		gvpConn.Close()
-	}()
+	// Parse private key
+	signer, err := ssh.ParsePrivateKey(privateKeyBytes)
+	if err != nil {
+		return fmt.Errorf("%w: failed to parse private key: %v", ErrAuthenticationFailed, err)
+	}
 
-	defer func() {
-		// Once c.SSHClient is created, calling c.SSHClient.Close will also close gvpConn.
-		// Before c.SSHClient is created, gvpConn must be closed manually.
-		if c.SSHClient == nil {
-			_ = gvpConn.Close()
-		}
-	}()
+	// Prepare SSH client configuration
+	sshConfig := &ssh.ClientConfig{
+		User: c.config.User,
+		Auth: []ssh.AuthMethod{
+			ssh.PublicKeys(signer),
+		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Note: For VM use case, this is acceptable
+		Timeout:         c.config.DialTimeout,
+	}
+	c.config.sshConfig = sshConfig
 
-	if err = transport.Tunnel(gvpConn, c.Addr, int(c.Port)); err != nil {
+	// Establish network connection
+	if err := c.dial(ctx); err != nil {
 		return err
 	}
 
-	f, err := os.ReadFile(c.Key)
+	// Establish SSH connection
+	addr := fmt.Sprintf("%s:%d", c.config.Host, c.config.Port)
+	clientConn, chans, reqs, err := ssh.NewClientConn(c.conn, addr, sshConfig)
 	if err != nil {
-		return fmt.Errorf("read ssh key failed: %w", err)
+		c.conn.Close()
+		return fmt.Errorf("%w: %v", ErrConnectionFailed, err)
 	}
 
-	signer, err := ssh.ParsePrivateKey(f)
-	if err != nil {
-		return errors.New("failed to parse private key")
-	}
-
-	conn, chans, reqs, err := ssh.NewClientConn(gvpConn, "", &ssh.ClientConfig{
-		User:            c.User,
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed to create ssh client connection: %w", err)
-	}
-
-	c.SSHClient = ssh.NewClient(conn, chans, reqs)
-	c.CleanUp.Add(func() error {
-		return c.SSHClient.Close()
-	})
-
-	c.MySession, err = c.SSHClient.NewSession()
-	if err != nil {
-		return fmt.Errorf("failed to create ssh session: %w", err)
-	}
-
-	c.CleanUp.Add(func() error {
-		_ = c.MySession.Close()
-		return nil
-	})
+	c.client = ssh.NewClient(clientConn, chans, reqs)
+	logrus.Debugf("SSH client connected to %s@%s", c.config.User, addr)
 
 	return nil
 }
 
-func (c *RunConfig) RequestPTY(ctx context.Context) (func(), error) {
-	resetFunc := func() {}
+// dial establishes the network connection (either direct or via gvproxy)
+func (c *Client) dial(ctx context.Context) error {
+	var conn net.Conn
+	var err error
 
-	if system.IsTerminal() {
-		state, err := system.MakeStdinRaw()
-		if err != nil {
-			return nil, err
-		}
-
-		system.OnTerminalResize(ctx, func(width, height int) { _ = c.MySession.WindowChange(height, width) })
-		if err = c.MySession.RequestPty(system.GetTerminalType(), 80, 80, ssh.TerminalModes{
-			ssh.ECHO:          1,
-			ssh.IUTF8:         1,
-			ssh.TTY_OP_ISPEED: 14400,
-			ssh.TTY_OP_OSPEED: 14400,
-		}); err != nil {
-			return nil, fmt.Errorf("failed to request pty: %w", err)
-		}
-		c.MySession.Stdin = os.Stdin
-		resetFunc = func() {
-			system.ResetStdin(state)
-		}
+	// Use gvproxy tunnel if configured
+	if c.config.GVProxySocketPath != "" {
+		conn, err = c.dialViaGVProxy(ctx)
+	} else {
+		conn, err = c.dialDirect(ctx)
 	}
 
-	return resetFunc, nil
-}
-
-func (c *RunConfig) WriteOutputTo(stdoutWriter, stderrWriter io.Writer) error {
-	outPipeReader, err := c.MySession.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("failed to get stdout pipe: %w", err)
-	}
-	errPipeReader, err := c.MySession.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to get stderr pipe: %w", err)
+		return fmt.Errorf("failed to establish network connection: %w", err)
 	}
 
-	c.StdoutWriterFn = func() error {
-		_, _ = io.Copy(stdoutWriter, outPipeReader)
-		return nil
-	}
-
-	c.StderrWriterFn = func() error {
-		_, _ = io.Copy(stderrWriter, errPipeReader)
-		return nil
-	}
-
-	c.MySession.Stdin = nil
-
+	c.conn = conn
 	return nil
 }
 
-func NewCfg(addr, user string, port uint64, keyFile string) *RunConfig {
-	return &RunConfig{
-		Addr:    addr,
-		User:    user,
-		Port:    port,
-		Key:     keyFile,
-		Signal:  ssh.SIGKILL,
-		CleanUp: system.CleanUp(),
+// dialDirect creates a direct TCP connection
+func (c *Client) dialDirect(ctx context.Context) (net.Conn, error) {
+	addr := fmt.Sprintf("%s:%d", c.config.Host, c.config.Port)
+
+	dialer := &net.Dialer{
+		Timeout: c.config.DialTimeout,
 	}
+
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial %s: %w", addr, err)
+	}
+
+	return conn, nil
 }
 
-func StartKeepAlive(ctx context.Context, conn *ssh.Client) {
-	ticker := time.NewTicker(10 * time.Second)
+// dialViaGVProxy creates a connection tunneled through gvproxy
+func (c *Client) dialViaGVProxy(ctx context.Context) (net.Conn, error) {
+	// Connect to gvproxy control socket
+	conn, err := net.DialTimeout("unix", c.config.GVProxySocketPath, c.config.DialTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to gvproxy at %q: %w", c.config.GVProxySocketPath, err)
+	}
+
+	// Establish tunnel
+	if err := transport.Tunnel(conn, c.config.Host, int(c.config.Port)); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to create gvproxy tunnel: %w", err)
+	}
+
+	logrus.Debugf("Established gvproxy tunnel to %s:%d", c.config.Host, c.config.Port)
+	return conn, nil
+}
+
+// NewSession creates a new SSH session from this client.
+// The session must be explicitly closed by calling Close() when done.
+//
+// Example:
+//
+//	session, err := client.NewSession(ctx)
+//	if err != nil {
+//	    return err
+//	}
+//	defer session.Close()
+func (c *Client) NewSession(ctx context.Context) (*Session, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.isClosed() {
+		return nil, ErrClientClosed
+	}
+
+	sshSession, err := c.client.NewSession()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SSH session: %w", err)
+	}
+
+	return &Session{
+		session: sshSession,
+		client:  c,
+		closed:  make(chan struct{}),
+	}, nil
+}
+
+// startKeepalive starts sending periodic keepalive messages
+func (c *Client) startKeepalive() {
+	go c.keepaliveLoop()
+}
+
+// keepaliveLoop sends periodic keepalive messages, when client closed, it will return immediately
+func (c *Client) keepaliveLoop() {
+	ticker := time.NewTicker(c.config.KeepaliveInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-ctx.Done():
-			logrus.Debugf("stop sending keepalive signal to ssh")
+		case <-c.closed:
 			return
 		case <-ticker.C:
-			if _, _, err := conn.SendRequest("keepalive@openssh.com", true, nil); err != nil {
-				logrus.Debugf("failed to send keepalive: %v", err)
+			/*
+				  时间线:
+				  -----------------------------------------------------------------
+				  T1: keepalive goroutine            | T2: Close() goroutine
+				  -----------------------------------------------------------------
+				  检查: if c.client == nil            |
+				  结果: false (c.client 还有值)     	 |
+				                                     | c.mu.Lock()
+				                                     | c.client = nil
+				                                     | c.mu.Unlock()
+				  使用: c.client.SendRequest(...)     |
+						   PANIC: nil pointer!       |
+				  -----------------------------------------------------------------
+			*/
+			c.mu.RLock()
+			client := c.client
+			c.mu.RUnlock()
+
+			if client == nil {
+				return
 			}
-			continue
+
+			// Send keepalive request
+			_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+			if err != nil {
+				logrus.Debugf("Keepalive failed: %v", err)
+				return
+			}
 		}
 	}
+}
+
+func isErrorIsConnectionAlreadyClosed(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "use of closed network connection") ||
+		strings.Contains(err.Error(), "connection already closed")
+}
+
+// Close closes the SSH client and releases all resources.
+func (c *Client) Close() error {
+	c.closeOnce.Do(func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+
+		// Signal closure
+		close(c.closed)
+
+		// Close SSH client (this also closes the underlying connection)
+		if c.client != nil {
+			if err := c.client.Close(); err != nil {
+				logrus.Errorf("failed to close SSH client: %v", err)
+			}
+			c.client = nil
+		}
+
+		// Close connection if it wasn't already closed by client.Close()
+		if c.conn != nil {
+			if err := c.conn.Close(); err != nil && !isErrorIsConnectionAlreadyClosed(err) {
+				logrus.Errorf("failed to close connection: %v", err)
+			}
+			c.conn = nil
+		}
+
+		logrus.Debug("SSH client closed")
+	})
+
+	return nil
+}
+
+// isClosed returns true if the client has been closed
+func (c *Client) isClosed() bool {
+	select {
+	case <-c.closed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Wait blocks until the client connection is closed
+func (c *Client) Wait() {
+	<-c.closed
 }

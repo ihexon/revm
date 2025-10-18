@@ -14,4 +14,3 @@ install_name_tool -id @@HOMEBREW_PREFIX@@/opt/virglrenderer/lib/libvirglrenderer
 
 install_name_tool -change @@HOMEBREW_PREFIX@@/opt/molten-vk-krunkit/lib/libMoltenVK.dylib libMoltenVK.dylib
 install_name_tool -change @@HOMEBREW_PREFIX@@/opt/molten-vk-krunkit/lib/libMoltenVK.dylib libMoltenVK.dylib
-

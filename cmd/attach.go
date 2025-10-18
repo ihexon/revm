@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/urfave/cli/v3"
+	gossh "golang.org/x/crypto/ssh"
 )
 
 var AttachConsole = cli.Command{
@@ -30,63 +31,90 @@ var AttachConsole = cli.Command{
 	},
 }
 
-func attachConsole(ctx context.Context, command *cli.Command) error {
+func attachConsole(ctx context.Context, command *cli.Command) (err error) {
+	// Parse and validate arguments
 	rootfs := command.Args().First()
 	if rootfs == "" {
 		return fmt.Errorf("no rootfs specified, please provide the rootfs path, e.g. %s /path/to/rootfs", command.Name)
-	}
-
-	vmc, err := define.LoadVMCFromFile(filepath.Join(rootfs, define.VMConfigFile))
-	if err != nil {
-		return err
-	}
-
-	endpoint, err := url.Parse(vmc.GVproxyEndpoint)
-	if err != nil {
-		return fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
 	}
 
 	if command.Args().Len() < 2 {
 		return fmt.Errorf("no cmdline specified, please provide the cmdline, e.g. %s /path/to/rootfs /bin/bash", command.Name)
 	}
 
+	// Load VM configuration
+	vmc, err := define.LoadVMCFromFile(filepath.Join(rootfs, define.VMConfigFile))
+	if err != nil {
+		return err
+	}
+
+	// Extract command line arguments
 	cmdline := command.Args().Tail()
 
-	// First we maka a ssh client configure, remember it just a configure store the information the ssh client actually needed
-	cfg := ssh.NewCfg(define.DefaultGuestAddr, define.DefaultGuestUser, define.DefaultGuestSSHDPort, vmc.SSHInfo.HostSSHKeyPairFile)
-	defer cfg.CleanUp.CleanIfErr(&err)
-
-	// Set the cmdline
-	cfg.SetCmdLine(cmdline[0], cmdline[1:])
-
-	if command.Bool(define.FlagPTY) {
-		cfg.SetPty(true)
+	// Parse gvproxy endpoint
+	endpoint, err := url.Parse(vmc.GVproxyEndpoint)
+	if err != nil {
+		return fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
 	}
 
-	// Connect to the ssh server over gvproxy vsock, we use the gvproxy endpoint to connect to the ssh server
-	if err = cfg.Connect(ctx, endpoint.Path); err != nil {
+	// Configure SSH client
+	clientCfg := ssh.NewClientConfig(
+		define.DefaultGuestAddr,
+		uint16(define.DefaultGuestSSHDPort),
+		define.DefaultGuestUser,
+		vmc.SSHInfo.HostSSHKeyPairFile,
+	).WithGVProxySocket(endpoint.Path)
+
+	// Create SSH client
+	client, err := ssh.NewClient(ctx, clientCfg)
+	if err != nil {
 		return fmt.Errorf("failed to connect to %s: %w", endpoint.Path, err)
 	}
+	defer client.Close()
 
-	keepAliveCtx, keepAliveCancel := context.WithCancel(ctx)
-	defer keepAliveCancel()
-	go func() {
-		ssh.StartKeepAlive(keepAliveCtx, cfg.SSHClient)
-	}()
-
-	// make stdout/stderr pipe, so we can get the output of the cmdline in realtime
-	if err = cfg.WriteOutputTo(os.Stdout, os.Stderr); err != nil {
-		return fmt.Errorf("failed to make std pipe: %w", err)
+	// Create session
+	session, err := client.NewSession(ctx)
+	if err != nil {
+		return err
 	}
+	defer session.Close()
 
-	// if enable pty, we need to request a pty
-	if cfg.IsPty() {
-		resetFunc, err := cfg.RequestPTY(ctx)
-		if err != nil {
+	// Check if PTY mode is enabled
+	enablePTY := command.Bool(define.FlagPTY)
+
+	if enablePTY {
+		// PTY mode: directly assign I/O streams, then request PTY
+		if err := session.SetStdin(os.Stdin); err != nil {
+			return err
+		}
+		if err := session.SetStdout(os.Stdout); err != nil {
+			return fmt.Errorf("failed to setup stdout: %w", err)
+		}
+		if err := session.SetStderr(os.Stderr); err != nil {
+			return fmt.Errorf("failed to setup stderr: %w", err)
+		}
+
+		if err := session.RequestPTY(ctx, "", 0, 0); err != nil {
 			return fmt.Errorf("failed to request pty: %w", err)
 		}
-		defer resetFunc()
+	} else {
+		// Non-PTY mode: use pipes with async I/O copying
+		if err := session.SetupPipes(nil, os.Stdout, os.Stderr); err != nil {
+			return fmt.Errorf("failed to setup pipes: %w", err)
+		}
 	}
 
-	return cfg.Run(ctx)
+	// Set up context cancellation to send SIGTERM
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	go func() {
+		<-runCtx.Done()
+		if ctx.Err() != nil {
+			_ = session.Signal(gossh.SIGTERM)
+		}
+	}()
+
+	// Execute command
+	return session.Run(ctx, cmdline...)
 }

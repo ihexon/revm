@@ -7,7 +7,9 @@ require (
 	github.com/charmbracelet/keygen v0.5.4-0.20250811135526-3a78fe71a39a
 	github.com/crc-org/vfkit v0.6.2-0.20250929125513-88ab5cdcf444
 	github.com/gofrs/flock v0.12.1
+	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.6.0
+	github.com/mattn/go-isatty v0.0.20
 	github.com/oomol-lab/sysproxy v0.0.0-20250609040630-bacc3356fc00
 	github.com/pkg/errors v0.9.1
 	github.com/shirou/gopsutil/v4 v4.25.8
@@ -21,6 +23,7 @@ require (
 )
 
 require (
+	al.essio.dev/pkg/shellescape v1.6.1-0.20250626071713-b09271781b1a // indirect
 	github.com/Code-Hex/go-infinity-channel v1.0.0 // indirect
 	github.com/containers/common v0.64.2 // indirect
 	github.com/ebitengine/purego v0.8.4 // indirect

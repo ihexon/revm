@@ -27,6 +27,8 @@ func showVersionAndOSInfo() error {
 		version.WriteString("unknown")
 	}
 
+	version.WriteString("-")
+
 	if define.CommitID != "" {
 		version.WriteString(define.CommitID)
 	} else {
