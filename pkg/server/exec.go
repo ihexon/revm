@@ -11,10 +11,12 @@ import (
 	"linuxvm/pkg/ssh"
 	"linuxvm/pkg/vmconfig"
 	"net/http"
+	"net/url"
 	"sync"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
+	gossh "golang.org/x/crypto/ssh"
 )
 
 type execAction struct {
@@ -23,63 +25,76 @@ type execAction struct {
 	Env  []string `json:"env,omitempty"`
 }
 
-type ExecProcess struct {
-	outPipeReader io.Reader
-	errPipeReader io.Reader
-	exitChan      chan error
+type ProcessStatusWrapper struct {
+	StdoutPipeReader *io.PipeReader
+	StderrPipeReader *io.PipeReader
+	errChan          chan error
 }
 
-func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...string) (*ExecProcess, error) {
-	process := &ExecProcess{
-		exitChan: make(chan error, 1),
-	}
-
+func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...string) (*ProcessStatusWrapper, error) {
 	addr, err := network.ParseUnixAddr(vmc.GVproxyEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
 	}
 
-	cfg := ssh.NewCfg(define.DefaultGuestAddr, define.DefaultGuestUser, define.DefaultGuestSSHDPort, vmc.SSHInfo.HostSSHKeyPairFile)
-	defer cfg.CleanUp.CleanIfErr(&err)
-
-	cfg.SetPty(false)
-	cfg.SetCmdLine(bin, args)
-
-	if err = cfg.Connect(ctx, addr.Path); err != nil {
-		return nil, fmt.Errorf("failed to connect to gvproxy: %w", err)
+	// Parse gvproxy endpoint
+	endpoint, err := url.Parse(vmc.GVproxyEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
 	}
 
-	keepAliveCtx, keepAliveCancel := context.WithCancel(ctx)
-	defer keepAliveCancel()
-	go func() {
-		ssh.StartKeepAlive(keepAliveCtx, cfg.SSHClient)
-	}()
+	// Configure SSH client
+	cfg := ssh.NewClientConfig(
+		define.DefaultGuestAddr,
+		uint16(define.DefaultGuestSSHDPort),
+		define.DefaultGuestUser,
+		vmc.SSHInfo.HostSSHKeyPairFile,
+	).WithGVProxySocket(endpoint.Path)
+
+	client, err := ssh.NewClient(ctx, cfg)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to %s: %w", addr.Path, err)
+	}
 
 	// remember to close the writer when the process exits
 	stdOutReader, stdoutWriter := io.Pipe()
 	stderrOutReader, stderrWriter := io.Pipe()
-
-	cleanFunc := func() {
-		_ = stdoutWriter.Close()
-		_ = stderrWriter.Close()
-	}
-
-	if err = cfg.WriteOutputTo(stdoutWriter, stderrWriter); err != nil {
-		return nil, fmt.Errorf("failed to make std pipe: %w", err)
-	}
-
-	process.outPipeReader = stdOutReader
-	process.errPipeReader = stderrOutReader
+	errChan := make(chan error, 1)
 
 	go func() {
-		err := cfg.Run(ctx)
-		logrus.Debugf("process exit with %v", err)
-		defer cfg.CleanUp.CleanIfErr(&err)
-		defer cleanFunc()
-		process.exitChan <- err
+		defer func(client *ssh.Client) {
+			if err := client.Close(); err != nil {
+				logrus.Errorf("failed to close client: %v", err)
+			}
+		}(client)
+
+		defer func() {
+			close(errChan)
+			if err := stdoutWriter.Close(); err != nil {
+				logrus.Errorf("failed to close stdoutWriter: %v", err)
+			}
+			if err := stderrWriter.Close(); err != nil {
+				logrus.Errorf("failed to close stderrWriter: %v", err)
+			}
+		}()
+
+		cmdSlice := append([]string{bin}, args...)
+		errChan <- ssh.NewExecutor(client).Exec(ctx, &ssh.ExecOptions{
+			Stdout:       stdoutWriter,
+			Stderr:       stderrWriter,
+			EnablePTY:    false,
+			CancelSignal: gossh.SIGKILL,
+		}, cmdSlice...)
 	}()
 
-	return process, nil
+	procStat := &ProcessStatusWrapper{
+		StdoutPipeReader: stdOutReader,
+		StderrPipeReader: stderrOutReader,
+		errChan:          errChan,
+	}
+
+	return procStat, nil
 }
 
 func (s *Server) doExec(w http.ResponseWriter, r *http.Request) {
@@ -103,11 +118,6 @@ func (s *Server) doExec(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	go func() {
-		var (
-			process *ExecProcess
-			err     error
-		)
-
 		defer cancel()
 
 		topic, ok := ctx.Value(topicKey).(string)
@@ -116,7 +126,7 @@ func (s *Server) doExec(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		process, err = GuestExec(ctx, s.Vmc, action.Bin, action.Args...)
+		procStat, err := GuestExec(ctx, s.Vmc, action.Bin, action.Args...)
 		if err != nil {
 			createSSEMsgAndPublish(TypeErr, "guest exec failed: "+err.Error(), sseServer, topic)
 			return
@@ -127,7 +137,7 @@ func (s *Server) doExec(w http.ResponseWriter, r *http.Request) {
 
 		go func() {
 			defer wg.Done()
-			sc := bufio.NewScanner(process.outPipeReader)
+			sc := bufio.NewScanner(procStat.StdoutPipeReader)
 			sc.Buffer(make([]byte, 64*1024), 1<<20) // 1MB
 			for sc.Scan() {
 				createSSEMsgAndPublish(TypeOut, sc.Text(), sseServer, topic)
@@ -137,7 +147,7 @@ func (s *Server) doExec(w http.ResponseWriter, r *http.Request) {
 
 		go func() {
 			defer wg.Done()
-			sc := bufio.NewScanner(process.errPipeReader)
+			sc := bufio.NewScanner(procStat.StderrPipeReader)
 			sc.Buffer(make([]byte, 64*1024), 1<<20) // 1MB
 			for sc.Scan() {
 				createSSEMsgAndPublish(TypeErr, sc.Text(), sseServer, topic)
@@ -148,8 +158,7 @@ func (s *Server) doExec(w http.ResponseWriter, r *http.Request) {
 		wg.Wait()
 		logrus.Debugf("read process.outPipeReader/process.errPipeReader line by line group done")
 
-		if err = <-process.exitChan; err != nil {
-			logrus.Debugf("process exit with %v", err)
+		if err = <-procStat.errChan; err != nil {
 			createSSEMsgAndPublish(TypeErr, "wait: "+err.Error(), sseServer, topic)
 			return
 		}

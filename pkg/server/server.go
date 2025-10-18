@@ -23,6 +23,17 @@ const (
 	IgnServerMode
 )
 
+func (t serverMode) String() string {
+	switch t {
+	case RestAPIMode:
+		return "RestAPI"
+	case IgnServerMode:
+		return "Ignition"
+	default:
+		return "Unknown"
+	}
+}
+
 type Server struct {
 	ServerMode serverMode
 	Vmc        *vmconfig.VMConfig
@@ -114,7 +125,7 @@ func (s *Server) Start(ctx context.Context) error {
 	errChan := make(chan error, 1)
 
 	go func() {
-		logrus.Infof("start revm RESTAPI server on %q", ln.Addr().String())
+		logrus.Infof("start %s server on %q", s.ServerMode.String(), ln.Addr().String())
 		if err = s.Server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errChan <- err
 		}

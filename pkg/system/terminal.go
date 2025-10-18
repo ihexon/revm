@@ -1,3 +1,5 @@
+//go:build !windows
+
 package system
 
 import (
@@ -7,62 +9,93 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/sirupsen/logrus"
+	"github.com/mattn/go-isatty"
 	"golang.org/x/term"
 )
 
-type StdinState struct {
-	State *term.State
+var isTerminal bool = isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd())
+
+type stdinState struct {
+	PreviousState *term.State
 }
 
-func MakeStdinRaw() (*StdinState, error) {
-	state, err := term.MakeRaw(int(os.Stdin.Fd()))
+func makeStdinRaw() (*stdinState, error) {
+	previousState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
 		return nil, fmt.Errorf("terminal make raw failed: %v", err)
 	}
-	return &StdinState{state}, nil
+	return &stdinState{previousState}, nil
 }
 
-func ResetStdin(s *StdinState) {
-	if s.State != nil {
-		_ = term.Restore(int(os.Stdin.Fd()), s.State)
-		s.State = nil
+func resetStdin(s *stdinState) {
+	if s.PreviousState != nil {
+		_ = term.Restore(int(os.Stdin.Fd()), s.PreviousState)
+		s.PreviousState = nil
 	}
 }
 
-func OnTerminalResize(ctx context.Context, setTerminalSize func(int, int)) {
+func getTerminalSize() (int, int, error) {
+	width, height, err := term.GetSize(int(os.Stdin.Fd()))
+	if err != nil {
+		return 0, 0, err
+	}
+	return width, height, nil
+}
+
+func OnTerminalResize(setTerminalSize func(), ctx context.Context) {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGWINCH)
-
-	if width, height, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
-		setTerminalSize(width, height)
-	}
-
-	go func() {
+	go func(ctx context.Context) {
 		defer signal.Stop(ch)
 		for {
 			select {
 			case <-ctx.Done():
-				logrus.Debugf("terminal resize context done")
 				return
 			case <-ch:
-				if width, height, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
-					setTerminalSize(width, height)
-				}
+				setTerminalSize()
 			}
 		}
-	}()
+	}(ctx)
+
+	ch <- syscall.SIGWINCH
 }
 
+// TerminalState wraps the terminal state for restoration
+type TerminalState struct {
+	state *stdinState
+}
+
+// MakeStdinRaw puts stdin into raw mode and returns state for restoration
+func MakeStdinRaw() (*TerminalState, error) {
+	state, err := makeStdinRaw()
+	if err != nil {
+		return nil, err
+	}
+	return &TerminalState{state: state}, nil
+}
+
+// ResetStdin restores stdin to its original state
+func ResetStdin(s *TerminalState) {
+	if s != nil && s.state != nil {
+		resetStdin(s.state)
+	}
+}
+
+// GetTerminalSize returns the current terminal dimensions
+func GetTerminalSize() (width, height int, err error) {
+	return getTerminalSize()
+}
+
+// IsTerminal returns true if stdin is a terminal
 func IsTerminal() bool {
-	return term.IsTerminal(int(os.Stdin.Fd()))
+	return isTerminal
 }
 
+// GetTerminalType returns the TERM environment variable or a default
 func GetTerminalType() string {
 	termEnv := os.Getenv("TERM")
 	if termEnv == "" {
 		termEnv = "xterm-256color"
 	}
-
 	return termEnv
 }
