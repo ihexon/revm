@@ -10,7 +10,7 @@ readonly GREEN="\033[32m"
 readonly RESET="\033[0m"
 
 readonly ROOTFS_LINUX_ARM64_URL="https://github.com/ihexon/revm-assets/releases/download/v1.0/rootfs-linux-arm64.tar.zst"
-readonly LIBKRUN_DARWIN_ARM64_URL="https://github.com/ihexon/revm-assets/releases/download/v1.0/libkrun-darwin-arm64.tar.zst"
+readonly LIBKRUN_DARWIN_ARM64_URL="https://github.com/ihexon/revm-assets/releases/download/v1.0.1/libkrun-darwin-arm64.tar.zst"
 readonly LIBEXEC_DARWIN_ARM64_URL="https://github.com/ihexon/revm-assets/releases/download/v1.0/libexec-darwin-arm64.tar.zst"
 readonly MIN_MACOS_VERSION="13.1"
 
