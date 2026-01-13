@@ -4,7 +4,7 @@ package libkrun
 
 /*
 #cgo CFLAGS: -I ../../include
-#cgo LDFLAGS: -L ../../out/lib/ -lkrun.1.15.1 -lkrunfw.4
+#cgo LDFLAGS: -L ../../out/lib/ -lkrun.1.17.0 -lkrunfw.5
 #include <libkrun.h>
 #include <stdlib.h>
 */
@@ -254,6 +254,12 @@ func (vm *LibkrunVM) Create(ctx context.Context) error {
 		return fmt.Errorf("cannot create VM in state %s (must be in 'new' state)", vm.state)
 	}
 
+	// Initialize libkrun logging BEFORE creating context
+	// This MUST be called before krun_create_ctx()
+	if err := initLogging(); err != nil {
+		return fmt.Errorf("failed to initialize logging: %w", err)
+	}
+
 	// Create libkrun context
 	ctxID := C.krun_create_ctx()
 	if ctxID < 0 {
@@ -261,11 +267,6 @@ func (vm *LibkrunVM) Create(ctx context.Context) error {
 	}
 	vm.ctxID = uint32(ctxID)
 	logrus.Infof("created libkrun context with ID: %d", vm.ctxID)
-
-	// Configure libkrun logging to match our log level
-	if err := vm.setLogLevel(); err != nil {
-		return fmt.Errorf("failed to configure log level: %w", err)
-	}
 
 	// Apply all VM configurations
 	if err := vm.configureVM(ctx); err != nil {
@@ -293,6 +294,11 @@ func (vm *LibkrunVM) configureVM(ctx context.Context) error {
 	// Set GPU options
 	if err := vm.setGPU(); err != nil {
 		return fmt.Errorf("failed to set GPU: %w", err)
+	}
+
+	// Configure explicit console (disable implicit and add our own)
+	if err := vm.setConsole(); err != nil {
+		return fmt.Errorf("failed to set console: %w", err)
 	}
 
 	// Set resource limits
@@ -328,27 +334,44 @@ func (vm *LibkrunVM) configureVM(ctx context.Context) error {
 	return nil
 }
 
-// setLogLevel configures libkrun's internal logging level based on logrus.
-func (vm *LibkrunVM) setLogLevel() error {
+// initLogging initializes libkrun's logging subsystem.
+// IMPORTANT: This MUST be called BEFORE krun_create_ctx().
+// Do NOT call krun_set_log_level() if using this function - they conflict.
+func initLogging() error {
 	var level C.uint32_t
 
 	// Map logrus levels to libkrun levels
 	switch logrus.GetLevel() {
-	case logrus.TraceLevel, logrus.DebugLevel:
-	case logrus.WarnLevel:
+	case logrus.TraceLevel:
+		level = C.KRUN_LOG_LEVEL_TRACE
+	case logrus.DebugLevel:
+		level = C.KRUN_LOG_LEVEL_DEBUG
 	case logrus.InfoLevel:
-	case logrus.ErrorLevel, logrus.FatalLevel, logrus.PanicLevel:
 		level = C.KRUN_LOG_LEVEL_INFO
+	case logrus.WarnLevel:
+		level = C.KRUN_LOG_LEVEL_WARN
+	case logrus.ErrorLevel, logrus.FatalLevel, logrus.PanicLevel:
+		level = C.KRUN_LOG_LEVEL_ERROR
 	default:
 		level = C.KRUN_LOG_LEVEL_INFO
 	}
 
-	ret := C.krun_set_log_level(level)
+	// Use krun_init_log with:
+	// - KRUN_LOG_TARGET_DEFAULT (-1): write to stderr
+	// - level: the log level we determined above
+	// - KRUN_LOG_STYLE_AUTO: auto-detect terminal color support
+	// - KRUN_LOG_OPTION_NO_ENV: don't allow env vars to override these settings
+	ret := C.krun_init_log(
+		C.KRUN_LOG_TARGET_DEFAULT,
+		level,
+		C.KRUN_LOG_STYLE_AUTO,
+		C.KRUN_LOG_OPTION_NO_ENV,
+	)
 	if ret != 0 {
-		return fmt.Errorf("krun_set_log_level failed with code %d", ret)
+		return fmt.Errorf("krun_init_log failed with code %d", ret)
 	}
 
-	logrus.Debugf("configured libkrun log level to %d", level)
+	logrus.Debugf("initialized libkrun logging with level %d", level)
 	return nil
 }
 
@@ -404,6 +427,37 @@ func (vm *LibkrunVM) setGPU() error {
 	return nil
 }
 
+// setConsole configures explicit console for the VM.
+// This disables the implicit console and adds an explicit virtio-console
+// connected to the host's stdin/stdout/stderr.
+func (vm *LibkrunVM) setConsole() error {
+	// First, disable the implicit console so we have full control
+	ret := C.krun_disable_implicit_console(C.uint32_t(vm.ctxID))
+	if ret != 0 {
+		return fmt.Errorf("krun_disable_implicit_console failed with code %d", ret)
+	}
+	logrus.Debug("disabled implicit console")
+
+	// Add explicit virtio-console connected to host stdin/stdout/stderr
+	// This creates a multi-port console that:
+	// - Uses stdin for input to the guest
+	// - Uses stdout for output from the guest
+	// - Uses stderr for error output from the guest
+	ret = C.krun_add_virtio_console_default(
+		C.uint32_t(vm.ctxID),
+		C.int(os.Stdin.Fd()),
+		C.int(os.Stdout.Fd()),
+		C.int(os.Stderr.Fd()),
+	)
+	if ret != 0 {
+		return fmt.Errorf("krun_add_virtio_console_default failed with code %d", ret)
+	}
+
+	logrus.Debugf("added explicit virtio-console (stdin=%d, stdout=%d, stderr=%d)",
+		os.Stdin.Fd(), os.Stdout.Fd(), os.Stderr.Fd())
+	return nil
+}
+
 // setResourceLimits configures resource limits for processes inside the VM.
 func (vm *LibkrunVM) setResourceLimits() error {
 	// Format: "RLIMIT_TYPE=SOFT:HARD"
@@ -428,7 +482,13 @@ func (vm *LibkrunVM) setResourceLimits() error {
 	return nil
 }
 
+// Fixed MAC address for the guest VM network interface
+// This MUST match the DHCP static lease in pkg/gvproxy/config.yaml
+// to ensure the guest gets the expected IP (192.168.127.2)
+var guestMACAddress = [6]C.uint8_t{0x5a, 0x94, 0xef, 0xe4, 0x0c, 0xee}
+
 // setNetworkProvider configures the network backend (gvproxy) for the VM.
+// Uses the new krun_add_net_unixgram API for explicit network device configuration.
 func (vm *LibkrunVM) setNetworkProvider() error {
 	backend := vm.config.NetworkStackBackend
 	addr, err := network.ParseUnixAddr(backend)
@@ -439,10 +499,28 @@ func (vm *LibkrunVM) setNetworkProvider() error {
 	socketPath := newCString(addr.Path)
 	defer socketPath.Free()
 
-	logrus.Infof("configuring network backend: %q", addr.Path)
-	ret := C.krun_set_gvproxy_path(C.uint32_t(vm.ctxID), socketPath.Ptr())
+	// Create a copy of the MAC address for the C call
+	mac := guestMACAddress
+
+	logrus.Infof("adding virtio-net device (unixgram): socket=%q, mac=%02x:%02x:%02x:%02x:%02x:%02x",
+		addr.Path, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
+
+	// Use krun_add_net_unixgram with:
+	// - socketPath: path to gvproxy unix socket
+	// - fd=-1: we're using socket path, not file descriptor
+	// - mac: the guest's MAC address
+	// - COMPAT_NET_FEATURES: standard network features for compatibility
+	// - NET_FLAG_VFKIT: send VFKIT magic after connection (required by gvproxy in vfkit mode)
+	ret := C.krun_add_net_unixgram(
+		C.uint32_t(vm.ctxID),
+		socketPath.Ptr(),
+		C.int(-1),
+		&mac[0],
+		C.COMPAT_NET_FEATURES,
+		C.NET_FLAG_VFKIT,
+	)
 	if ret != 0 {
-		return fmt.Errorf("krun_set_gvproxy_path failed with code %d", ret)
+		return fmt.Errorf("krun_add_net_unixgram failed with code %d", ret)
 	}
 
 	return nil
@@ -593,7 +671,27 @@ func (vm *LibkrunVM) configureNestedVirt(ctx context.Context) error {
 
 // addVSockListener configures VSock communication between host and guest.
 // VSock is used for the ignition provisioner and other host-guest communication.
+// This uses explicit VSock configuration (disables implicit vsock, then adds our own).
 func (vm *LibkrunVM) addVSockListener(ctx context.Context) error {
+	// First, disable implicit vsock to have full control
+	ret := C.krun_disable_implicit_vsock(C.uint32_t(vm.ctxID))
+	if ret != 0 {
+		return fmt.Errorf("krun_disable_implicit_vsock failed with code %d", ret)
+	}
+	logrus.Debug("disabled implicit vsock")
+
+	// Add explicit vsock device without TSI hijacking
+	// TSI features:
+	// - 0: No socket hijacking (explicit port mappings only)
+	// - KRUN_TSI_HIJACK_INET: Hijack INET sockets
+	// - KRUN_TSI_HIJACK_UNIX: Hijack UNIX sockets
+	ret = C.krun_add_vsock(C.uint32_t(vm.ctxID), 0)
+	if ret != 0 {
+		return fmt.Errorf("krun_add_vsock failed with code %d", ret)
+	}
+	logrus.Debug("added explicit vsock device (no TSI hijacking)")
+
+	// Add the ignition provisioner port mapping
 	ignAddr := vm.config.IgnProvisionerAddr
 	addr, err := network.ParseUnixAddr(ignAddr)
 	if err != nil {
@@ -604,13 +702,13 @@ func (vm *LibkrunVM) addVSockListener(ctx context.Context) error {
 	defer socketPath.Free()
 
 	vsockPort := uint32(define.DefaultVSockPort)
-	logrus.Debugf("configuring VSock listener: port=%d, unix_socket=%q", vsockPort, addr.Path)
+	logrus.Debugf("adding VSock port mapping: port=%d → unix_socket=%q", vsockPort, addr.Path)
 
-	ret := C.krun_add_vsock_port2(
+	ret = C.krun_add_vsock_port2(
 		C.uint32_t(vm.ctxID),
 		C.uint32_t(vsockPort),
 		socketPath.Ptr(),
-		false, // true if guest expects connections to be initiated from host
+		false, // false: guest initiates connection to host
 	)
 	if ret != 0 {
 		return fmt.Errorf("krun_add_vsock_port2 failed with code %d", ret)

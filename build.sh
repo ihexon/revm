@@ -10,7 +10,7 @@ readonly GREEN="\033[32m"
 readonly RESET="\033[0m"
 
 readonly ROOTFS_LINUX_ARM64_URL="https://github.com/ihexon/revm-assets/releases/download/v1.0/rootfs-linux-arm64.tar.zst"
-readonly LIBKRUN_DARWIN_ARM64_URL="https://github.com/ihexon/revm-assets/releases/download/v1.0.1/libkrun-darwin-arm64.tar.zst"
+readonly LIBKRUN_DARWIN_ARM64_URL="https://github.com/ihexon/revm-assets/releases/download/v1.1.0/libkrun-darwin-arm64.tar.zst"
 readonly LIBEXEC_DARWIN_ARM64_URL="https://github.com/ihexon/revm-assets/releases/download/v1.0/libexec-darwin-arm64.tar.zst"
 readonly MIN_MACOS_VERSION="13.1"
 
@@ -159,7 +159,7 @@ check_dependencies() {
 download_libkrun() {
 	local tarball="/tmp/$(basename "$LIBKRUN_DARWIN_ARM64_URL")"
 	local dest="$OUTDIR/lib"
-	ensure_dir $dest
+	ensure_dir "$dest"
 
 	if ! wget -c -q --show-progress --output-document="$tarball" "$LIBKRUN_DARWIN_ARM64_URL"; then
 		log_err "Failed to download libkrun from $LIBKRUN_DARWIN_ARM64_URL"
@@ -169,7 +169,6 @@ download_libkrun() {
 		log_err "Failed to extract libkrun"
 	fi
 	log_info "$tarball downloaded and extracted successfully"
-
 }
 
 # Copies Darwin-specific tools to output directory
