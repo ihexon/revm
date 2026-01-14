@@ -204,6 +204,7 @@ func MountVirtiofs(ctx context.Context, vmc *define.VMConfig) error {
 func MountBlockDevices(ctx context.Context, vmc *define.VMConfig) error {
 	for _, dataDiskMnt := range vmc.BlkDevs {
 		mnt := &Mnt{
+			Opts:   "rw,discard",
 			UUID:   dataDiskMnt.UUID,
 			Type:   dataDiskMnt.FsType,
 			Target: dataDiskMnt.MountTo,

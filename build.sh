@@ -10,7 +10,7 @@ readonly GREEN="\033[32m"
 readonly RESET="\033[0m"
 
 readonly ROOTFS_LINUX_ARM64_URL="https://github.com/ihexon/revm-assets/releases/download/v1.0/rootfs-linux-arm64.tar.zst"
-readonly LIBKRUN_DARWIN_ARM64_URL="https://github.com/ihexon/revm-assets/releases/download/v1.0.1/libkrun-darwin-arm64.tar.zst"
+readonly LIBKRUN_DARWIN_ARM64_URL="https://github.com/ihexon/revm-assets/releases/download/v1.1.0/libkrun-darwin-arm64.tar.zst"
 readonly LIBEXEC_DARWIN_ARM64_URL="https://github.com/ihexon/revm-assets/releases/download/v1.0/libexec-darwin-arm64.tar.zst"
 readonly MIN_MACOS_VERSION="13.1"
 
@@ -159,24 +159,23 @@ check_dependencies() {
 download_libkrun() {
 	local tarball="/tmp/$(basename "$LIBKRUN_DARWIN_ARM64_URL")"
 	local dest="$OUTDIR/lib"
-	ensure_dir $dest
+	ensure_dir "$dest"
 
 	if ! wget -c -q --show-progress --output-document="$tarball" "$LIBKRUN_DARWIN_ARM64_URL"; then
 		log_err "Failed to download libkrun from $LIBKRUN_DARWIN_ARM64_URL"
 	fi
 
-	if ! tar --strip-components=1 -xf "$tarball" -C "$dest"; then
+	if ! tar --strip-components=0 -xf "$tarball" -C "$dest"; then
 		log_err "Failed to extract libkrun"
 	fi
 	log_info "$tarball downloaded and extracted successfully"
-
 }
 
 # Copies Darwin-specific tools to output directory
 download_darwin_tools() {
 	local tarball="/tmp/$(basename "$LIBEXEC_DARWIN_ARM64_URL")"
 	local dest="$OUTDIR/libexec"
-	ensure_dir $dest
+	ensure_dir "$dest"
 
 	if ! wget -c -q --show-progress --output-document="$tarball" "$LIBEXEC_DARWIN_ARM64_URL"; then
 		log_err "Failed to download libexec from $LIBEXEC_DARWIN_ARM64_URL"
@@ -186,7 +185,6 @@ download_darwin_tools() {
 		log_err "Failed to extract libexec"
 	fi
 	log_info "$tarball downloaded and extracted successfully"
-
 }
 
 # Downloads and extracts the built-in rootfs
@@ -254,7 +252,7 @@ build_guest_agent() {
 	log_info "Building guest agent (${target_os}/${target_arch})"
 
 	# First change to guest-agent source dir
-	safe_cd $src_dir
+	safe_cd "$src_dir"
 
 	if ! GOOS="$target_os" GOARCH="$target_arch" \
 		go build \
@@ -308,6 +306,49 @@ build_revm() {
 	log_info "revm binary built successfully: $revm_bin"
 }
 
+# Fixes dylib install names to use @rpath for portable deployment
+fix_dylib_install_names() {
+	local lib_dir="$OUTDIR/lib"
+	local bin_dir="$OUTDIR/bin"
+
+	log_info "Fixing dylib install names for portable deployment"
+
+	# Fix LC_ID_DYLIB (install name) for each dylib
+	install_name_tool -id @rpath/libkrun.1.17.0.dylib "$lib_dir/libkrun.1.17.0.dylib"
+	install_name_tool -id @rpath/libkrunfw.5.dylib "$lib_dir/libkrunfw.5.dylib"
+	install_name_tool -id @rpath/libepoxy.0.dylib "$lib_dir/libepoxy.0.dylib"
+	install_name_tool -id @rpath/libvirglrenderer.1.dylib "$lib_dir/libvirglrenderer.1.dylib"
+	install_name_tool -id @rpath/libMoltenVK.dylib "$lib_dir/libMoltenVK.dylib"
+
+	# Fix libkrun.1.17.0.dylib references
+	install_name_tool -change /opt/homebrew/opt/libepoxy/lib/libepoxy.0.dylib @rpath/libepoxy.0.dylib "$lib_dir/libkrun.1.17.0.dylib"
+	install_name_tool -change /opt/homebrew/opt/virglrenderer/lib/libvirglrenderer.1.dylib @rpath/libvirglrenderer.1.dylib "$lib_dir/libkrun.1.17.0.dylib"
+
+	# Fix libvirglrenderer.1.dylib references
+	install_name_tool -change "@@HOMEBREW_PREFIX@@/opt/virglrenderer/lib/libvirglrenderer.1.dylib" @rpath/libvirglrenderer.1.dylib "$lib_dir/libvirglrenderer.1.dylib"
+	install_name_tool -change "@@HOMEBREW_PREFIX@@/opt/molten-vk/lib/libMoltenVK.dylib" @rpath/libMoltenVK.dylib "$lib_dir/libvirglrenderer.1.dylib"
+	install_name_tool -change "@@HOMEBREW_PREFIX@@/opt/libepoxy/lib/libepoxy.0.dylib" @rpath/libepoxy.0.dylib "$lib_dir/libvirglrenderer.1.dylib"
+
+	# Fix libMoltenVK.dylib references
+	install_name_tool -change /opt/homebrew/opt/molten-vk/lib/libMoltenVK.dylib @rpath/libMoltenVK.dylib "$lib_dir/libMoltenVK.dylib"
+
+	# Fix libepoxy.0.dylib references
+	install_name_tool -change /opt/homebrew/opt/libepoxy/lib/libepoxy.0.dylib @rpath/libepoxy.0.dylib "$lib_dir/libepoxy.0.dylib"
+
+	# Fix binary references (binary references libkrun.1.dylib because that's the install name of libkrun.1.17.0.dylib)
+	install_name_tool -change libkrun.1.dylib @rpath/libkrun.1.17.0.dylib "$bin_dir/revm"
+	install_name_tool -change libkrunfw.5.dylib @rpath/libkrunfw.5.dylib "$bin_dir/revm"
+
+	# Re-sign all dylibs
+	codesign --force --sign - "$lib_dir/libkrun.1.17.0.dylib"
+	codesign --force --sign - "$lib_dir/libkrunfw.5.dylib"
+	codesign --force --sign - "$lib_dir/libepoxy.0.dylib"
+	codesign --force --sign - "$lib_dir/libvirglrenderer.1.dylib"
+	codesign --force --sign - "$lib_dir/libMoltenVK.dylib"
+	
+	log_info "Dylib install names fixed"
+}
+
 # Signs and configures macOS binary with entitlements and rpath
 sign_and_configure_macos_binary() {
 	local binary="$1"
@@ -318,23 +359,20 @@ sign_and_configure_macos_binary() {
 		log_err "Binary not found: $binary"
 	fi
 
-	log_info "Codesigning binary (initial)"
-	if ! codesign --force --deep --sign - "$binary"; then
-		log_err "Failed to codesign binary"
-	fi
+	# Fix all dylib install names and binary references
+	fix_dylib_install_names
 
+	# Add rpath to binary
 	log_info "Adding rpath: $rpath"
-	if ! install_name_tool -add_rpath "$rpath" "$binary" 2> /dev/null; then
-		log_warn "Failed to add rpath (may already exist)"
-	fi
+	install_name_tool -add_rpath "$rpath" "$binary" 2>/dev/null || true
 
+	# Sign binary with entitlements
+	log_info "Codesigning binary with entitlements"
 	if [[ -f "$entitlements" ]]; then
-		log_info "Codesigning with entitlements"
-		if ! codesign --entitlements "$entitlements" --force -s - "$binary"; then
-			log_err "Failed to codesign with entitlements"
-		fi
+		codesign --entitlements "$entitlements" --force -s - "$binary"
 	else
 		log_warn "Entitlements file not found: $entitlements"
+		codesign --force --sign - "$binary"
 	fi
 }
 
