@@ -212,20 +212,6 @@ func (c *Client) keepaliveLoop() {
 		case <-c.closed:
 			return
 		case <-ticker.C:
-			/*
-				  时间线:
-				  -----------------------------------------------------------------
-				  T1: keepalive goroutine            | T2: Close() goroutine
-				  -----------------------------------------------------------------
-				  检查: if c.client == nil            |
-				  结果: false (c.client 还有值)     	 |
-				                                     | c.mu.Lock()
-				                                     | c.client = nil
-				                                     | c.mu.Unlock()
-				  使用: c.client.SendRequest(...)     |
-						   PANIC: nil pointer!       |
-				  -----------------------------------------------------------------
-			*/
 			c.mu.RLock()
 			client := c.client
 			c.mu.RUnlock()
@@ -258,9 +244,6 @@ func (c *Client) Close() error {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 
-		// Signal closure
-		close(c.closed)
-
 		// Close SSH client (this also closes the underlying connection)
 		if c.client != nil {
 			if err := c.client.Close(); err != nil {
@@ -276,6 +259,9 @@ func (c *Client) Close() error {
 			}
 			c.conn = nil
 		}
+
+		// Signal closure
+		close(c.closed)
 
 		logrus.Debug("SSH client closed")
 	})
