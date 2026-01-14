@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sync"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
@@ -119,84 +118,31 @@ func (e *Executor) Exec(ctx context.Context, opts *ExecOptions, command ...strin
 	defer session.Close()
 
 	// Set up I/O streams
-	if err := e.setupIO(session, opts); err != nil {
+	if err := e.setupIO(ctx,session, opts); err != nil {
 		return err
 	}
 
-	// Request PTY if needed
-	if opts.EnablePTY {
-		if err := session.RequestPTY(ctx, "", opts.TerminalWidth, opts.TerminalHeight); err != nil {
-			return err
-		}
-	}
-
-	// Set up context cancellation handling
-	cancelCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	// Monitor context and send signal on cancellation
+	runErrChan := make(chan error, 1)
 	go func() {
-		<-cancelCtx.Done()
-		if ctx.Err() != nil {
-			logrus.Debugf("Context canceled, sending signal %s", opts.CancelSignal)
-			if err := session.Signal(opts.CancelSignal); err != nil {
-				logrus.Debugf("Failed to send signal: %v", err)
-			}
-		}
+		runErrChan <- session.Run(ctx, command...)
 	}()
 
-	// Execute command
-	return session.Run(ctx, command...)
-}
-
-// ExecWithOutput executes a command and captures its output.
-// This is a convenience method that returns stdout and stderr as byte slices.
-//
-// Example:
-//
-//	stdout, stderr, err := executor.ExecWithOutput(ctx, "ls", "-la")
-//	if err != nil {
-//	    return err
-//	}
-//	fmt.Println(string(stdout))
-func (e *Executor) ExecWithOutput(ctx context.Context, command ...string) (stdout, stderr []byte, err error) {
-	// Create buffers for output
-	var stdoutBuf, stderrBuf syncBuffer
-
-	// Configure options
-	opts := DefaultExecOptions().
-		WithStdout(&stdoutBuf).
-		WithStderr(&stderrBuf)
-
-	// Execute command
-	if err := e.Exec(ctx, opts, command...); err != nil {
-		return stdoutBuf.Bytes(), stderrBuf.Bytes(), err
+	select {
+	case <-ctx.Done():
+		logrus.Infof("Context canceled, sending signal %s", opts.CancelSignal)
+		if err := session.Signal(opts.CancelSignal); err != nil {
+			logrus.Debugf("Failed to send signal: %v", err)
+		}
+		return ctx.Err()
+	case err := <-runErrChan:
+		return err
 	}
-
-	return stdoutBuf.Bytes(), stderrBuf.Bytes(), nil
 }
 
-// ExecInteractive executes a command in interactive mode with PTY.
-// This automatically configures stdin/stdout/stderr for interactive use.
-// Terminal size is auto-detected from the current terminal.
-//
-// Example:
-//
-//	err := executor.ExecInteractive(ctx, "/bin/bash")
-//	if err != nil {
-//	    return err
-//	}
-func (e *Executor) ExecInteractive(ctx context.Context, command ...string) error {
-	opts := DefaultExecOptions().
-		WithStdin(os.Stdin).
-		WithPTY(0, 0) // Auto-detect terminal size
-
-	return e.Exec(ctx, opts, command...)
-}
 
 // setupIO configures the session I/O streams based on options
 // PTY mode uses direct assignment, non-PTY mode uses pipes with async copying
-func (e *Executor) setupIO(session *Session, opts *ExecOptions) error {
+func (e *Executor) setupIO(ctx context.Context,session *Session, opts *ExecOptions) error {
 	if opts.EnablePTY {
 		// PTY mode: use direct assignment
 		if opts.Stdin != nil {
@@ -216,6 +162,9 @@ func (e *Executor) setupIO(session *Session, opts *ExecOptions) error {
 				return fmt.Errorf("failed to configure stderr: %w", err)
 			}
 		}
+		if err := session.RequestPTY(ctx, "", opts.TerminalWidth, opts.TerminalHeight); err != nil {
+			return err
+		}
 	} else {
 		// Non-PTY mode: use pipes with async copying
 		if err := session.SetupPipes(opts.Stdin, opts.Stdout, opts.Stderr); err != nil {
@@ -233,78 +182,6 @@ type Stream struct {
 	done    chan error
 }
 
-// ExecStream starts a command in streaming mode without waiting for completion.
-// The returned Stream can be used to monitor progress and wait for completion.
-//
-// Example:
-//
-//	stream, err := executor.ExecStream(ctx, opts, "tail", "-f", "/var/log/syslog")
-//	if err != nil {
-//	    return err
-//	}
-//	defer stream.Close()
-//
-//	// Do other work...
-//
-//	// Wait for completion
-//	if err := stream.Wait(); err != nil {
-//	    return err
-//	}
-func (e *Executor) ExecStream(ctx context.Context, opts *ExecOptions, command ...string) (*Stream, error) {
-	// Create session
-	session, err := e.client.NewSession(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Set up I/O streams
-	if err := e.setupIO(session, opts); err != nil {
-		session.Close()
-		return nil, err
-	}
-
-	// Request PTY if needed
-	if opts.EnablePTY {
-		if err := session.RequestPTY(ctx, "", opts.TerminalWidth, opts.TerminalHeight); err != nil {
-			session.Close()
-			return nil, err
-		}
-	}
-
-	// Create stream
-	streamCtx, cancel := context.WithCancel(ctx)
-	stream := &Stream{
-		session: session,
-		cancel:  cancel,
-		done:    make(chan error, 1),
-	}
-
-	// Set up context cancellation handling
-	go func() {
-		<-streamCtx.Done()
-		if ctx.Err() != nil {
-			logrus.Debugf("Stream context canceled, sending signal %s", opts.CancelSignal)
-			if err := session.Signal(opts.CancelSignal); err != nil {
-				logrus.Debugf("Failed to send signal: %v", err)
-			}
-		}
-	}()
-
-	// Start command in background
-	if err := session.Start(ctx, command...); err != nil {
-		cancel()
-		session.Close()
-		return nil, err
-	}
-
-	// Wait for completion in background
-	go func() {
-		stream.done <- session.Wait()
-	}()
-
-	return stream, nil
-}
-
 // Wait waits for the streaming command to complete
 func (s *Stream) Wait() error {
 	return <-s.done
@@ -316,23 +193,3 @@ func (s *Stream) Close() error {
 	return s.session.Close()
 }
 
-// syncBuffer is a thread-safe buffer for capturing output
-type syncBuffer struct {
-	mu  sync.Mutex
-	buf []byte
-}
-
-func (b *syncBuffer) Write(p []byte) (n int, err error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.buf = append(b.buf, p...)
-	return len(p), nil
-}
-
-func (b *syncBuffer) Bytes() []byte {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	result := make([]byte, len(b.buf))
-	copy(result, b.buf)
-	return result
-}

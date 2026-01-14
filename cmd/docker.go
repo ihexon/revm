@@ -78,32 +78,34 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
+	// Optional: Management API server for host-side control
 	if command.IsSet(define.FlagRestAPIListenAddr) && command.String(define.FlagRestAPIListenAddr) != "" {
 		g.Go(func() error {
-			return server.NewAPIServer(vmc, server.RestAPIMode).Start(ctx)
+			return server.NewManagementAPIServer(vmc).Start(ctx)
 		})
 	}
 
-	// Start service probers
+	// Service readiness prober
 	g.Go(func() error {
-		defer logrus.Debugf("vmconfig.CloseChannelWhenServiceReady(ctx, vmc) exit")
+		defer logrus.Debug("service prober exited")
 		return vmc.CloseChannelWhenServiceReady(ctx)
 	})
 
-	// Start Ignition server (no dependencies)
+	// Guest config server (provides VM config to guest agent via VSock)
 	g.Go(func() error {
-		defer logrus.Debugf("server.NewAPIServer(vmc, server.IgnServerMode).Start(ctx) exit")
-		return server.NewAPIServer(vmc, server.IgnServerMode).Start(ctx)
+		defer logrus.Debug("guest-config server exited")
+		return server.NewGuestConfigServer(vmc).Start(ctx)
 	})
 
+	// Network backend (gvproxy)
 	g.Go(func() error {
-		defer logrus.Debugf("vmp.StartNetwork(ctx) exit")
+		defer logrus.Debug("network backend exited")
 		return vmp.StartNetwork(ctx)
 	})
 
-	// VM Create and Start requires both GVProxy and IgnServer to be ready
+	// VM lifecycle: wait for dependencies, then create and start
 	g.Go(func() error {
-		defer logrus.Debugf("vmp.Start(ctx) exit")
+		defer logrus.Debug("VM exited")
 
 		if err := vmc.WaitForServices(ctx, define.ServiceGVProxy, define.ServiceIgnServer); err != nil {
 			return err
@@ -116,14 +118,15 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		return vmp.Start(ctx)
 	})
 
+	// Docker API tunnel: forward host Unix socket to guest Podman API
 	g.Go(func() error {
-		defer logrus.Warnf("network.ForwardPodmanAPIOverVSock exit")
+		defer logrus.Debug("docker API tunnel exited")
 
 		if err := vmc.WaitForServices(ctx, define.ServiceGVProxy); err != nil {
 			return err
 		}
 
-		return network.ForwardPodmanAPIOverVSock(ctx, vmc.GVproxyEndpoint, vmc.PodmanInfo.UnixSocksAddr, define.DefaultGuestAddr, uint16(define.DefaultGuestPodmanAPIPort))
+		return network.TunnelHostUnixToGuest(ctx, vmc.GVproxyEndpoint, vmc.PodmanInfo.UnixSocksAddr, define.DefaultGuestAddr, uint16(define.DefaultGuestPodmanAPIPort))
 	})
 
 	return g.Wait()
