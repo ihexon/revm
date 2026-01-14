@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vm"
 	"linuxvm/pkg/vmconfig"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -37,12 +39,12 @@ func showVersionAndOSInfo() error {
 
 	logrus.Infof("%s version: %s", os.Args[0], version.String())
 
-	osInfo, err := system.GetOSVersion()
-	if err != nil {
-		return fmt.Errorf("failed to get os version: %w", err)
-	}
-
-	logrus.Infof("os version: %+v", osInfo)
+	//osInfo, err := system.GetOSVersion()
+	//if err != nil {
+	//	return fmt.Errorf("failed to get os version: %w", err)
+	//}
+	//
+	//logrus.Infof("os version: %+v", osInfo)
 
 	return nil
 }
@@ -71,6 +73,14 @@ func setMaxMemory() uint64 {
 	return mb
 }
 
+func GetVMM(vmc *vmconfig.VMConfig) (vm.Provider, error) {
+	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
+		return libkrun.NewLibkrunVM(vmc), nil
+	}
+	return nil, fmt.Errorf("not support this platform")
+}
+
+
 func vmProviderFactory(ctx context.Context, mode define.RunMode, command *cli.Command) (vm.Provider, error) {
 	vmc, err := createBaseVMConfig(command)
 	if err != nil {
@@ -89,7 +99,7 @@ func vmProviderFactory(ctx context.Context, mode define.RunMode, command *cli.Co
 		return nil, fmt.Errorf("invalid run mode: %s", mode.String())
 	}
 
-	vmProvider, err := vm.Get(vmc)
+	vmProvider, err := GetVMM(vmc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get vm provider: %w", err)
 	}

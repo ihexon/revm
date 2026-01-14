@@ -1,3 +1,5 @@
+//go:build (darwin && arm64) || (linux && (arm64 || amd64))
+
 package server
 
 import (
@@ -7,38 +9,44 @@ import (
 	"github.com/tmaxmax/go-sse"
 )
 
+// SSE message types
 const (
-	TypeOut = "out"
-	TypeErr = "error"
+	sseTypeOut = "out"
+	sseTypeErr = "error"
 
-	topicKey = "topicKey"
+	sseTopicKey = "sseTopicKey"
 )
 
-var (
-	sseServer *sse.Server
-)
+// sseServer wraps the SSE server with helper methods.
+type sseServer struct {
+	server *sse.Server
+}
 
-func createSSEMsgAndPublish(msgType, msg string, sseServer *sse.Server, topic string) {
-	m := &sse.Message{}
-	m.AppendData(msg)
-	m.Type = sse.Type(msgType)
-	if err := sseServer.Publish(m, topic); err != nil {
-		logrus.Warnf("Error publishing message: %v", err)
+func newSSEServer() *sseServer {
+	return &sseServer{
+		server: &sse.Server{
+			OnSession: func(w http.ResponseWriter, r *http.Request) ([]string, bool) {
+				topic, ok := r.Context().Value(sseTopicKey).(string)
+				if !ok || topic == "" {
+					logrus.Warn("sse: empty topic in session")
+					return nil, false
+				}
+				return []string{topic}, true
+			},
+		},
 	}
 }
 
-func newSSEServer() *sse.Server {
-	sseServer = &sse.Server{
-		OnSession: func(w http.ResponseWriter, r *http.Request) (topics []string, allowed bool) {
-			topic, ok := r.Context().Value(topicKey).(string)
+func (s *sseServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.server.ServeHTTP(w, r)
+}
 
-			if topic == "" || !ok {
-				logrus.Warn("empty topic in OnSession")
-				return nil, false
-			}
+func (s *sseServer) publish(topic, msgType, data string) {
+	msg := &sse.Message{}
+	msg.AppendData(data)
+	msg.Type = sse.Type(msgType)
 
-			return []string{topic}, true
-		},
+	if err := s.server.Publish(msg, topic); err != nil {
+		logrus.Warnf("sse: failed to publish message: %v", err)
 	}
-	return sseServer
 }
