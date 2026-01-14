@@ -1,5 +1,3 @@
-//go:build darwin && (arm64 || amd64)
-
 package network
 
 import (
@@ -14,16 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// ForwardPodmanAPIOverVSock forwards the Podman API through a vsock proxy,
-// enabling communication between the host and a container.
-//
-// Parameters:
-//
-//   - ctx controls the lifetime of the forwarding loop.
-//   - gvpAddr is the unix address to the gvproxy control socket.
-//   - listenAddr is the Unix domain socket address where the proxy listens for incoming connections.
-//   - targetIP and targetPort specify the destination endpoint inside the container.
-func ForwardPodmanAPIOverVSock(ctx context.Context, gvproxyCtlUnixAddr, listHostUnixAddr, targetIP string, targetPort uint16) error {
+func TunnelHostUnixToGuest(ctx context.Context, gvproxyCtlUnixAddr, listHostUnixAddr, targetIP string, targetPort uint16) error {
 	gvpAddr, err := ParseUnixAddr(gvproxyCtlUnixAddr)
 	if err != nil {
 		return fmt.Errorf("failed to parse gvproxy socket address: %w", err)

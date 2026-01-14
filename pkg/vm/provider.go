@@ -4,10 +4,7 @@ package vm
 
 import (
 	"context"
-	"fmt"
-	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/vmconfig"
-	"runtime"
 )
 
 type Provider interface {
@@ -16,11 +13,4 @@ type Provider interface {
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
 	GetVMConfigure() (*vmconfig.VMConfig, error)
-}
-
-func Get(vmc *vmconfig.VMConfig) (Provider, error) {
-	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
-		return libkrun.NewLibkrunVM(vmc), nil
-	}
-	return nil, fmt.Errorf("not support this platform")
 }
