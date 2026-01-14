@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/libkrun"
-	"linuxvm/pkg/vfkit"
 	"linuxvm/pkg/vmconfig"
 	"runtime"
 )
@@ -23,10 +22,5 @@ func Get(vmc *vmconfig.VMConfig) (Provider, error) {
 	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
 		return libkrun.NewLibkrunVM(vmc), nil
 	}
-
-	if runtime.GOOS == "darwin" && runtime.GOARCH == "amd64" {
-		return vfkit.NewStubber(vmc), nil
-	}
-
 	return nil, fmt.Errorf("not support this platform")
 }
