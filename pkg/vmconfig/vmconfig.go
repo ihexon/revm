@@ -341,8 +341,7 @@ func (v *VMConfig) WithExternalTools() error {
 	v.ExternalTools.DarwinTools.GuestAgent = filepath.Join(libexecPath, guestAgent)
 
 	v.ExternalTools.LinuxTools.Busybox = "/3rd/bin/busybox"
-	v.ExternalTools.LinuxTools.DropBear = "/3rd/bin/dropbear"
-	v.ExternalTools.LinuxTools.DropBearKey = "/3rd/bin/dropbearkey"
+	v.ExternalTools.LinuxTools.DropBear = "/3rd/bin/dropbearmulti"
 
 	v.ExternalTools.LinuxTools.GuestAgent = "/3rd/bin/" + guestAgent
 
