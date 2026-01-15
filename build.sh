@@ -120,6 +120,7 @@ init_workspace() {
 	WORKSPACE="$(realpath "$(dirname "$0")")"
 	export WORKSPACE
 	export OUTDIR="$WORKSPACE/out"
+	rm -rf "$OUTDIR"
 
 	log_info "Workspace: $WORKSPACE"
 	safe_cd "$WORKSPACE"
