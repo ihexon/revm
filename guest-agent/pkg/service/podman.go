@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
-	"guestAgent/pkg/define"
+	"linuxvm/pkg/define"
 	"os"
 	"os/exec"
 

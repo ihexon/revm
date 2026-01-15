@@ -27,7 +27,6 @@ func WriteJSON(w http.ResponseWriter, code int, value interface{}) {
 	}
 }
 
-
 // ProcessOutput holds the output streams and error channel from a guest command.
 type ProcessOutput struct {
 	StdoutPipeReader *io.PipeReader
@@ -87,4 +86,3 @@ func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...
 		errChan:          errChan,
 	}, nil
 }
-
