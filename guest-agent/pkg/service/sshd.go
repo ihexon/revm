@@ -13,18 +13,15 @@ import (
 	"linuxvm/pkg/define"
 
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
 )
 
-//go:embed dropbear
-var dropbearData []byte
-
-//go:embed dropbearkey
-var dropbearkeyData []byte
+//go:embed dropbearmulti
+var dropbearmulti []byte
 
 type SSHServer struct {
-	dropbear    string
-	dropbearKey string
-	cfg         *cfg
+	dropbearMulti string
+	cfg           *cfg
 }
 
 type cfg struct {
@@ -40,8 +37,6 @@ func StartGuestSSHServer(ctx context.Context, vmc *define.VMConfig) error {
 	sshServer := NewBuiltinSSHServer(
 		// the dropbear binary which used to run ssh server
 		vmc.ExternalTools.LinuxTools.DropBear,
-		// the dropbearkey binary which used to generate ssh key pair
-		vmc.ExternalTools.LinuxTools.DropBearKey,
 		// the ssh server run config
 		&cfg{
 			port:               define.DefaultGuestSSHDPort,
@@ -80,11 +75,10 @@ func StartGuestSSHServer(ctx context.Context, vmc *define.VMConfig) error {
 	}
 }
 
-func NewBuiltinSSHServer(serverBinary, keygenBinary string, cfg *cfg) *SSHServer {
+func NewBuiltinSSHServer(dropbearBinPath string, cfg *cfg) *SSHServer {
 	return &SSHServer{
-		dropbear:    serverBinary,
-		dropbearKey: keygenBinary,
-		cfg:         cfg,
+		dropbearMulti: dropbearBinPath,
+		cfg:           cfg,
 	}
 }
 
@@ -101,11 +95,11 @@ func getBinary(filePath string, b []byte) error {
 }
 
 func (s *SSHServer) getBinaries() error {
-	if err := getBinary(s.dropbear, dropbearData); err != nil {
+	if err := getBinary(s.dropbearMulti, dropbearmulti); err != nil {
 		return err
 	}
-
-	return getBinary(s.dropbearKey, dropbearkeyData)
+	unix.Sync()
+	return os.Chmod(s.dropbearMulti, 0755)
 }
 
 func (s *SSHServer) GenerateSSHKeyFile(ctx context.Context) error {
@@ -113,13 +107,11 @@ func (s *SSHServer) GenerateSSHKeyFile(ctx context.Context) error {
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, s.dropbearKey, "-f", s.cfg.keyPairFiles)
+	cmd := exec.CommandContext(ctx, s.dropbearMulti, "dropbearkey", "-f", s.cfg.keyPairFiles)
 
 	cmd.Stdin = nil
-	if logrus.IsLevelEnabled(logrus.DebugLevel) {
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stderr
-	}
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stderr
 
 	logrus.Debugf("dropbearkey cmdline: %q", cmd.Args)
 	return cmd.Run()
@@ -147,16 +139,14 @@ func (s *SSHServer) WriteAuthorizedkeysFile(ctx context.Context, vmc *define.VMC
 }
 
 func (s *SSHServer) Start(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, s.dropbear, "-p", fmt.Sprintf("%s:%d", s.cfg.addr, s.cfg.port), "-r", s.cfg.keyPairFiles, "-D",
-		s.cfg.runTimeDir, "-F", "-B", "-P", s.cfg.pidFile)
+	cmd := exec.CommandContext(ctx, s.dropbearMulti, "dropbear", "-p", fmt.Sprintf("%s:%d", s.cfg.addr, s.cfg.port), "-r", s.cfg.keyPairFiles, "-D",
+		s.cfg.runTimeDir, "-F", "-s", "-E", "-P", s.cfg.pidFile)
 
 	cmd.Stdin = nil
 	cmd.Env = append(os.Environ(), "PASS_FILEPEM_CHECK=1")
 
-	if logrus.IsLevelEnabled(logrus.DebugLevel) {
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stderr
-	}
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stderr
 
 	logrus.Debugf("start ssh server cmdline: %q", cmd.Args)
 	return cmd.Run()
