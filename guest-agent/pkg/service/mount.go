@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
-	"guestAgent/pkg/define"
+	"linuxvm/pkg/define"
 	"os"
 
 	"github.com/sirupsen/logrus"
@@ -181,7 +181,6 @@ func MountAllPseudoMnt(ctx context.Context) error {
 }
 
 func MountVirtiofs(ctx context.Context, vmc *define.VMConfig) error {
-
 	for _, virtiofsMnt := range vmc.Mounts {
 		mnt := &Mnt{
 			Tag:    virtiofsMnt.Tag,

@@ -39,7 +39,7 @@ func showVersionAndOSInfo() error {
 
 	logrus.Infof("%s version: %s", os.Args[0], version.String())
 
-	//osInfo, err := system.GetOSVersion()
+	// osInfo, err := system.GetOSVersion()
 	//if err != nil {
 	//	return fmt.Errorf("failed to get os version: %w", err)
 	//}
@@ -79,7 +79,6 @@ func GetVMM(vmc *vmconfig.VMConfig) (vm.Provider, error) {
 	}
 	return nil, fmt.Errorf("not support this platform")
 }
-
 
 func vmProviderFactory(ctx context.Context, mode define.RunMode, command *cli.Command) (vm.Provider, error) {
 	vmc, err := createBaseVMConfig(command)
