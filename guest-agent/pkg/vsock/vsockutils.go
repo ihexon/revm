@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"guestAgent/pkg/define"
+	"linuxvm/pkg/define"
 	"time"
 )
 

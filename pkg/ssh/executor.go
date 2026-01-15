@@ -118,7 +118,7 @@ func (e *Executor) Exec(ctx context.Context, opts *ExecOptions, command ...strin
 	defer session.Close()
 
 	// Set up I/O streams
-	if err := e.setupIO(ctx,session, opts); err != nil {
+	if err := e.setupIO(ctx, session, opts); err != nil {
 		return err
 	}
 
@@ -139,10 +139,9 @@ func (e *Executor) Exec(ctx context.Context, opts *ExecOptions, command ...strin
 	}
 }
 
-
 // setupIO configures the session I/O streams based on options
 // PTY mode uses direct assignment, non-PTY mode uses pipes with async copying
-func (e *Executor) setupIO(ctx context.Context,session *Session, opts *ExecOptions) error {
+func (e *Executor) setupIO(ctx context.Context, session *Session, opts *ExecOptions) error {
 	if opts.EnablePTY {
 		// PTY mode: use direct assignment
 		if opts.Stdin != nil {
@@ -192,4 +191,3 @@ func (s *Stream) Close() error {
 	s.cancel()
 	return s.session.Close()
 }
-

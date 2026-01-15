@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
-	"guestAgent/pkg/define"
+
 	"guestAgent/pkg/vsock"
+
+	"linuxvm/pkg/define"
 
 	"github.com/sirupsen/logrus"
 )

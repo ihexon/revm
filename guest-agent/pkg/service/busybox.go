@@ -4,7 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"guestAgent/pkg/define"
+	"linuxvm/pkg/define"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,7 +36,6 @@ func InitializeBusybox(vmc *define.VMConfig) error {
 			path:        vmc.ExternalTools.LinuxTools.Busybox,
 			initialized: true,
 		}
-
 	})
 
 	return os.WriteFile(vmc.ExternalTools.LinuxTools.Busybox, elfData, 0755)

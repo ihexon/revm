@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"guestAgent/pkg/define"
+	"linuxvm/pkg/define"
 	"guestAgent/pkg/service"
 	"os"
 	"os/signal"

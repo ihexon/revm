@@ -4,11 +4,13 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"guestAgent/pkg/define"
-	"guestAgent/pkg/pathutils"
+
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"guestAgent/pkg/pathutils"
+	"linuxvm/pkg/define"
 
 	"github.com/sirupsen/logrus"
 )
