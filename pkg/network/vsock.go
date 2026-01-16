@@ -62,7 +62,7 @@ func TunnelHostUnixToGuest(ctx context.Context, gvproxyCtlUnixAddr, listHostUnix
 
 		conn, err := ln.Accept()
 		if err != nil {
-			logrus.Debugf("accept connection error: %v", err)
+			logrus.Infof("accept connection error: %v", err)
 			continue
 		}
 
@@ -71,7 +71,7 @@ func TunnelHostUnixToGuest(ctx context.Context, gvproxyCtlUnixAddr, listHostUnix
 }
 
 func handleConn(_ context.Context, clientConn net.Conn, gvproxyCtlSocksPath, targetIP string, targetPort uint16) {
-	logrus.Debugf("accepted new connection from %v", clientConn.RemoteAddr())
+	logrus.Infof("accepted new connection from %v", clientConn.RemoteAddr())
 
 	guestConn, err := net.Dial("unix", gvproxyCtlSocksPath)
 	if err != nil {

@@ -48,7 +48,7 @@ const (
 	FlagRootfsMode = "rootfs-mode"
 	FlagKernelMode = "kernel-mode"
 
-	FlagVerbose              = "verbose"
+	FlagLogLevel             = "log-level"
 	FlagListenUnixFile       = "listen-unix"
 	FlagRestAPIListenAddr    = "rest-api"
 	FlagCPUS                 = "cpus"

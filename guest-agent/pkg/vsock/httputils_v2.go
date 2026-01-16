@@ -120,7 +120,7 @@ func (c *HTTPClient) Get(ctx context.Context, path string) (*http.Response, erro
 		return nil, fmt.Errorf("failed to create GET request: %w", err)
 	}
 
-	logrus.Debugf("HTTP GET: %s via %s", url, c.transport.Name())
+	logrus.Infof("HTTP GET: %s via %s", url, c.transport.Name())
 	return c.client.Do(req)
 }
 
@@ -136,7 +136,7 @@ func (c *HTTPClient) Post(ctx context.Context, path string, contentType string, 
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	logrus.Debugf("HTTP POST: %s via %s", url, c.transport.Name())
+	logrus.Infof("HTTP POST: %s via %s", url, c.transport.Name())
 	return c.client.Do(req)
 }
 

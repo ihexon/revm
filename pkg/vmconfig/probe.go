@@ -141,22 +141,22 @@ func probeUntilReady(ctx context.Context, prober ServiceProber, interval time.Du
 	defer ticker.Stop()
 
 	serviceName := prober.Name()
-	logrus.Debugf("starting probe for %s service", serviceName)
+	logrus.Infof("starting probe for %s service", serviceName)
 
 	for {
 		select {
 		case <-ctx.Done():
-			logrus.Debugf("probe for %s cancelled: %v", serviceName, ctx.Err())
+			logrus.Infof("probe for %s cancelled: %v", serviceName, ctx.Err())
 			return
 
 		case <-ticker.C:
 			if err := prober.Probe(ctx); err != nil {
-				logrus.Debugf("%s service not ready: %v", serviceName, err)
+				logrus.Infof("%s service not ready: %v", serviceName, err)
 				continue
 			}
 
 			prober.NotifyReady()
-			logrus.Debugf("%s service is ready", serviceName)
+			logrus.Infof("%s service is ready", serviceName)
 			return
 		}
 	}

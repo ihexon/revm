@@ -96,13 +96,13 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	// Network backend (gvproxy)
 	g.Go(func() error {
-		defer logrus.Debug("network backend exited")
+		defer logrus.Infof("network backend exited")
 		return vmp.StartNetwork(ctx)
 	})
 
 	// VM lifecycle: wait for dependencies, then create and start
 	g.Go(func() error {
-		defer logrus.Debug("VM exited")
+		defer logrus.Infof("VM exited")
 
 		if err := vmc.WaitForServices(ctx, define.ServiceGVProxy, define.ServiceIgnServer); err != nil {
 			return err

@@ -187,7 +187,7 @@ func Run(ctx context.Context, vmc *vmconfig.VMConfig) error {
 				}
 				err := forward.AcceptAndTunnel(ctx)
 				if err != nil {
-					logrus.Debugf("Error occurred handling ssh forwarded connection: %q", err)
+					logrus.Infof("Error occurred handling ssh forwarded connection: %q", err)
 				}
 			}
 			return nil

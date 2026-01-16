@@ -14,7 +14,7 @@ func IsPathExist(path string) bool {
 	}
 
 	if err != nil {
-		logrus.Debugf("os.Stat %q error: %v", path, err)
+		logrus.Infof("os.Stat %q error: %v", path, err)
 		return false
 	}
 

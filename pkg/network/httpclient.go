@@ -72,7 +72,7 @@ func (c *UnixHTTPClient) do(ctx context.Context, method, path, contentType strin
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	logrus.Debugf("HTTP %s: %s via unix:%s", method, url, c.socketPath)
+	logrus.Infof("HTTP %s: %s via unix:%s", method, url, c.socketPath)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -108,7 +108,7 @@ func (c *UnixHTTPClient) closeResponse(resp *http.Response) {
 		// Drain and close the response body to ensure connection reuse
 		_, _ = io.Copy(io.Discard, resp.Body)
 		if err := resp.Body.Close(); err != nil {
-			logrus.Debugf("failed to close response body: %v", err)
+			logrus.Infof("failed to close response body: %v", err)
 		}
 	}
 }

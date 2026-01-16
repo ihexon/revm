@@ -61,7 +61,7 @@ func (s *httpServer) serve(ctx context.Context) error {
 	defer func() {
 		_ = s.server.Close()
 		_ = ln.Close()
-		logrus.Debugf("%s server stopped", s.name)
+		logrus.Infof("%s server stopped", s.name)
 	}()
 
 	select {

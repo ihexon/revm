@@ -16,10 +16,11 @@ import (
 )
 
 func setLogrus(command *cli.Command) {
-	logrus.SetLevel(logrus.InfoLevel)
-	if command.Bool(define.FlagVerbose) {
-		logrus.SetLevel(logrus.DebugLevel)
+	level, err := logrus.ParseLevel(command.String(define.FlagLogLevel))
+	if err != nil {
+		level = logrus.WarnLevel
 	}
+	logrus.SetLevel(level)
 
 	logrus.SetFormatter(&logrus.TextFormatter{
 		FullTimestamp:   true,
@@ -36,10 +37,10 @@ func main() {
 		UsageText:   os.Args[0] + " [command] [flags]",
 		Description: "setup the guest environment, and run the command specified by the user.",
 		Flags: []cli.Flag{
-			&cli.BoolFlag{
-				Name:   define.FlagVerbose,
-				Hidden: true,
-				Value:  false,
+			&cli.StringFlag{
+				Name:  define.FlagLogLevel,
+				Usage: "set log level (trace, debug, info, warn, error, fatal, panic)",
+				Value: "warn",
 			},
 		},
 		Before:                    earlyStage,
@@ -101,7 +102,7 @@ func run(ctx context.Context, _ *cli.Command) error {
 }
 
 func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
-	logrus.Debugf("run user command line mode")
+	logrus.Infof("run user command line mode")
 
 	g, ctx := errgroup.WithContext(ctx)
 
