@@ -131,7 +131,7 @@ func (e *Executor) Exec(ctx context.Context, opts *ExecOptions, command ...strin
 	case <-ctx.Done():
 		logrus.Infof("Context canceled, sending signal %s", opts.CancelSignal)
 		if err := session.Signal(opts.CancelSignal); err != nil {
-			logrus.Debugf("Failed to send signal: %v", err)
+			logrus.Infof("Failed to send signal: %v", err)
 		}
 		return ctx.Err()
 	case err := <-runErrChan:

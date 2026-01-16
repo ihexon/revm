@@ -87,25 +87,25 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	// Service readiness prober
 	g.Go(func() error {
-		defer logrus.Debug("service prober exited")
+		defer logrus.Infof("service prober exited")
 		return vmc.CloseChannelWhenServiceReady(ctx)
 	})
 
 	// Guest config server (provides VM config to guest agent via VSock)
 	g.Go(func() error {
-		defer logrus.Debug("guest-config server exited")
+		defer logrus.Infof("guest-config server exited")
 		return server.NewGuestConfigServer(vmc).Start(ctx)
 	})
 
 	// Network backend (gvproxy)
 	g.Go(func() error {
-		defer logrus.Debug("network backend exited")
+		defer logrus.Infof("network backend exited")
 		return vmp.StartNetwork(ctx)
 	})
 
 	// VM lifecycle: wait for dependencies, then create and start
 	g.Go(func() error {
-		defer logrus.Debug("VM exited")
+		defer logrus.Infof("VM exited")
 
 		if err := vmc.WaitForServices(ctx, define.ServiceGVProxy, define.ServiceIgnServer); err != nil {
 			return err
@@ -120,7 +120,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	// Docker API tunnel: forward host Unix socket to guest Podman API
 	g.Go(func() error {
-		defer logrus.Debug("docker API tunnel exited")
+		defer logrus.Infof("docker API tunnel exited")
 
 		if err := vmc.WaitForServices(ctx, define.ServiceGVProxy); err != nil {
 			return err

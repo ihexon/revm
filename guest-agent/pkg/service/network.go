@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"guestAgent/pkg/network"
-	"os"
 
 	"github.com/sirupsen/logrus"
 )
@@ -19,9 +18,6 @@ func ConfigureNetwork(ctx context.Context) error {
 
 	go func() {
 		verbose := false
-		if _, find := os.LookupEnv("REVM_DEBUG"); find {
-			verbose = true
-		}
 
 		if logrus.IsLevelEnabled(logrus.DebugLevel) {
 			verbose = true

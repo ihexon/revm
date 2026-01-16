@@ -50,10 +50,11 @@ func showVersionAndOSInfo() error {
 }
 
 func setLogrus(command *cli.Command) {
-	logrus.SetLevel(logrus.InfoLevel)
-	if command.Bool(define.FlagVerbose) {
-		logrus.SetLevel(logrus.DebugLevel)
+	level, err := logrus.ParseLevel(command.String(define.FlagLogLevel))
+	if err != nil {
+		level = logrus.WarnLevel
 	}
+	logrus.SetLevel(level)
 
 	logrus.SetFormatter(&logrus.TextFormatter{
 		FullTimestamp:   true,

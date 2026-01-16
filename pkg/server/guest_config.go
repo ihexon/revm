@@ -44,7 +44,7 @@ func (s *GuestConfigServer) handleHealth(w http.ResponseWriter, r *http.Request)
 		WriteJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	logrus.Debug("guest-config: /healthz")
+	logrus.Infof("guest-config: /healthz")
 	WriteJSON(w, http.StatusOK, nil)
 }
 
@@ -53,6 +53,6 @@ func (s *GuestConfigServer) handleVMConfig(w http.ResponseWriter, r *http.Reques
 		WriteJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	logrus.Debug("guest-config: /vmconfig")
+	logrus.Infof("guest-config: /vmconfig")
 	WriteJSON(w, http.StatusOK, s.vmc)
 }

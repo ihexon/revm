@@ -73,7 +73,7 @@ func (v *VMConfig) Lock() (*flock.Flock, error) {
 
 	fileLock := flock.New(filepath.Join(v.RootFS, define.LockFile))
 
-	logrus.Debugf("try to lock file: %q", fileLock.Path())
+	logrus.Infof("try to lock file: %q", fileLock.Path())
 	ifLocked, err := fileLock.TryLock()
 	if err != nil {
 		return nil, fmt.Errorf("failed to lock file: %w", err)
@@ -181,11 +181,9 @@ func (v *VMConfig) WithGuestAgentConfigure() error {
 
 	v.Cmdline.Env = append(v.Cmdline.Env, "PATH=/3rd/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin")
 
-	if logrus.IsLevelEnabled(logrus.DebugLevel) {
-		v.Cmdline.GuestAgentArgs = append(v.Cmdline.GuestAgentArgs, "--verbose")
-	}
+	v.Cmdline.GuestAgentArgs = append(v.Cmdline.GuestAgentArgs, "--"+define.FlagLogLevel+"="+logrus.GetLevel().String())
 
-	logrus.Debugf("guest-agent %q args is: %q", v.Cmdline.GuestAgent, v.Cmdline.GuestAgentArgs)
+	logrus.Infof("guest-agent %q args is: %q", v.Cmdline.GuestAgent, v.Cmdline.GuestAgentArgs)
 	return nil
 }
 
@@ -352,7 +350,7 @@ func NewVMConfig() *VMConfig {
 	vmc := &VMConfig{}
 
 	prefix := filepath.Join(os.TempDir(), system.GenerateRandomID())
-	logrus.Debugf("runtime temp directory: %q", prefix)
+	logrus.Infof("runtime temp directory: %q", prefix)
 
 	vmc.GVproxyEndpoint = fmt.Sprintf("unix://%s/%s", prefix, define.GvProxyControlEndPoint)
 	vmc.NetworkStackBackend = fmt.Sprintf("unixgram://%s/%s", prefix, define.GvProxyNetworkEndpoint)
