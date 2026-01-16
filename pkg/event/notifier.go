@@ -22,21 +22,23 @@ func InitializeReporter(endpoint string) *Reporter {
 	return &Reporter{client: network.NewUnixHTTPClient(endpoint, 1*time.Second)}
 }
 
+// SendEventInInitLifeCycle sends an event during the `init` stage, distinguishing between error and non-error cases.
 func (r *Reporter) SendEventInInitLifeCycle(ctx context.Context, evtName EvtName, errMsg string) error {
 	if errMsg != "" {
-		return r.SendEvent(ctx, Init, Error, errMsg)
+		return r.sendEvent(ctx, Init, Error, errMsg)
 	}
-	return r.SendEvent(ctx, Init, evtName, errMsg)
+	return r.sendEvent(ctx, Init, evtName, errMsg)
 }
 
+// SendEventInRunLifeCycle sends an event during the `run` stage, distinguishing between error and non-error cases.
 func (r *Reporter) SendEventInRunLifeCycle(ctx context.Context, evtName EvtName, errMsg string) error {
 	if errMsg != "" {
-		return r.SendEvent(ctx, Run, Error, errMsg)
+		return r.sendEvent(ctx, Run, Error, errMsg)
 	}
-	return r.SendEvent(ctx, Run, evtName, errMsg)
+	return r.sendEvent(ctx, Run, evtName, errMsg)
 }
 
-func (r *Reporter) SendEvent(ctx context.Context, stage StageName, evtName EvtName, value string) error {
+func (r *Reporter) sendEvent(ctx context.Context, stage StageName, evtName EvtName, value string) error {
 	if r.client == nil {
 		return nil
 	}

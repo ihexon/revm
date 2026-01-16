@@ -37,7 +37,7 @@ type GvproxyConfig struct {
 		Vfkit  string `yaml:"vfkit,omitempty"`
 	} `yaml:"interfaces,omitempty"`
 	Forwards []GvproxyConfigForward `yaml:"forwards,omitempty"`
-	Services string                 `yaml:"services,omitempty"`
+	Services string                 `yaml:"probes,omitempty"`
 }
 
 type GvproxyConfigForward struct {
@@ -99,7 +99,7 @@ func Run(ctx context.Context, vmc *vmconfig.VMConfig) error {
 	}
 
 	if config.Services != "" {
-		logrus.Infof("enabling services API. Listening %s", config.Services)
+		logrus.Infof("enabling probes API. Listening %s", config.Services)
 		ln, err := transport.Listen(config.Services)
 		if err != nil {
 			return fmt.Errorf("cannot listen: %w", err)
