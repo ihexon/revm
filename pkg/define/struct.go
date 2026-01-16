@@ -49,8 +49,8 @@ type VMConfig struct {
 	PodmanInfo          PodmanInfo `json:"podmanInfo,omitempty"`
 	RestAPIAddress      string     `json:"restAPIAddress,omitempty"`
 
-	RunMode            string `json:"runMode,omitempty"`
-	IgnProvisionerAddr string `json:"ignProvisionerAddr,omitempty"`
+	RunMode                 string `json:"runMode,omitempty"`
+	VMConfigProvisionerAddr string `json:"VMConfigProvisionerAddr,omitempty"`
 
 	ExternalTools ExternalTools `json:"externalTools,omitempty"`
 
@@ -91,9 +91,9 @@ type Stage struct {
 	GuestSSHServerReadyChan  chan struct{}
 	GuestSSHChanCloseOnce    sync.Once
 	GuestPodmanReadyChan     chan struct{}
-	GuestPodmanChanCloseOnce sync.Once
-	IgnServerChan            chan struct{}
-	IgnServerChanCloseOnce   sync.Once
+	GuestPodmanChanCloseOnce      sync.Once
+	VMConfigProvisionerServerChan          chan struct{}
+	VMConfigProvisionerServerChanCloseOnce sync.Once
 }
 
 // GetReadyChannel returns the ready channel and close once function for a given service type
@@ -102,7 +102,7 @@ func (s *Stage) GetReadyChannel(serviceType ServiceType) (chan struct{}, func(fu
 	case ServiceGVProxy:
 		return s.GVProxyChan, s.GVProxyChanCloseOnce.Do
 	case ServiceIgnServer:
-		return s.IgnServerChan, s.IgnServerChanCloseOnce.Do
+		return s.VMConfigProvisionerServerChan, s.VMConfigProvisionerServerChanCloseOnce.Do
 	case ServiceGuestPodman:
 		return s.GuestPodmanReadyChan, s.GuestPodmanChanCloseOnce.Do
 	case ServiceGuestSSHServer:

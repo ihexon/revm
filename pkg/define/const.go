@@ -60,10 +60,7 @@ const (
 	FlagMemory               = "memory"
 	FlagPTY                  = "pty"
 	FlagEnvs                 = "envs"
-	FlagVMMProvider          = "vmm-provider"
-	FlagKernel               = "kernel"
-	FlagInitrd               = "initrd"
-	FlagKernelCmdline        = "kernel-cmdline"
+	FlagReportURL            = "report-url"
 )
 
 type RunMode int
