@@ -3,7 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/network"
+	"linuxvm/pkg/probes"
 	"linuxvm/pkg/server"
 	"linuxvm/pkg/system"
 
@@ -70,27 +74,66 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("create run configure failed: %w", err)
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
-
 	vmc, err := vmp.GetVMConfigure()
 	if err != nil {
 		return fmt.Errorf("failed to get vm configure: %w", err)
 	}
 
+	// ========= Initialize service probes ============
+	addr, err := network.ParseUnixAddr(vmc.GVproxyEndpoint)
+	if err != nil {
+		return err
+	}
+	gvProxyServiceProbe := probes.NewGVProxyService(addr.Path)
+	sshServiceProbe := probes.NewGuestSSHService(addr.Path, vmc.SSHInfo.HostSSHKeyPairFile)
+
+	addr, err = network.ParseUnixAddr(vmc.VMConfigProvisionerAddr)
+	if err != nil {
+		return err
+	}
+	vmCfgProvisionerProbe := probes.NewVMConfigProvisionerServer(addr.Path)
+
+	g, ctx := errgroup.WithContext(ctx)
+
 	// Optional: Management API server for host-side control
 	if command.IsSet(define.FlagRestAPIListenAddr) && command.String(define.FlagRestAPIListenAddr) != "" {
 		g.Go(func() error {
+			defer logrus.Infof("management API server exited")
 			return server.NewManagementAPIServer(vmc).Start(ctx)
 		})
 	}
 
 	// Service readiness prober
 	g.Go(func() error {
-		return vmc.CloseChannelWhenServiceReady(ctx)
+		defer logrus.Infof("service prober exited")
+
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		g, ctx := errgroup.WithContext(ctx)
+
+		g.Go(func() error {
+			return gvProxyServiceProbe.ProbeUntilReady(ctx)
+		})
+
+		g.Go(func() error {
+			return vmCfgProvisionerProbe.ProbeUntilReady(ctx)
+		})
+
+		g.Go(func() error {
+			return sshServiceProbe.ProbeUntilReady(ctx)
+		})
+
+		if err := g.Wait(); err != nil {
+			return fmt.Errorf("failed to probe services: %w", err)
+		}
+
+		return nil
 	})
 
 	// Guest config server (provides VM config to guest agent via VSock)
 	g.Go(func() error {
+		defer logrus.Infof("guest-config server exited")
 		return server.NewGuestConfigServer(vmc).Start(ctx)
 	})
 
@@ -104,10 +147,10 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	g.Go(func() error {
 		defer logrus.Infof("VM exited")
 
-		if err := vmc.WaitForServices(ctx, define.ServiceGVProxy, define.ServiceIgnServer); err != nil {
-			return err
-		}
-		if err = vmp.Create(ctx); err != nil {
+		gvProxyServiceProbe.WaitUntilReady(ctx)
+		vmCfgProvisionerProbe.WaitUntilReady(ctx)
+
+		if err := vmp.Create(ctx); err != nil {
 			return fmt.Errorf("failed to create vm: %w", err)
 		}
 		return vmp.Start(ctx)

@@ -6,8 +6,10 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/event"
 	"linuxvm/pkg/network"
+	"linuxvm/pkg/probes"
 	"linuxvm/pkg/server"
 	"linuxvm/pkg/system"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -77,9 +79,38 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("failed to get vm configure: %w", err)
 	}
 
+	//  ========= get all service probes ============
+	servicesProbes := probes.NewRegisters()
+	addr, err := network.ParseUnixAddr(vmc.GVproxyEndpoint)
+	if err != nil {
+		return err
+	}
+	gvProxyServiceProbe := probes.NewGVProxyService(addr.Path)
+	sshServiceProbe := probes.NewGuestSSHService(addr.Path, vmc.SSHInfo.HostSSHKeyPairFile)
+	servicesProbes.AddProbe(gvProxyServiceProbe, sshServiceProbe)
+
+	addr, err = network.ParseUnixAddr(vmc.VMConfigProvisionerAddr)
+	if err != nil {
+		return err
+	}
+	vmCfgProvisionerProbe := probes.NewVMConfigProvisionerServer(addr.Path)
+	servicesProbes.AddProbe(vmCfgProvisionerProbe)
+
+	addr, err = network.ParseUnixAddr(vmc.PodmanInfo.UnixSocksAddr)
+	if err != nil {
+		return err
+	}
+	podmanServiceProbe := probes.NewPodmanService(addr.Path)
+	servicesProbes.AddProbe(podmanServiceProbe)
+
+	// Optional: Report event to server
+	if command.IsSet(define.FlagReportURL) {
+		ctx = context.WithValue(ctx, event.ReportFuncKey, event.InitializeReporter(command.String(define.FlagReportURL)))
+	}
+
 	g, ctx := errgroup.WithContext(ctx)
 
-	// Optional: Management API server for host-side control
+	// Optional: VM Management API server for host-side control
 	if command.IsSet(define.FlagRestAPIListenAddr) {
 		g.Go(func() error {
 			defer logrus.Infof("management API server exited")
@@ -87,23 +118,30 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		})
 	}
 
-	// Optional: Report event to server
-	if command.IsSet(define.FlagReportURL) {
-		ctx = context.WithValue(ctx, event.ReportFuncKey, event.InitializeReporter(command.String(define.FlagReportURL)))
-	}
-
 	// Service readiness prober
 	g.Go(func() error {
 		defer logrus.Infof("service prober exited")
 
-		if err := vmc.CloseChannelWhenServiceReady(ctx); err != nil {
-			return err
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		g, ctx := errgroup.WithContext(ctx)
+		for _, probe := range servicesProbes.GetProbes() {
+			g.Go(func() error {
+				return probe.ProbeUntilReady(ctx)
+			})
+		}
+
+		err := g.Wait()
+
+		if err != nil {
+			return fmt.Errorf("failed to probe services: %w", err)
 		}
 
 		// if all service are ready, report success event to endpoint
 		if reporter := event.GetReporterFromCtx(ctx); reporter != nil {
 			if err := reporter.SendEventInRunLifeCycle(ctx, event.Success, ""); err != nil {
-				logrus.Errorf("send event failed: %v", err)
+				logrus.Warnf("send event failed: %v", err)
 			}
 		}
 
@@ -122,13 +160,12 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		return vmp.StartNetwork(ctx)
 	})
 
-	// vmp.Start(ctx) must be started after the ServiceGVProxy and ServiceIgnServer services have finished starting.
+	// vmp.Start(ctx) must be started after the ServiceGVProxy and ServiceIgnServer probes have finished starting.
 	g.Go(func() error {
 		defer logrus.Infof("VM exited")
 
-		if err := vmc.WaitForServices(ctx, define.ServiceGVProxy, define.ServiceIgnServer); err != nil {
-			return err
-		}
+		gvProxyServiceProbe.WaitUntilReady(ctx)
+		vmCfgProvisionerProbe.WaitUntilReady(ctx)
 
 		if err := vmp.Create(ctx); err != nil {
 			return fmt.Errorf("failed to create vm: %w", err)
@@ -140,10 +177,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	// Docker API tunnel: forward host Unix socket to guest Podman API
 	g.Go(func() error {
 		defer logrus.Infof("docker API tunnel exited")
-
-		if err := vmc.WaitForServices(ctx, define.ServiceGVProxy); err != nil {
-			return err
-		}
+		gvProxyServiceProbe.WaitUntilReady(ctx)
 
 		return network.TunnelHostUnixToGuest(ctx, vmc.GVproxyEndpoint, vmc.PodmanInfo.UnixSocksAddr, define.DefaultGuestAddr, uint16(define.DefaultGuestPodmanAPIPort))
 	})
