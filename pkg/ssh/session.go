@@ -130,14 +130,14 @@ func (s *Session) RequestPTY(ctx context.Context, termType string, width, height
 			if session != nil {
 				newWidth, newHeight, err := term.GetSize(int(os.Stdin.Fd()))
 				if err != nil {
-					logrus.Debugf("Failed to get terminal size: %v", err)
+					logrus.Infof("Failed to get terminal size: %v", err)
 					return
 				}
 
 				if err := session.WindowChange(newHeight, newWidth); err != nil {
-					logrus.Debugf("Failed to change window size: %v", err)
+					logrus.Infof("Failed to change window size: %v", err)
 				} else {
-					logrus.Debugf("Terminal resized to %dx%d", newWidth, newHeight)
+					logrus.Infof("Terminal resized to %dx%d", newWidth, newHeight)
 				}
 			}
 		}
@@ -145,7 +145,7 @@ func (s *Session) RequestPTY(ctx context.Context, termType string, width, height
 		system.OnTerminalResize(resizeFn, ctx)
 	}
 
-	logrus.Debugf("PTY allocated: %s (%dx%d)", termType, width, height)
+	logrus.Infof("PTY allocated: %s (%dx%d)", termType, width, height)
 	return nil
 }
 
@@ -212,7 +212,7 @@ func (s *Session) SetupPipes(stdin io.Reader, stdout, stderr io.Writer) error {
 		go func() {
 			defer s.ioWg.Done()
 			_, err := io.Copy(stdout, stdoutPipe)
-			logrus.Debugf("stdout pipe copy finished with error: %v", err)
+			logrus.Infof("stdout pipe copy finished with error: %v", err)
 		}()
 	}
 
@@ -227,7 +227,7 @@ func (s *Session) SetupPipes(stdin io.Reader, stdout, stderr io.Writer) error {
 		go func() {
 			defer s.ioWg.Done()
 			_, err := io.Copy(stderr, stderrPipe)
-			logrus.Debugf("stderr pipe copy finished with error: %v", err)
+			logrus.Infof("stderr pipe copy finished with error: %v", err)
 		}()
 	}
 
@@ -243,7 +243,7 @@ func (s *Session) SetupPipes(stdin io.Reader, stdout, stderr io.Writer) error {
 			defer s.ioWg.Done()
 			_, _ = io.Copy(stdinPipe, stdin)
 			stdinPipe.Close()
-			logrus.Debugf("stdin pipe copy finished")
+			logrus.Infof("stdin pipe copy finished")
 		}()
 	}
 
@@ -318,7 +318,7 @@ func (s *Session) Wait() error {
 	// This ensures all output is copied before returning
 	s.ioWg.Wait()
 
-	logrus.Debugf("All I/O operations completed")
+	logrus.Infof("All I/O operations completed")
 
 	if err != nil {
 		// Check if it's an exit error
@@ -350,7 +350,7 @@ func (s *Session) Signal(signal ssh.Signal) error {
 		return fmt.Errorf("failed to send signal %s: %w", signal, err)
 	}
 
-	logrus.Debugf("Sent signal %s to remote process", signal)
+	logrus.Infof("Sent signal %s to remote process", signal)
 	return nil
 }
 
@@ -390,7 +390,7 @@ func (s *Session) Close() error {
 		// Close stdin pipe if we opened it
 		if s.stdin != nil {
 			if err := s.stdin.Close(); err != nil {
-				logrus.Debugf("Failed to close stdin pipe: %v", err)
+				logrus.Infof("Failed to close stdin pipe: %v", err)
 			}
 			s.stdin = nil
 		}
@@ -403,13 +403,13 @@ func (s *Session) Close() error {
 			s.session = nil
 		}
 
-		logrus.Debug("SSH session closed")
+		logrus.Infof("SSH session closed")
 	})
 
 	// Wait for all I/O goroutines to finish after session is closed
 	// This ensures no goroutines are leaked and all I/O is complete
 	s.ioWg.Wait()
-	logrus.Debug("All I/O goroutines finished")
+	logrus.Infof("All I/O goroutines finished")
 
 	// Restore terminal state using system package
 	if s.previousTerminalState != nil {

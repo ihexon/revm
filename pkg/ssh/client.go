@@ -108,7 +108,7 @@ func (c *Client) connect(ctx context.Context) error {
 	}
 
 	c.client = ssh.NewClient(clientConn, chans, reqs)
-	logrus.Debugf("SSH client connected to %s@%s", c.config.User, addr)
+	logrus.Infof("SSH client connected to %s@%s", c.config.User, addr)
 
 	return nil
 }
@@ -163,7 +163,7 @@ func (c *Client) dialViaGVProxy(ctx context.Context) (net.Conn, error) {
 		return nil, fmt.Errorf("failed to create gvproxy tunnel: %w", err)
 	}
 
-	logrus.Debugf("Established gvproxy tunnel to %s:%d", c.config.Host, c.config.Port)
+	logrus.Infof("Established gvproxy tunnel to %s:%d", c.config.Host, c.config.Port)
 	return conn, nil
 }
 
@@ -223,7 +223,7 @@ func (c *Client) keepaliveLoop() {
 			// Send keepalive request
 			_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
 			if err != nil {
-				logrus.Debugf("Keepalive failed: %v", err)
+				logrus.Infof("Keepalive failed: %v", err)
 				return
 			}
 		}
@@ -263,7 +263,7 @@ func (c *Client) Close() error {
 		// Signal closure
 		close(c.closed)
 
-		logrus.Debug("SSH client closed")
+		logrus.Infof("SSH client closed")
 	})
 
 	return nil

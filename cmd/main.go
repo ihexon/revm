@@ -32,10 +32,10 @@ func main() {
 				Usage: "listen for REST API requests on the given address, support http or unix socket address," +
 					" e.g. http://127.0.0.1:8080 or unix:///tmp/restapi.sock",
 			},
-			&cli.BoolFlag{
-				Name:   define.FlagVerbose,
-				Hidden: true,
-				Value:  false,
+			&cli.StringFlag{
+				Name:  define.FlagLogLevel,
+				Usage: "set log level (trace, debug, info, warn, error, fatal, panic)",
+				Value: "warn",
 			},
 		},
 	}

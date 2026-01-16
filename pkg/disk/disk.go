@@ -54,7 +54,7 @@ func (b BlkManager) Format(ctx context.Context, blkPath, fsType string) error {
 		}
 		cmd.Stdin = nil
 
-		logrus.Debugf("mke2fs cmdline: %q", cmd.Args)
+		logrus.Infof("mke2fs cmdline: %q", cmd.Args)
 		return cmd.Run()
 	default:
 		return fmt.Errorf("unsupported filesystem type: %s", fsType)

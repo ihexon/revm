@@ -219,7 +219,7 @@ func (vm *LibkrunVM) GetVMConfigure() (*vmconfig.VMConfig, error) {
 //
 // This implements the vm.Provider interface.
 func (vm *LibkrunVM) StartNetwork(ctx context.Context) error {
-	logrus.Debug("starting network backend (gvproxy)")
+	logrus.Infof("starting network backend (gvproxy)")
 	return gvproxy.Run(ctx, vm.config)
 }
 
@@ -319,7 +319,7 @@ func (vm *LibkrunVM) configureResources() error {
 	limits := newCStringArray([]string{limitSpec})
 	defer limits.Free()
 
-	logrus.Debugf("configuring resource limits: NPROC soft=%d hard=%d",
+	logrus.Infof("configuring resource limits: NPROC soft=%d hard=%d",
 		defaultNProcSoftLimit, defaultNProcHardLimit)
 
 	ret = C.krun_set_rlimits(C.uint32_t(vm.ctxID), limits.Ptr())
@@ -347,7 +347,7 @@ func (vm *LibkrunVM) configureDevices() error {
 	if ret != 0 {
 		return fmt.Errorf("krun_add_virtio_console_default failed with code %d", ret)
 	}
-	logrus.Debug("configured virtio-console device")
+	logrus.Infof("configured virtio-console device")
 
 	// VSock: disable implicit and add explicit
 	ret = C.krun_disable_implicit_vsock(C.uint32_t(vm.ctxID))
@@ -359,14 +359,14 @@ func (vm *LibkrunVM) configureDevices() error {
 	if ret != 0 {
 		return fmt.Errorf("krun_add_vsock failed with code %d", ret)
 	}
-	logrus.Debug("configured vsock device")
+	logrus.Infof("configured vsock device")
 
 	// GPU
 	ret = C.krun_set_gpu_options(C.uint32_t(vm.ctxID), C.uint32_t(defaultGPUFlags))
 	if ret != 0 {
 		return fmt.Errorf("krun_set_gpu_options failed with code %d", ret)
 	}
-	logrus.Debug("configured GPU (Venus/Vulkan)")
+	logrus.Infof("configured GPU (Venus/Vulkan)")
 
 	return nil
 }
@@ -469,7 +469,7 @@ func (vm *LibkrunVM) configureAdvancedFeatures() error {
 	ret := C.krun_check_nested_virt()
 	switch ret {
 	case 0:
-		logrus.Debug("nested virtualization not supported, skipping")
+		logrus.Infof("nested virtualization not supported, skipping")
 		return nil
 	case 1:
 		// Supported, continue to enable
@@ -523,7 +523,7 @@ func initLogging() error {
 		return fmt.Errorf("krun_init_log failed with code %d", ret)
 	}
 
-	logrus.Debugf("initialized libkrun logging with level %d", level)
+	logrus.Infof("initialized libkrun logging with level %d", level)
 	return nil
 }
 
@@ -653,7 +653,7 @@ func (vm *LibkrunVM) setCommandLine() error {
 	workdir := newCString(cmdline.Workspace)
 	defer workdir.Free()
 
-	logrus.Debugf("setting working directory: %q", cmdline.Workspace)
+	logrus.Infof("setting working directory: %q", cmdline.Workspace)
 	ret := C.krun_set_workdir(C.uint32_t(vm.ctxID), workdir.Ptr())
 	if ret != 0 {
 		return fmt.Errorf("krun_set_workdir failed with code %d", ret)
@@ -673,7 +673,7 @@ func (vm *LibkrunVM) setCommandLine() error {
 
 	logrus.Infof("configuring guest-agent: %q (args: %v)", cmdline.GuestAgent, cmdline.GuestAgentArgs)
 	if len(cmdline.Env) > 0 {
-		logrus.Debugf("passing %d environment variable(s) to guest", len(cmdline.Env))
+		logrus.Infof("passing %d environment variable(s) to guest", len(cmdline.Env))
 	}
 
 	ret = C.krun_set_exec(
@@ -696,7 +696,7 @@ func (vm *LibkrunVM) executeVM(ctx context.Context) error {
 
 	// Start VM in a goroutine so we can handle context cancellation
 	go func() {
-		logrus.Debugf("entering VM execution loop (ctx_id=%d)", vm.ctxID)
+		logrus.Infof("entering VM execution loop (ctx_id=%d)", vm.ctxID)
 		ret := C.krun_start_enter(C.uint32_t(vm.ctxID))
 		if ret != 0 {
 			// Convert negative error code to errno for better error messages
@@ -729,7 +729,7 @@ func (vm *LibkrunVM) Stop(_ context.Context) error {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
 
-	logrus.Debugf("stop requested for VM (ctx_id=%d, state=%s)", vm.ctxID, vm.state)
+	logrus.Infof("stop requested for VM (ctx_id=%d, state=%s)", vm.ctxID, vm.state)
 	return nil
 }
 
@@ -740,7 +740,7 @@ func (vm *LibkrunVM) Close() error {
 		vm.mu.Lock()
 		defer vm.mu.Unlock()
 
-		logrus.Debugf("closing VM (ctx_id=%d, state=%s)", vm.ctxID, vm.state)
+		logrus.Infof("closing VM (ctx_id=%d, state=%s)", vm.ctxID, vm.state)
 		vm.state = stateClosed
 	})
 	return nil
@@ -788,7 +788,7 @@ func (vm *LibkrunVM) setKernel(kernelPath, initramfsPath string, cmdlineArgs ...
 
 	logrus.Infof("configuring custom kernel: %q", kernelPath)
 	logrus.Infof("configuring initramfs: %q", initramfsPath)
-	logrus.Debugf("kernel command line: %q", cmdline)
+	logrus.Infof("kernel command line: %q", cmdline)
 
 	ret := C.krun_set_kernel(
 		C.uint32_t(vm.ctxID),
