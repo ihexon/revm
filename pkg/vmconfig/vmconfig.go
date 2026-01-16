@@ -358,13 +358,6 @@ func NewVMConfig() *VMConfig {
 		HostSSHKeyPairFile: filepath.Join(prefix, define.SSHKeyPair),
 	}
 	vmc.VMConfigProvisionerAddr = fmt.Sprintf("unix://%s/%s", prefix, define.IgnServerSocketName)
-	vmc.Stage = define.Stage{
-		GVProxyChan:                   make(chan struct{}, 1),
-		VMConfigProvisionerServerChan: make(chan struct{}, 1),
-
-		GuestPodmanReadyChan:    make(chan struct{}, 1),
-		GuestSSHServerReadyChan: make(chan struct{}, 1),
-	}
 
 	vmc.BlkDevs = []define.BlkDev{}
 	vmc.Mounts = []define.Mount{}
