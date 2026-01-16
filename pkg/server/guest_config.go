@@ -27,7 +27,7 @@ type GuestConfigServer struct {
 func NewGuestConfigServer(vmc *vmconfig.VMConfig) *GuestConfigServer {
 	return &GuestConfigServer{
 		vmc: vmc,
-		srv: newHTTPServer("guest-config", vmc.IgnProvisionerAddr),
+		srv: newHTTPServer("guest-config", vmc.VMConfigProvisionerAddr),
 	}
 }
 

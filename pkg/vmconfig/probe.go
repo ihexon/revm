@@ -182,16 +182,16 @@ func waitGVProxyAlive(ctx context.Context, vmc *VMConfig) error {
 	return nil
 }
 
-// waitIgnServerAlive probes Ignition provisioner server until it's ready
-func waitIgnServerAlive(ctx context.Context, vmc *VMConfig) error {
-	addr, err := network.ParseUnixAddr(vmc.IgnProvisionerAddr)
+// waitVMConfigProvisonerServerAlive probes Ignition provisioner server until it's ready
+func waitVMConfigProvisonerServerAlive(ctx context.Context, vmc *VMConfig) error {
+	addr, err := network.ParseUnixAddr(vmc.VMConfigProvisionerAddr)
 	if err != nil {
 		return err
 	}
 
 	prober := &unixSocketStatusProber{
 		baseProber:     newBaseProber(&vmc.Stage, define.ServiceIgnServer),
-		name:           "Ignition Server",
+		name:           "vmconfig provisioner Server",
 		unixSocketFile: addr.Path,
 		path:           "/healthz",
 	}
@@ -257,16 +257,19 @@ func (v *VMConfig) CloseChannelWhenServiceReady(ctx context.Context) error {
 	})
 
 	g.Go(func() error {
-		return waitIgnServerAlive(ctx, v)
+		defer logrus.Infof("vmconfig provisioner server available now")
+		return waitVMConfigProvisonerServerAlive(ctx, v)
 	})
 
 	if v.RunMode == define.ContainerMode.String() {
 		g.Go(func() error {
+			defer logrus.Infof("guest podman service available now")
 			return waiteHostPodmanForwardAlive(ctx, v)
 		})
 	}
 
 	g.Go(func() error {
+		defer logrus.Infof("guest ssh service available now")
 		return waiteSSHTunnelAlive(ctx, v)
 	})
 
