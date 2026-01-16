@@ -23,9 +23,8 @@ func main() {
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:   define.FlagVMMProvider,
-				Usage:  "vmm provider, support libkrun and vfkit for now, default is libkrun",
-				Hidden: true,
+				Name:   define.FlagReportURL,
+				Usage:  "report virtual machine events to this endpoints, eg: unix:///var/run/events.sock or tcp://192.168.1.252:8888",
 			},
 			&cli.StringFlag{
 				Name: define.FlagRestAPIListenAddr,

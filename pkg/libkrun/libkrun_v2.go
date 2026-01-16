@@ -256,7 +256,7 @@ func (vm *LibkrunVM) Create(ctx context.Context) error {
 	logrus.Infof("created libkrun context with ID: %d", vm.ctxID)
 
 	// Apply all VM configurations
-	if err := vm.configureVM(); err != nil {
+	if err := vm.configureVM(ctx); err != nil {
 		return fmt.Errorf("failed to configure VM: %w", err)
 	}
 
@@ -267,29 +267,31 @@ func (vm *LibkrunVM) Create(ctx context.Context) error {
 
 // configureVM applies all VM configuration settings.
 // Configuration is organized into logical phases for clarity.
-func (vm *LibkrunVM) configureVM() error {
+func (vm *LibkrunVM) configureVM(ctx context.Context) error {
+	var err error
+
 	// Phase 1: Core VM resources
-	if err := vm.configureResources(); err != nil {
+	if err = vm.configureResources(); err != nil {
 		return err
 	}
 
 	// Phase 2: Virtual devices (console, vsock, GPU)
-	if err := vm.configureDevices(); err != nil {
+	if err = vm.configureDevices(); err != nil {
 		return err
 	}
 
 	// Phase 3: Storage (rootfs, block devices, shared directories)
-	if err := vm.configureStorage(); err != nil {
+	if err = vm.configureStorage(); err != nil {
 		return err
 	}
 
 	// Phase 4: Networking
-	if err := vm.configureNetwork(); err != nil {
+	if err = vm.configureNetwork(); err != nil {
 		return err
 	}
 
 	// Phase 5: Advanced features
-	if err := vm.configureAdvancedFeatures(); err != nil {
+	if err = vm.configureAdvancedFeatures(); err != nil {
 		return err
 	}
 
@@ -440,7 +442,7 @@ func (vm *LibkrunVM) configureNetwork() error {
 	}
 
 	// VSock port mapping for ignition provisioner
-	ignAddr, err := network.ParseUnixAddr(vm.config.IgnProvisionerAddr)
+	ignAddr, err := network.ParseUnixAddr(vm.config.VMConfigProvisionerAddr)
 	if err != nil {
 		return fmt.Errorf("failed to parse ignition server address: %w", err)
 	}

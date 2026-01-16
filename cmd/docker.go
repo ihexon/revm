@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/event"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/server"
 	"linuxvm/pkg/system"
@@ -79,19 +80,37 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Optional: Management API server for host-side control
-	if command.IsSet(define.FlagRestAPIListenAddr) && command.String(define.FlagRestAPIListenAddr) != "" {
+	if command.IsSet(define.FlagRestAPIListenAddr) {
 		g.Go(func() error {
+			defer logrus.Infof("management API server exited")
 			return server.NewManagementAPIServer(vmc).Start(ctx)
 		})
+	}
+
+	// Optional: Report event to server
+	if command.IsSet(define.FlagReportURL) {
+		ctx = context.WithValue(ctx, event.ReportFuncKey, event.InitializeReporter(command.String(define.FlagReportURL)))
 	}
 
 	// Service readiness prober
 	g.Go(func() error {
 		defer logrus.Infof("service prober exited")
-		return vmc.CloseChannelWhenServiceReady(ctx)
+
+		if err := vmc.CloseChannelWhenServiceReady(ctx); err != nil {
+			return err
+		}
+
+		// if all service are ready, report success event to endpoint
+		if reporter := event.GetReporterFromCtx(ctx); reporter != nil {
+			if err := reporter.SendEventInRunLifeCycle(ctx, event.Success, ""); err != nil {
+				logrus.Errorf("send event failed: %v", err)
+			}
+		}
+
+		return nil
 	})
 
-	// Guest config server (provides VM config to guest agent via VSock)
+	// A server that hosts the vmonfig configuration in memory.
 	g.Go(func() error {
 		defer logrus.Infof("guest-config server exited")
 		return server.NewGuestConfigServer(vmc).Start(ctx)
@@ -103,7 +122,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		return vmp.StartNetwork(ctx)
 	})
 
-	// VM lifecycle: wait for dependencies, then create and start
+	// vmp.Start(ctx) must be started after the ServiceGVProxy and ServiceIgnServer services have finished starting.
 	g.Go(func() error {
 		defer logrus.Infof("VM exited")
 
@@ -111,7 +130,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 			return err
 		}
 
-		if err = vmp.Create(ctx); err != nil {
+		if err := vmp.Create(ctx); err != nil {
 			return fmt.Errorf("failed to create vm: %w", err)
 		}
 
@@ -129,5 +148,25 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		return network.TunnelHostUnixToGuest(ctx, vmc.GVproxyEndpoint, vmc.PodmanInfo.UnixSocksAddr, define.DefaultGuestAddr, uint16(define.DefaultGuestPodmanAPIPort))
 	})
 
-	return g.Wait()
+	err = g.Wait()
+
+	// if the run life cycle has any error, report error to endpoint
+	if err != nil {
+		if reporter := event.GetReporterFromCtx(ctx); reporter != nil {
+			if err := reporter.SendEventInRunLifeCycle(ctx, event.Error, err.Error()); err != nil {
+				logrus.Errorf("send event failed: %v", err)
+			}
+		}
+	}
+
+	// if the virtual machine exited normally, report exit event to endpoint
+	if err == nil {
+		if reporter := event.GetReporterFromCtx(ctx); reporter != nil {
+			if err := reporter.SendEventInRunLifeCycle(ctx, event.Exit, ""); err != nil {
+				logrus.Errorf("send event failed: %v", err)
+			}
+		}
+	}
+
+	return err
 }
