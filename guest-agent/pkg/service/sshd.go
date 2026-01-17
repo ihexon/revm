@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"time"
 
 	"os"
 	"os/exec"
@@ -13,11 +14,10 @@ import (
 	"linuxvm/pkg/define"
 
 	"github.com/sirupsen/logrus"
-	"golang.org/x/sys/unix"
 )
 
 //go:embed dropbearmulti
-var dropbearmulti []byte
+var dropbearmultiBytes []byte
 
 type SSHServer struct {
 	dropbearMulti string
@@ -51,6 +51,10 @@ func StartGuestSSHServer(ctx context.Context, vmc *define.VMConfig) error {
 	if err := sshServer.getBinaries(); err != nil {
 		return err
 	}
+
+	// unknown bug: fork/exec /3rd/bin/dropbearmulti: text file busy
+	// TODO: write the binaries to a tmp dir, not in virtio-fs rootfs system
+	time.Sleep(50 * time.Millisecond)
 
 	if err := sshServer.GenerateSSHKeyFile(ctx); err != nil {
 		return fmt.Errorf("failed to create ssh key: %w", err)
@@ -95,11 +99,7 @@ func getBinary(filePath string, b []byte) error {
 }
 
 func (s *SSHServer) getBinaries() error {
-	if err := getBinary(s.dropbearMulti, dropbearmulti); err != nil {
-		return err
-	}
-	unix.Sync()
-	return os.Chmod(s.dropbearMulti, 0755)
+	return getBinary(s.dropbearMulti, dropbearmultiBytes)
 }
 
 func (s *SSHServer) GenerateSSHKeyFile(ctx context.Context) error {

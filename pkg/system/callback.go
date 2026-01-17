@@ -32,7 +32,6 @@ func (c *CleanupCallback) CleanOnSignal() {
 	}
 
 	c.clean()
-	os.Exit(1)
 }
 
 func (c *CleanupCallback) DoClean() {

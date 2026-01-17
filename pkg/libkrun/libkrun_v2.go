@@ -15,13 +15,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"unsafe"
 
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/system"
@@ -253,6 +251,7 @@ func (vm *LibkrunVM) Create(ctx context.Context) error {
 		return fmt.Errorf("failed to create libkrun context: krun_create_ctx returned %d", ctxID)
 	}
 	vm.ctxID = uint32(ctxID)
+
 	logrus.Infof("created libkrun context with ID: %d", vm.ctxID)
 
 	// Apply all VM configurations
@@ -451,7 +450,7 @@ func (vm *LibkrunVM) configureNetwork() error {
 	defer ignSocketPath.Free()
 
 	vsockPort := uint32(define.DefaultVSockPort)
-	logrus.Infof("adding VSock port mapping: port=%d → %q", vsockPort, ignAddr.Path)
+	logrus.Infof("adding vsock port mapping: port=%d → %q", vsockPort, ignAddr.Path)
 
 	ret = C.krun_add_vsock_port2(
 		C.uint32_t(vm.ctxID),
@@ -474,16 +473,14 @@ func (vm *LibkrunVM) configureAdvancedFeatures() error {
 		logrus.Infof("nested virtualization not supported, skipping")
 		return nil
 	case 1:
-		// Supported, continue to enable
+		ret = C.krun_set_nested_virt(C.uint32_t(vm.ctxID), true)
+		if ret != 0 {
+			return fmt.Errorf("krun_set_nested_virt failed with code %d", ret)
+		}
+		logrus.Info("enabled nested virtualization")
 	default:
 		return fmt.Errorf("krun_check_nested_virt failed with code %d", ret)
 	}
-
-	ret = C.krun_set_nested_virt(C.uint32_t(vm.ctxID), true)
-	if ret != 0 {
-		return fmt.Errorf("krun_set_nested_virt failed with code %d", ret)
-	}
-	logrus.Info("enabled nested virtualization")
 
 	return nil
 }
@@ -594,7 +591,7 @@ func (vm *LibkrunVM) addVirtIOFS(tag, hostPath string) error {
 	pathC := newCString(resolvedPath)
 	defer pathC.Free()
 
-	logrus.Infof("adding VirtIO-FS: %q → tag=%q", resolvedPath, tag)
+	logrus.Infof("adding virtio-fs: %q → tag=%q", resolvedPath, tag)
 	ret := C.krun_add_virtiofs2(
 		C.uint32_t(vm.ctxID),
 		tagC.Ptr(),
@@ -638,7 +635,7 @@ func (vm *LibkrunVM) Start(ctx context.Context) error {
 	}
 
 	// Start VM execution (blocks until VM exits)
-	err := vm.executeVM(ctx)
+	err := vm.enterVMLifecycle(ctx)
 
 	vm.mu.Lock()
 	vm.state = stateStopped
@@ -691,9 +688,9 @@ func (vm *LibkrunVM) setCommandLine() error {
 	return nil
 }
 
-// executeVM starts the VM and waits for it to terminate.
+// enterVMLifecycle starts the VM and waits for it to terminate.
 // This is the main VM execution loop that blocks until completion.
-func (vm *LibkrunVM) executeVM(ctx context.Context) error {
+func (vm *LibkrunVM) enterVMLifecycle(ctx context.Context) error {
 	errChan := make(chan error, 1)
 
 	// Start VM in a goroutine so we can handle context cancellation
@@ -745,63 +742,5 @@ func (vm *LibkrunVM) Close() error {
 		logrus.Infof("closing VM (ctx_id=%d, state=%s)", vm.ctxID, vm.state)
 		vm.state = stateClosed
 	})
-	return nil
-}
-
-// SetKernel configures a custom kernel and initramfs for the VM.
-// This is an advanced feature and is not typically needed for standard usage.
-//
-// Most users should use the default kernel embedded in the rootfs.
-// This method is useful for kernel development or testing custom kernels.
-func (vm *LibkrunVM) SetKernel(ctx context.Context) error {
-	return vm.setKernel(
-		vm.config.Kernel,
-		vm.config.Initrd,
-		vm.config.KernelCmdline...,
-	)
-}
-
-// setKernel configures custom kernel, initramfs, and kernel command line.
-func (vm *LibkrunVM) setKernel(kernelPath, initramfsPath string, cmdlineArgs ...string) error {
-	// Validate kernel exists
-	if exists, _ := filesystem.PathExists(kernelPath); !exists {
-		return fmt.Errorf("kernel image not found: %q", kernelPath)
-	}
-
-	// Validate initramfs exists
-	if exists, _ := filesystem.PathExists(initramfsPath); !exists {
-		return fmt.Errorf("initramfs not found: %q", initramfsPath)
-	}
-
-	// Build command line string
-	if len(cmdlineArgs) == 0 {
-		return fmt.Errorf("kernel command line cannot be empty")
-	}
-	cmdline := strings.Join(cmdlineArgs, " ")
-
-	kernel := newCString(kernelPath)
-	defer kernel.Free()
-
-	initramfs := newCString(initramfsPath)
-	defer initramfs.Free()
-
-	cmdlineC := newCString(cmdline)
-	defer cmdlineC.Free()
-
-	logrus.Infof("configuring custom kernel: %q", kernelPath)
-	logrus.Infof("configuring initramfs: %q", initramfsPath)
-	logrus.Infof("kernel command line: %q", cmdline)
-
-	ret := C.krun_set_kernel(
-		C.uint32_t(vm.ctxID),
-		kernel.Ptr(),
-		C.KRUN_KERNEL_FORMAT_RAW,
-		initramfs.Ptr(),
-		cmdlineC.Ptr(),
-	)
-	if ret != 0 {
-		return fmt.Errorf("krun_set_kernel failed with code %d", ret)
-	}
-
 	return nil
 }
