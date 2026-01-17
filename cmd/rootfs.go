@@ -93,6 +93,9 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	}
 	vmCfgProvisionerProbe := probes.NewVMConfigProvisionerServer(addr.Path)
 
+	registeredProbes := probes.NewRegisters()
+	registeredProbes.AddProbe(gvProxyServiceProbe, sshServiceProbe, vmCfgProvisionerProbe)
+
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Optional: Management API server for host-side control
@@ -112,17 +115,11 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 
 		g, ctx := errgroup.WithContext(ctx)
 
-		g.Go(func() error {
-			return gvProxyServiceProbe.ProbeUntilReady(ctx)
-		})
-
-		g.Go(func() error {
-			return vmCfgProvisionerProbe.ProbeUntilReady(ctx)
-		})
-
-		g.Go(func() error {
-			return sshServiceProbe.ProbeUntilReady(ctx)
-		})
+		for _, probe := range registeredProbes.GetProbes() {
+			g.Go(func() error {
+				return probe.ProbeUntilReady(ctx)
+			})
+		}
 
 		if err := g.Wait(); err != nil {
 			return fmt.Errorf("failed to probe services: %w", err)
