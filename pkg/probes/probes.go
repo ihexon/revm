@@ -75,7 +75,7 @@ func (v *VMConfigProvisionerServer) ProbeUntilReady(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			resp, err := client.Get(ctx, "/healthz") // nolint:bodyclose
+			resp, err := client.Get(ctx, "/healthz") //nolint:bodyclose
 			if err != nil {
 				continue
 			}
@@ -185,7 +185,7 @@ func (p *PodmanService) ProbeUntilReady(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			resp, err := client.Get(ctx, "/libpod/_ping") // nolint:bodyclose
+			resp, err := client.Get(ctx, "/libpod/_ping") //nolint:bodyclose
 			if err != nil {
 				continue
 			}

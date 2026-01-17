@@ -9,13 +9,9 @@ func NewRegisters() *Registers {
 }
 
 func (r *Registers) AddProbe(probe ...ServiceProber) {
-	for _, p := range probe {
-		r.Probes = append(r.Probes, p)
-	}
+	r.Probes = append(r.Probes, probe...)
 }
 
 func (r *Registers) GetProbes() []ServiceProber {
 	return r.Probes
 }
-
-

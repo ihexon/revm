@@ -37,6 +37,10 @@ func main() {
 				Usage: "set log level (trace, debug, info, warn, error, fatal, panic)",
 				Value: "warn",
 			},
+			&cli.StringFlag{
+				Name:  define.FlagSaveLogTo,
+				Usage: "save log to file",
+			},
 		},
 	}
 
