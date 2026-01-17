@@ -241,7 +241,7 @@ func (vm *LibkrunVM) Create(ctx context.Context) error {
 
 	// Initialize libkrun logging BEFORE creating context
 	// This MUST be called before krun_create_ctx()
-	if err := initLogging(); err != nil {
+	if err := initLogging(vm.config.LogFile); err != nil {
 		return fmt.Errorf("failed to initialize logging: %w", err)
 	}
 
@@ -339,11 +339,23 @@ func (vm *LibkrunVM) configureDevices() error {
 		return fmt.Errorf("krun_disable_implicit_console failed with code %d", ret)
 	}
 
+	// Default: use stdin/stdout/stderr for console
+	inputFd := C.int(os.Stdin.Fd())
+	outputFd := C.int(os.Stdout.Fd())
+	errFd := C.int(os.Stderr.Fd())
+
+	// If log file is specified, redirect console output to log file
+	if vm.config.LogFile != nil {
+		outputFd = C.int(vm.config.LogFile.Fd())
+		errFd = C.int(vm.config.LogFile.Fd())
+		logrus.Infof("console output will be written to log file: %q", vm.config.LogFile.Name())
+	}
+
 	ret = C.krun_add_virtio_console_default(
 		C.uint32_t(vm.ctxID),
-		C.int(os.Stdin.Fd()),
-		C.int(os.Stdout.Fd()),
-		C.int(os.Stderr.Fd()),
+		inputFd,
+		outputFd,
+		errFd,
 	)
 	if ret != 0 {
 		return fmt.Errorf("krun_add_virtio_console_default failed with code %d", ret)
@@ -488,7 +500,7 @@ func (vm *LibkrunVM) configureAdvancedFeatures() error {
 // initLogging initializes libkrun's logging subsystem.
 // IMPORTANT: This MUST be called BEFORE krun_create_ctx().
 // Do NOT call krun_set_log_level() if using this function - they conflict.
-func initLogging() error {
+func initLogging(logFile *os.File) error {
 	var level C.uint32_t
 
 	// Map logrus levels to libkrun levels
@@ -507,15 +519,19 @@ func initLogging() error {
 		level = C.KRUN_LOG_LEVEL_INFO
 	}
 
-	// Use krun_init_log with:
-	// - KRUN_LOG_TARGET_DEFAULT (-1): write to stderr
-	// - level: the log level we determined above
-	// - KRUN_LOG_STYLE_AUTO: auto-detect terminal color support
-	// - KRUN_LOG_OPTION_NO_ENV: don't allow env vars to override these settings
+	// Determine target fd: log file or default (stderr)
+	targetFd := C.int(C.KRUN_LOG_TARGET_DEFAULT)
+	style := C.uint32_t(C.KRUN_LOG_STYLE_AUTO)
+	if logFile != nil {
+		targetFd = C.int(logFile.Fd())
+		style = C.KRUN_LOG_STYLE_NEVER // disable colors when writing to file
+		logrus.Infof("libkrun logs will be written to: %q", logFile.Name())
+	}
+
 	ret := C.krun_init_log(
-		C.KRUN_LOG_TARGET_DEFAULT,
+		targetFd,
 		level,
-		C.KRUN_LOG_STYLE_AUTO,
+		style,
 		C.KRUN_LOG_OPTION_NO_ENV,
 	)
 	if ret != 0 {

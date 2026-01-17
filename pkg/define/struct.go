@@ -40,18 +40,18 @@ type VMConfig struct {
 	GVproxyEndpoint string `json:"GVproxyEndpoint,omitempty"`
 	// NetworkStackBackend is the network stack backend to use. which provided
 	// by gvproxy
-	NetworkStackBackend string     `json:"networkStackBackend,omitempty"`
-	LogLevel            string     `json:"logLevel,omitempty"`
-	Mounts              []Mount    `json:"mounts,omitempty"`
-	SSHInfo             SSHInfo    `json:"sshInfo,omitempty"`
-	Cmdline             Cmdline    `json:"cmdline,omitempty"`
-	PodmanInfo          PodmanInfo `json:"podmanInfo,omitempty"`
-	RestAPIAddress      string     `json:"restAPIAddress,omitempty"`
+	NetworkStackBackend     string        `json:"networkStackBackend,omitempty"`
+	LogLevel                string        `json:"logLevel,omitempty"`
+	Mounts                  []Mount       `json:"mounts,omitempty"`
+	SSHInfo                 SSHInfo       `json:"sshInfo,omitempty"`
+	Cmdline                 Cmdline       `json:"cmdline,omitempty"`
+	PodmanInfo              PodmanInfo    `json:"podmanInfo,omitempty"`
+	RestAPIAddress          string        `json:"restAPIAddress,omitempty"`
+	RunMode                 string        `json:"runMode,omitempty"`
+	VMConfigProvisionerAddr string        `json:"VMConfigProvisionerAddr,omitempty"`
+	ExternalTools           ExternalTools `json:"externalTools,omitempty"`
 
-	RunMode                 string `json:"runMode,omitempty"`
-	VMConfigProvisionerAddr string `json:"VMConfigProvisionerAddr,omitempty"`
-
-	ExternalTools ExternalTools `json:"externalTools,omitempty"`
+	LogFile *os.File `json:"-"` // opened log file, not serialized
 }
 
 type LinuxTools struct {

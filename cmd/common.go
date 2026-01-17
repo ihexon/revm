@@ -16,6 +16,10 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+// logFile holds the opened log file for sharing across components.
+// It is opened once in setLogrus and passed to VMConfig.
+var logFile *os.File
+
 func earlyStage(ctx context.Context, command *cli.Command) (context.Context, error) {
 	setLogrus(command)
 	return ctx, nil
@@ -40,14 +44,16 @@ func showVersionAndOSInfo() error {
 	logrus.Infof("%s version: %s", os.Args[0], version.String())
 
 	// osInfo, err := system.GetOSVersion()
-	//if err != nil {
+	// if err != nil {
 	//	return fmt.Errorf("failed to get os version: %w", err)
 	//}
 	//
-	//logrus.Infof("os version: %+v", osInfo)
+	// logrus.Infof("os version: %+v", osInfo)
 
 	return nil
 }
+
+const maxLogFileSize = 100 * 1024 * 1024 // 100MB
 
 func setLogrus(command *cli.Command) {
 	level, err := logrus.ParseLevel(command.String(define.FlagLogLevel))
@@ -61,7 +67,25 @@ func setLogrus(command *cli.Command) {
 		ForceColors:     true,
 		TimestampFormat: "2006-01-02 15:04:05.000",
 	})
+
 	logrus.SetOutput(os.Stderr)
+
+	// If --save-logs is set, write only to log file (not to terminal)
+	if command.IsSet(define.FlagSaveLogTo) {
+		logPath := command.String(define.FlagSaveLogTo)
+
+		// Check file size and truncate if > 100MB
+		if info, err := os.Stat(logPath); err == nil && info.Size() > maxLogFileSize {
+			if err = os.Truncate(logPath, 0); err != nil {
+				logrus.Warnf("failed to truncate log file: %v", err)
+			}
+		}
+
+		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err == nil {
+			logrus.SetOutput(logFile)
+		}
+	}
 }
 
 func setMaxMemory() uint64 {
@@ -128,6 +152,9 @@ func createBaseVMConfig(command *cli.Command) (*vmconfig.VMConfig, error) {
 		}
 	}
 
+	// Pass the already-opened log file to VMConfig
+	vmc.LogFile = logFile
+
 	if err := vmc.GenerateSSHInfo(); err != nil {
 		return nil, err
 	}
@@ -189,37 +216,3 @@ func generateRootfsVMConfig(ctx context.Context, vmc *vmconfig.VMConfig, command
 
 	return nil
 }
-
-// func setupVZMode(_ context.Context, vmc *vmconfig.VMConfig, command *cli.Command) (vm.Provider, error) {
-//	vmc.RunMode = define.VZMode.String()
-//
-//	kernelPath, err := path.GetBuiltKernelPath()
-//	if err != nil {
-//		return nil, fmt.Errorf("failed to find built kernel path: %w", err)
-//	}
-//	logrus.Infof("kernel path: %s", kernelPath)
-//
-//	initramfsPath, err := path.GetBuiltInitramfsPath()
-//	if err != nil {
-//		return nil, fmt.Errorf("failed to find built initramfs path: %w", err)
-//	}
-//	logrus.Infof("initramfs path: %s", initramfsPath)
-//
-//	vmc.WithUncompressedKernel(kernelPath)
-//	vmc.WithInitramfs(initramfsPath)
-//	vmc.WithKernelCmdline([]string{"console=hvc0"})
-//
-//	// TODO: add env to u-root init
-//	if err := vmc.WithUserProvidedCmdline(command.Args().First(), command.Args().Tail(), command.StringSlice(define.FlagEnvs)); err != nil {
-//		return nil, err
-//	}
-//
-//	// TODO: auto mount virtio-fs host shared dir
-//	if command.IsSet(define.FlagMount) {
-//		if err := vmc.WithUserProvidedMounts(command.StringSlice(define.FlagMount)); err != nil {
-//			return nil, fmt.Errorf("failed to set user provided mounts: %w", err)
-//		}
-//	}
-//
-//	return vm.Get(vmc), nil
-//}
