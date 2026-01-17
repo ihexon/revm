@@ -46,7 +46,6 @@ const (
 const (
 	FlagDockerMode = "docker-mode"
 	FlagRootfsMode = "rootfs-mode"
-	FlagKernelMode = "kernel-mode"
 
 	FlagLogLevel             = "log-level"
 	FlagListenUnixFile       = "listen-unix"
@@ -61,6 +60,7 @@ const (
 	FlagPTY                  = "pty"
 	FlagEnvs                 = "envs"
 	FlagReportURL            = "report-url"
+	FlagSaveLogTo            = "save-logs"
 )
 
 type RunMode int

@@ -30,8 +30,8 @@ func NewUnixHTTPClient(socketPath string, timeout time.Duration) *UnixHTTPClient
 	}
 
 	return &UnixHTTPClient{
-		socketPath: socketPath,
-		timeout:    timeout,
+		socketPath:  socketPath,
+		timeout:     timeout,
 		httpHeaders: http.Header{},
 		urlValues:   url.Values{},
 		client: &http.Client{
@@ -152,5 +152,3 @@ func (c *UnixHTTPClient) AddHeader(key, value string) {
 func (c *UnixHTTPClient) AddQuery(key, value string) {
 	c.urlValues.Add(key, value)
 }
-
-
