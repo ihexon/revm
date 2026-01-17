@@ -7,8 +7,6 @@ import (
 	"net/http"
 
 	"linuxvm/pkg/vmconfig"
-
-	"github.com/sirupsen/logrus"
 )
 
 // GuestConfigServer provides VM configuration to the guest agent.
@@ -44,7 +42,6 @@ func (s *GuestConfigServer) handleHealth(w http.ResponseWriter, r *http.Request)
 		WriteJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	logrus.Infof("guest-config: /healthz")
 	WriteJSON(w, http.StatusOK, nil)
 }
 
@@ -53,6 +50,5 @@ func (s *GuestConfigServer) handleVMConfig(w http.ResponseWriter, r *http.Reques
 		WriteJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	logrus.Infof("guest-config: /vmconfig")
 	WriteJSON(w, http.StatusOK, s.vmc)
 }

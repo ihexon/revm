@@ -94,8 +94,7 @@ func (c *UnixHTTPClient) do(ctx context.Context, method, path string, headers ht
 	req.Header = headers
 	req.URL.RawQuery = c.urlValues.Encode()
 
-	logrus.Infof("HTTP %s: %s via unix:%s", method, myURL, c.socketPath)
-
+	logrus.Debugf("do http request: %q %q", req.Method, req.URL.String())
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP %s request failed: %w", method, err)

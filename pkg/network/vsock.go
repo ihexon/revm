@@ -6,102 +6,112 @@ import (
 	"io"
 	"net"
 	"os"
-	"strings"
+	"sync"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/sirupsen/logrus"
 )
 
-func TunnelHostUnixToGuest(ctx context.Context, gvproxyCtlUnixAddr, listHostUnixAddr, targetIP string, targetPort uint16) error {
-	gvpAddr, err := ParseUnixAddr(gvproxyCtlUnixAddr)
+// TunnelHostUnixToGuest creates a Unix socket tunnel that forwards connections to a guest VM.
+func TunnelHostUnixToGuest(ctx context.Context, gvproxyCtlUnixAddr, listenUnixAddr, targetIP string, targetPort uint16) error {
+	gvproxyPath, err := parseUnixSocketPath(gvproxyCtlUnixAddr)
 	if err != nil {
-		return fmt.Errorf("failed to parse gvproxy socket address: %w", err)
-	}
-	if gvpAddr.Path == "" {
-		return fmt.Errorf("parsed gvproxy control socket address is empty")
+		return fmt.Errorf("invalid gvproxy socket address: %w", err)
 	}
 
-	listenAddr, err := ParseUnixAddr(listHostUnixAddr)
+	listenPath, err := parseUnixSocketPath(listenUnixAddr)
 	if err != nil {
-		return fmt.Errorf("failed to parse listen socket address %q: %w", listHostUnixAddr, err)
+		return fmt.Errorf("invalid listen socket address: %w", err)
 	}
 
-	if listenAddr.Path == "" {
-		return fmt.Errorf("parsed listen socket address is empty")
-	}
-
-	// Ensure old socket is removed if exists
-	if err := os.Remove(listenAddr.Path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove old socket %s: %w", listenAddr.Path, err)
-	}
-
-	ln, err := net.Listen("unix", listenAddr.Path)
+	ln, err := createUnixListenerSockFile(listenPath)
 	if err != nil {
-		return fmt.Errorf("listen on %q: %w", listenAddr.Path, err)
-	}
-	defer func(ln net.Listener) {
-		_ = ln.Close()
-	}(ln)
-
-	if err = os.Chmod(listenAddr.Path, 0600); err != nil {
-		logrus.Warnf("chmod unix socket %q: %v", listenAddr.Path, err)
+		return err
 	}
 
-	go func(ctx context.Context) {
+	// Use sync.Once to ensure listener is closed exactly once
+	var closeOnce sync.Once
+	closeLn := func() { closeOnce.Do(func() { _ = ln.Close() }) }
+	defer closeLn()
+
+	// Close listener when context is cancelled to unblock Accept()
+	go func() {
 		<-ctx.Done()
-		_ = ln.Close()
-	}(ctx)
+		closeLn()
+	}()
 
-	// Accept loop
+	return acceptLoop(ctx, ln, gvproxyPath, targetIP, targetPort)
+}
+
+func parseUnixSocketPath(addr string) (string, error) {
+	parsed, err := ParseUnixAddr(addr)
+	if err != nil {
+		return "", err
+	}
+	if parsed.Path == "" {
+		return "", fmt.Errorf("empty socket path")
+	}
+	return parsed.Path, nil
+}
+
+func createUnixListenerSockFile(path string) (net.Listener, error) {
+	_ = os.Remove(path) // ignore error if not exists
+
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, fmt.Errorf("listen on %q: %w", path, err)
+	}
+
+	if err = os.Chmod(path, 0600); err != nil {
+		logrus.Warnf("chmod unix socket %q: %v", path, err)
+	}
+
+	return ln, nil
+}
+
+func acceptLoop(ctx context.Context, ln net.Listener, gvproxyPath, targetIP string, targetPort uint16) error {
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
 		conn, err := ln.Accept()
 		if err != nil {
-			logrus.Infof("accept connection error: %v", err)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			continue
 		}
 
-		go handleConn(ctx, conn, gvpAddr.Path, targetIP, targetPort)
+		go handleTunnelConn(conn, gvproxyPath, targetIP, targetPort)
 	}
 }
 
-func handleConn(_ context.Context, clientConn net.Conn, gvproxyCtlSocksPath, targetIP string, targetPort uint16) {
-	logrus.Infof("accepted new connection from %v", clientConn.RemoteAddr())
+func handleTunnelConn(clientConn net.Conn, gvproxyPath, targetIP string, targetPort uint16) {
+	defer clientConn.Close()
 
-	guestConn, err := net.Dial("unix", gvproxyCtlSocksPath)
+	guestConn, err := net.Dial("unix", gvproxyPath)
 	if err != nil {
-		logrus.Errorf("dial gvproxy socket %q failed: %v", gvproxyCtlSocksPath, err)
-		clientConn.Close()
+		logrus.Errorf("dial gvproxy socket %q: %v", gvproxyPath, err)
 		return
 	}
+	defer guestConn.Close()
 
 	if err := transport.Tunnel(guestConn, targetIP, int(targetPort)); err != nil {
-		logrus.Errorf("setup tunnel to %s:%d failed: %v", targetIP, targetPort, err)
-		guestConn.Close()
-		clientConn.Close()
+		logrus.Errorf("setup tunnel to %s:%d: %v", targetIP, targetPort, err)
 		return
 	}
 
-	// Start bidirectional copy
-	go proxyCopy(clientConn, guestConn, "guest->client")
-	go proxyCopy(guestConn, clientConn, "client->guest")
+	bidirectionalCopy(clientConn, guestConn)
 }
 
-func proxyCopy(dst, src net.Conn, direction string) {
-	defer dst.Close()
-	defer src.Close()
+func bidirectionalCopy(conn1, conn2 net.Conn) {
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	if _, err := io.Copy(dst, src); err != nil && !isUseOfClosedErr(err) {
-		logrus.Errorf("io copy error (%v): %v", direction, err)
+	copy := func(dst, src net.Conn) {
+		defer wg.Done()
+		_, _ = io.Copy(dst, src)
 	}
-}
 
-// helper: ignore "use of closed network connection" errors
-func isUseOfClosedErr(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "use of closed network connection")
+	go copy(conn1, conn2)
+	go copy(conn2, conn1)
+
+	wg.Wait()
 }
