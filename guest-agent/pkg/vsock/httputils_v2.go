@@ -52,6 +52,7 @@ func (t *VSockTransport) DialContext(ctx context.Context, network, addr string) 
 		err error
 	}, 1)
 
+	// vsock.Dial is fast, so no need for immediate response ctx
 	go func() {
 		c, err := vsock.Dial(t.cid, t.port, nil)
 		result <- struct {
@@ -120,7 +121,6 @@ func (c *HTTPClient) Get(ctx context.Context, path string) (*http.Response, erro
 		return nil, fmt.Errorf("failed to create GET request: %w", err)
 	}
 
-	logrus.Infof("HTTP GET: %s via %s", url, c.transport.Name())
 	return c.client.Do(req)
 }
 
