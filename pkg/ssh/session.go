@@ -150,7 +150,7 @@ func (s *Session) RequestPTY(ctx context.Context, termType string, width, height
 }
 
 // SetStdin configures the input stream for the session (for PTY mode)
-// This directly assigns the reader to session.Stdin
+// This directly assigns the reader to session.stdin
 func (s *Session) SetStdin(r io.Reader) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -164,7 +164,7 @@ func (s *Session) SetStdin(r io.Reader) error {
 }
 
 // SetStdout configures the output stream for the session (for PTY mode)
-// This directly assigns the writer to session.Stdout
+// This directly assigns the writer to session.stdout
 func (s *Session) SetStdout(w io.Writer) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -178,7 +178,7 @@ func (s *Session) SetStdout(w io.Writer) error {
 }
 
 // SetStderr configures the error stream for the session (for PTY mode)
-// This directly assigns the writer to session.Stderr
+// This directly assigns the writer to session.stderr
 func (s *Session) SetStderr(w io.Writer) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -27,12 +27,9 @@ type SSHInfo struct {
 }
 
 type VMConfig struct {
-	MemoryInMB    uint64   `json:"memoryInMB,omitempty"`
-	Cpus          int8     `json:"cpus,omitempty"`
-	RootFS        string   `json:"rootFS,omitempty"`
-	Kernel        string   `json:"kernel,omitempty"`
-	Initrd        string   `json:"initrd,omitempty"`
-	KernelCmdline []string `json:"kernelArgs,omitempty"`
+	MemoryInMB uint64 `json:"memoryInMB,omitempty"`
+	Cpus       int8   `json:"cpus,omitempty"`
+	RootFS     string `json:"rootFS,omitempty"`
 
 	// data disk will map into /dev/vdX and automount by guest-agent process
 	BlkDevs []BlkDev `json:"blkDevs,omitempty"`
@@ -42,6 +39,7 @@ type VMConfig struct {
 	// by gvproxy
 	NetworkStackBackend     string        `json:"networkStackBackend,omitempty"`
 	LogLevel                string        `json:"logLevel,omitempty"`
+	LogFilePath             string        `json:"logFilePath,omitempty"`
 	Mounts                  []Mount       `json:"mounts,omitempty"`
 	SSHInfo                 SSHInfo       `json:"sshInfo,omitempty"`
 	Cmdline                 Cmdline       `json:"cmdline,omitempty"`
