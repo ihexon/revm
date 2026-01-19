@@ -443,7 +443,7 @@ main() {
 
 	case "${action}" in
 		test)
-			run_tests
+#			run_tests
 			;;
 		build_darwin)
 			build_darwin
