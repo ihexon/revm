@@ -143,18 +143,6 @@ func (v *VMConfig) WithBlkDisk(ctx context.Context, blocks []string, isContainer
 	return nil
 }
 
-func (v *VMConfig) WithUncompressedKernel(kernelPath string) {
-	v.Kernel = kernelPath
-}
-
-func (v *VMConfig) WithInitramfs(initrdPath string) {
-	v.Initrd = initrdPath
-}
-
-func (v *VMConfig) WithKernelCmdline(cmdline []string) {
-	v.KernelCmdline = cmdline
-}
-
 func validateArgs(args []string) error {
 	for _, arg := range args {
 		if strings.Contains(arg, ";") || strings.Contains(arg, "|") ||
