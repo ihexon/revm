@@ -1,9 +1,10 @@
-package network
+package gvproxy
 
 import (
 	"context"
 	"fmt"
 	"io"
+	"linuxvm/pkg/network"
 	"net"
 	"os"
 	"sync"
@@ -44,7 +45,7 @@ func TunnelHostUnixToGuest(ctx context.Context, gvproxyCtlUnixAddr, listenUnixAd
 }
 
 func parseUnixSocketPath(addr string) (string, error) {
-	parsed, err := ParseUnixAddr(addr)
+	parsed, err := network.ParseUnixAddr(addr)
 	if err != nil {
 		return "", err
 	}
@@ -69,6 +70,8 @@ func createUnixListenerSockFile(path string) (net.Listener, error) {
 	return ln, nil
 }
 
+// FIXME: If listener closed but ctx not done, infinite loop,
+// should have Exponential backoff, but for now, It just work most of time
 func acceptLoop(ctx context.Context, ln net.Listener, gvproxyPath, targetIP string, targetPort uint16) error {
 	for {
 		conn, err := ln.Accept()
@@ -105,13 +108,13 @@ func bidirectionalCopy(conn1, conn2 net.Conn) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	copy := func(dst, src net.Conn) {
+	copyFn := func(dst, src net.Conn) {
 		defer wg.Done()
 		_, _ = io.Copy(dst, src)
 	}
 
-	go copy(conn1, conn2)
-	go copy(conn2, conn1)
+	go copyFn(conn1, conn2)
+	go copyFn(conn2, conn1)
 
 	wg.Wait()
 }

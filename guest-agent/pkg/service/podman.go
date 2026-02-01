@@ -11,7 +11,7 @@ import (
 )
 
 func startGuestPodmanService(ctx context.Context) error {
-	addr := fmt.Sprintf("tcp://%s:%d", define.UnspecifiedAddress, define.DefaultGuestPodmanAPIPort) //nolint:nosprintfhostport
+	addr := fmt.Sprintf("tcp://%s:%d", define.UnspecifiedAddress, define.GuestPodmanAPIPort) //nolint:nosprintfhostport
 	cmd := exec.CommandContext(ctx, "podman", "system", "service", "--time=0", addr)
 	cmd.Stdin = nil
 

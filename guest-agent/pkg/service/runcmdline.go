@@ -14,7 +14,7 @@ import (
 var ErrProcessExitNormal = errors.New("process exit normally")
 
 func DoExecCmdLine(ctx context.Context, vmc *define.VMConfig) error {
-	cmd := exec.CommandContext(ctx, vmc.Cmdline.TargetBin, vmc.Cmdline.TargetBinArgs...)
+	cmd := exec.CommandContext(ctx, vmc.GuestAgentCfg.TargetBin, vmc.GuestAgentCfg.TargetBinArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin

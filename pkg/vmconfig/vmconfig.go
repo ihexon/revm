@@ -4,21 +4,23 @@ package vmconfig
 
 import (
 	"context"
+	_ "embed"
+	"encoding/json"
 	"fmt"
-	"net/url"
-	"os"
-	"strings"
-
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/disk"
 	"linuxvm/pkg/filesystem"
+	"linuxvm/pkg/logger"
 	"linuxvm/pkg/network"
-	"linuxvm/pkg/path"
-	ssh "linuxvm/pkg/ssh"
-	"linuxvm/pkg/system"
+	"linuxvm/pkg/ssh"
+	"linuxvm/pkg/static_resources"
+	"net/url"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gofrs/flock"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -26,118 +28,118 @@ type (
 	VMConfig define.VMConfig
 )
 
-func (v *VMConfig) WithSystemProxy() error {
-	proxyInfo, err := network.GetAndNormalizeSystemProxy()
-	if err != nil {
-		return fmt.Errorf("failed to get and normalize system proxy: %w", err)
-	}
-
-	if proxyInfo.HTTP == nil {
-		logrus.Warnf("no system http proxy found")
-	} else {
-		httpProxy := fmt.Sprintf("http_proxy=http://%s:%d", proxyInfo.HTTP.Host, proxyInfo.HTTP.Port)
-		logrus.Infof("using http proxy: %q", httpProxy)
-		v.Cmdline.Env = append(v.Cmdline.Env, httpProxy)
-	}
-
-	if proxyInfo.HTTPS == nil {
-		logrus.Warnf("no system https proxy found")
-	} else {
-		httpsProxy := fmt.Sprintf("https_proxy=http://%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port)
-		logrus.Infof("using https proxy: %q", httpsProxy)
-		v.Cmdline.Env = append(v.Cmdline.Env, httpsProxy)
-	}
-
-	return nil
-}
-
-// GenerateSSHInfo Generate SSH info for the VM, notice the ssh keypair will be written when guest rootfs actually running.
-func (v *VMConfig) GenerateSSHInfo() error {
-	logrus.Infof("ssh keypair write to: %q", v.SSHInfo.HostSSHKeyPairFile)
-	keyPair, err := ssh.GenerateKeyPair(v.SSHInfo.HostSSHKeyPairFile, ssh.DefaultKeyGenOptions())
-	if err != nil {
-		return fmt.Errorf("failed to generate host ssh keypair for host: %w", err)
-	}
-
-	// Fill the ssh keypair into vmc.SSHInfo using the keypair in memory
-	v.SSHInfo.HostSSHPrivateKey = string(keyPair.RawProtectedPrivateKey())
-	v.SSHInfo.HostSSHPublicKey = keyPair.AuthorizedKey()
-
-	return nil
-}
-
-func (v *VMConfig) Lock() (*flock.Flock, error) {
-	if v.RootFS == "" {
-		return nil, fmt.Errorf("root file system is not set")
-	}
-
-	fileLock := flock.New(filepath.Join(v.RootFS, define.LockFile))
+func (v *VMConfig) Lock() error {
+	fileLock := flock.New(filepath.Join(v.WorkspacePath, ".lock"))
 
 	logrus.Infof("try to lock file: %q", fileLock.Path())
+
 	ifLocked, err := fileLock.TryLock()
 	if err != nil {
-		return nil, fmt.Errorf("failed to lock file: %w", err)
+		return fmt.Errorf("get lock failed: %w", err)
 	}
 
 	if !ifLocked {
-		return nil, fmt.Errorf("file %q is locked by another vm instance", fileLock.Path())
+		return fmt.Errorf("file %q is locked by another vm instance", fileLock.Path())
 	}
 
-	return fileLock, nil
+	return nil
 }
 
-func (v *VMConfig) WithBlkDisk(ctx context.Context, blocks []string, isContainerDisk bool) error {
-	diskMgr := disk.NewBlkManager(
-		v.ExternalTools.DarwinTools.Mke2fs,
-		v.ExternalTools.DarwinTools.Blkid,
-		v.ExternalTools.DarwinTools.FsckExt4,
-	)
+func (v *VMConfig) generateRAWDisk(ctx context.Context, rawDiskPath string, givenUUID string) error {
+	rawDiskPath, err := filepath.Abs(filepath.Clean(rawDiskPath))
+	if err != nil {
+		return err
+	}
 
-	for _, blk := range blocks {
-		absPath, err := filepath.Abs(blk)
+	diskMgr, err := disk.NewBlkManagerHost()
+	if err != nil {
+		return err
+	}
+
+	err = static_resources.ExtractEmbeddedRawDisk(ctx, rawDiskPath)
+	if err != nil {
+		return err
+	}
+
+	err = diskMgr.NewUUID(ctx, givenUUID, rawDiskPath)
+	if err != nil {
+		return err
+	}
+
+	return v.attachRAWDisk(ctx, rawDiskPath)
+}
+
+func (v *VMConfig) GetContainerStorageDiskPath() string {
+	return filepath.Join(v.WorkspacePath, "raw-disk", "container-storage.ext4")
+}
+
+func (v *VMConfig) AutoAttachContainerStorageRawDisk(ctx context.Context) error {
+	f := v.GetContainerStorageDiskPath()
+	_, err := os.Stat(f)
+	if err == nil {
+		return v.attachRAWDisk(ctx, f)
+	}
+
+	return v.generateRAWDisk(ctx, f, define.ContainerDiskUUID)
+}
+
+func (v *VMConfig) attachRAWDisk(ctx context.Context, rawDiskPath string) error {
+	rawDiskPath, err := filepath.Abs(filepath.Clean(rawDiskPath))
+	if err != nil {
+		return err
+	}
+
+	diskMgr, err := disk.NewBlkManagerHost()
+	if err != nil {
+		return err
+	}
+
+	info, err := diskMgr.Inspect(ctx, rawDiskPath)
+	if err != nil {
+		return err
+	}
+
+	blkDev := define.BlkDev{
+		UUID:    info.UUID,
+		FsType:  info.FsType,
+		Path:    info.Path,
+		MountTo: info.MountTo,
+	}
+
+	v.BlkDevs = append(v.BlkDevs, blkDev)
+
+	return nil
+}
+
+func (v *VMConfig) BindUserHomeDir(ctx context.Context) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	return v.WithMounts([]string{fmt.Sprintf("%s:%s", homeDir, homeDir)})
+}
+
+func (v *VMConfig) WithGivenRAWDisk(ctx context.Context, rawDiskS []string) error {
+	for _, f := range rawDiskS {
+		if f == "" {
+			return fmt.Errorf("raw disk path is empty")
+		}
+
+		rawDiskPath, err := filepath.Abs(filepath.Clean(f))
 		if err != nil {
 			return err
 		}
 
-		if !system.IsPathExist(absPath) {
-			logrus.Infof("create ext4 block %q with size %d", absPath, define.DefaultCreateDiskSizeInGB)
-
-			if err := diskMgr.Create(ctx, absPath, define.DefaultCreateDiskSizeInGB*1024); err != nil {
-				return fmt.Errorf("failed to create ext4 disk: %w", err)
+		if _, err = os.Stat(rawDiskPath); err == nil {
+			if err = v.attachRAWDisk(ctx, rawDiskPath); err != nil {
+				return err
 			}
-
-			if err := diskMgr.Format(ctx, absPath, "ext4"); err != nil {
-				return fmt.Errorf("failed to format ext4 disk: %w", err)
-			}
-
-			if err := diskMgr.FsCheck(ctx, absPath); err != nil {
-				return fmt.Errorf("filesystem integrity check %q error %w", absPath, err)
+		} else {
+			if err = v.generateRAWDisk(ctx, rawDiskPath, uuid.NewString()); err != nil {
+				return err
 			}
 		}
-
-		info, err := diskMgr.Inspect(ctx, absPath)
-		if err != nil {
-			return fmt.Errorf("failed to inspect raw disk %q, %w", absPath, err)
-		}
-
-		if err := diskMgr.FsCheck(ctx, absPath); err != nil {
-			return fmt.Errorf("filesystem integrity check %q error %w", absPath, err)
-		}
-
-		blkDev := define.BlkDev{
-			UUID:               info.UUID,
-			FsType:             info.FsType,
-			IsContainerStorage: isContainerDisk,
-			Path:               absPath,
-			MountTo:            filepath.Join("/mnt", absPath),
-		}
-
-		if isContainerDisk {
-			logrus.Infof("container storage disk will be mount to %q", define.ContainerStorageMountPoint)
-			blkDev.MountTo = define.ContainerStorageMountPoint
-		}
-
-		v.BlkDevs = append(v.BlkDevs, blkDev)
 	}
 
 	return nil
@@ -153,29 +155,12 @@ func validateArgs(args []string) error {
 	return nil
 }
 
-func (v *VMConfig) WithGuestAgentConfigure() error {
-	if v.RootFS == "" {
-		return fmt.Errorf("root file system is not set")
+func (v *VMConfig) RunCmdline(workdir, bin string, args, envs []string, usingSystemProxy bool) error {
+
+	if filepath.Clean(workdir) == "" {
+		workdir = "/"
 	}
 
-	src := v.ExternalTools.DarwinTools.GuestAgent
-	dest := v.RootFS + "/3rd/bin/" + guestAgent
-
-	if err := system.CopyFile(src, dest); err != nil {
-		return fmt.Errorf("failed to copy guest-agent file to rootfs: %w", err)
-	}
-
-	v.Cmdline.GuestAgent = v.ExternalTools.LinuxTools.GuestAgent
-
-	v.Cmdline.Env = append(v.Cmdline.Env, "PATH=/3rd/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin")
-
-	v.Cmdline.GuestAgentArgs = append(v.Cmdline.GuestAgentArgs, "--"+define.FlagLogLevel+"="+logrus.GetLevel().String())
-
-	logrus.Infof("guest-agent %q args is: %q", v.Cmdline.GuestAgent, v.Cmdline.GuestAgentArgs)
-	return nil
-}
-
-func (v *VMConfig) WithUserProvidedCmdline(bin string, args, envs []string) error {
 	if strings.TrimSpace(bin) == "" {
 		return fmt.Errorf("target binary is empty")
 	}
@@ -184,39 +169,69 @@ func (v *VMConfig) WithUserProvidedCmdline(bin string, args, envs []string) erro
 		return err
 	}
 
-	v.Cmdline.Workspace = define.DefaultWorkDir
-	v.Cmdline.TargetBin = bin
-	v.Cmdline.TargetBinArgs = args
-	v.Cmdline.Env = append(v.Cmdline.Env, envs...)
+	// inject user-given envs
+	var finalEnv []string
+	finalEnv = append(finalEnv, envs...)
+	finalEnv = append(finalEnv, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+	finalEnv = append(finalEnv, "LC_ALL=C.UTF-8")
+	finalEnv = append(finalEnv, "LANG=C.UTF-8")
+	finalEnv = append(finalEnv, "HOME=/root")
+	finalEnv = append(finalEnv, fmt.Sprintf("%s=%s", define.EnvLogLevel, logrus.GetLevel().String()))
+
+	if usingSystemProxy {
+		proxyInfo, err := network.GetAndNormalizeSystemProxy()
+		if err != nil {
+			return fmt.Errorf("failed to get and normalize system proxy: %w", err)
+		}
+
+		if proxyInfo.HTTP == nil {
+			logrus.Warnf("no system http proxy found")
+		} else {
+			httpProxy := fmt.Sprintf("http_proxy=http://%s:%d", proxyInfo.HTTP.Host, proxyInfo.HTTP.Port)
+			logrus.Infof("using http proxy: %q", httpProxy)
+			finalEnv = append(finalEnv, httpProxy)
+		}
+
+		if proxyInfo.HTTPS == nil {
+			logrus.Warnf("no system https proxy found")
+		} else {
+			httpsProxy := fmt.Sprintf("https_proxy=http://%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port)
+			logrus.Infof("using https proxy: %q", httpsProxy)
+			finalEnv = append(finalEnv, httpsProxy)
+		}
+	}
+
+	v.GuestAgentCfg = define.GuestAgentCfg{
+		ShellCode:     static_resources.IgnitionScript(define.IgnitionVirtioFsTag, define.IgnitionFsMountDir),
+		Workdir:       workdir,
+		TargetBin:     bin,
+		TargetBinArgs: args,
+		Env:           finalEnv,
+	}
 
 	return nil
 }
 
-func (v *VMConfig) WithResources(memory uint64, cpus int8) {
+func (v *VMConfig) WithResources(memoryInMB uint64, cpus int8) error {
 	if cpus <= 0 {
-		logrus.Warnf("1 cpu cores is the minimum value and has been enforced")
-		cpus = 1
+		return fmt.Errorf("1 cpu cores is the minimum value")
 	}
 
-	if memory <= 512 {
-		logrus.Warnf("512MB of memory is the minimum value and has been enforced")
-		memory = 512
+	if memoryInMB < 512 {
+		return fmt.Errorf("512MB of memory is the minimum value")
 	}
 
-	v.MemoryInMB = memory
+	v.MemoryInMB = memoryInMB
 	v.Cpus = cpus
+
+	defer func() {
+		logrus.Infof("set memory: %dMB, cpus: %d", v.MemoryInMB, v.Cpus)
+	}()
+
+	return nil
 }
 
-func (v *VMConfig) WithShareUserHomeDir() error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("can not get user home directory: %w", err)
-	}
-
-	return v.WithUserProvidedMounts([]string{fmt.Sprintf("%s:%s", homeDir, homeDir)})
-}
-
-func (v *VMConfig) WithUserProvidedMounts(dirs []string) error {
+func (v *VMConfig) WithMounts(dirs []string) error {
 	if len(dirs) == 0 || dirs == nil {
 		return nil
 	}
@@ -234,19 +249,118 @@ func (v *VMConfig) WithUserProvidedMounts(dirs []string) error {
 	return nil
 }
 
-func (v *VMConfig) WithUserProvidedRootFS(rootfsPath string) error {
-	if rootfsPath == "" {
-		return fmt.Errorf("rootfs path is empty")
+func (v *VMConfig) SetupIgnition() error {
+	if v.WorkspacePath == "" {
+		return fmt.Errorf("workspace path is empty, can not setup ignition virtio-fs")
 	}
-	rootfsPath, err := filepath.Abs(rootfsPath)
+
+	guestAgentFilePath := filepath.Join(v.WorkspacePath, "ignition", "guest-agent")
+
+	err := os.MkdirAll(filepath.Dir(guestAgentFilePath), 0755)
 	if err != nil {
 		return err
 	}
 
+	err = os.WriteFile(guestAgentFilePath, static_resources.GuestAgentBytes, 0755)
+	if err != nil {
+		return err
+	}
+
+	v.Mounts = append(v.Mounts, define.Mount{
+		ReadOnly: false,
+		Type:     filesystem.VirtIOFs,
+		Source:   filepath.Dir(guestAgentFilePath),
+		Target:   define.IgnitionFsMountDir,
+		Tag:      define.IgnitionVirtioFsTag,
+		UUID:     define.IgnitionVirtioFsTag,
+	})
+
+	v.Ignition = define.Ignition{
+		HostListenAddr: (&url.URL{
+			Scheme: "unix",
+			Path:   v.GetSocksPath("ignition-listen.sock"),
+		}).String(),
+		HostDir:  filepath.Join(v.WorkspacePath, "ignition"),
+		GuestDir: define.IgnitionFsMountDir,
+	}
+
+	return nil
+}
+
+func (v *VMConfig) SetLogLevel(level string, logFile string) error {
+	logrus.SetOutput(os.Stderr)
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp:   true,
+		ForceColors:     true,
+		TimestampFormat: "2006-01-02 15:04:05.000",
+	})
+
+	l, err := logrus.ParseLevel(level)
+	if err != nil {
+		return fmt.Errorf("invalid log level: %w", err)
+	}
+
+	logrus.SetLevel(l)
+	logrus.Infof("log level: %s", l.String())
+
+	maxSizeBytes := int64(filesystem.MiB(10).ToBytes())
+	if logFile != "" {
+		logFile, err = filepath.Abs(logFile)
+		if err != nil {
+			return err
+		}
+		logFile = filepath.Clean(logFile)
+		// Check file size and truncate if > 100MB
+		if info, err := os.Stat(logFile); err == nil && info.Size() > maxSizeBytes {
+			if err = os.Truncate(logFile, 0); err != nil {
+				logrus.Warnf("failed to truncate log file: %v", err)
+			}
+			logrus.Infof("log file truncated: %s", logFile)
+		}
+
+		if f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
+			logrus.SetOutput(f)
+			logger.LogFd = f
+			logrus.Infof("log file: %s", logFile)
+		}
+	}
+
+	return nil
+}
+
+func (v *VMConfig) WithBuiltInAlpineRootfs(ctx context.Context) error {
+	alpineRootfsPath := filepath.Join(v.WorkspacePath, "rootfs")
+	err := static_resources.ExtractBuiltinRootfs(ctx, alpineRootfsPath)
+	if err != nil {
+		return err
+	}
+
+	return v.WithRootfs(ctx, alpineRootfsPath)
+}
+
+func (v *VMConfig) WithRootfs(ctx context.Context, rootfsPath string) error {
+	if rootfsPath == "" {
+		return fmt.Errorf("rootfs path is empty")
+	}
+
+	rootfsPath, err := filepath.Abs(rootfsPath)
+	if err != nil {
+		return err
+	}
+	_, err = os.Stat(rootfsPath)
+	if err != nil {
+		logrus.Warnf("rootfs path %q does not exist, will try to extract it from builtin", rootfsPath)
+		if err = static_resources.ExtractBuiltinRootfs(ctx, rootfsPath); err != nil {
+			return err
+		}
+	}
+
 	v.RootFS = rootfsPath
 
-	if _, err = v.Lock(); err != nil {
-		return fmt.Errorf("failed to acquire lock for rootfs: %v", err)
+	// only one vm instance can access the rootfs at a time
+	err = flock.New(filepath.Join(v.RootFS, ".lock")).Lock()
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -256,99 +370,135 @@ func (v *VMConfig) WithRunMode(runMode define.RunMode) {
 	v.RunMode = runMode.String()
 }
 
-func (v *VMConfig) WithBuiltInRootfs() error {
-	rootfsPath, err := path.GetBuiltinRootfsPath()
-	if err != nil {
-		return fmt.Errorf("failed to get builtin rootfs path: %w", err)
-	}
-
-	return v.WithUserProvidedRootFS(rootfsPath)
+func (v *VMConfig) GetSocksPath(name string) string {
+	return filepath.Clean(filepath.Join(v.WorkspacePath, "socks", name))
 }
 
-func (v *VMConfig) WithContainerDataDisk(ctx context.Context, containerDataDiskPath string) error {
-	return v.WithBlkDisk(ctx, []string{containerDataDiskPath}, true)
+func (v *VMConfig) GetSSHPrivateKey() string {
+	return filepath.Clean(filepath.Join(v.WorkspacePath, "ssh", "key"))
 }
 
-func (v *VMConfig) WithPodmanListenAPIInHost(listenAPIPath string) error {
-	if listenAPIPath == "" {
-		return fmt.Errorf("listen api path is empty")
-	}
-
-	listenAPIPath, err := filepath.Abs(listenAPIPath)
-	if err != nil {
-		return err
-	}
-
+func (v *VMConfig) withPodmanCfg() error {
 	unixAddr := &url.URL{
 		Scheme: "unix",
 		Host:   "",
-		Path:   listenAPIPath,
+		Path:   v.GetSocksPath("podman-listen.sock"),
 	}
 
 	v.PodmanInfo = define.PodmanInfo{
-		UnixSocksAddr: unixAddr.String(),
+		PodmanAPIUnixSockLocalForward: unixAddr.String(),
+		GuestPodmanAPIListenedIP:      define.GuestIP,
+		GuestPodmanAPIListenedPort:    define.GuestPodmanAPIPort,
 	}
-	return nil
+
+	data, _ := json.Marshal(v.PodmanInfo)
+	logrus.Infof("podman API configured with: %q", string(data))
+
+	return os.MkdirAll(filepath.Dir(unixAddr.Path), 0755)
 }
 
-// WithRESTAPIAddress set the REST API address for the VM. only support unix socket
-func (v *VMConfig) WithRESTAPIAddress(path string) error {
-	if path == "" {
-		return fmt.Errorf("restapi listening path is empty")
+func (v *VMConfig) withVMControlCfg() error {
+	unixAddr := &url.URL{
+		Scheme: "unix",
+		Host:   "",
+		Path:   v.GetSocksPath("vm-control.sock"),
 	}
 
-	listenAPIPath, err := filepath.Abs(path)
+	v.VMCtlAddress = unixAddr.String()
+
+	logrus.Infof("vm control API configured with: %q", v.VMCtlAddress)
+
+	return os.MkdirAll(filepath.Dir(unixAddr.Path), 0755)
+}
+
+func (v *VMConfig) withGvisorTapVsockCfg() error {
+	unixAddr := &url.URL{
+		Scheme: "unix",
+		Host:   "",
+		Path:   v.GetSocksPath("gvpctl.sock"),
+	}
+
+	v.GvisorTapVsockEndpoint = unixAddr.String()
+	v.GvisorTapVsockNetwork = fmt.Sprintf("unixgram://%s", v.GetSocksPath("gvpnet.sock"))
+	
+	_ = os.Remove(v.GetSocksPath("gvpctl.sock"))
+	_ = os.Remove(v.GetSocksPath("gvpnet.sock"))
+
+	logrus.Infof("gvisor-tap-vsock configured with control endpoint: %q, network: %q", v.GvisorTapVsockEndpoint, v.GvisorTapVsockNetwork)
+
+	return os.MkdirAll(filepath.Dir(unixAddr.Path), 0755)
+}
+
+func (v *VMConfig) generateSSHCfg() error {
+	keyPair, err := ssh.GenerateKeyPair(v.GetSSHPrivateKey(), ssh.DefaultKeyGenOptions())
 	if err != nil {
 		return err
 	}
 
-	unixAddr := &url.URL{
-		Scheme: "unix",
-		Host:   "",
-		Path:   listenAPIPath,
+	v.SSHInfo = define.SSHInfo{
+		HostSSHPublicKey:      keyPair.AuthorizedKey(),
+		HostSSHPrivateKey:     string(keyPair.RawProtectedPrivateKey()),
+		HostSSHPrivateKeyFile: v.GetSSHPrivateKey(),
 	}
 
-	v.RestAPIAddress = unixAddr.String()
-	return nil
+	if err := os.MkdirAll(filepath.Dir(v.SSHInfo.HostSSHPrivateKeyFile), 0700); err != nil {
+		return err
+	}
+
+	_ = os.Remove(v.SSHInfo.HostSSHPrivateKeyFile)
+	_ = os.Remove(v.SSHInfo.HostSSHPrivateKeyFile + ".pub")
+
+	return keyPair.WriteKeys()
 }
 
-const guestAgent = "guest-agent"
+func (v *VMConfig) SetupWorkspace(workspacePath string) error {
+	if workspacePath == "" {
+		return fmt.Errorf("workspace path is empty")
+	}
 
-func (v *VMConfig) WithExternalTools() error {
-	libexecPath, err := path.GetLibexecPath()
+	p, err := filepath.Abs(filepath.Clean(workspacePath))
 	if err != nil {
-		return fmt.Errorf("failed to get libexec path: %w", err)
+		return err
 	}
 
-	v.ExternalTools.DarwinTools.Mke2fs = filepath.Join(libexecPath, "mke2fs")
-	v.ExternalTools.DarwinTools.Blkid = filepath.Join(libexecPath, "blkid")
-	v.ExternalTools.DarwinTools.FsckExt4 = filepath.Join(libexecPath, "fsck.ext4")
+	v.WorkspacePath = p
 
-	v.ExternalTools.DarwinTools.GuestAgent = filepath.Join(libexecPath, guestAgent)
+	if err = os.MkdirAll(v.WorkspacePath, 0755); err != nil {
+		return err
+	}
 
-	v.ExternalTools.LinuxTools.Busybox = "/3rd/bin/busybox"
-	v.ExternalTools.LinuxTools.DropBear = "/3rd/bin/dropbearmulti"
+	// first we lock the workspace, only one vm instance can access the workspace at a time
+	err = v.Lock()
+	if err != nil {
+		return err
+	}
 
-	v.ExternalTools.LinuxTools.GuestAgent = "/3rd/bin/" + guestAgent
+	err = v.withPodmanCfg()
+	if err != nil {
+		return err
+	}
+
+	err = v.withVMControlCfg()
+	if err != nil {
+		return err
+	}
+
+	err = v.withGvisorTapVsockCfg()
+	if err != nil {
+		return err
+	}
+
+	if err = v.generateSSHCfg(); err != nil {
+		return err
+	}
 
 	return nil
 }
 
-func NewVMConfig() *VMConfig {
-	vmc := &VMConfig{}
-
-	prefix := filepath.Join(os.TempDir(), system.GenerateRandomID())
-	logrus.Infof("runtime temp directory: %q", prefix)
-
-	vmc.GVproxyEndpoint = fmt.Sprintf("unix://%s/%s", prefix, define.GvProxyControlEndPoint)
-	vmc.NetworkStackBackend = fmt.Sprintf("unixgram://%s/%s", prefix, define.GvProxyNetworkEndpoint)
-	vmc.SSHInfo = define.SSHInfo{
-		HostSSHKeyPairFile: filepath.Join(prefix, define.SSHKeyPair),
+func NewVMConfig(mode define.RunMode) *VMConfig {
+	vmc := &VMConfig{
+		RunMode: mode.String(),
 	}
-	vmc.VMConfigProvisionerAddr = fmt.Sprintf("unix://%s/%s", prefix, define.IgnServerSocketName)
-
-	vmc.BlkDevs = []define.BlkDev{}
-	vmc.Mounts = []define.Mount{}
 
 	return vmc
 }

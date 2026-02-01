@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/interfaces"
 	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/system"
-	"linuxvm/pkg/vm"
 	"linuxvm/pkg/vmconfig"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -16,16 +17,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// logFile holds the opened log file for sharing across components.
-// It is opened once in setLogrus and passed to VMConfig.
-var logFile *os.File
-
-func earlyStage(ctx context.Context, command *cli.Command) (context.Context, error) {
-	setLogrus(command)
-	return ctx, nil
-}
-
-func showVersionAndOSInfo() error {
+func showVersionAndOSInfo() {
 	var version strings.Builder
 	if define.Version != "" {
 		version.WriteString(define.Version)
@@ -42,50 +34,6 @@ func showVersionAndOSInfo() error {
 	}
 
 	logrus.Infof("%s version: %s", os.Args[0], version.String())
-
-	// osInfo, err := system.GetOSVersion()
-	// if err != nil {
-	//	return fmt.Errorf("failed to get os version: %w", err)
-	//}
-	//
-	// logrus.Infof("os version: %+v", osInfo)
-
-	return nil
-}
-
-const maxLogFileSize = 100 * 1024 * 1024 // 100MB
-
-func setLogrus(command *cli.Command) {
-	level, err := logrus.ParseLevel(command.String(define.FlagLogLevel))
-	if err != nil {
-		level = logrus.WarnLevel
-	}
-	logrus.SetLevel(level)
-
-	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp:   true,
-		ForceColors:     true,
-		TimestampFormat: "2006-01-02 15:04:05.000",
-	})
-
-	logrus.SetOutput(os.Stderr)
-
-	// If --save-logs is set, write only to log file (not to terminal)
-	if command.IsSet(define.FlagSaveLogTo) {
-		logPath := command.String(define.FlagSaveLogTo)
-
-		// Check file size and truncate if > 100MB
-		if info, err := os.Stat(logPath); err == nil && info.Size() > maxLogFileSize {
-			if err = os.Truncate(logPath, 0); err != nil {
-				logrus.Warnf("failed to truncate log file: %v", err)
-			}
-		}
-
-		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err == nil {
-			logrus.SetOutput(logFile)
-		}
-	}
 }
 
 func setMaxMemory() uint64 {
@@ -98,121 +46,93 @@ func setMaxMemory() uint64 {
 	return mb
 }
 
-func GetVMM(vmc *vmconfig.VMConfig) (vm.Provider, error) {
+func GetVMM(vmc *vmconfig.VMConfig) (interfaces.VMMProvider, error) {
 	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
 		return libkrun.NewLibkrunVM(vmc), nil
 	}
 	return nil, fmt.Errorf("not support this platform")
 }
 
-func vmProviderFactory(ctx context.Context, mode define.RunMode, command *cli.Command) (vm.Provider, error) {
-	vmc, err := createBaseVMConfig(command)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create base vm config: %w", err)
-	}
-	switch mode {
-	case define.ContainerMode:
-		if err = generateContainerVMConfig(ctx, vmc, command); err != nil {
-			return nil, fmt.Errorf("failed to generate container vm config: %w", err)
-		}
-	case define.RootFsMode:
-		if err = generateRootfsVMConfig(ctx, vmc, command); err != nil {
-			return nil, fmt.Errorf("failed to generate rootfs vm config: %w", err)
-		}
-	default:
-		return nil, fmt.Errorf("invalid run mode: %s", mode.String())
-	}
+func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMode) (*vmconfig.VMConfig, error) {
+	var (
+		err           error
+		logLevel      = command.String(define.FlagLogLevel)
+		saveLogTo     = command.String(define.FlagSaveLogTo)
+		workspacePath = command.String(define.FlagWorkspace)
+		cpus          = command.Int8(define.FlagCPUS)
+		memoryInMB    = command.Uint64(define.FlagMemoryInMB)
+		rawDisks      = command.StringSlice(define.FlagRawDisk)
+	)
 
-	vmProvider, err := GetVMM(vmc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get vm provider: %w", err)
-	}
+	vmc := vmconfig.NewVMConfig(runMode)
+	logrus.Infof("set run mode: %q", vmc.RunMode)
 
-	return vmProvider, nil
-}
-
-func createBaseVMConfig(command *cli.Command) (*vmconfig.VMConfig, error) {
-	vmc := vmconfig.NewVMConfig()
-
-	if err := vmc.WithExternalTools(); err != nil {
-		return nil, fmt.Errorf("failed to find external tools: %w", err)
-	}
-
-	vmc.WithResources(command.Uint64(define.FlagMemory), command.Int8(define.FlagCPUS))
-
-	if command.IsSet(define.FlagRestAPIListenAddr) {
-		if err := vmc.WithRESTAPIAddress(command.String(define.FlagRestAPIListenAddr)); err != nil {
-			return nil, fmt.Errorf("failed to set rest api listen address: %w", err)
-		}
-	}
-
-	if command.IsSet(define.FlagUsingSystemProxy) {
-		if err := vmc.WithSystemProxy(); err != nil {
-			return nil, fmt.Errorf("failed to use system proxy: %w", err)
-		}
-	}
-
-	// Pass the already-opened log file to VMConfig
-	vmc.LogFile = logFile
-
-	if err := vmc.GenerateSSHInfo(); err != nil {
+	if err = vmc.SetLogLevel(logLevel, saveLogTo);err != nil {
 		return nil, err
 	}
 
-	return vmc, nil
-}
-
-func generateContainerVMConfig(ctx context.Context, vmc *vmconfig.VMConfig, command *cli.Command) error {
-	vmc.WithRunMode(define.ContainerMode)
-
-	if err := vmc.WithBuiltInRootfs(); err != nil {
-		return fmt.Errorf("failed to use builtin rootfs: %w", err)
+	if err = vmc.SetupWorkspace(workspacePath); err != nil {
+		return nil, err
 	}
 
-	if err := vmc.WithContainerDataDisk(ctx, command.String(define.FlagContainerDataStorage)); err != nil {
-		return fmt.Errorf("failed to set container data disk: %w", err)
+	if err = vmc.WithResources(memoryInMB, cpus); err != nil {
+		return nil, err
 	}
 
-	if err := vmc.WithPodmanListenAPIInHost(command.String(define.FlagListenUnixFile)); err != nil {
-		return fmt.Errorf("failed to set podman listen unix file: %w", err)
+	err = vmc.WithGivenRAWDisk(ctx, rawDisks)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := vmc.WithShareUserHomeDir(); err != nil {
-		return fmt.Errorf("failed to add user home directory to mounts: %w", err)
+	logrus.Infof("setup mounts to %v", command.StringSlice(define.FlagMount))
+	err = vmc.WithMounts(command.StringSlice(define.FlagMount))
+	if err != nil {
+		return nil, err
 	}
 
-	if err := vmc.WithGuestAgentConfigure(); err != nil {
-		return fmt.Errorf("failed to configure guest agent: %w", err)
+	logrus.Infof("setup ignition config")
+	err = vmc.SetupIgnition()
+	if err != nil {
+		return nil, err
 	}
 
-	return nil
-}
-
-func generateRootfsVMConfig(ctx context.Context, vmc *vmconfig.VMConfig, command *cli.Command) error {
-	vmc.WithRunMode(define.RootFsMode)
-	if err := vmc.WithUserProvidedRootFS(command.String(define.FlagRootfs)); err != nil {
-		return fmt.Errorf("failed to setup rootfs: %w", err)
+	usingSystemProxy := false
+	if command.Bool(define.FlagUsingSystemProxy) {
+		usingSystemProxy = true
 	}
 
-	if command.IsSet(define.FlagDiskDisk) {
-		if err := vmc.WithBlkDisk(ctx, command.StringSlice(define.FlagDiskDisk), false); err != nil {
-			return fmt.Errorf("failed to set user provided data disk: %w", err)
+	switch vmc.RunMode {
+	case define.RootFsMode.String():
+		if !command.IsSet(define.FlagRootfs) {
+			if err = command.Set(define.FlagRootfs, filepath.Join(vmc.WorkspacePath, "builtin-rootfs")); err != nil {
+				return nil, err
+			}
 		}
-	}
 
-	if command.IsSet(define.FlagMount) {
-		if err := vmc.WithUserProvidedMounts(command.StringSlice(define.FlagMount)); err != nil {
-			return fmt.Errorf("failed to set user provided mounts: %w", err)
+		if err = vmc.WithRootfs(ctx, command.String(define.FlagRootfs)); err != nil {
+			return nil, err
 		}
+
+	case define.ContainerMode.String():
+		err = vmc.WithBuiltInAlpineRootfs(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if err = vmc.BindUserHomeDir(ctx); err != nil {
+			return nil, err
+		}
+
+		if err = vmc.AutoAttachContainerStorageRawDisk(ctx); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("unsupported mode %q", vmc.RunMode)
 	}
 
-	if err := vmc.WithUserProvidedCmdline(command.Args().First(), command.Args().Tail(), command.StringSlice(define.FlagEnvs)); err != nil {
-		return fmt.Errorf("failed to set run command and args: %w", err)
-	}
-
-	if err := vmc.WithGuestAgentConfigure(); err != nil {
-		return fmt.Errorf("failed to configure guest agent: %w", err)
-	}
-
-	return nil
+	return vmc, vmc.RunCmdline(command.String(define.FlagWorkDir),
+		command.Args().First(),
+		command.Args().Tail(),
+		command.StringSlice(define.FlagEnvs),
+		usingSystemProxy)
 }

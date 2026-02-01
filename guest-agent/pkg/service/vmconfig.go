@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"guestAgent/pkg/vsock"
 
@@ -10,8 +11,6 @@ import (
 
 	"github.com/sirupsen/logrus"
 )
-
-var vmc *define.VMConfig
 
 func getVMConfig(ctx context.Context) (*define.VMConfig, error) {
 	svc := vsock.NewVSockService()
@@ -30,15 +29,12 @@ func getVMConfig(ctx context.Context) (*define.VMConfig, error) {
 }
 
 func GetVMConfig(ctx context.Context) (*define.VMConfig, error) {
-	if vmc != nil {
-		return vmc, nil
-	}
-
 	vmc, err := getVMConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := vmc.WriteToJsonFile("/vmconfig.json"); err != nil {
+
+	if err = vmc.WriteToJsonFile(filepath.Join(define.IgnitionFsMountDir, define.VMConfigFileName)); err != nil {
 		return nil, err
 	}
 

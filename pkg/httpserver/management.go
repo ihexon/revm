@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package server
+package httpserver
 
 import (
 	"bufio"
@@ -28,11 +28,11 @@ type ManagementAPIServer struct {
 	sse *sseServer
 }
 
-// NewManagementAPIServer creates a server for host-side VM management.
+// NewManagementAPIServer creates a httpserver for host-side VM management.
 func NewManagementAPIServer(vmc *vmconfig.VMConfig) *ManagementAPIServer {
 	return &ManagementAPIServer{
 		vmc: vmc,
-		srv: newHTTPServer("management-api", vmc.RestAPIAddress),
+		srv: newUnixSockHTTPServer("management-api", vmc.VMCtlAddress),
 		sse: newSSEServer(),
 	}
 }

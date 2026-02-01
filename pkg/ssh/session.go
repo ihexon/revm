@@ -107,7 +107,7 @@ func (s *Session) RequestPTY(ctx context.Context, termType string, width, height
 		}
 	}
 
-	// Request PTY from SSH server
+	// Request PTY from SSH httpserver
 	if err := s.session.RequestPty(termType, height, width, modes); err != nil {
 		return fmt.Errorf("%w: %v", ErrPTYRequestFailed, err)
 	}

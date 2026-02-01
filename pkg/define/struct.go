@@ -19,14 +19,24 @@ type Mount struct {
 }
 
 type SSHInfo struct {
-	// HostSSHKeyPairFile is the path to the host ssh keypair file
-	HostSSHKeyPairFile string `json:"hostSSHKeyFile,omitempty"`
+	// HostSSHPrivateKeyFile is the path to the host ssh private key
+	HostSSHPrivateKeyFile string `json:"hostSSHKeyFile,omitempty"`
 
 	HostSSHPublicKey  string `json:"sshPublicKey,omitempty"`
 	HostSSHPrivateKey string `json:"sshPrivateKey,omitempty"`
+
+	SSHLocalForwardAddr string `json:"sshLocalForwardAddr,omitempty"`
 }
 
+type LogKeyType string
+
+const (
+	GlobalLogKey LogKeyType = "global"
+)
+
 type VMConfig struct {
+	WorkspacePath string `json:"workspacePath,omitempty"`
+
 	MemoryInMB uint64 `json:"memoryInMB,omitempty"`
 	Cpus       int8   `json:"cpus,omitempty"`
 	RootFS     string `json:"rootFS,omitempty"`
@@ -34,22 +44,24 @@ type VMConfig struct {
 	// data disk will map into /dev/vdX and automount by guest-agent process
 	BlkDevs []BlkDev `json:"blkDevs,omitempty"`
 	// GVproxy control endpoint
-	GVproxyEndpoint string `json:"GVproxyEndpoint,omitempty"`
-	// NetworkStackBackend is the network stack backend to use. which provided
+	GvisorTapVsockEndpoint string `json:"GvisorTapVsockEndpoint,omitempty"`
+	// GvisorTapVsockNetwork is the network stack backend to use. which provided
 	// by gvproxy
-	NetworkStackBackend     string        `json:"networkStackBackend,omitempty"`
-	LogLevel                string        `json:"logLevel,omitempty"`
-	LogFilePath             string        `json:"logFilePath,omitempty"`
-	Mounts                  []Mount       `json:"mounts,omitempty"`
-	SSHInfo                 SSHInfo       `json:"sshInfo,omitempty"`
-	Cmdline                 Cmdline       `json:"cmdline,omitempty"`
-	PodmanInfo              PodmanInfo    `json:"podmanInfo,omitempty"`
-	RestAPIAddress          string        `json:"restAPIAddress,omitempty"`
-	RunMode                 string        `json:"runMode,omitempty"`
-	VMConfigProvisionerAddr string        `json:"VMConfigProvisionerAddr,omitempty"`
-	ExternalTools           ExternalTools `json:"externalTools,omitempty"`
+	GvisorTapVsockNetwork string        `json:"gvisorTapVsockNetwork,omitempty"`
+	LogFilePath           string        `json:"logFilePath,omitempty"`
+	Mounts                []Mount       `json:"mounts,omitempty"`
+	SSHInfo               SSHInfo       `json:"sshInfo,omitempty"`
+	PodmanInfo            PodmanInfo    `json:"podmanInfo,omitempty"`
+	VMCtlAddress          string        `json:"vmCTLAddress,omitempty"`
+	RunMode               string        `json:"runMode,omitempty"`
+	Ignition              Ignition      `json:"ignition,omitempty"`
+	GuestAgentCfg         GuestAgentCfg `json:"guestAgentCfg,omitempty"`
+}
 
-	LogFile *os.File `json:"-"` // opened log file, not serialized
+type Ignition struct {
+	HostListenAddr string `json:"HostListenAddr,omitempty"`
+	GuestDir       string `json:"guestDir,omitempty"`
+	HostDir        string `json:"hostDir,omitempty"`
 }
 
 type LinuxTools struct {
@@ -60,10 +72,9 @@ type LinuxTools struct {
 }
 
 type DarwinTools struct {
-	Mke2fs     string `json:"mkfs.ext4,omitempty"`
-	FsckExt4   string `json:"fsck.ext4,omitempty"`
-	Blkid      string `json:"blkid,omitempty"`
-	GuestAgent string `json:"guestAgent,omitempty"`
+	E2fsck  string `json:"e2fsck,omitempty"`
+	Blkid   string `json:"blkid,omitempty"`
+	Tune2fs string `json:"tune2fs,omitempty"`
 }
 
 type ExternalTools struct {
@@ -73,7 +84,8 @@ type ExternalTools struct {
 
 // BlkDev represents the configuration of a data disk, including its file system type, path, and mount point.
 type BlkDev struct {
-	IsContainerStorage bool   `json:"isContainerStorage,omitempty"`
+	// general fields
+	IsContainerStorage bool   `json:"isContainerStorage"`
 	FsType             string `json:"fsType,omitempty"`
 	UUID               string `json:"UUID,omitempty"`
 	Path               string `json:"path,omitempty"`
@@ -82,19 +94,25 @@ type BlkDev struct {
 }
 
 type PodmanInfo struct {
-	UnixSocksAddr string `json:"unixSocksAddr,omitempty"`
+	// Forward the PodmanAPIUnixSockLocalForward on the host to the Podman API service in
+	// the guest which tcp://GuestPodmanAPIListenedIP:GuestPodmanAPIListenedPort
+	PodmanAPIUnixSockLocalForward string `json:"podmanAPIUnixSockLocalForward,omitempty"`
+	GuestPodmanAPIListenedIP      string `json:"GuestPodmanAPIListenedIP,omitempty"`
+	GuestPodmanAPIListenedPort    uint16 `json:"GuestPodmanAPIListenedPort,omitempty"`
 }
 
-// Cmdline exec cmdline within rootfs
-type Cmdline struct {
-	// GuestAgent is a process that runs under PID 1. As a secondary init, GuestAgent incubates all user child processes.
-	GuestAgent     string   `json:"guestagent,omitempty"`
-	GuestAgentArgs []string `json:"guestAgentArgs,omitempty"`
-	Workspace      string   `json:"workspace,omitempty"`
-	// TargetBin is the binary to run by guest-agent.
-	TargetBin string `json:"targetBin,omitempty"`
-	// TargetBinArgs is the arguments to pass to the target binary.
-	TargetBinArgs []string `json:"targetBinArgs,omitempty"`
+type GuestAgentCfg struct {
+	// ShellCode a mount command to run before guest-agent, because we need to mount the ignition folder to the guest
+	ShellCode string `json:"ShellCode,omitempty"`
+
+	// GuestAgentPath the guest-agent is pre-written into the ignition folder and mounted to the guest as a virtiofs, then called and executed by the init program.
+	GuestAgentPath string `json:"guestAgentPath,omitempty"`
+
+	Workdir   string `json:"workdir,omitempty"`   // Workdir the working directory for guest-agent
+	TargetBin string `json:"targetBin,omitempty"` // TargetBin is the binary to run by guest-agent.
+
+	TargetBinArgs []string `json:"targetBinArgs,omitempty"` // TargetBinArgs is the arguments to pass to the target binary.
+
 	// Env is the environment variables to set for the guest-agent process and target binary, in the form of KEY=VALUE.
 	Env []string `json:"env,omitempty"`
 }

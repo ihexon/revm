@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package server
+package httpserver
 
 import (
 	"context"
@@ -37,16 +37,16 @@ type ProcessOutput struct {
 // GuestExec executes a command in the guest VM via SSH.
 // Returns a ProcessOutput that streams stdout/stderr and signals completion.
 func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...string) (*ProcessOutput, error) {
-	endpoint, err := url.Parse(vmc.GVproxyEndpoint)
+	endpoint, err := url.Parse(vmc.GvisorTapVsockEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
 	}
 
 	cfg := ssh.NewClientConfig(
-		define.DefaultGuestAddr,
-		uint16(define.DefaultGuestSSHDPort),
+		define.GuestIP,
+		uint16(define.GuestSSHServerPort),
 		define.DefaultGuestUser,
-		vmc.SSHInfo.HostSSHKeyPairFile,
+		vmc.SSHInfo.HostSSHPrivateKeyFile,
 	).WithGVProxySocket(endpoint.Path)
 
 	client, err := ssh.NewClient(ctx, cfg)

@@ -4,5 +4,6 @@ out/**
 revm.tar.zst
 CLAUDE.md
 .claude/
+.deps/
 
 revm-*.tar.*

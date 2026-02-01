@@ -3,7 +3,6 @@ package event
 import (
 	"context"
 	"linuxvm/pkg/network"
-	"net/url"
 	"time"
 )
 
@@ -12,14 +11,22 @@ type ReportFuncKeyType string
 var ReportFuncKey ReportFuncKeyType = "ReportFuncKey"
 
 type Reporter struct {
-	client *network.UnixHTTPClient
+	client *network.Client
 }
 
 func InitializeReporter(endpoint string) *Reporter {
 	if endpoint == "" {
 		return nil
 	}
-	return &Reporter{client: network.NewUnixHTTPClient(endpoint, 1*time.Second)}
+
+	addr, err := network.ParseUnixAddr(endpoint)
+	if err != nil {
+		return nil
+	}
+
+	return &Reporter{
+		client: network.NewUnixClient(addr.Path, network.WithTimeout(1*time.Second)),
+	}
 }
 
 // SendEventInInitLifeCycle sends an event during the `init` stage, distinguishing between error and non-error cases.
@@ -39,23 +46,28 @@ func (r *Reporter) SendEventInRunLifeCycle(ctx context.Context, evtName EvtName,
 }
 
 func (r *Reporter) sendEvent(ctx context.Context, stage StageName, evtName EvtName, value string) error {
-	if r.client == nil {
+	if r == nil || r.client == nil {
 		return nil
 	}
 
-	// 1. 构造局部 query，不会污染 r.client 的内部状态
-	query := url.Values{}
-	query.Set("stage", string(stage))
-	query.Set("name", string(evtName))
-	query.Set("value", value)
-
-	// 2. 使用专门设计的 GetWithQuery 方法
-	resp, err := r.client.GetWithQuery(ctx, "/notify", query)
+	resp, err := r.client.Get("/notify").
+		Query("stage", string(stage)).
+		Query("name", string(evtName)).
+		Query("value", value).
+		Do(ctx)
 	if err != nil {
 		return err
 	}
 
-	defer r.client.CloseResponse(resp)
+	network.CloseResponse(resp)
+	return nil
+}
+
+// Close closes the reporter's HTTP client
+func (r *Reporter) Close() error {
+	if r != nil && r.client != nil {
+		return r.client.Close()
+	}
 	return nil
 }
 

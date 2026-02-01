@@ -2,58 +2,67 @@ package service
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
-	"linuxvm/pkg/define"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"sync"
 
 	"github.com/sirupsen/logrus"
 )
 
-//go:embed busybox.static
-var elfData []byte
-
-var (
-	Busybox *Byx
-	once    sync.Once
-)
-
-type Byx struct {
-	path        string
-	initialized bool
+// busybox provides access to busybox commands.
+type busybox struct {
+	path string
 }
 
-func InitializeBusybox(vmc *define.VMConfig) error {
-	if err := os.MkdirAll(filepath.Dir(vmc.ExternalTools.LinuxTools.Busybox), 0755); err != nil {
+// Busybox is the global busybox instance. Must call InitializeBusybox first.
+var Busybox *busybox
+
+// InitializeBusybox extracts busybox binary and initializes the global instance.
+func InitializeBusybox(dir string) error {
+	path, err := BusyboxBinary.Extract(dir)
+	if err != nil {
 		return err
 	}
-
-	once.Do(func() {
-		Busybox = &Byx{
-			path:        vmc.ExternalTools.LinuxTools.Busybox,
-			initialized: true,
-		}
-	})
-
-	return os.WriteFile(vmc.ExternalTools.LinuxTools.Busybox, elfData, 0755)
+	Busybox = &busybox{path: path}
+	return nil
 }
 
-func (b *Byx) Exec(ctx context.Context, args ...string) error {
-	if !b.initialized {
-		return fmt.Errorf("busybox is not initialized")
+// Exec runs a busybox applet with the given arguments.
+// Example: Busybox.Exec(ctx, "mkdir", "-p", "/tmp/foo")
+func (b *busybox) Exec(ctx context.Context, args ...string) error {
+	if b == nil {
+		return fmt.Errorf("busybox not initialized")
 	}
 
 	cmd := exec.CommandContext(ctx, b.path, args...)
+	cmd.Env = os.Environ()
 
 	if logrus.IsLevelEnabled(logrus.DebugLevel) {
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stderr
 	}
 
-	logrus.Debugf("busybox cmdline: %q", cmd.Args)
-
+	logrus.Debugf("busybox: %v", cmd.Args)
 	return cmd.Run()
+}
+
+// ExecOutput runs a busybox applet and returns the output.
+func (b *busybox) ExecOutput(ctx context.Context, args ...string) ([]byte, error) {
+	if b == nil {
+		return nil, fmt.Errorf("busybox not initialized")
+	}
+
+	cmd := exec.CommandContext(ctx, b.path, args...)
+	cmd.Env = os.Environ()
+
+	logrus.Debugf("busybox: %v", cmd.Args)
+	return cmd.Output()
+}
+
+// Path returns the busybox binary path.
+func (b *busybox) Path() string {
+	if b == nil {
+		return ""
+	}
+	return b.path
 }

@@ -101,8 +101,8 @@ func (mnt *Mnt) Mount(ctx context.Context, action MountActionType) error {
 func MountAllPseudoMnt(ctx context.Context) error {
 	var pseudoMnts = []Mnt{
 		{
-			Target: "/tmp",
-			Type:   tmpfsType,
+			Target:       "/tmp",
+			Type:         tmpfsType,
 		},
 		{
 			Target: "/run",

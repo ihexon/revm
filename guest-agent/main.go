@@ -15,10 +15,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func setLogrus(command *cli.Command) {
-	level, err := logrus.ParseLevel(command.String(define.FlagLogLevel))
+func setupLogger() error {
+	level, err := logrus.ParseLevel(os.Getenv(define.EnvLogLevel))
 	if err != nil {
-		level = logrus.WarnLevel
+		return err
 	}
 	logrus.SetLevel(level)
 
@@ -28,22 +28,15 @@ func setLogrus(command *cli.Command) {
 		TimestampFormat: "2006-01-02 15:04:05.000",
 	})
 	logrus.SetOutput(os.Stderr)
+	return nil
 }
 
 func main() {
 	app := cli.Command{
-		Name:        os.Args[0],
-		Usage:       "rootfs guest agent",
-		UsageText:   os.Args[0] + " [command] [flags]",
-		Description: "setup the guest environment, and run the command specified by the user.",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:  define.FlagLogLevel,
-				Usage: "set log level (trace, debug, info, warn, error, fatal, panic)",
-				Value: "warn",
-			},
-		},
-		Before:                    earlyStage,
+		Name:                      os.Args[0],
+		Usage:                     "rootfs guest agent",
+		UsageText:                 os.Args[0] + " [command] [flags]",
+		Description:               "setup the guest environment, and run the command specified by the user.",
 		Action:                    run,
 		DisableSliceFlagSeparator: true,
 	}
@@ -53,12 +46,6 @@ func main() {
 	if err := app.Run(ctx, os.Args); err != nil && !errors.Is(err, service.ErrProcessExitNormal) {
 		logrus.Fatalf("bootstrap exit with error: %v", err)
 	}
-}
-
-func earlyStage(ctx context.Context, command *cli.Command) (context.Context, error) {
-	setLogrus(command)
-
-	return ctx, nil
 }
 
 func mountAllFs(ctx context.Context, vmc *define.VMConfig) error {
@@ -78,12 +65,16 @@ func mountAllFs(ctx context.Context, vmc *define.VMConfig) error {
 }
 
 func run(ctx context.Context, _ *cli.Command) error {
+	if err := setupLogger(); err != nil {
+		return err
+	}
+
 	vmc, err := service.GetVMConfig(ctx)
 	if err != nil {
 		return err
 	}
 
-	if err := service.InitializeBusybox(vmc); err != nil {
+	if err := service.InitializeBusybox(vmc.Ignition.GuestDir); err != nil {
 		return err
 	}
 

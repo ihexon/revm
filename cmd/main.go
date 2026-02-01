@@ -20,17 +20,11 @@ func main() {
 		Usage:                     "run a linux shell in 1 second",
 		UsageText:                 os.Args[0] + " [command] [flags]",
 		Description:               "run a linux shell in 1 second",
-		Before:                    earlyStage,
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:  define.FlagReportURL,
 				Usage: "report virtual machine events to this endpoints, eg: unix:///var/run/events.sock or tcp://192.168.1.252:8888",
-			},
-			&cli.StringFlag{
-				Name: define.FlagRestAPIListenAddr,
-				Usage: "listen for REST API requests on the given address, support http or unix socket address," +
-					" e.g. http://127.0.0.1:8080 or unix:///tmp/restapi.sock",
 			},
 			&cli.StringFlag{
 				Name:  define.FlagLogLevel,
@@ -40,6 +34,11 @@ func main() {
 			&cli.StringFlag{
 				Name:  define.FlagSaveLogTo,
 				Usage: "save log to file",
+			},
+			&cli.StringFlag{
+				Name:  define.FlagWorkspace,
+				Usage: "workspace path",
+				Value: "/tmp/revm-workspace",
 			},
 		},
 	}
