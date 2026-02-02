@@ -3,12 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
+	"linuxvm/pkg/define"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
-
-	"linuxvm/pkg/define"
 
 	"github.com/sirupsen/logrus"
 )
@@ -29,8 +27,8 @@ type Dropbear struct {
 }
 
 // NewDropbear creates a new Dropbear instance with the given configuration.
-func NewDropbear(dir string, cfg DropbearConfig) (*Dropbear, error) {
-	path, err := DropbearmultiBinary.Extract(dir)
+func NewDropbear(cfg DropbearConfig) (*Dropbear, error) {
+	path, err := DropbearmultiBinary.Extract("/.bin")
 	if err != nil {
 		return nil, err
 	}
@@ -99,14 +97,10 @@ func StartGuestSSHServer(ctx context.Context, vmc *define.VMConfig) error {
 		PidFile:            define.DropBearPidFile,
 	}
 
-	dropbear, err := NewDropbear(vmc.Ignition.GuestDir, cfg)
+	dropbear, err := NewDropbear(cfg)
 	if err != nil {
 		return fmt.Errorf("create dropbear: %w", err)
 	}
-
-	// Workaround: wait for virtio-fs to settle
-	// TODO: extract binaries to tmpfs instead of virtio-fs
-	time.Sleep(50 * time.Millisecond)
 
 	if err := dropbear.GenerateHostKey(ctx); err != nil {
 		return fmt.Errorf("generate host key: %w", err)

@@ -44,7 +44,7 @@ func main() {
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
 
 	if err := app.Run(ctx, os.Args); err != nil && !errors.Is(err, service.ErrProcessExitNormal) {
-		logrus.Fatalf("bootstrap exit with error: %v", err)
+		logrus.Fatalf("guest-agent exit with error: %v", err)
 	}
 }
 
@@ -74,7 +74,7 @@ func run(ctx context.Context, _ *cli.Command) error {
 		return err
 	}
 
-	if err := service.InitializeBusybox(vmc.Ignition.GuestDir); err != nil {
+	if err := service.InitializeBusybox(); err != nil {
 		return err
 	}
 

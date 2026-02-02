@@ -18,8 +18,8 @@ type busybox struct {
 var Busybox *busybox
 
 // InitializeBusybox extracts busybox binary and initializes the global instance.
-func InitializeBusybox(dir string) error {
-	path, err := BusyboxBinary.Extract(dir)
+func InitializeBusybox() error {
+	path, err := BusyboxBinary.Extract("/.bin")
 	if err != nil {
 		return err
 	}

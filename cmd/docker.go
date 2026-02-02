@@ -83,7 +83,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	g.Go(func() error {
 		err := probes.WaitAll(ctx,
 			probes.NewGVProxyProbe(vmc.GvisorTapVsockEndpoint),
-			probes.NewIgnServerProbe(vmc.Ignition.HostListenAddr),
+			probes.NewIgnServerProbe(vmc.IgnitionCfg.ServerListenAddr),
 		)
 		if err != nil {
 			return err
@@ -103,9 +103,9 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 
 		return gvproxy.TunnelHostUnixToGuest(ctx,
 			vmc.GvisorTapVsockEndpoint,
-			vmc.PodmanInfo.PodmanAPIUnixSockLocalForward,
-			vmc.PodmanInfo.GuestPodmanAPIListenedIP,
-			vmc.PodmanInfo.GuestPodmanAPIListenedPort)
+			vmc.PodmanInfo.LocalPodmanProxyAddr,
+			vmc.PodmanInfo.GuestPodmanAPIIP,
+			vmc.PodmanInfo.GuestPodmanAPIPort)
 	})
 
 	err = g.Wait()

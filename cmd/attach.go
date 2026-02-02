@@ -43,7 +43,7 @@ func attachConsole(ctx context.Context, command *cli.Command) (err error) {
 	}
 
 	// Load VM configuration
-	vmc, err := define.LoadVMCFromFile(filepath.Join(rootfs, define.VMConfigFileName))
+	vmc, err := define.LoadVMCFromFile(filepath.Join(rootfs, define.VMConfigFilePathInGuest))
 	if err != nil {
 		return err
 	}

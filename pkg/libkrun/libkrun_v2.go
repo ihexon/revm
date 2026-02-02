@@ -45,8 +45,6 @@ type cstring struct {
 	ptr *C.char
 }
 
-// newCString creates a new C string from a Go string.
-// The caller MUST call Free() when done, typically via defer.
 func newCString(s string) *cstring {
 	return &cstring{ptr: C.CString(s)}
 }
@@ -59,11 +57,17 @@ func (cs *cstring) Free() {
 	}
 }
 
-// Ptr returns the underlying C string pointer.
 func (cs *cstring) Ptr() *C.char {
 	return cs.ptr
 }
 
+type cstringArray struct {
+	ptrs []*C.char
+}
+
+// newCStringArray creates a null-terminated array of C strings from Go strings.
+// The caller MUST call Free() when done, typically via defer.
+//
 // cstringArray manages an array of C strings with automatic cleanup.
 // The array is null-terminated as required by many C APIs.
 //
@@ -72,12 +76,6 @@ func (cs *cstring) Ptr() *C.char {
 //	arr := newCStringArray([]string{"arg1", "arg2"})
 //	defer arr.Free()
 //	C.some_function(arr.Ptr())
-type cstringArray struct {
-	ptrs []*C.char
-}
-
-// newCStringArray creates a null-terminated array of C strings from Go strings.
-// The caller MUST call Free() when done, typically via defer.
 func newCStringArray(strs []string) *cstringArray {
 	// Allocate array with space for null terminator
 	ptrs := make([]*C.char, len(strs)+1)
@@ -113,8 +111,6 @@ const (
 	defaultNProcHardLimit = 8192
 )
 
-// GPU configuration flags (from virglrenderer.h)
-// Only defining flags that are actually used to avoid namespace pollution.
 const (
 	gpuFlagVenus   = 1 << 6 // Enable Venus (Vulkan passthrough)
 	gpuFlagNoVirgl = 1 << 7 // Disable legacy VirGL (OpenGL)
@@ -162,20 +158,6 @@ func (s vmState) String() string {
 	}
 }
 
-// LibkrunVM represents a libkrun virtual machine instance.
-// It manages the complete lifecycle of a VM from creation through execution to cleanup.
-//
-// Lifecycle:
-//  1. NewLibkrunVM() - Create new VM instance
-//  2. StartNetwork() - Start network backend (gvproxy)
-//  3. Create()       - Configure the VM
-//  4. Start()        - Execute the VM (blocks until completion)
-//  5. Stop()         - Stop the VM (optional, usually handled by context cancellation)
-//  6. Close()        - Clean up resources
-//
-// Thread Safety:
-// LibkrunVM is safe for concurrent method calls. Internal state is protected
-// by a mutex, though typical usage is sequential (Create -> Start).
 type LibkrunVM struct {
 	vmc   *vmconfig.VMConfig
 	ctxID uint32
@@ -186,17 +168,12 @@ type LibkrunVM struct {
 }
 
 // guestMACAddress is the fixed MAC address for the guest VM network interface.
-// This MUST match the DHCP static lease in pkg/gvproxy/vmc.yaml
 // to ensure the guest gets the expected IP (192.168.127.2).
 var guestMACAddress = [6]byte{0x5a, 0x94, 0xef, 0xe4, 0x0c, 0xee}
 
 // Compile-time check: LibkrunVM must implement vm.VMProvider
 var _ interfaces.VMMProvider = (*LibkrunVM)(nil)
 
-// NewLibkrunVM creates a new libkrun VM instance with the provided configuration.
-//
-// This function does not allocate any libkrun resources yet. Call Create()
-// to actually configure the VM.
 func NewLibkrunVM(vmc *vmconfig.VMConfig) *LibkrunVM {
 	return &LibkrunVM{
 		vmc:   vmc,
@@ -204,8 +181,6 @@ func NewLibkrunVM(vmc *vmconfig.VMConfig) *LibkrunVM {
 	}
 }
 
-// GetVMConfigure returns the VM configuration.
-// This implements the vm.VMProvider interface.
 func (vm *LibkrunVM) GetVMConfigure() (*vmconfig.VMConfig, error) {
 	if vm.vmc == nil {
 		return nil, fmt.Errorf("vm configuration is nil")
@@ -214,20 +189,9 @@ func (vm *LibkrunVM) GetVMConfigure() (*vmconfig.VMConfig, error) {
 }
 
 func (vm *LibkrunVM) StartNetwork(ctx context.Context) error {
-	logrus.Infof("starting network backend (gvproxy)")
 	return gvproxy.Run(ctx, vm.vmc)
 }
 
-// Create configures the VM based on the provided configuration.
-// This must be called before Start().
-//
-// This method:
-//   - Creates the libkrun context
-//   - Configures all VM resources (CPU, memory, disks, etc.)
-//   - Sets up networking, GPU, and other devices
-//   - Does NOT start the VM execution
-//
-// This implements the vm.VMProvider interface.
 func (vm *LibkrunVM) Create(ctx context.Context) error {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
@@ -262,7 +226,6 @@ func (vm *LibkrunVM) Create(ctx context.Context) error {
 }
 
 // configureLibKRUN applies all VM configuration settings.
-// Configuration is organized into logical phases for clarity.
 func (vm *LibkrunVM) configureLibKRUN(ctx context.Context) error {
 	var err error
 
@@ -450,7 +413,7 @@ func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
 	}
 
 	// VSock port mapping for ignition server
-	ignAddr, err := network.ParseUnixAddr(vm.vmc.Ignition.HostListenAddr)
+	ignAddr, err := network.ParseUnixAddr(vm.vmc.IgnitionCfg.ServerListenAddr)
 	if err != nil {
 		return fmt.Errorf("failed to parse ignition httpserver address: %w", err)
 	}
@@ -659,36 +622,29 @@ func (vm *LibkrunVM) Start(ctx context.Context) error {
 
 // setCommandLine configures the command, arguments, and environment for the guest.
 func (vm *LibkrunVM) setCommandLine() error {
-	cmdline := vm.vmc.GuestAgentCfg
 
-	workdir := newCString(cmdline.Workdir)
+	workdir := newCString(vm.vmc.GuestAgentCfg.Workdir)
 	defer workdir.Free()
 
-	logrus.Infof("setting working directory: %q", cmdline.Workdir)
+	logrus.Infof("setting working directory: %q", vm.vmc.GuestAgentCfg.Workdir)
 	ret := C.krun_set_workdir(C.uint32_t(vm.ctxID), workdir.Ptr())
 	if ret != 0 {
 		return fmt.Errorf("krun_set_workdir failed with code %d", ret)
 	}
 
-	// Set executable (guest agent binary)
-	executable := newCString("sh")
+	// guest-agent is the second process running in the VM, so the executable
+	// is always vm.vmc.IgnitionCfg.IgnitionExecutable
+	executable := newCString(vm.vmc.IgnitionCfg.IgnitionExecutable)
 	defer executable.Free()
 
-	// Set arguments to pass to the guest agent
-	args := newCStringArray([]string{
-		"-c",
-		cmdline.ShellCode,
-	})
-
+	// guest-agent do not need any args, guest-agent read vmconfig to decide what to do
+	args := newCStringArray([]string{})
 	defer args.Free()
 
 	// Set environment variables
-	envs := newCStringArray(cmdline.Env)
+	envs := newCStringArray(vm.vmc.GuestAgentCfg.Env)
 	defer envs.Free()
-
-	if len(cmdline.Env) > 0 {
-		logrus.Infof("passing %d environment variable(s) to guest", len(cmdline.Env))
-	}
+	logrus.Infof("setting environment variables: %v", vm.vmc.GuestAgentCfg.Env)
 
 	ret = C.krun_set_exec(
 		C.uint32_t(vm.ctxID),
@@ -697,7 +653,7 @@ func (vm *LibkrunVM) setCommandLine() error {
 		envs.Ptr(),
 	)
 	if ret != 0 {
-		return fmt.Errorf("krun_set_exec failed with code %d", ret)
+		return fmt.Errorf("krun_set_exec failed with code %v", ret)
 	}
 
 	return nil

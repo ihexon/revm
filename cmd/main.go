@@ -38,7 +38,7 @@ func main() {
 			&cli.StringFlag{
 				Name:  define.FlagWorkspace,
 				Usage: "workspace path",
-				Value: "/tmp/revm-workspace",
+				Value: "/tmp/.revm-workspace",
 			},
 		},
 	}

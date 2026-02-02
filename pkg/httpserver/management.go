@@ -12,7 +12,6 @@ import (
 	"linuxvm/pkg/vmconfig"
 
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
 )
 
 // ManagementAPIServer provides a REST API for managing the VM from the host.
@@ -51,7 +50,6 @@ func (s *ManagementAPIServer) handleHealth(w http.ResponseWriter, r *http.Reques
 		WriteJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	logrus.Infof("management-api: /healthz")
 	WriteJSON(w, http.StatusOK, nil)
 }
 
@@ -60,7 +58,6 @@ func (s *ManagementAPIServer) handleVMConfig(w http.ResponseWriter, r *http.Requ
 		WriteJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	logrus.Infof("management-api: /vmconfig")
 	WriteJSON(w, http.StatusOK, s.vmc)
 }
 

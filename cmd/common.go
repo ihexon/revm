@@ -9,7 +9,6 @@ import (
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -55,34 +54,44 @@ func GetVMM(vmc *vmconfig.VMConfig) (interfaces.VMMProvider, error) {
 
 func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMode) (*vmconfig.VMConfig, error) {
 	var (
-		err           error
-		logLevel      = command.String(define.FlagLogLevel)
-		saveLogTo     = command.String(define.FlagSaveLogTo)
-		workspacePath = command.String(define.FlagWorkspace)
-		cpus          = command.Int8(define.FlagCPUS)
-		memoryInMB    = command.Uint64(define.FlagMemoryInMB)
-		rawDisks      = command.StringSlice(define.FlagRawDisk)
+		err              error
+		logLevel         = command.String(define.FlagLogLevel)
+		saveLogTo        = command.String(define.FlagSaveLogTo)
+		workspacePath    = command.String(define.FlagWorkspace)
+		cpus             = command.Int8(define.FlagCPUS)
+		memoryInMB       = command.Uint64(define.FlagMemoryInMB)
+		rawDisks         = command.StringSlice(define.FlagRawDisk)
+		rootfsPath       = command.String(define.FlagRootfs)
+		usingSystemProxy = command.Bool(define.FlagUsingSystemProxy)
+
+		runBin        = command.Args().First()
+		runBinArgs    = command.Args().Tail()
+		runBinWorkdir = command.String(define.FlagWorkDir)
+		runBinEnvs    = command.StringSlice(define.FlagEnvs)
 	)
 
 	vmc := vmconfig.NewVMConfig(runMode)
 	logrus.Infof("set run mode: %q", vmc.RunMode)
 
-	if err = vmc.SetLogLevel(logLevel, saveLogTo);err != nil {
+	if err = vmc.SetLogLevel(logLevel, saveLogTo); err != nil {
 		return nil, err
 	}
+	logrus.Infof("set log level: %s", logLevel)
 
 	if err = vmc.SetupWorkspace(workspacePath); err != nil {
 		return nil, err
 	}
+	logrus.Infof("workspace path: %s", workspacePath)
 
 	if err = vmc.WithResources(memoryInMB, cpus); err != nil {
 		return nil, err
 	}
+	logrus.Infof("set memory: %dMB, cpus: %d", memoryInMB, cpus)
 
-	err = vmc.WithGivenRAWDisk(ctx, rawDisks)
-	if err != nil {
+	if err = vmc.WithGivenRAWDisk(ctx, rawDisks); err != nil {
 		return nil, err
 	}
+	logrus.Infof("given raw disks: %v", rawDisks)
 
 	logrus.Infof("setup mounts to %v", command.StringSlice(define.FlagMount))
 	err = vmc.WithMounts(command.StringSlice(define.FlagMount))
@@ -90,29 +99,19 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 		return nil, err
 	}
 
-	logrus.Infof("setup ignition config")
-	err = vmc.SetupIgnition()
-	if err != nil {
-		return nil, err
-	}
-
-	usingSystemProxy := false
-	if command.Bool(define.FlagUsingSystemProxy) {
-		usingSystemProxy = true
-	}
-
 	switch vmc.RunMode {
 	case define.RootFsMode.String():
-		if !command.IsSet(define.FlagRootfs) {
-			if err = command.Set(define.FlagRootfs, filepath.Join(vmc.WorkspacePath, "builtin-rootfs")); err != nil {
+		if rootfsPath == "" {
+			logrus.Infof("rootfs path is empty, use built-in alpine rootfs")
+			if err = vmc.WithBuiltInAlpineRootfs(ctx); err != nil {
+				return nil, err
+			}
+		} else {
+			logrus.Infof("user provided rootfs path: %q", rootfsPath)
+			if err = vmc.WithRootfs(ctx, rootfsPath); err != nil {
 				return nil, err
 			}
 		}
-
-		if err = vmc.WithRootfs(ctx, command.String(define.FlagRootfs)); err != nil {
-			return nil, err
-		}
-
 	case define.ContainerMode.String():
 		err = vmc.WithBuiltInAlpineRootfs(ctx)
 		if err != nil {
@@ -130,9 +129,14 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 		return nil, fmt.Errorf("unsupported mode %q", vmc.RunMode)
 	}
 
-	return vmc, vmc.RunCmdline(command.String(define.FlagWorkDir),
-		command.Args().First(),
-		command.Args().Tail(),
-		command.StringSlice(define.FlagEnvs),
+	if err = vmc.SetupIgnition(); err != nil {
+		return nil, err
+	}
+	logrus.Infof("ignition configure done")
+
+	return vmc, vmc.RunCmdline(runBinWorkdir,
+		runBin,
+		runBinArgs,
+		runBinEnvs,
 		usingSystemProxy)
 }

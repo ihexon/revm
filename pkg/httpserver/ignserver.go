@@ -19,11 +19,10 @@ type GuestConfigServer struct {
 func NewIgnitionServer(vmc *vmconfig.VMConfig) *GuestConfigServer {
 	return &GuestConfigServer{
 		vmc: vmc,
-		srv: newUnixSockHTTPServer("ignition-httpserver", vmc.Ignition.HostListenAddr),
+		srv: newUnixSockHTTPServer("ignition-httpserver", vmc.IgnitionCfg.ServerListenAddr),
 	}
 }
 
-// Start begins serving requests. Blocks until context is cancelled.
 func (s *GuestConfigServer) Start(ctx context.Context) error {
 	s.srv.mux.HandleFunc("/healthz", s.handleHealth)
 	s.srv.mux.HandleFunc("/vmconfig", s.handleVMConfig)

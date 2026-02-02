@@ -3,8 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"path/filepath"
-
 	"guestAgent/pkg/vsock"
 
 	"linuxvm/pkg/define"
@@ -34,9 +32,5 @@ func GetVMConfig(ctx context.Context) (*define.VMConfig, error) {
 		return nil, err
 	}
 
-	if err = vmc.WriteToJsonFile(filepath.Join(define.IgnitionFsMountDir, define.VMConfigFileName)); err != nil {
-		return nil, err
-	}
-
-	return vmc, nil
+	return vmc, vmc.WriteToJsonFile(define.VMConfigFilePathInGuest)
 }

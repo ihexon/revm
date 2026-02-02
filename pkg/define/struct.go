@@ -28,12 +28,6 @@ type SSHInfo struct {
 	SSHLocalForwardAddr string `json:"sshLocalForwardAddr,omitempty"`
 }
 
-type LogKeyType string
-
-const (
-	GlobalLogKey LogKeyType = "global"
-)
-
 type VMConfig struct {
 	WorkspacePath string `json:"workspacePath,omitempty"`
 
@@ -54,14 +48,15 @@ type VMConfig struct {
 	PodmanInfo            PodmanInfo    `json:"podmanInfo,omitempty"`
 	VMCtlAddress          string        `json:"vmCTLAddress,omitempty"`
 	RunMode               string        `json:"runMode,omitempty"`
-	Ignition              Ignition      `json:"ignition,omitempty"`
+	IgnitionCfg           IgnitionCfg   `json:"ignitionCfg,omitempty"`
 	GuestAgentCfg         GuestAgentCfg `json:"guestAgentCfg,omitempty"`
 }
 
-type Ignition struct {
-	HostListenAddr string `json:"HostListenAddr,omitempty"`
-	GuestDir       string `json:"guestDir,omitempty"`
-	HostDir        string `json:"hostDir,omitempty"`
+type IgnitionCfg struct {
+	ServerListenAddr string `json:"ServerListenAddr,omitempty"`
+
+	// the executable path of guest-agent, in guest view
+	IgnitionExecutable string `json:"IgnitionExecutable,omitempty"`
 }
 
 type LinuxTools struct {
@@ -84,30 +79,20 @@ type ExternalTools struct {
 
 // BlkDev represents the configuration of a data disk, including its file system type, path, and mount point.
 type BlkDev struct {
-	// general fields
-	IsContainerStorage bool   `json:"isContainerStorage"`
-	FsType             string `json:"fsType,omitempty"`
-	UUID               string `json:"UUID,omitempty"`
-	Path               string `json:"path,omitempty"`
-	MountTo            string `json:"mountTo,omitempty"`
-	SizeInMib          uint64 `json:"sizeInMIB,omitempty"`
+	FsType    string `json:"fsType,omitempty"`
+	UUID      string `json:"UUID,omitempty"`
+	Path      string `json:"path,omitempty"`
+	MountTo   string `json:"mountTo,omitempty"`
+	SizeInMib uint64 `json:"sizeInMIB,omitempty"`
 }
 
 type PodmanInfo struct {
-	// Forward the PodmanAPIUnixSockLocalForward on the host to the Podman API service in
-	// the guest which tcp://GuestPodmanAPIListenedIP:GuestPodmanAPIListenedPort
-	PodmanAPIUnixSockLocalForward string `json:"podmanAPIUnixSockLocalForward,omitempty"`
-	GuestPodmanAPIListenedIP      string `json:"GuestPodmanAPIListenedIP,omitempty"`
-	GuestPodmanAPIListenedPort    uint16 `json:"GuestPodmanAPIListenedPort,omitempty"`
+	LocalPodmanProxyAddr string `json:"localPodmanProxyAddr,omitempty"`
+	GuestPodmanAPIIP     string `json:"GuestPodmanAPIIP,omitempty"`
+	GuestPodmanAPIPort   uint16 `json:"GuestPodmanAPIPort,omitempty"`
 }
 
 type GuestAgentCfg struct {
-	// ShellCode a mount command to run before guest-agent, because we need to mount the ignition folder to the guest
-	ShellCode string `json:"ShellCode,omitempty"`
-
-	// GuestAgentPath the guest-agent is pre-written into the ignition folder and mounted to the guest as a virtiofs, then called and executed by the init program.
-	GuestAgentPath string `json:"guestAgentPath,omitempty"`
-
 	Workdir   string `json:"workdir,omitempty"`   // Workdir the working directory for guest-agent
 	TargetBin string `json:"targetBin,omitempty"` // TargetBin is the binary to run by guest-agent.
 

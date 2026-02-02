@@ -5,7 +5,6 @@ package vmconfig
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/disk"
@@ -175,7 +174,6 @@ func (v *VMConfig) RunCmdline(workdir, bin string, args, envs []string, usingSys
 	finalEnv = append(finalEnv, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
 	finalEnv = append(finalEnv, "LC_ALL=C.UTF-8")
 	finalEnv = append(finalEnv, "LANG=C.UTF-8")
-	finalEnv = append(finalEnv, "HOME=/root")
 	finalEnv = append(finalEnv, fmt.Sprintf("%s=%s", define.EnvLogLevel, logrus.GetLevel().String()))
 
 	if usingSystemProxy {
@@ -202,7 +200,6 @@ func (v *VMConfig) RunCmdline(workdir, bin string, args, envs []string, usingSys
 	}
 
 	v.GuestAgentCfg = define.GuestAgentCfg{
-		ShellCode:     static_resources.IgnitionScript(define.IgnitionVirtioFsTag, define.IgnitionFsMountDir),
 		Workdir:       workdir,
 		TargetBin:     bin,
 		TargetBinArgs: args,
@@ -223,10 +220,6 @@ func (v *VMConfig) WithResources(memoryInMB uint64, cpus int8) error {
 
 	v.MemoryInMB = memoryInMB
 	v.Cpus = cpus
-
-	defer func() {
-		logrus.Infof("set memory: %dMB, cpus: %d", v.MemoryInMB, v.Cpus)
-	}()
 
 	return nil
 }
@@ -249,39 +242,33 @@ func (v *VMConfig) WithMounts(dirs []string) error {
 	return nil
 }
 
+// SetupIgnition extracts the guest-agent into the rootfs and sets up the ignition unix-socket listening address
 func (v *VMConfig) SetupIgnition() error {
-	if v.WorkspacePath == "" {
-		return fmt.Errorf("workspace path is empty, can not setup ignition virtio-fs")
+	if v.RootFS == "" {
+		return fmt.Errorf("rootfs path is empty")
 	}
 
-	guestAgentFilePath := filepath.Join(v.WorkspacePath, "ignition", "guest-agent")
+	guestAgentFilePath := filepath.Join(v.RootFS, ".bin", "guest-agent")
 
-	err := os.MkdirAll(filepath.Dir(guestAgentFilePath), 0755)
+	if err := os.MkdirAll(filepath.Dir(guestAgentFilePath), 0755); err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(guestAgentFilePath, static_resources.GuestAgentBytes, 0755); err != nil {
+		return fmt.Errorf("failed to write guest-agent file to %q: %w", guestAgentFilePath, err)
+	}
+
+	rel, err := filepath.Rel(v.RootFS, guestAgentFilePath)
 	if err != nil {
 		return err
 	}
 
-	err = os.WriteFile(guestAgentFilePath, static_resources.GuestAgentBytes, 0755)
-	if err != nil {
-		return err
-	}
-
-	v.Mounts = append(v.Mounts, define.Mount{
-		ReadOnly: false,
-		Type:     filesystem.VirtIOFs,
-		Source:   filepath.Dir(guestAgentFilePath),
-		Target:   define.IgnitionFsMountDir,
-		Tag:      define.IgnitionVirtioFsTag,
-		UUID:     define.IgnitionVirtioFsTag,
-	})
-
-	v.Ignition = define.Ignition{
-		HostListenAddr: (&url.URL{
+	v.IgnitionCfg = define.IgnitionCfg{
+		IgnitionExecutable: filepath.Join("/", rel),
+		ServerListenAddr: (&url.URL{
 			Scheme: "unix",
-			Path:   v.GetSocksPath("ignition-listen.sock"),
+			Path:   v.GetSocksPath("ign.sock"),
 		}).String(),
-		HostDir:  filepath.Join(v.WorkspacePath, "ignition"),
-		GuestDir: define.IgnitionFsMountDir,
 	}
 
 	return nil
@@ -330,8 +317,11 @@ func (v *VMConfig) SetLogLevel(level string, logFile string) error {
 
 func (v *VMConfig) WithBuiltInAlpineRootfs(ctx context.Context) error {
 	alpineRootfsPath := filepath.Join(v.WorkspacePath, "rootfs")
-	err := static_resources.ExtractBuiltinRootfs(ctx, alpineRootfsPath)
-	if err != nil {
+	if err := os.MkdirAll(alpineRootfsPath, 0755); err != nil {
+		return err
+	}
+
+	if err := static_resources.ExtractBuiltinRootfs(ctx, alpineRootfsPath); err != nil {
 		return err
 	}
 
@@ -343,24 +333,26 @@ func (v *VMConfig) WithRootfs(ctx context.Context, rootfsPath string) error {
 		return fmt.Errorf("rootfs path is empty")
 	}
 
-	rootfsPath, err := filepath.Abs(rootfsPath)
+	rootfsPath, err := filepath.Abs(filepath.Clean(rootfsPath))
 	if err != nil {
 		return err
 	}
-	_, err = os.Stat(rootfsPath)
+
+	_, err = os.Lstat(filepath.Join(rootfsPath, "bin", "sh"))
 	if err != nil {
-		logrus.Warnf("rootfs path %q does not exist, will try to extract it from builtin", rootfsPath)
-		if err = static_resources.ExtractBuiltinRootfs(ctx, rootfsPath); err != nil {
-			return err
-		}
+		return fmt.Errorf("rootfs path %q does not contain shell interpreter /bin/sh: %w", rootfsPath, err)
 	}
 
 	v.RootFS = rootfsPath
 
-	// only one vm instance can access the rootfs at a time
-	err = flock.New(filepath.Join(v.RootFS, ".lock")).Lock()
+	// flock do not need release
+	ok, err := flock.New(filepath.Join(v.RootFS, ".lock")).TryLock()
 	if err != nil {
 		return err
+	}
+
+	if !ok {
+		return fmt.Errorf("rootfs %q is locked by another instance", rootfsPath)
 	}
 
 	return nil
@@ -374,7 +366,7 @@ func (v *VMConfig) GetSocksPath(name string) string {
 	return filepath.Clean(filepath.Join(v.WorkspacePath, "socks", name))
 }
 
-func (v *VMConfig) GetSSHPrivateKey() string {
+func (v *VMConfig) GetSSHPrivateKeyFile() string {
 	return filepath.Clean(filepath.Join(v.WorkspacePath, "ssh", "key"))
 }
 
@@ -386,13 +378,10 @@ func (v *VMConfig) withPodmanCfg() error {
 	}
 
 	v.PodmanInfo = define.PodmanInfo{
-		PodmanAPIUnixSockLocalForward: unixAddr.String(),
-		GuestPodmanAPIListenedIP:      define.GuestIP,
-		GuestPodmanAPIListenedPort:    define.GuestPodmanAPIPort,
+		LocalPodmanProxyAddr: unixAddr.String(),
+		GuestPodmanAPIIP:     define.GuestIP,
+		GuestPodmanAPIPort:   define.GuestPodmanAPIPort,
 	}
-
-	data, _ := json.Marshal(v.PodmanInfo)
-	logrus.Infof("podman API configured with: %q", string(data))
 
 	return os.MkdirAll(filepath.Dir(unixAddr.Path), 0755)
 }
@@ -406,8 +395,6 @@ func (v *VMConfig) withVMControlCfg() error {
 
 	v.VMCtlAddress = unixAddr.String()
 
-	logrus.Infof("vm control API configured with: %q", v.VMCtlAddress)
-
 	return os.MkdirAll(filepath.Dir(unixAddr.Path), 0755)
 }
 
@@ -420,7 +407,7 @@ func (v *VMConfig) withGvisorTapVsockCfg() error {
 
 	v.GvisorTapVsockEndpoint = unixAddr.String()
 	v.GvisorTapVsockNetwork = fmt.Sprintf("unixgram://%s", v.GetSocksPath("gvpnet.sock"))
-	
+
 	_ = os.Remove(v.GetSocksPath("gvpctl.sock"))
 	_ = os.Remove(v.GetSocksPath("gvpnet.sock"))
 
@@ -430,7 +417,7 @@ func (v *VMConfig) withGvisorTapVsockCfg() error {
 }
 
 func (v *VMConfig) generateSSHCfg() error {
-	keyPair, err := ssh.GenerateKeyPair(v.GetSSHPrivateKey(), ssh.DefaultKeyGenOptions())
+	keyPair, err := ssh.GenerateKeyPair(v.GetSSHPrivateKeyFile(), ssh.DefaultKeyGenOptions())
 	if err != nil {
 		return err
 	}
@@ -438,7 +425,7 @@ func (v *VMConfig) generateSSHCfg() error {
 	v.SSHInfo = define.SSHInfo{
 		HostSSHPublicKey:      keyPair.AuthorizedKey(),
 		HostSSHPrivateKey:     string(keyPair.RawProtectedPrivateKey()),
-		HostSSHPrivateKeyFile: v.GetSSHPrivateKey(),
+		HostSSHPrivateKeyFile: v.GetSSHPrivateKeyFile(),
 	}
 
 	if err := os.MkdirAll(filepath.Dir(v.SSHInfo.HostSSHPrivateKeyFile), 0700); err != nil {
@@ -456,12 +443,12 @@ func (v *VMConfig) SetupWorkspace(workspacePath string) error {
 		return fmt.Errorf("workspace path is empty")
 	}
 
-	p, err := filepath.Abs(filepath.Clean(workspacePath))
+	workspacePath, err := filepath.Abs(filepath.Clean(workspacePath))
 	if err != nil {
 		return err
 	}
 
-	v.WorkspacePath = p
+	v.WorkspacePath = workspacePath
 
 	if err = os.MkdirAll(v.WorkspacePath, 0755); err != nil {
 		return err
@@ -472,25 +459,29 @@ func (v *VMConfig) SetupWorkspace(workspacePath string) error {
 	if err != nil {
 		return err
 	}
+	logrus.Infof("workspace locked, current running instance pid: %d", os.Getpid())
 
-	err = v.withPodmanCfg()
-	if err != nil {
-		return err
+	if v.RunMode == define.ContainerMode.String() {
+		if err = v.withPodmanCfg(); err != nil {
+			return err
+		}
+		logrus.Infof("podman api proxy listen in: %q", v.PodmanInfo.LocalPodmanProxyAddr)
 	}
 
-	err = v.withVMControlCfg()
-	if err != nil {
+	if err = v.withVMControlCfg(); err != nil {
 		return err
 	}
+	logrus.Infof("vm control API listen in: %q", v.VMCtlAddress)
 
-	err = v.withGvisorTapVsockCfg()
-	if err != nil {
+	if err = v.withGvisorTapVsockCfg(); err != nil {
 		return err
 	}
+	logrus.Infof("gvisor-tap-vsock control endpoint: %q, network: %q", v.GvisorTapVsockEndpoint, v.GvisorTapVsockNetwork)
 
 	if err = v.generateSSHCfg(); err != nil {
 		return err
 	}
+	logrus.Infof("ssh key pair generated in: %q", v.SSHInfo.HostSSHPrivateKeyFile)
 
 	return nil
 }

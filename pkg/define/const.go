@@ -5,8 +5,8 @@ type (
 )
 
 const (
-	VMConfigFileName = "vmconfig.json"
-	HostDNSInGVProxy = "host.containers.internal"
+	VMConfigFilePathInGuest = "/vmconfig.json"
+	HostDNSInGVPNet         = "host.containers.internal"
 
 	RootfsDirName  = "rootfs"
 	LibexecDirName = "libexec"
@@ -27,18 +27,17 @@ const (
 	UnspecifiedAddress = "0.0.0.0"
 	GuestIP            = "192.168.127.2"
 
-	DefaultVSockPort          = 25882
+	DefaultVSockPort = 25882
 
 	GuestSSHServerPort = 25883
 	GuestPodmanAPIPort = 25884
-	LocalHost = "127.0.0.1"
+	LocalHost          = "127.0.0.1"
 
 	SSHLocalForwardListenPort = 6123
+)
 
+const (
 	RestAPIVMConfigURL = "/vmconfig"
-	IgnitionVirtioFsTag = "4C3525BF-5FB4-4EF0-8FE6-6F2E9A246221"
-
-	IgnitionFsMountDir = "/dev/shm/ignition"
 )
 
 const (
