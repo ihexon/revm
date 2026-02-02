@@ -5,7 +5,7 @@ type (
 )
 
 const (
-	GuestAgentPathInGuest = "/.bin/guest-agent"
+	GuestAgentPathInGuest   = "/.bin/guest-agent"
 	GuestHiddenBinDir       = "/.bin"
 	VMConfigFilePathInGuest = "/vmconfig.json"
 	HostDomain              = "host.containers.internal"

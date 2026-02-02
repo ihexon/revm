@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"embed"
-	_ "embed"
 	"fmt"
 	"linuxvm/pkg/archiver"
 	"linuxvm/pkg/define"

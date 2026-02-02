@@ -14,6 +14,10 @@ import (
 var ErrProcessExitNormal = errors.New("process exit normally")
 
 func DoExecCmdLine(ctx context.Context, vmc *define.VMConfig) error {
+	if err := os.Chdir(vmc.Cmdline.WorkDir); err != nil {
+		return err
+	}
+
 	cmd := exec.CommandContext(ctx, vmc.Cmdline.Bin, vmc.Cmdline.Args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

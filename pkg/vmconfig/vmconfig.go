@@ -153,7 +153,7 @@ func (v *VMConfig) SetupCmdLine(workdir, bin string, args, envs []string, usingS
 		return fmt.Errorf("rootfs path is empty")
 	}
 
-	if filepath.Clean(workdir) == "" {
+	if workdir == "" {
 		workdir = "/"
 	}
 
@@ -189,9 +189,10 @@ func (v *VMConfig) SetupCmdLine(workdir, bin string, args, envs []string, usingS
 	}
 
 	v.Cmdline = define.Cmdline{
-		Bin:  bin,
-		Args: args,
-		Envs: envs,
+		Bin:     bin,
+		Args:    args,
+		Envs:    envs,
+		WorkDir: workdir,
 	}
 
 	return nil

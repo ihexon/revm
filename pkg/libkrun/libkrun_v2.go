@@ -603,7 +603,7 @@ func (vm *LibkrunVM) Start(ctx context.Context) error {
 	}
 
 	// Configure the command line to execute inside the VM
-	if err := vm.applyGuestAgentCfgs(); err != nil {
+	if err := vm.applyGuestAgentCfg(); err != nil {
 		vm.mu.Lock()
 		vm.state = stateConfigured // Restore state on failure
 		vm.mu.Unlock()
@@ -620,17 +620,15 @@ func (vm *LibkrunVM) Start(ctx context.Context) error {
 	return err
 }
 
-// applyGuestAgentCfgs configures the command, arguments, and environment for the guest.
+// applyGuestAgentCfg configures the command, arguments, and environment for the guest.
 //
 // The first program executed by the virtual machine is `init`, provided by krun, and the second program is always the guest-agent.
-func (vm *LibkrunVM) applyGuestAgentCfgs() error {
+func (vm *LibkrunVM) applyGuestAgentCfg() error {
 	workdir := newCString(vm.vmc.GuestAgentCfg.Workdir)
 	defer workdir.Free()
 
-	logrus.Infof("setting working directory: %q", vm.vmc.GuestAgentCfg.Workdir)
-	ret := C.krun_set_workdir(C.uint32_t(vm.ctxID), workdir.Ptr())
-	if ret != 0 {
-		return fmt.Errorf("krun_set_workdir failed with code %d", ret)
+	if ret := C.krun_set_workdir(C.uint32_t(vm.ctxID), workdir.Ptr()); ret != 0 {
+		return fmt.Errorf("krun_set_workdir failed with code %v", ret)
 	}
 
 	executable := newCString(define.GuestAgentPathInGuest)
@@ -645,7 +643,7 @@ func (vm *LibkrunVM) applyGuestAgentCfgs() error {
 	defer envs.Free()
 	logrus.Infof("setting environment variables: %v", vm.vmc.GuestAgentCfg.Env)
 
-	ret = C.krun_set_exec(
+	ret := C.krun_set_exec(
 		C.uint32_t(vm.ctxID),
 		executable.Ptr(),
 		args.Ptr(),

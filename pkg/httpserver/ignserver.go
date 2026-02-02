@@ -12,7 +12,6 @@ import (
 type GuestConfigServer struct {
 	vmc *vmconfig.VMConfig
 	srv *httpServer
-	elfFS   http.Handler
 }
 
 // NewIgnitionServer creates a httpserver that provides configuration to the guest.

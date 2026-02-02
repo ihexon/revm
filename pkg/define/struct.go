@@ -34,9 +34,10 @@ type VMConfig struct {
 }
 
 type Cmdline struct {
-	Envs []string `json:"envs,omitempty"`
-	Bin  string   `json:"bin,omitempty"`
-	Args []string `json:"args,omitempty"`
+	Envs    []string `json:"envs,omitempty"`
+	Bin     string   `json:"bin,omitempty"`
+	Args    []string `json:"args,omitempty"`
+	WorkDir string   `json:"workdir,omitempty"`
 }
 
 type Mount struct {

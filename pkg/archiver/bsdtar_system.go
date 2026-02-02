@@ -22,7 +22,7 @@ type TarOpts struct {
 
 	toStdout  bool // ExtractToDir file contents to stdout instead of disk (extract only)
 	fromStdin bool // Read from stdin instead of file
-	fastRead bool
+	// fastRead  bool
 
 	stdout io.Writer // Output to writer instead of disk
 	stderr io.Writer // stderr writer
