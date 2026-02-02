@@ -14,23 +14,10 @@ const (
 
 func ConfigureNetwork(ctx context.Context) error {
 	logrus.Infof("configure guest network: start")
-	errChan := make(chan error, 1)
 
-	go func() {
-		verbose := false
-
-		if logrus.IsLevelEnabled(logrus.DebugLevel) {
-			verbose = true
-		}
-
-		errChan <- network.DHClient4(eth0, attempts, verbose)
-		logrus.Infof("configure guest network: done")
-	}()
-
-	select {
-	case <-ctx.Done():
-		return context.Cause(ctx)
-	case err := <-errChan:
+	if err := network.DHClient4(ctx, eth0, attempts); err != nil {
 		return err
 	}
+	logrus.Infof("configure guest network configure done")
+	return nil
 }

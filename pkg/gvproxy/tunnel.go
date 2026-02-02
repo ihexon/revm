@@ -2,12 +2,14 @@ package gvproxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"linuxvm/pkg/network"
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/sirupsen/logrus"
@@ -70,8 +72,6 @@ func createUnixListenerSockFile(path string) (net.Listener, error) {
 	return ln, nil
 }
 
-// FIXME: If listener closed but ctx not done, infinite loop,
-// should have Exponential backoff, but for now, It just work most of time
 func acceptLoop(ctx context.Context, ln net.Listener, gvproxyPath, targetIP string, targetPort uint16) error {
 	for {
 		conn, err := ln.Accept()
@@ -79,6 +79,11 @@ func acceptLoop(ctx context.Context, ln net.Listener, gvproxyPath, targetIP stri
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
+			if errors.Is(err, net.ErrClosed) {
+				return fmt.Errorf("listener %q closed", ln.Addr())
+			}
+
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 

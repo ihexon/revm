@@ -39,13 +39,13 @@ func GetAndNormalizeSystemProxy() (*Proxy, error) {
 	}
 
 	if proxyInfo.HTTP != nil && (proxyInfo.HTTP.Host == "127.0.0.1" || proxyInfo.HTTP.Host == "localhost") {
-		logrus.Debugf("system http proxy is localhost/127.0.0.1, using %q instead", define.HostDNSInGVPNet)
-		proxyInfo.HTTP.Host = define.HostDNSInGVPNet
+		logrus.Infof("system http proxy is localhost/127.0.0.1, using %q instead", define.HostDomain)
+		proxyInfo.HTTP.Host = define.HostDomain
 	}
 
 	if proxyInfo.HTTPS != nil && (proxyInfo.HTTPS.Host == "127.0.0.1" || proxyInfo.HTTPS.Host == "localhost") {
-		logrus.Debugf("system https proxy is localhost/127.0.0.1, using %q instead", define.HostDNSInGVPNet)
-		proxyInfo.HTTPS.Host = define.HostDNSInGVPNet
+		logrus.Infof("system https proxy is localhost/127.0.0.1, using %q instead", define.HostDomain)
+		proxyInfo.HTTPS.Host = define.HostDomain
 	}
 
 	return proxyInfo, nil

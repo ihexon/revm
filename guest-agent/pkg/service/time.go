@@ -10,6 +10,8 @@ import (
 const NTPServer = "time.cloudflare.com"
 
 func SyncRTCTime(ctx context.Context) error {
+	syncTimeFromNtpServer(ctx) // try sync time from ntp server at first
+
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 	for {

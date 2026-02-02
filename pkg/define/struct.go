@@ -8,6 +8,37 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type VMConfig struct {
+	WorkspacePath string `json:"workspacePath,omitempty"`
+
+	MemoryInMB uint64 `json:"memoryInMB,omitempty"`
+	Cpus       int8   `json:"cpus,omitempty"`
+	RootFS     string `json:"rootFS,omitempty"`
+
+	// data disk will map into /dev/vdX and automount by guest-agent process
+	BlkDevs []BlkDev `json:"blkDevs,omitempty"`
+	// GVproxy control endpoint
+	GvisorTapVsockEndpoint string `json:"GvisorTapVsockEndpoint,omitempty"`
+	// GvisorTapVsockNetwork is the network stack backend to use. which provided
+	// by gvproxy
+	GvisorTapVsockNetwork string            `json:"gvisorTapVsockNetwork,omitempty"`
+	LogFilePath           string            `json:"logFilePath,omitempty"`
+	Mounts                []Mount           `json:"mounts,omitempty"`
+	SSHInfo               SSHInfo           `json:"sshInfo,omitempty"`
+	PodmanInfo            PodmanInfo        `json:"podmanInfo,omitempty"`
+	VMCtlAddress          string            `json:"vmCTLAddress,omitempty"`
+	RunMode               string            `json:"runMode,omitempty"`
+	IgnitionServerCfg     IgnitionServerCfg `json:"ignitionServerCfg,omitempty"`
+	GuestAgentCfg         GuestAgentCfg     `json:"guestAgentCfg,omitempty"`
+	Cmdline               Cmdline           `json:"cmdline,omitempty"`
+}
+
+type Cmdline struct {
+	Envs []string `json:"envs,omitempty"`
+	Bin  string   `json:"bin,omitempty"`
+	Args []string `json:"args,omitempty"`
+}
+
 type Mount struct {
 	ReadOnly bool   `json:"readOnly"`
 	Source   string `json:"source"`
@@ -28,35 +59,15 @@ type SSHInfo struct {
 	SSHLocalForwardAddr string `json:"sshLocalForwardAddr,omitempty"`
 }
 
-type VMConfig struct {
-	WorkspacePath string `json:"workspacePath,omitempty"`
-
-	MemoryInMB uint64 `json:"memoryInMB,omitempty"`
-	Cpus       int8   `json:"cpus,omitempty"`
-	RootFS     string `json:"rootFS,omitempty"`
-
-	// data disk will map into /dev/vdX and automount by guest-agent process
-	BlkDevs []BlkDev `json:"blkDevs,omitempty"`
-	// GVproxy control endpoint
-	GvisorTapVsockEndpoint string `json:"GvisorTapVsockEndpoint,omitempty"`
-	// GvisorTapVsockNetwork is the network stack backend to use. which provided
-	// by gvproxy
-	GvisorTapVsockNetwork string        `json:"gvisorTapVsockNetwork,omitempty"`
-	LogFilePath           string        `json:"logFilePath,omitempty"`
-	Mounts                []Mount       `json:"mounts,omitempty"`
-	SSHInfo               SSHInfo       `json:"sshInfo,omitempty"`
-	PodmanInfo            PodmanInfo    `json:"podmanInfo,omitempty"`
-	VMCtlAddress          string        `json:"vmCTLAddress,omitempty"`
-	RunMode               string        `json:"runMode,omitempty"`
-	IgnitionCfg           IgnitionCfg   `json:"ignitionCfg,omitempty"`
-	GuestAgentCfg         GuestAgentCfg `json:"guestAgentCfg,omitempty"`
+type ProxySetting struct {
+	HTTPProxy  string `json:"httpProxy,omitempty"`
+	HTTPSProxy string `json:"httpsProxy,omitempty"`
+	Use        bool   `json:"use,omitempty"`
 }
 
-type IgnitionCfg struct {
-	ServerListenAddr string `json:"ServerListenAddr,omitempty"`
-
-	// the executable path of guest-agent, in guest view
-	IgnitionExecutable string `json:"IgnitionExecutable,omitempty"`
+type IgnitionServerCfg struct {
+	ListenUnixSockAddr string `json:"ListenUnixSockAddr,omitempty"`
+	ListenTcpAddr      string `json:"ListenTcpAddr,omitempty"` // not implemented yet
 }
 
 type LinuxTools struct {
@@ -93,13 +104,8 @@ type PodmanInfo struct {
 }
 
 type GuestAgentCfg struct {
-	Workdir   string `json:"workdir,omitempty"`   // Workdir the working directory for guest-agent
-	TargetBin string `json:"targetBin,omitempty"` // TargetBin is the binary to run by guest-agent.
-
-	TargetBinArgs []string `json:"targetBinArgs,omitempty"` // TargetBinArgs is the arguments to pass to the target binary.
-
-	// Env is the environment variables to set for the guest-agent process and target binary, in the form of KEY=VALUE.
-	Env []string `json:"env,omitempty"`
+	Workdir string   `json:"workdir,omitempty"`
+	Env     []string `json:"env,omitempty"`
 }
 
 func LoadVMCFromFile(file string) (*VMConfig, error) {

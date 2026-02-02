@@ -32,10 +32,6 @@ github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 h1:El6M4kTTCOh6aBiKaU
 github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510/go.mod h1:pupxD2MaaD3pAXIBCelhxNneeOaAeabZDe5s4K6zSpQ=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/ihexon/libarchive-go v0.0.0-20260126034318-a306355d404b h1:ZBlS3VGxX3Iiz6JNGwFTf0+fU9h4u3xZPoPHvr/IXSM=
-github.com/ihexon/libarchive-go v0.0.0-20260126034318-a306355d404b/go.mod h1:C4bII7+FrTOK72FnyMQ2gXjWBxfbt5JCYZjOrRt0oEg=
-github.com/ihexon/libarchive-go v0.0.0-20260130143936-45936643ccb2 h1:M8YkJn/m7Z3PbJxrjE7HP8GCQPdyQwxaqgpJtq3ahPY=
-github.com/ihexon/libarchive-go v0.0.0-20260130143936-45936643ccb2/go.mod h1:C4bII7+FrTOK72FnyMQ2gXjWBxfbt5JCYZjOrRt0oEg=
 github.com/ihexon/libarchive-go v0.0.0-20260130150032-cf3ec39e997f h1:C1sY5+xr64he9iPeihtrwPGJJ1QbtCgYRC9Jg5hJQok=
 github.com/ihexon/libarchive-go v0.0.0-20260130150032-cf3ec39e997f/go.mod h1:7Gtc9bNQEJ3yR5hrEihMiRr2V12f8QsrghC8BPyNhgI=
 github.com/insomniacslk/dhcp v0.0.0-20251020182700-175e84fbb167 h1:MEufgJohwIjFi2n3eJv4c/8UdRLQVUwPwSWQPoER+eU=
@@ -141,5 +137,3 @@ gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
 gvisor.dev/gvisor v0.0.0-20240916094835-a174eb65023f h1:O2w2DymsOlM/nv2pLNWCMCYOldgBBMkD7H0/prN5W2k=
 gvisor.dev/gvisor v0.0.0-20240916094835-a174eb65023f/go.mod h1:sxc3Uvk/vHcd3tj7/DHVBoR5wvWT/MmRq2pj7HRJnwU=
-mvdan.cc/sh/v3 v3.12.1-0.20260124232039-e74afc18e65b h1:PUPnLxbDzRO9kg/03l7TZk7+ywTv7FxmOhDHOtOdOtk=
-mvdan.cc/sh/v3 v3.12.1-0.20260124232039-e74afc18e65b/go.mod h1:mencVHx2sy9XZG5wJbCA9nRUOE3zvMtoRXOmXMxH7sc=

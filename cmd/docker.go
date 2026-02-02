@@ -8,6 +8,7 @@ import (
 	"linuxvm/pkg/probes"
 	"linuxvm/pkg/system"
 
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 )
@@ -58,12 +59,12 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	vmc, err := ConfigureVM(ctx, command, define.ContainerMode)
 	if err != nil {
-		return fmt.Errorf("configure vm: %w", err)
+		return fmt.Errorf("configure vm fail: %w", err)
 	}
 
 	vmp, err := GetVMM(vmc)
 	if err != nil {
-		return fmt.Errorf("get vmm: %w", err)
+		return fmt.Errorf("get vmm fail: %w", err)
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -81,11 +82,10 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	})
 
 	g.Go(func() error {
-		err := probes.WaitAll(ctx,
+		if err := probes.WaitAll(ctx,
 			probes.NewGVProxyProbe(vmc.GvisorTapVsockEndpoint),
-			probes.NewIgnServerProbe(vmc.IgnitionCfg.ServerListenAddr),
-		)
-		if err != nil {
+			probes.NewIgnServerProbe(vmc.IgnitionServerCfg.ListenUnixSockAddr),
+		); err != nil {
 			return err
 		}
 
@@ -96,8 +96,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	})
 
 	g.Go(func() error {
-		err := probes.NewGuestSSHProbe(vmc.GvisorTapVsockEndpoint, vmc.SSHInfo.HostSSHPrivateKeyFile).ProbeUntilReady(ctx)
-		if err != nil {
+		if err = probes.NewGuestSSHProbe(vmc.GvisorTapVsockEndpoint, vmc.SSHInfo.HostSSHPrivateKeyFile).ProbeUntilReady(ctx); err != nil {
 			return err
 		}
 
@@ -106,6 +105,16 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 			vmc.PodmanInfo.LocalPodmanProxyAddr,
 			vmc.PodmanInfo.GuestPodmanAPIIP,
 			vmc.PodmanInfo.GuestPodmanAPIPort)
+	})
+
+	g.Go(func() error {
+		if err := probes.WaitAll(ctx,
+			probes.NewPodmanProbe(vmc.PodmanInfo.LocalPodmanProxyAddr),
+		); err != nil {
+			return err
+		}
+		logrus.Infof("podman api proxy listen in: %q", vmc.PodmanInfo.LocalPodmanProxyAddr)
+		return nil
 	})
 
 	err = g.Wait()

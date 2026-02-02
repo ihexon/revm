@@ -7,6 +7,7 @@ require (
 	github.com/charmbracelet/keygen v0.5.4
 	github.com/gofrs/flock v0.13.0
 	github.com/google/uuid v1.6.0
+	github.com/ihexon/libarchive-go v0.0.0-20260130150032-cf3ec39e997f
 	github.com/mattn/go-isatty v0.0.20
 	github.com/oomol-lab/sysproxy v0.0.0-20250609040630-bacc3356fc00
 	github.com/pkg/errors v0.9.1
@@ -25,7 +26,6 @@ require (
 	github.com/ebitengine/purego v0.9.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/ihexon/libarchive-go v0.0.0-20260130150032-cf3ec39e997f // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20251013123823-9fd1530e3ec3 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
@@ -35,7 +35,6 @@ require (
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	gvisor.dev/gvisor v0.0.0-20240916094835-a174eb65023f // indirect
-	mvdan.cc/sh/v3 v3.12.1-0.20260124232039-e74afc18e65b // indirect
 )
 
 require (

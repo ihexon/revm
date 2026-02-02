@@ -27,14 +27,14 @@ var (
 	DropbearmultiBinary = &EmbeddedBinary{name: "dropbearmulti", bytes: dropbearmultiBytes}
 )
 
-// Extract writes the embedded binary to the specified directory.
+// ExtractToDir writes the embedded binary to the specified directory.
 // It's safe to call multiple times - extraction only happens once.
-func (e *EmbeddedBinary) Extract(dir string) (string, error) {
+func (e *EmbeddedBinary) ExtractToDir(dir string) (string, error) {
 	var extractErr error
 
 	e.once.Do(func() {
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			extractErr = fmt.Errorf("create dir %s: %w", dir, err)
+			extractErr = err
 			return
 		}
 
@@ -46,7 +46,7 @@ func (e *EmbeddedBinary) Extract(dir string) (string, error) {
 		}
 
 		if err := os.WriteFile(e.path, e.bytes, 0755); err != nil {
-			extractErr = fmt.Errorf("write %s: %w", e.path, err)
+			extractErr = err
 			return
 		}
 	})
@@ -62,7 +62,7 @@ func (e *EmbeddedBinary) Extract(dir string) (string, error) {
 	return e.path, nil
 }
 
-// Path returns the extracted binary path. Must call Extract first.
+// Path returns the extracted binary path. Must call ExtractToDir first.
 func (e *EmbeddedBinary) Path() string {
 	return e.path
 }

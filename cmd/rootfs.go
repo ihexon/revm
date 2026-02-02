@@ -65,12 +65,12 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	vmc, err := ConfigureVM(ctx, command, define.RootFsMode)
 	if err != nil {
-		return fmt.Errorf("failed to configure vm: %w", err)
+		return fmt.Errorf("configure vm fail: %w", err)
 	}
 
 	vmp, err := GetVMM(vmc)
 	if err != nil {
-		return fmt.Errorf("failed to get vmm: %w", err)
+		return fmt.Errorf("get vmm fail: %w", err)
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -90,7 +90,7 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	g.Go(func() error {
 		err := probes.WaitAll(ctx,
 			probes.NewGVProxyProbe(vmc.GvisorTapVsockEndpoint),
-			probes.NewIgnServerProbe(vmc.IgnitionCfg.ServerListenAddr),
+			probes.NewIgnServerProbe(vmc.IgnitionServerCfg.ListenUnixSockAddr),
 		)
 
 		if err != nil {

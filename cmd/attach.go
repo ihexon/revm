@@ -48,7 +48,7 @@ func attachConsole(ctx context.Context, command *cli.Command) (err error) {
 		return err
 	}
 
-	// Extract command line arguments
+	// ExtractToDir command line arguments
 	cmdline := command.Args().Tail()
 
 	// Parse gvproxy endpoint

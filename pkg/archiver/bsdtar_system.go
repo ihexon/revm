@@ -20,7 +20,7 @@ type TarOpts struct {
 	removeOld    bool     // Remove old files before extraction
 	append       bool     // append mode (archive only)
 
-	toStdout  bool // Extract file contents to stdout instead of disk (extract only)
+	toStdout  bool // ExtractToDir file contents to stdout instead of disk (extract only)
 	fromStdin bool // Read from stdin instead of file
 	fastRead bool
 

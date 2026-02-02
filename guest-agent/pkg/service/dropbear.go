@@ -28,7 +28,7 @@ type Dropbear struct {
 
 // NewDropbear creates a new Dropbear instance with the given configuration.
 func NewDropbear(cfg DropbearConfig) (*Dropbear, error) {
-	path, err := DropbearmultiBinary.Extract("/.bin")
+	path, err := DropbearmultiBinary.ExtractToDir(define.GuestHiddenBinDir)
 	if err != nil {
 		return nil, err
 	}
@@ -67,6 +67,7 @@ func (d *Dropbear) WriteAuthorizedKeys(publicKey string) error {
 func (d *Dropbear) Start(ctx context.Context) error {
 	args := []string{
 		"dropbear",
+		"-D", filepath.Dir(d.cfg.AuthorizedKeysFile),
 		"-p", fmt.Sprintf("%s:%d", d.cfg.ListenAddr, d.cfg.ListenPort),
 		"-r", d.cfg.PrivateKeyPath,
 		"-F", // foreground
@@ -106,6 +107,7 @@ func StartGuestSSHServer(ctx context.Context, vmc *define.VMConfig) error {
 		return fmt.Errorf("generate host key: %w", err)
 	}
 
+	// inject public key into authorized_keys for dropbear
 	if err := dropbear.WriteAuthorizedKeys(vmc.SSHInfo.HostSSHPublicKey); err != nil {
 		return fmt.Errorf("write authorized_keys: %w", err)
 	}

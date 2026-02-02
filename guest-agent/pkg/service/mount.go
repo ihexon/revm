@@ -194,9 +194,10 @@ func MountVirtiofs(ctx context.Context, vmc *define.VMConfig) error {
 		}
 
 		if err := mnt.Mount(ctx, VirtioFsAction); err != nil {
-			return fmt.Errorf("mount %q: %w", mnt.Target, err)
+			return fmt.Errorf("mount virtio-fs failed: %q: %w", mnt.Target, err)
 		}
 	}
+
 	return nil
 }
 

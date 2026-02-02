@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"linuxvm/pkg/define"
 	"os"
 	"os/exec"
 
@@ -19,7 +20,7 @@ var Busybox *busybox
 
 // InitializeBusybox extracts busybox binary and initializes the global instance.
 func InitializeBusybox() error {
-	path, err := BusyboxBinary.Extract("/.bin")
+	path, err := BusyboxBinary.ExtractToDir(define.GuestHiddenBinDir)
 	if err != nil {
 		return err
 	}

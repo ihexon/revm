@@ -135,9 +135,9 @@ func (s *Session) RequestPTY(ctx context.Context, termType string, width, height
 				}
 
 				if err := session.WindowChange(newHeight, newWidth); err != nil {
-					logrus.Infof("Failed to change window size: %v", err)
+					logrus.Warnf("Failed to change window size: %v", err)
 				} else {
-					logrus.Infof("Terminal resized to %dx%d", newWidth, newHeight)
+					logrus.Debugf("Terminal resized to %dx%d", newWidth, newHeight)
 				}
 			}
 		}

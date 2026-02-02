@@ -5,8 +5,10 @@ type (
 )
 
 const (
+	GuestAgentPathInGuest = "/.bin/guest-agent"
+	GuestHiddenBinDir       = "/.bin"
 	VMConfigFilePathInGuest = "/vmconfig.json"
-	HostDNSInGVPNet         = "host.containers.internal"
+	HostDomain              = "host.containers.internal"
 
 	RootfsDirName  = "rootfs"
 	LibexecDirName = "libexec"

@@ -13,9 +13,11 @@ import (
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh"
 	"linuxvm/pkg/static_resources"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gofrs/flock"
@@ -29,8 +31,6 @@ type (
 
 func (v *VMConfig) Lock() error {
 	fileLock := flock.New(filepath.Join(v.WorkspacePath, ".lock"))
-
-	logrus.Infof("try to lock file: %q", fileLock.Path())
 
 	ifLocked, err := fileLock.TryLock()
 	if err != nil {
@@ -144,66 +144,89 @@ func (v *VMConfig) WithGivenRAWDisk(ctx context.Context, rawDiskS []string) erro
 	return nil
 }
 
-func validateArgs(args []string) error {
+func (v *VMConfig) SetupCmdLine(workdir, bin string, args, envs []string, usingSystemProxy bool) error {
+	if v.RunMode != define.RootFsMode.String() {
+		return fmt.Errorf("expect run mode %q, but got %q", define.RootFsMode.String(), v.RunMode)
+	}
+
+	if v.RootFS == "" {
+		return fmt.Errorf("rootfs path is empty")
+	}
+
+	if filepath.Clean(workdir) == "" {
+		workdir = "/"
+	}
+
+	if filepath.Clean(bin) == "" {
+		return fmt.Errorf("bin path is empty")
+	}
+
 	for _, arg := range args {
 		if strings.Contains(arg, ";") || strings.Contains(arg, "|") ||
 			strings.Contains(arg, "&") || strings.Contains(arg, "`") {
 			return fmt.Errorf("dangerous shell metacharacters in argument: %s", arg)
 		}
 	}
-	return nil
-}
-
-func (v *VMConfig) RunCmdline(workdir, bin string, args, envs []string, usingSystemProxy bool) error {
-
-	if filepath.Clean(workdir) == "" {
-		workdir = "/"
-	}
-
-	if strings.TrimSpace(bin) == "" {
-		return fmt.Errorf("target binary is empty")
-	}
-
-	if err := validateArgs(args); err != nil {
-		return err
-	}
-
-	// inject user-given envs
-	var finalEnv []string
-	finalEnv = append(finalEnv, envs...)
-	finalEnv = append(finalEnv, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
-	finalEnv = append(finalEnv, "LC_ALL=C.UTF-8")
-	finalEnv = append(finalEnv, "LANG=C.UTF-8")
-	finalEnv = append(finalEnv, fmt.Sprintf("%s=%s", define.EnvLogLevel, logrus.GetLevel().String()))
 
 	if usingSystemProxy {
+		logrus.Warnf("your system proxy must support CONNECT method")
 		proxyInfo, err := network.GetAndNormalizeSystemProxy()
 		if err != nil {
 			return fmt.Errorf("failed to get and normalize system proxy: %w", err)
 		}
 
-		if proxyInfo.HTTP == nil {
-			logrus.Warnf("no system http proxy found")
-		} else {
+		if proxyInfo.HTTP != nil {
 			httpProxy := fmt.Sprintf("http_proxy=http://%s:%d", proxyInfo.HTTP.Host, proxyInfo.HTTP.Port)
 			logrus.Infof("using http proxy: %q", httpProxy)
-			finalEnv = append(finalEnv, httpProxy)
+			envs = append(envs, httpProxy)
 		}
 
-		if proxyInfo.HTTPS == nil {
-			logrus.Warnf("no system https proxy found")
-		} else {
+		if proxyInfo.HTTPS != nil {
 			httpsProxy := fmt.Sprintf("https_proxy=http://%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port)
 			logrus.Infof("using https proxy: %q", httpsProxy)
-			finalEnv = append(finalEnv, httpsProxy)
+			envs = append(envs, httpsProxy)
 		}
 	}
 
+	v.Cmdline = define.Cmdline{
+		Bin:  bin,
+		Args: args,
+		Envs: envs,
+	}
+
+	return nil
+}
+
+// SetupGuestAgentCfg must be called after the rootfs is set up
+func (v *VMConfig) SetupGuestAgentCfg() error {
+	if v.RootFS == "" {
+		return fmt.Errorf("rootfs path is empty")
+	}
+
+	// inject user-given envs to guest-agent
+	var finalEnv []string
+	finalEnv = append(finalEnv, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+	finalEnv = append(finalEnv, "LC_ALL=C.UTF-8")
+	finalEnv = append(finalEnv, "LANG=C.UTF-8")
+	finalEnv = append(finalEnv, "TMPDIR=/tmp")
+
+	// In the virtualNetwork, HOST_DOMAIN is the domain name of the host, and the guest can access network resources on the host through HOST_DOMAIN.
+	finalEnv = append(finalEnv, fmt.Sprintf("HOST_DOMAIN=%s", define.HostDomain))
+	finalEnv = append(finalEnv, fmt.Sprintf("%s=%s", define.EnvLogLevel, logrus.GetLevel().String()))
+
+	guestAgentFilePath := filepath.Join(v.RootFS, ".bin", "guest-agent")
+
+	if err := os.MkdirAll(filepath.Dir(guestAgentFilePath), 0755); err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(guestAgentFilePath, static_resources.GuestAgentBytes, 0755); err != nil {
+		return fmt.Errorf("failed to write guest-agent file to %q: %w", guestAgentFilePath, err)
+	}
+
 	v.GuestAgentCfg = define.GuestAgentCfg{
-		Workdir:       workdir,
-		TargetBin:     bin,
-		TargetBinArgs: args,
-		Env:           finalEnv,
+		Workdir: "/",
+		Env:     finalEnv,
 	}
 
 	return nil
@@ -242,33 +265,36 @@ func (v *VMConfig) WithMounts(dirs []string) error {
 	return nil
 }
 
-// SetupIgnition extracts the guest-agent into the rootfs and sets up the ignition unix-socket listening address
-func (v *VMConfig) SetupIgnition() error {
-	if v.RootFS == "" {
-		return fmt.Errorf("rootfs path is empty")
+// SetupIgnitionServerCfg extracts the guest-agent into the rootfs and sets up the ignition unix-socket listening address
+func (v *VMConfig) SetupIgnitionServerCfg() error {
+	if v.WorkspacePath == "" {
+		return fmt.Errorf("workspace path is empty")
 	}
 
-	guestAgentFilePath := filepath.Join(v.RootFS, ".bin", "guest-agent")
-
-	if err := os.MkdirAll(filepath.Dir(guestAgentFilePath), 0755); err != nil {
-		return err
-	}
-
-	if err := os.WriteFile(guestAgentFilePath, static_resources.GuestAgentBytes, 0755); err != nil {
-		return fmt.Errorf("failed to write guest-agent file to %q: %w", guestAgentFilePath, err)
-	}
-
-	rel, err := filepath.Rel(v.RootFS, guestAgentFilePath)
+	port, err := network.GetAvailablePort(62234)
 	if err != nil {
 		return err
 	}
 
-	v.IgnitionCfg = define.IgnitionCfg{
-		IgnitionExecutable: filepath.Join("/", rel),
-		ServerListenAddr: (&url.URL{
-			Scheme: "unix",
-			Path:   v.GetSocksPath("ign.sock"),
-		}).String(),
+	unixUSL := &url.URL{
+		Scheme: "unix",
+		Path:   v.GetSocksPath("ign.sock"),
+	}
+
+	tcpURL := &url.URL{
+		Scheme: "tcp",
+		Host:   net.JoinHostPort(define.LocalHost, strconv.Itoa(int(port))),
+	}
+
+	if err = os.MkdirAll(filepath.Dir(unixUSL.Path), 0755); err != nil {
+		return err
+	}
+
+	_ = os.Remove(unixUSL.Path)
+
+	v.IgnitionServerCfg = define.IgnitionServerCfg{
+		ListenTcpAddr:      tcpURL.String(),
+		ListenUnixSockAddr: unixUSL.String(),
 	}
 
 	return nil
@@ -288,7 +314,6 @@ func (v *VMConfig) SetLogLevel(level string, logFile string) error {
 	}
 
 	logrus.SetLevel(l)
-	logrus.Infof("log level: %s", l.String())
 
 	maxSizeBytes := int64(filesystem.MiB(10).ToBytes())
 	if logFile != "" {
@@ -411,8 +436,6 @@ func (v *VMConfig) withGvisorTapVsockCfg() error {
 	_ = os.Remove(v.GetSocksPath("gvpctl.sock"))
 	_ = os.Remove(v.GetSocksPath("gvpnet.sock"))
 
-	logrus.Infof("gvisor-tap-vsock configured with control endpoint: %q, network: %q", v.GvisorTapVsockEndpoint, v.GvisorTapVsockNetwork)
-
 	return os.MkdirAll(filepath.Dir(unixAddr.Path), 0755)
 }
 
@@ -465,7 +488,7 @@ func (v *VMConfig) SetupWorkspace(workspacePath string) error {
 		if err = v.withPodmanCfg(); err != nil {
 			return err
 		}
-		logrus.Infof("podman api proxy listen in: %q", v.PodmanInfo.LocalPodmanProxyAddr)
+		logrus.Infof("podman api proxy addr: %q", v.PodmanInfo.LocalPodmanProxyAddr)
 	}
 
 	if err = v.withVMControlCfg(); err != nil {

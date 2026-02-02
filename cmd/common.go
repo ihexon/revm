@@ -81,7 +81,7 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 	if err = vmc.SetupWorkspace(workspacePath); err != nil {
 		return nil, err
 	}
-	logrus.Infof("workspace path: %s", workspacePath)
+	logrus.Infof("workspace configure done, path: %q", workspacePath)
 
 	if err = vmc.WithResources(memoryInMB, cpus); err != nil {
 		return nil, err
@@ -99,19 +99,30 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 		return nil, err
 	}
 
+	if err = vmc.SetupIgnitionServerCfg(); err != nil {
+		return nil, err
+	}
+	logrus.Infof("ignition configure done")
+
 	switch vmc.RunMode {
 	case define.RootFsMode.String():
 		if rootfsPath == "" {
-			logrus.Infof("rootfs path is empty, use built-in alpine rootfs")
 			if err = vmc.WithBuiltInAlpineRootfs(ctx); err != nil {
 				return nil, err
 			}
+			logrus.Infof("user not provided rootfs, use built-in rootfs: %q", vmc.RootFS)
 		} else {
-			logrus.Infof("user provided rootfs path: %q", rootfsPath)
 			if err = vmc.WithRootfs(ctx, rootfsPath); err != nil {
 				return nil, err
 			}
+			logrus.Infof("user provided rootfs path: %q", rootfsPath)
 		}
+
+		if err = vmc.SetupCmdLine(runBinWorkdir, runBin, runBinArgs, runBinEnvs, usingSystemProxy); err != nil {
+			return nil, fmt.Errorf("setup cmdline failed: %w", err)
+		}
+		logrus.Infof("run %q with args %q in %q, using proxy: %t", runBin, runBinArgs, runBinWorkdir, usingSystemProxy)
+
 	case define.ContainerMode.String():
 		err = vmc.WithBuiltInAlpineRootfs(ctx)
 		if err != nil {
@@ -129,14 +140,9 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 		return nil, fmt.Errorf("unsupported mode %q", vmc.RunMode)
 	}
 
-	if err = vmc.SetupIgnition(); err != nil {
+	if err = vmc.SetupGuestAgentCfg(); err != nil {
 		return nil, err
 	}
-	logrus.Infof("ignition configure done")
 
-	return vmc, vmc.RunCmdline(runBinWorkdir,
-		runBin,
-		runBinArgs,
-		runBinEnvs,
-		usingSystemProxy)
+	return vmc, nil
 }

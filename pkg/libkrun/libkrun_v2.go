@@ -413,7 +413,7 @@ func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
 	}
 
 	// VSock port mapping for ignition server
-	ignAddr, err := network.ParseUnixAddr(vm.vmc.IgnitionCfg.ServerListenAddr)
+	ignAddr, err := network.ParseUnixAddr(vm.vmc.IgnitionServerCfg.ListenUnixSockAddr)
 	if err != nil {
 		return fmt.Errorf("failed to parse ignition httpserver address: %w", err)
 	}
@@ -531,7 +531,7 @@ func (vm *LibkrunVM) addBlockDevice(diskPath string) error {
 		false, // read-write
 	)
 	if ret != 0 {
-		return fmt.Errorf("krun_add_disk2 failed with code %d", ret)
+		return fmt.Errorf("krun_add_disk2 failed with code %v", ret)
 	}
 
 	return nil
@@ -603,7 +603,7 @@ func (vm *LibkrunVM) Start(ctx context.Context) error {
 	}
 
 	// Configure the command line to execute inside the VM
-	if err := vm.setCommandLine(); err != nil {
+	if err := vm.applyGuestAgentCfgs(); err != nil {
 		vm.mu.Lock()
 		vm.state = stateConfigured // Restore state on failure
 		vm.mu.Unlock()
@@ -620,9 +620,10 @@ func (vm *LibkrunVM) Start(ctx context.Context) error {
 	return err
 }
 
-// setCommandLine configures the command, arguments, and environment for the guest.
-func (vm *LibkrunVM) setCommandLine() error {
-
+// applyGuestAgentCfgs configures the command, arguments, and environment for the guest.
+//
+// The first program executed by the virtual machine is `init`, provided by krun, and the second program is always the guest-agent.
+func (vm *LibkrunVM) applyGuestAgentCfgs() error {
 	workdir := newCString(vm.vmc.GuestAgentCfg.Workdir)
 	defer workdir.Free()
 
@@ -632,12 +633,10 @@ func (vm *LibkrunVM) setCommandLine() error {
 		return fmt.Errorf("krun_set_workdir failed with code %d", ret)
 	}
 
-	// guest-agent is the second process running in the VM, so the executable
-	// is always vm.vmc.IgnitionCfg.IgnitionExecutable
-	executable := newCString(vm.vmc.IgnitionCfg.IgnitionExecutable)
+	executable := newCString(define.GuestAgentPathInGuest)
 	defer executable.Free()
 
-	// guest-agent do not need any args, guest-agent read vmconfig to decide what to do
+	// guest-agent does not need any args, guest-agent read vmconfig to decide what to do
 	args := newCStringArray([]string{})
 	defer args.Free()
 
@@ -693,27 +692,12 @@ func (vm *LibkrunVM) enterVMLifecycle(ctx context.Context) error {
 
 // Stop requests the VM to stop.
 //
-// Note: libkrun doesn't provide a graceful stop mechanism.
-// The VM terminates when the init process exits or context is cancelled.
+// Note: libkrun doesn't provide a graceful stop mechanism. so we have to implement a forceful shutdown
 func (vm *LibkrunVM) Stop(_ context.Context) error {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
 
-	logrus.Infof("stop requested for VM (ctx_id=%d, state=%s)", vm.ctxID, vm.state)
-	return nil
-}
-
-// Close releases all resources associated with the VM.
-// Safe to call multiple times.
-func (vm *LibkrunVM) Close() error {
-	vm.closeOnce.Do(func() {
-		vm.mu.Lock()
-		defer vm.mu.Unlock()
-
-		logrus.Infof("closing VM (ctx_id=%d, state=%s)", vm.ctxID, vm.state)
-		vm.state = stateClosed
-	})
-	return nil
+	return fmt.Errorf("not implemented yet")
 }
 
 func (vm *LibkrunVM) StartIgnServer(ctx context.Context) error {
