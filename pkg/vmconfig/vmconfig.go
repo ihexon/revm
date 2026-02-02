@@ -55,17 +55,15 @@ func (v *VMConfig) generateRAWDisk(ctx context.Context, rawDiskPath string, give
 		return err
 	}
 
-	err = static_resources.ExtractEmbeddedRawDisk(ctx, rawDiskPath)
-	if err != nil {
+	if err = static_resources.ExtractEmbeddedRawDisk(ctx, rawDiskPath); err != nil {
 		return err
 	}
 
-	err = diskMgr.NewUUID(ctx, givenUUID, rawDiskPath)
-	if err != nil {
+	if err = diskMgr.NewUUID(ctx, givenUUID, rawDiskPath); err != nil {
 		return err
 	}
 
-	return v.attachRAWDisk(ctx, rawDiskPath)
+	return nil
 }
 
 func (v *VMConfig) GetContainerStorageDiskPath() string {
@@ -75,11 +73,14 @@ func (v *VMConfig) GetContainerStorageDiskPath() string {
 func (v *VMConfig) AutoAttachContainerStorageRawDisk(ctx context.Context) error {
 	f := v.GetContainerStorageDiskPath()
 	_, err := os.Stat(f)
-	if err == nil {
-		return v.attachRAWDisk(ctx, f)
+	if err != nil {
+		logrus.Infof("try to generate container storage raw disk: %q", f)
+		if err = v.generateRAWDisk(ctx, f, define.ContainerDiskUUID); err != nil {
+			return fmt.Errorf("failed to generate container storage raw disk: %w", err)
+		}
 	}
 
-	return v.generateRAWDisk(ctx, f, define.ContainerDiskUUID)
+	return v.attachRAWDisk(ctx, f)
 }
 
 func (v *VMConfig) attachRAWDisk(ctx context.Context, rawDiskPath string) error {
@@ -96,6 +97,11 @@ func (v *VMConfig) attachRAWDisk(ctx context.Context, rawDiskPath string) error 
 	info, err := diskMgr.Inspect(ctx, rawDiskPath)
 	if err != nil {
 		return err
+	}
+
+	// raw disk with ContainerDiskUUID should mount to ContainerStorageMountPoint
+	if info.UUID == define.ContainerDiskUUID {
+		info.MountTo = define.ContainerStorageMountPoint
 	}
 
 	blkDev := define.BlkDev{
@@ -116,6 +122,7 @@ func (v *VMConfig) BindUserHomeDir(ctx context.Context) error {
 		return err
 	}
 
+	logrus.Infof("in container mode, directory %q will be auto mount to guest %q", homeDir, homeDir)
 	return v.WithMounts([]string{fmt.Sprintf("%s:%s", homeDir, homeDir)})
 }
 
@@ -136,6 +143,9 @@ func (v *VMConfig) WithGivenRAWDisk(ctx context.Context, rawDiskS []string) erro
 			}
 		} else {
 			if err = v.generateRAWDisk(ctx, rawDiskPath, uuid.NewString()); err != nil {
+				return err
+			}
+			if err = v.attachRAWDisk(ctx, rawDiskPath); err != nil {
 				return err
 			}
 		}

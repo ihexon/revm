@@ -36,7 +36,7 @@ var startDocker = cli.Command{
 			Usage: "use system proxy, set environment http(s)_proxy to docker engine",
 			Value: false,
 		},
-		&cli.StringFlag{
+		&cli.StringSliceFlag{
 			Name:  define.FlagRawDisk,
 			Usage: "attach another raw disk into guest",
 		},
@@ -96,7 +96,9 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	})
 
 	g.Go(func() error {
-		if err = probes.NewGuestSSHProbe(vmc.GvisorTapVsockEndpoint, vmc.SSHInfo.HostSSHPrivateKeyFile).ProbeUntilReady(ctx); err != nil {
+		if err := probes.WaitAll(ctx,
+			probes.NewGVProxyProbe(vmc.GvisorTapVsockEndpoint),
+		); err != nil {
 			return err
 		}
 
@@ -108,7 +110,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	})
 
 	g.Go(func() error {
-		if err := probes.WaitAll(ctx,
+		if err = probes.WaitAll(ctx,
 			probes.NewPodmanProbe(vmc.PodmanInfo.LocalPodmanProxyAddr),
 		); err != nil {
 			return err

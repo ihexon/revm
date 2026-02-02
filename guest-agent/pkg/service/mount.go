@@ -101,8 +101,8 @@ func (mnt *Mnt) Mount(ctx context.Context, action MountActionType) error {
 func MountAllPseudoMnt(ctx context.Context) error {
 	var pseudoMnts = []Mnt{
 		{
-			Target:       "/tmp",
-			Type:         tmpfsType,
+			Target: "/tmp",
+			Type:   tmpfsType,
 		},
 		{
 			Target: "/run",
@@ -193,6 +193,7 @@ func MountVirtiofs(ctx context.Context, vmc *define.VMConfig) error {
 			continue
 		}
 
+		logrus.Infof("mount virtiofs %q to %q", mnt.Tag, mnt.Target)
 		if err := mnt.Mount(ctx, VirtioFsAction); err != nil {
 			return fmt.Errorf("mount virtio-fs failed: %q: %w", mnt.Target, err)
 		}
@@ -215,6 +216,7 @@ func MountBlockDevices(ctx context.Context, vmc *define.VMConfig) error {
 			continue
 		}
 
+		logrus.Infof("mount block device: %q, uuid: %q to %q", mnt.Source, mnt.UUID, mnt.Target)
 		if err := mnt.Mount(ctx, UUIDAction); err != nil {
 			return err
 		}

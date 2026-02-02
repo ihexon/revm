@@ -93,7 +93,7 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 	}
 	logrus.Infof("given raw disks: %v", rawDisks)
 
-	logrus.Infof("setup mounts to %v", command.StringSlice(define.FlagMount))
+	logrus.Infof("user provided mounts: %v", command.StringSlice(define.FlagMount))
 	err = vmc.WithMounts(command.StringSlice(define.FlagMount))
 	if err != nil {
 		return nil, err

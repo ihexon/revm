@@ -17,6 +17,10 @@ import (
 const (
 	defaultProbeTimeout  = 50 * time.Millisecond
 	defaultProbeInterval = 50 * time.Millisecond
+
+	// podman/ssh takes much longer to start than the other services
+	defaultPodmanProbeTimeout = 1 * time.Second
+	defaultSSHProbeTimeout    = 1 * time.Second
 )
 
 // Probe defines the interface for service readiness probes.
@@ -212,7 +216,7 @@ func (p *GuestSSHProbe) ProbeUntilReady(ctx context.Context) error {
 	cfg.WithGVProxySocket(socketPath.Path)
 	cfg.WithDialTimeout(defaultProbeTimeout)
 
-	ticker := time.NewTicker(defaultProbeInterval)
+	ticker := time.NewTicker(defaultSSHProbeTimeout)
 	defer ticker.Stop()
 
 	for {
@@ -272,7 +276,7 @@ func (p *PodmanProbe) ProbeUntilReady(ctx context.Context) error {
 	client := network.NewUnixClient(socketPath.Path, network.WithTimeout(50*time.Millisecond))
 	defer client.Close()
 
-	ticker := time.NewTicker(defaultProbeInterval)
+	ticker := time.NewTicker(defaultPodmanProbeTimeout)
 	defer ticker.Stop()
 
 	for {
@@ -286,7 +290,6 @@ func (p *PodmanProbe) ProbeUntilReady(ctx context.Context) error {
 			}
 
 			if resp.StatusCode != http.StatusOK {
-				logrus.Warnf("Podman API ping returned status code: %d, retrying", resp.StatusCode)
 				network.CloseResponse(resp)
 				continue
 			}
