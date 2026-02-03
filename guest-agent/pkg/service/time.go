@@ -25,5 +25,5 @@ func SyncRTCTime(ctx context.Context) error {
 }
 
 func syncTimeFromNtpServer(ctx context.Context) {
-	_ = Busybox.ExecQuiet(ctx, "ntpd", "-q", "-n", "-p", NTPServer)
+	_ = ExecOutput(ctx, nil, nil, "ntpd", "-q", "-n", "-p", NTPServer)
 }
