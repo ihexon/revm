@@ -28,6 +28,19 @@ func setupLogger() error {
 		TimestampFormat: "2006-01-02 15:04:05.000",
 	})
 	logrus.SetOutput(os.Stderr)
+	logrus.AddHook(stageHook{})
+	return nil
+}
+
+func (h stageHook) Levels() []logrus.Level { return logrus.AllLevels }
+
+
+type stageHook struct{}
+
+func (h stageHook) Fire(e *logrus.Entry) error {
+	if _, ok := e.Data["stage"]; !ok {
+		e.Data["stage"] = "guest-agent"
+	}
 	return nil
 }
 
@@ -48,36 +61,35 @@ func main() {
 	}
 }
 
-func mountAllFs(ctx context.Context, vmc *define.VMConfig) error {
-	if err := service.MountAllPseudoMnt(ctx); err != nil {
-		return err
-	}
-
-	if err := service.MountBlockDevices(ctx, vmc); err != nil {
-		return err
-	}
-
-	return service.MountVirtiofs(ctx, vmc)
-}
-
 func run(ctx context.Context, _ *cli.Command) error {
 	if err := setupLogger(); err != nil {
 		return err
 	}
 
+	if err := service.InitBinDir(); err != nil {
+		return fmt.Errorf("init bin dir: %w", err)
+	}
+
+	// 2. Get VM configuration from host
 	vmc, err := service.GetVMConfig(ctx)
 	if err != nil {
 		return err
 	}
 
-	if err := service.InitializeBusybox(); err != nil {
+	// 3. Mount all pseudo filesystems (/proc, /sys, /dev, /tmp, etc.)
+	if err := service.MountAllPseudoMnt(ctx); err != nil {
 		return err
 	}
 
-	if err := mountAllFs(ctx, vmc); err != nil {
+	// 4. Mount block devices and virtiofs
+	if err := service.MountBlockDevices(ctx, vmc); err != nil {
+		return err
+	}
+	if err := service.MountVirtiofs(ctx, vmc); err != nil {
 		return err
 	}
 
+	// 5. Run mode-specific services
 	switch vmc.RunMode {
 	case define.RootFsMode.String():
 		return userRootfsMode(ctx, vmc)

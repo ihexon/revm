@@ -36,15 +36,8 @@ const (
 	PseudoFsAction
 )
 
-func IsMounted(target string) bool {
-	if err := Busybox.Exec(context.Background(), "mountpoint", "-q", target); err != nil {
-		return false
-	}
-	return true
-}
-
 func (mnt *Mnt) makeMountCmdline(action MountActionType) ([]string, error) {
-	args := []string{"mount"}
+	var args []string
 
 	if mnt.Opts != "" {
 		args = append(args, "-o", mnt.Opts)
@@ -82,10 +75,6 @@ func (mnt *Mnt) makeMountCmdline(action MountActionType) ([]string, error) {
 	return args, nil
 }
 
-func Umount(ctx context.Context, target string) error {
-	return Busybox.Exec(ctx, "umount", "-l", "-d", "-f", target)
-}
-
 func (mnt *Mnt) Mount(ctx context.Context, action MountActionType) error {
 	if err := os.MkdirAll(mnt.Target, 0755); err != nil {
 		return fmt.Errorf("failed to create dir for mount point: %w", err)
@@ -95,7 +84,7 @@ func (mnt *Mnt) Mount(ctx context.Context, action MountActionType) error {
 	if err != nil {
 		return err
 	}
-	return Busybox.Exec(ctx, args...)
+	return Mount(ctx, args...)
 }
 
 func MountAllPseudoMnt(ctx context.Context) error {
