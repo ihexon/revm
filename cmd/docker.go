@@ -4,12 +4,9 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/event"
-	"linuxvm/pkg/network"
+	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/probes"
-	"linuxvm/pkg/server"
 	"linuxvm/pkg/system"
-	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -29,7 +26,7 @@ var startDocker = cli.Command{
 			Value: int8(system.GetCPUCores()),
 		},
 		&cli.Uint64Flag{
-			Name:    define.FlagMemory,
+			Name:    define.FlagMemoryInMB,
 			Aliases: []string{"m"},
 			Usage:   "given how many memory in MB",
 			Value:   setMaxMemory(),
@@ -39,168 +36,88 @@ var startDocker = cli.Command{
 			Usage: "use system proxy, set environment http(s)_proxy to docker engine",
 			Value: false,
 		},
-		&cli.StringFlag{
-			Name:    define.FlagRootfs,
-			Aliases: []string{"d", "podman-rootfs"},
-			Usage:   "path to another podman rootfs directory (must have podman pre-installed)",
-		},
-		&cli.StringFlag{
-			Name:    define.FlagListenUnixFile,
-			Aliases: []string{"l"},
-			Usage:   "listen for Docker API requests on a Unix socket, forwarding them to the guest's Docker engine",
-			Value:   define.DefaultPodmanAPIUnixSocksInHost,
-		},
-		&cli.StringFlag{
-			Name:     define.FlagContainerDataStorage,
-			Aliases:  []string{"data", "s", "save"},
-			Usage:    "An raw data disk that save all container data",
-			Required: true,
+		&cli.StringSliceFlag{
+			Name:  define.FlagRawDisk,
+			Usage: "attach another raw disk into guest",
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagMount,
-			Usage: "mount host dir to guest dir",
+			Usage: "mount another host dir to guest",
+		},
+		&cli.StringFlag{
+			Name:   define.FlagWorkDir,
+			Usage:  "set cmdline workdir",
+			Hidden: true,
+			Value:  "/tmp",
 		},
 	},
 	Action: dockerModeLifeCycle,
 }
 
 func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
-	if err := showVersionAndOSInfo(); err != nil {
-		logrus.Warn("cannot get Build version/OS information")
-	}
+	showVersionAndOSInfo()
 
-	vmp, err := vmProviderFactory(ctx, define.ContainerMode, command)
+	vmc, err := ConfigureVM(ctx, command, define.ContainerMode)
 	if err != nil {
-		return fmt.Errorf("create run configure failed: %w", err)
+		return fmt.Errorf("configure vm fail: %w", err)
 	}
 
-	vmc, err := vmp.GetVMConfigure()
+	vmp, err := GetVMM(vmc)
 	if err != nil {
-		return fmt.Errorf("failed to get vm configure: %w", err)
-	}
-
-	//  ========= get all service probes ============
-	servicesProbes := probes.NewRegisters()
-	addr, err := network.ParseUnixAddr(vmc.GVproxyEndpoint)
-	if err != nil {
-		return err
-	}
-	gvProxyServiceProbe := probes.NewGVProxyService(addr.Path)
-	sshServiceProbe := probes.NewGuestSSHService(addr.Path, vmc.SSHInfo.HostSSHKeyPairFile)
-	servicesProbes.AddProbe(gvProxyServiceProbe, sshServiceProbe)
-
-	addr, err = network.ParseUnixAddr(vmc.VMConfigProvisionerAddr)
-	if err != nil {
-		return err
-	}
-	vmCfgProvisionerProbe := probes.NewVMConfigProvisionerServer(addr.Path)
-	servicesProbes.AddProbe(vmCfgProvisionerProbe)
-
-	addr, err = network.ParseUnixAddr(vmc.PodmanInfo.UnixSocksAddr)
-	if err != nil {
-		return err
-	}
-	podmanServiceProbe := probes.NewPodmanService(addr.Path)
-	servicesProbes.AddProbe(podmanServiceProbe)
-
-	// Optional: Report event to server
-	if command.IsSet(define.FlagReportURL) {
-		ctx = context.WithValue(ctx, event.ReportFuncKey, event.InitializeReporter(command.String(define.FlagReportURL)))
+		return fmt.Errorf("get vmm fail: %w", err)
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	// Optional: VM Management API server for host-side control
-	if command.IsSet(define.FlagRestAPIListenAddr) {
-		g.Go(func() error {
-			defer logrus.Infof("management API server exited")
-			return server.NewManagementAPIServer(vmc).Start(ctx)
-		})
-	}
-
-	// Service readiness prober
 	g.Go(func() error {
-		defer logrus.Infof("service prober exited")
-
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-
-		g, ctx := errgroup.WithContext(ctx)
-		for _, probe := range servicesProbes.GetProbes() {
-			g.Go(func() error {
-				return probe.ProbeUntilReady(ctx)
-			})
-		}
-
-		err := g.Wait()
-
-		if err != nil {
-			return fmt.Errorf("failed to probe services: %w", err)
-		}
-
-		// if all service are ready, report success event to endpoint
-		if reporter := event.GetReporterFromCtx(ctx); reporter != nil {
-			if err := reporter.SendEventInRunLifeCycle(ctx, event.Success, ""); err != nil {
-				logrus.Warnf("send event failed: %v", err)
-			}
-		}
-
-		return nil
+		return vmp.StartIgnServer(ctx)
 	})
 
-	// A server that hosts the vmonfig configuration in memory.
 	g.Go(func() error {
-		defer logrus.Infof("guest-config server exited")
-		return server.NewGuestConfigServer(vmc).Start(ctx)
-	})
-
-	// Network backend (gvproxy)
-	g.Go(func() error {
-		defer logrus.Infof("network backend exited")
 		return vmp.StartNetwork(ctx)
 	})
 
-	// vmp.Start(ctx) must be started after the ServiceGVProxy and ServiceIgnServer probes have finished starting.
 	g.Go(func() error {
-		defer logrus.Infof("VM exited")
+		return vmp.StartVMCtlServer(ctx)
+	})
 
-		gvProxyServiceProbe.WaitUntilReady(ctx)
-		vmCfgProvisionerProbe.WaitUntilReady(ctx)
-
-		if err := vmp.Create(ctx); err != nil {
-			return fmt.Errorf("failed to create vm: %w", err)
+	g.Go(func() error {
+		if err := probes.WaitAll(ctx,
+			probes.NewGVProxyProbe(vmc.GvisorTapVsockEndpoint),
+			probes.NewIgnServerProbe(vmc.IgnitionServerCfg.ListenUnixSockAddr),
+		); err != nil {
+			return err
 		}
 
+		if err = vmp.Create(ctx); err != nil {
+			return fmt.Errorf("create vm: %w", err)
+		}
 		return vmp.Start(ctx)
 	})
 
-	// Docker API tunnel: forward host Unix socket to guest Podman API
 	g.Go(func() error {
-		defer logrus.Infof("docker API tunnel exited")
-		gvProxyServiceProbe.WaitUntilReady(ctx)
+		if err := probes.WaitAll(ctx,
+			probes.NewGVProxyProbe(vmc.GvisorTapVsockEndpoint),
+		); err != nil {
+			return err
+		}
 
-		return network.TunnelHostUnixToGuest(ctx, vmc.GVproxyEndpoint, vmc.PodmanInfo.UnixSocksAddr, define.DefaultGuestAddr, uint16(define.DefaultGuestPodmanAPIPort))
+		return gvproxy.TunnelHostUnixToGuest(ctx,
+			vmc.GvisorTapVsockEndpoint,
+			vmc.PodmanInfo.LocalPodmanProxyAddr,
+			vmc.PodmanInfo.GuestPodmanAPIIP,
+			vmc.PodmanInfo.GuestPodmanAPIPort)
 	})
 
-	err = g.Wait()
-
-	// if the run life cycle has any error, report error to endpoint
-	if err != nil {
-		if reporter := event.GetReporterFromCtx(ctx); reporter != nil {
-			if err := reporter.SendEventInRunLifeCycle(ctx, event.Error, err.Error()); err != nil {
-				logrus.Errorf("send event failed: %v", err)
-			}
+	g.Go(func() error {
+		if err = probes.WaitAll(ctx,
+			probes.NewPodmanProbe(vmc.PodmanInfo.LocalPodmanProxyAddr),
+		); err != nil {
+			return err
 		}
-	}
+		logrus.Infof("Podman API ready: %s", vmc.PodmanInfo.LocalPodmanProxyAddr)
+		return nil
+	})
 
-	// if the virtual machine exited normally, report exit event to endpoint
-	if err == nil {
-		if reporter := event.GetReporterFromCtx(ctx); reporter != nil {
-			if err := reporter.SendEventInRunLifeCycle(ctx, event.Exit, ""); err != nil {
-				logrus.Errorf("send event failed: %v", err)
-			}
-		}
-	}
-
-	return err
+	return g.Wait()
 }

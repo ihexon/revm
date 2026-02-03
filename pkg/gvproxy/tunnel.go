@@ -1,12 +1,15 @@
-package network
+package gvproxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"linuxvm/pkg/network"
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/sirupsen/logrus"
@@ -40,11 +43,12 @@ func TunnelHostUnixToGuest(ctx context.Context, gvproxyCtlUnixAddr, listenUnixAd
 		closeLn()
 	}()
 
+	logrus.Infof("tunnel ready: %s → %s:%d", listenUnixAddr, targetIP, targetPort)
 	return acceptLoop(ctx, ln, gvproxyPath, targetIP, targetPort)
 }
 
 func parseUnixSocketPath(addr string) (string, error) {
-	parsed, err := ParseUnixAddr(addr)
+	parsed, err := network.ParseUnixAddr(addr)
 	if err != nil {
 		return "", err
 	}
@@ -76,6 +80,12 @@ func acceptLoop(ctx context.Context, ln net.Listener, gvproxyPath, targetIP stri
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
+			if errors.Is(err, net.ErrClosed) {
+				return fmt.Errorf("listener %q closed", ln.Addr())
+			}
+
+			logrus.Warnf("tunnel accept error: %v", err)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 
@@ -88,13 +98,13 @@ func handleTunnelConn(clientConn net.Conn, gvproxyPath, targetIP string, targetP
 
 	guestConn, err := net.Dial("unix", gvproxyPath)
 	if err != nil {
-		logrus.Errorf("dial gvproxy socket %q: %v", gvproxyPath, err)
+		logrus.Errorf("dial gvproxy: %v", err)
 		return
 	}
 	defer guestConn.Close()
 
 	if err := transport.Tunnel(guestConn, targetIP, int(targetPort)); err != nil {
-		logrus.Errorf("setup tunnel to %s:%d: %v", targetIP, targetPort, err)
+		logrus.Errorf("tunnel setup failed: %v", err)
 		return
 	}
 
@@ -105,13 +115,13 @@ func bidirectionalCopy(conn1, conn2 net.Conn) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	copy := func(dst, src net.Conn) {
+	copyFn := func(dst, src net.Conn) {
 		defer wg.Done()
 		_, _ = io.Copy(dst, src)
 	}
 
-	go copy(conn1, conn2)
-	go copy(conn2, conn1)
+	go copyFn(conn1, conn2)
+	go copyFn(conn2, conn1)
 
 	wg.Wait()
 }

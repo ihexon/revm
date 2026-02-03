@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package server
+package httpserver
 
 import (
 	"context"
@@ -23,7 +23,7 @@ type httpServer struct {
 	mux      *http.ServeMux
 }
 
-func newHTTPServer(name, listener string) *httpServer {
+func newUnixSockHTTPServer(name, listener string) *httpServer {
 	return &httpServer{
 		name:     name,
 		listener: listener,
@@ -38,9 +38,7 @@ func (s *httpServer) serve(ctx context.Context) error {
 		return fmt.Errorf("failed to parse unix socket address: %w", err)
 	}
 
-	if err = os.Remove(addr.Path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove old unix socket %q: %w", addr.Path, err)
-	}
+	_ = os.Remove(addr.Path)
 
 	ln, err := net.Listen("unix", addr.Path)
 	if err != nil {
@@ -52,7 +50,7 @@ func (s *httpServer) serve(ctx context.Context) error {
 
 	errChan := make(chan error, 1)
 	go func() {
-		logrus.Infof("starting %s server on %q", s.name, ln.Addr().String())
+		logrus.Infof("starting %s httpserver on %q", s.name, ln.Addr().String())
 		if err := s.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errChan <- err
 		}
@@ -61,12 +59,12 @@ func (s *httpServer) serve(ctx context.Context) error {
 	defer func() {
 		_ = s.server.Close()
 		_ = ln.Close()
-		logrus.Infof("%s server stopped", s.name)
+		logrus.Infof("%s httpserver stopped", s.name)
 	}()
 
 	select {
 	case err := <-errChan:
-		return fmt.Errorf("%s server error: %w", s.name, err)
+		return fmt.Errorf("%s httpserver error: %w", s.name, err)
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}

@@ -3,15 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
-
 	"guestAgent/pkg/vsock"
 
 	"linuxvm/pkg/define"
 
 	"github.com/sirupsen/logrus"
 )
-
-var vmc *define.VMConfig
 
 func getVMConfig(ctx context.Context) (*define.VMConfig, error) {
 	svc := vsock.NewVSockService()
@@ -30,17 +27,11 @@ func getVMConfig(ctx context.Context) (*define.VMConfig, error) {
 }
 
 func GetVMConfig(ctx context.Context) (*define.VMConfig, error) {
-	if vmc != nil {
-		return vmc, nil
-	}
-
 	vmc, err := getVMConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := vmc.WriteToJsonFile("/vmconfig.json"); err != nil {
-		return nil, err
-	}
 
-	return vmc, nil
+	logrus.Infof("VM config received (mode: %s)", vmc.RunMode)
+	return vmc, vmc.WriteToJsonFile(define.VMConfigFilePathInGuest)
 }

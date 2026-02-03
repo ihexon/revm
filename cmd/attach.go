@@ -43,26 +43,26 @@ func attachConsole(ctx context.Context, command *cli.Command) (err error) {
 	}
 
 	// Load VM configuration
-	vmc, err := define.LoadVMCFromFile(filepath.Join(rootfs, define.VMConfigFile))
+	vmc, err := define.LoadVMCFromFile(filepath.Join(rootfs, define.VMConfigFilePathInGuest))
 	if err != nil {
 		return err
 	}
 
-	// Extract command line arguments
+	// ExtractToDir command line arguments
 	cmdline := command.Args().Tail()
 
 	// Parse gvproxy endpoint
-	endpoint, err := url.Parse(vmc.GVproxyEndpoint)
+	endpoint, err := url.Parse(vmc.GvisorTapVsockEndpoint)
 	if err != nil {
 		return fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
 	}
 
 	// Configure SSH client
 	clientCfg := ssh.NewClientConfig(
-		define.DefaultGuestAddr,
-		uint16(define.DefaultGuestSSHDPort),
+		define.GuestIP,
+		uint16(define.GuestSSHServerPort),
 		define.DefaultGuestUser,
-		vmc.SSHInfo.HostSSHKeyPairFile,
+		vmc.SSHInfo.HostSSHPrivateKeyFile,
 	).WithGVProxySocket(endpoint.Path)
 
 	// Create SSH client

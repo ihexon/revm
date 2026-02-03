@@ -1,45 +1,44 @@
 package define
 
-const (
-	VMConfigFile     = "vmconfig.json"
-	HostDNSInGVProxy = "host.containers.internal"
+type (
+	RunMode int
 )
 
 const (
-	KernelPrefixDir = "kernel"
-)
+	GuestAgentPathInGuest   = "/.bin/guest-agent"
+	GuestHiddenBinDir       = "/.bin"
+	VMConfigFilePathInGuest = "/vmconfig.json"
+	HostDomain              = "host.containers.internal"
 
-const (
-	DefaultWorkDir = "/"
 	RootfsDirName  = "rootfs"
 	LibexecDirName = "libexec"
 
-	IgnServerSocketName    = "ignition.sock"
-	GvProxyControlEndPoint = "gvpctl.sock"
-	GvProxyNetworkEndpoint = "gvpnet.sock"
-	DropBearRuntimeDir     = "/run/dropbear"
-	DropBearKeyFile        = DropBearRuntimeDir + "/key"
-	DropBearPidFile        = DropBearRuntimeDir + "/dropbear.pid"
+	SSHPrivateKeyFileName = "private.key"
+	SSHPublicKeyFileName  = "public.key"
 
-	SSHKeyPair = "ssh_keypair"
+	DropBearRuntimeDir = "/run/dropbear"
 
-	LockFile = ".lock"
+	DropBearPrivateKeyPath = DropBearRuntimeDir + "/" + SSHPrivateKeyFileName
 
-	DefaultPodmanAPIUnixSocksInHost = "/tmp/docker_api.sock"
-
-	DefaultCreateDiskSizeInGB = 200
+	DropBearPidFile = DropBearRuntimeDir + "/dropbear.pid"
 
 	ContainerStorageMountPoint = "/var/lib/containers"
 
 	DefaultGuestUser = "root"
 
 	UnspecifiedAddress = "0.0.0.0"
-	DefaultGuestAddr   = "192.168.127.2"
+	GuestIP            = "192.168.127.2"
 
-	DefaultVSockPort          = 25882
-	DefaultGuestSSHDPort      = 25883
-	DefaultGuestPodmanAPIPort = 25884
+	DefaultVSockPort = 25882
 
+	GuestSSHServerPort = 25883
+	GuestPodmanAPIPort = 25884
+	LocalHost          = "127.0.0.1"
+
+	SSHLocalForwardListenPort = 6123
+)
+
+const (
 	RestAPIVMConfigURL = "/vmconfig"
 )
 
@@ -47,27 +46,32 @@ const (
 	FlagDockerMode = "docker-mode"
 	FlagRootfsMode = "rootfs-mode"
 
-	FlagLogLevel             = "log-level"
-	FlagListenUnixFile       = "listen-unix"
-	FlagRestAPIListenAddr    = "rest-api"
-	FlagCPUS                 = "cpus"
-	FlagDiskDisk             = "data-disk"
-	FlagContainerDataStorage = "data-storage"
-	FlagMount                = "mount"
-	FlagRootfs               = "rootfs"
-	FlagUsingSystemProxy     = "system-proxy"
-	FlagMemory               = "memory"
-	FlagPTY                  = "pty"
-	FlagEnvs                 = "envs"
-	FlagReportURL            = "report-url"
-	FlagSaveLogTo            = "save-logs"
+	FlagLogLevel         = "log-level"
+	FlagCPUS             = "cpus"
+	FlagRawDisk          = "raw-disk"
+	FlagMount            = "mount"
+	FlagRootfs           = "rootfs"
+	FlagUsingSystemProxy = "system-proxy"
+	FlagWorkDir          = "workdir"
+	FlagMemoryInMB       = "memory"
+	FlagPTY              = "pty"
+	FlagEnvs             = "envs"
+	FlagReportURL        = "report-url"
+	FlagSaveLogTo        = "save-logs"
+
+	ContainerDiskUUID = "44f7d1c0-122c-4402-a20e-c1166cbbad6d"
+	UserDataDiskUUID  = "254879c7-7107-4267-a2c6-d25e27a5358d"
 )
 
-type RunMode int
+const (
+	EnvLogLevel = "LOG_LEVEL"
+)
 
 const (
 	ContainerMode RunMode = iota
 	RootFsMode
+
+	OOMOLStudioMode
 )
 
 func (m RunMode) String() string {
@@ -76,7 +80,50 @@ func (m RunMode) String() string {
 		return "container"
 	case RootFsMode:
 		return "rootfs"
+	case OOMOLStudioMode:
+		return "oomol-studio"
 	default:
 		return "unknown"
 	}
 }
+
+// OVM-specific configuration
+
+type OVMRawDiskType string
+
+const (
+	OVMUserDataRawDisk             OVMRawDiskType = "userDataRawDisk"
+	OVMUserContainerStorageRawDisk OVMRawDiskType = "userContainerStorageRawDisk"
+
+	FlagWorkspace = "workspace"
+
+	// FlagBoot is a rootfs tar archive that automatically
+	// extracts to the specified directory as a bootable rootfs
+	FlagBoot = "boot"
+
+	// FlagBootVersion is the version of the rootfs, used to force an update of the rootfs,
+	// although it is not frequently used.
+	FlagBootVersion = "boot-version"
+
+	// FlagDataVersion is no need anymore, the purpose of keeping it is solely for compatibility with ovm-js
+	FlagDataVersion = "data-version"
+
+	// FlagPPID is no need anymore, the purpose of keeping it is solely for compatibility with ovm-js
+	FlagPPID = "ppid"
+
+	// FlagVolume mount host directory to guest
+	FlagVolume = "volume"
+
+	// FlagName is not used anymore, the purpose of keeping it is solely for compatibility with ovm-js
+	FlagName = "name"
+
+	SubCmdInit  = "init"
+	SubCmdStart = "start"
+
+	OVMUserDataDiskMountPoint = "/mnt/user-data"
+
+	OVMContainerStorageMountPoint = ContainerStorageMountPoint
+
+	OVMContainerStorageDiskUUID = ContainerDiskUUID
+	OVMUserDataStorageDiskUUID  = UserDataDiskUUID
+)

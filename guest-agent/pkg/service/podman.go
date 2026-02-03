@@ -11,16 +11,13 @@ import (
 )
 
 func startGuestPodmanService(ctx context.Context) error {
-	addr := fmt.Sprintf("tcp://%s:%d", define.UnspecifiedAddress, define.DefaultGuestPodmanAPIPort) //nolint:nosprintfhostport
+	addr := fmt.Sprintf("tcp://%s:%d", define.UnspecifiedAddress, define.GuestPodmanAPIPort) //nolint:nosprintfhostport
 	cmd := exec.CommandContext(ctx, "podman", "system", "service", "--time=0", addr)
 	cmd.Stdin = nil
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
-	if logrus.IsLevelEnabled(logrus.InfoLevel) {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-	}
-
-	logrus.Debugf("podman service cmdline: %q", cmd.Args)
+	logrus.Infof("podman service starting on port %d", define.GuestPodmanAPIPort)
 	return cmd.Run()
 }
 

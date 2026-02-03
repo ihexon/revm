@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package server
+package httpserver
 
 import (
 	"net/http"

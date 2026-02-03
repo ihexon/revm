@@ -8,26 +8,32 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-
-	"github.com/sirupsen/logrus"
 )
 
-// GetAvailablePort returns a free port on "0.0.0.0", proto is one of "tcp", "tcp4", "tcp6"
-func GetAvailablePort(proto string) (uint64, error) {
-	addr, err := net.ResolveTCPAddr(proto, "0.0.0.0:0")
+func GetAvailablePort(preferredPort uint16) (uint64, error) {
+	// 使用 127.0.0.1 检查，因为实际使用时绑定的是 localhost
+	addr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("127.0.0.1:%d", preferredPort))
+	if err != nil {
+		return 0, err
+	}
+	l, err := net.ListenTCP("tcp4", addr)
+	if err == nil {
+		_ = l.Close()
+		return uint64(preferredPort), nil
+	}
+
+	// Fallback to ephemeral port
+	addr, err = net.ResolveTCPAddr("tcp4", "127.0.0.1:0")
 	if err != nil {
 		return 0, err
 	}
 
-	l, err := net.ListenTCP(proto, addr)
+	l, err = net.ListenTCP("tcp4", addr)
 	if err != nil {
 		return 0, err
 	}
-	defer func(l *net.TCPListener) {
-		if err := l.Close(); err != nil {
-			logrus.Errorf("failed to close listener: %v", err)
-		}
-	}(l)
+
+	defer l.Close()
 
 	return uint64(l.Addr().(*net.TCPAddr).Port), nil
 }

@@ -2,6 +2,8 @@
 
 package network
 
-func DHClient4(ifName string, attempts int, verbose bool) error {
+import "context"
+
+func DHClient4(ctx context.Context, ifName string, attempts int) error {
 	return nil
 }

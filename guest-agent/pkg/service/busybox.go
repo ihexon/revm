@@ -2,58 +2,57 @@ package service
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"linuxvm/pkg/define"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"sync"
 
 	"github.com/sirupsen/logrus"
 )
 
-//go:embed busybox.static
-var elfData []byte
-
-var (
-	Busybox *Byx
-	once    sync.Once
-)
-
-type Byx struct {
-	path        string
-	initialized bool
+type busybox struct {
+	path string
 }
 
-func InitializeBusybox(vmc *define.VMConfig) error {
-	if err := os.MkdirAll(filepath.Dir(vmc.ExternalTools.LinuxTools.Busybox), 0755); err != nil {
+var Busybox *busybox
+
+func InitializeBusybox() error {
+	logrus.Debug("initializing busybox...")
+	path, err := BusyboxBinary.ExtractToDir(define.GuestHiddenBinDir)
+	if err != nil {
 		return err
 	}
-
-	once.Do(func() {
-		Busybox = &Byx{
-			path:        vmc.ExternalTools.LinuxTools.Busybox,
-			initialized: true,
-		}
-	})
-
-	return os.WriteFile(vmc.ExternalTools.LinuxTools.Busybox, elfData, 0755)
+	Busybox = &busybox{path: path}
+	logrus.Debugf("busybox initialized at %q", path)
+	return nil
 }
 
-func (b *Byx) Exec(ctx context.Context, args ...string) error {
-	if !b.initialized {
-		return fmt.Errorf("busybox is not initialized")
+func (b *busybox) Exec(ctx context.Context, args ...string) error {
+	if b == nil {
+		return fmt.Errorf("busybox not initialized")
 	}
 
 	cmd := exec.CommandContext(ctx, b.path, args...)
+	cmd.Env = os.Environ()
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stderr
 
-	if logrus.IsLevelEnabled(logrus.DebugLevel) {
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stderr
+	logrus.Debugf("busybox: %v", cmd.Args)
+	return cmd.Run()
+}
+
+func (b *busybox) ExecQuiet(ctx context.Context, args ...string) error {
+	if b == nil {
+		return fmt.Errorf("busybox not initialized")
 	}
 
-	logrus.Debugf("busybox cmdline: %q", cmd.Args)
+	cmd := exec.CommandContext(ctx, b.path, args...)
+	cmd.Env = os.Environ()
 
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = nil
+	cmd.Stdin = nil
+
+	logrus.Debugf("busybox: %v", cmd.Args)
 	return cmd.Run()
 }

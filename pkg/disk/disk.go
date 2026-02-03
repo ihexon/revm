@@ -6,12 +6,11 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/filesystem"
+	"linuxvm/pkg/static_resources"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/sirupsen/logrus"
 )
 
 type Manager interface {
@@ -19,53 +18,69 @@ type Manager interface {
 	Inspect(ctx context.Context, blkPath string) (*define.BlkDev, error)
 	Create(ctx context.Context, blkPath string, sizeInMib uint64) error
 	FsCheck(ctx context.Context, blkPath string) error
+	NewUUID(ctx context.Context, id string, blkPath string) error
 }
 
-type BlkManager struct {
-	tools struct {
-		mkfsExt4 string
-		blkid    string
-		fsckExt4 string
+type RawDiskManager struct {
+	tune2fs string
+	blkid   string
+	e2fsck  string
+	mke2fs  string
+}
+
+func NewBlkManagerHost() (*RawDiskManager, error) {
+	tune2fs, err := static_resources.GetBuiltinTool(os.TempDir(), "tune2fs")
+	if err != nil {
+		return nil, err
+	}
+	blkid, err := static_resources.GetBuiltinTool(os.TempDir(), "blkid")
+	if err != nil {
+		return nil, err
+	}
+	e2fsck, err := static_resources.GetBuiltinTool(os.TempDir(), "e2fsck")
+	if err != nil {
+		return nil, err
+	}
+	mke2fs, err := static_resources.GetBuiltinTool(os.TempDir(), "mke2fs")
+	if err != nil {
+		return nil, err
+	}
+
+	return &RawDiskManager{
+		tune2fs: tune2fs,
+		blkid:   blkid,
+		e2fsck:  e2fsck,
+		mke2fs:  mke2fs,
+	}, nil
+}
+
+func NewBlkManager(tune2fs, blkid, e2fsck, mke2fs string) *RawDiskManager {
+	return &RawDiskManager{
+		tune2fs: tune2fs,
+		blkid:   blkid,
+		e2fsck:  e2fsck,
+		mke2fs:  mke2fs,
 	}
 }
 
-func NewBlkManager(mkfsExt4, blkid, fsckExt4 string) *BlkManager {
-	return &BlkManager{
-		tools: struct {
-			mkfsExt4 string
-			blkid    string
-			fsckExt4 string
-		}{
-			mkfsExt4: mkfsExt4,
-			blkid:    blkid,
-			fsckExt4: fsckExt4,
-		},
-	}
-}
-
-func (b BlkManager) Format(ctx context.Context, blkPath, fsType string) error {
+func (b RawDiskManager) Format(ctx context.Context, blkPath, fsType string) error {
 	switch fsType {
 	case "ext4":
-		mke2fs := b.tools.mkfsExt4
+		mke2fs := b.mke2fs
 		cmd := exec.CommandContext(ctx, mke2fs, "-t", fsType, "-E", "discard", "-F", blkPath)
-		if logrus.GetLevel() == logrus.DebugLevel {
-			cmd.Stderr = os.Stderr
-			cmd.Stdout = os.Stderr
-		}
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stderr
 		cmd.Stdin = nil
-
-		logrus.Infof("mke2fs cmdline: %q", cmd.Args)
 		return cmd.Run()
 	default:
 		return fmt.Errorf("unsupported filesystem type: %s", fsType)
 	}
 }
 
-func (b BlkManager) inspect(ctx context.Context, blkPath string, info string) (string, error) {
-	cmd := exec.CommandContext(ctx, b.tools.blkid, "-c", filepath.Join(os.TempDir(), "blkid.cache"), "-s", info, "-o", "value", blkPath)
-	if logrus.GetLevel() == logrus.DebugLevel {
-		cmd.Stderr = os.Stderr
-	}
+func (b RawDiskManager) inspect(ctx context.Context, blkPath string, info string) (string, error) {
+	cmd := exec.CommandContext(ctx, b.blkid, "-c", filepath.Join(os.TempDir(), "blkid.cache"), "-s", info, "-o", "value", blkPath)
+	cmd.Stderr = os.Stderr
+
 	var result bytes.Buffer
 	cmd.Stdin = nil
 	cmd.Stdout = &result
@@ -77,7 +92,12 @@ func (b BlkManager) inspect(ctx context.Context, blkPath string, info string) (s
 	return strings.TrimSpace(result.String()), nil
 }
 
-func (b BlkManager) Inspect(ctx context.Context, blkPath string) (*define.BlkDev, error) {
+func (b RawDiskManager) Inspect(ctx context.Context, blkPath string) (*define.BlkDev, error) {
+	blkPath, err := filepath.Abs(blkPath)
+	if err != nil {
+		return nil, err
+	}
+
 	fsUUID, err := b.inspect(ctx, blkPath, "UUID")
 	if err != nil {
 		return nil, err
@@ -88,51 +108,52 @@ func (b BlkManager) Inspect(ctx context.Context, blkPath string) (*define.BlkDev
 		return nil, err
 	}
 
-	abs, err := filepath.Abs(blkPath)
-	if err != nil {
-		return nil, err
-	}
-
 	return &define.BlkDev{
-		UUID:   fsUUID,
-		FsType: fsType,
-		Path:   abs,
+		UUID:    fsUUID,
+		FsType:  fsType,
+		Path:    blkPath,
+		MountTo: fmt.Sprintf("/mnt/%s", fsUUID),
 	}, nil
 }
 
-func (b BlkManager) Create(ctx context.Context, blkPath string, sizeInMib uint64) error {
+func (b RawDiskManager) Create(ctx context.Context, blkPath string, sizeInMib uint64) error {
 	f, err := os.OpenFile(blkPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
-
-	defer func(f *os.File) {
-		if err := f.Close(); err != nil {
-			logrus.Errorf("failed to close file: %v", err)
-		}
-	}(f)
+	defer f.Close()
 
 	return f.Truncate(int64(filesystem.MiB(sizeInMib).ToBytes()))
 }
 
-func (b BlkManager) FsCheck(ctx context.Context, blkPath string) error {
+func (b RawDiskManager) FsCheck(ctx context.Context, blkPath string) error {
 	info, err := b.Inspect(ctx, blkPath)
 	if err != nil {
 		return err
 	}
 
 	if info.FsType != "ext4" {
-		logrus.Warnf("filesystem integrity check only support ext4 filesystem")
 		return nil
 	}
 
-	cmd := exec.CommandContext(ctx, b.tools.fsckExt4, "-p", blkPath)
-	if logrus.GetLevel() == logrus.DebugLevel {
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stderr
-	}
+	cmd := exec.CommandContext(ctx, b.e2fsck, "-p", blkPath)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stderr
 	cmd.Stdin = nil
+	return cmd.Run()
+}
 
-	logrus.Debugf("fsck.ext4 cmdline: %q", cmd.Args)
+func (b RawDiskManager) NewUUID(ctx context.Context, id string, blkPath string) error {
+	blkPath, err := filepath.Abs(blkPath)
+	if err != nil {
+		return err
+	}
+
+	blkPath = filepath.Clean(blkPath)
+
+	cmd := exec.CommandContext(ctx, b.tune2fs, "-U", id, blkPath)
+	cmd.Stdin = nil
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stderr
 	return cmd.Run()
 }

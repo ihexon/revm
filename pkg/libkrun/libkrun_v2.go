@@ -3,8 +3,8 @@
 package libkrun
 
 /*
-#cgo CFLAGS: -I ../../include
-#cgo LDFLAGS: -L ../../out/lib/ -lkrun.1.17.0 -lkrunfw.5
+#cgo CFLAGS: -I ../../out/.deps/libkrun/include
+#cgo LDFLAGS: -L ../../out/.deps/libkrun/lib/ -L../../out/.deps/libkrunfw/lib -lkrun -lkrunfw
 #include <libkrun.h>
 #include <stdlib.h>
 */
@@ -13,6 +13,9 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"linuxvm/pkg/httpserver"
+	"linuxvm/pkg/interfaces"
+	"linuxvm/pkg/logger"
 	"os"
 	"path/filepath"
 	"sync"
@@ -23,7 +26,6 @@ import (
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/system"
-	"linuxvm/pkg/vm"
 	"linuxvm/pkg/vmconfig"
 
 	"github.com/google/uuid"
@@ -43,8 +45,6 @@ type cstring struct {
 	ptr *C.char
 }
 
-// newCString creates a new C string from a Go string.
-// The caller MUST call Free() when done, typically via defer.
 func newCString(s string) *cstring {
 	return &cstring{ptr: C.CString(s)}
 }
@@ -57,11 +57,17 @@ func (cs *cstring) Free() {
 	}
 }
 
-// Ptr returns the underlying C string pointer.
 func (cs *cstring) Ptr() *C.char {
 	return cs.ptr
 }
 
+type cstringArray struct {
+	ptrs []*C.char
+}
+
+// newCStringArray creates a null-terminated array of C strings from Go strings.
+// The caller MUST call Free() when done, typically via defer.
+//
 // cstringArray manages an array of C strings with automatic cleanup.
 // The array is null-terminated as required by many C APIs.
 //
@@ -70,12 +76,6 @@ func (cs *cstring) Ptr() *C.char {
 //	arr := newCStringArray([]string{"arg1", "arg2"})
 //	defer arr.Free()
 //	C.some_function(arr.Ptr())
-type cstringArray struct {
-	ptrs []*C.char
-}
-
-// newCStringArray creates a null-terminated array of C strings from Go strings.
-// The caller MUST call Free() when done, typically via defer.
 func newCStringArray(strs []string) *cstringArray {
 	// Allocate array with space for null terminator
 	ptrs := make([]*C.char, len(strs)+1)
@@ -111,8 +111,6 @@ const (
 	defaultNProcHardLimit = 8192
 )
 
-// GPU configuration flags (from virglrenderer.h)
-// Only defining flags that are actually used to avoid namespace pollution.
 const (
 	gpuFlagVenus   = 1 << 6 // Enable Venus (Vulkan passthrough)
 	gpuFlagNoVirgl = 1 << 7 // Disable legacy VirGL (OpenGL)
@@ -160,23 +158,9 @@ func (s vmState) String() string {
 	}
 }
 
-// LibkrunVM represents a libkrun virtual machine instance.
-// It manages the complete lifecycle of a VM from creation through execution to cleanup.
-//
-// Lifecycle:
-//  1. NewLibkrunVM() - Create new VM instance
-//  2. StartNetwork() - Start network backend (gvproxy)
-//  3. Create()       - Configure the VM
-//  4. Start()        - Execute the VM (blocks until completion)
-//  5. Stop()         - Stop the VM (optional, usually handled by context cancellation)
-//  6. Close()        - Clean up resources
-//
-// Thread Safety:
-// LibkrunVM is safe for concurrent method calls. Internal state is protected
-// by a mutex, though typical usage is sequential (Create -> Start).
 type LibkrunVM struct {
-	config *vmconfig.VMConfig
-	ctxID  uint32
+	vmc   *vmconfig.VMConfig
+	ctxID uint32
 
 	mu        sync.Mutex
 	state     vmState
@@ -184,53 +168,30 @@ type LibkrunVM struct {
 }
 
 // guestMACAddress is the fixed MAC address for the guest VM network interface.
-// This MUST match the DHCP static lease in pkg/gvproxy/config.yaml
 // to ensure the guest gets the expected IP (192.168.127.2).
 var guestMACAddress = [6]byte{0x5a, 0x94, 0xef, 0xe4, 0x0c, 0xee}
 
-// Compile-time check: LibkrunVM must implement vm.Provider
-var _ vm.Provider = (*LibkrunVM)(nil)
+// Compile-time check: LibkrunVM must implement vm.VMProvider
+var _ interfaces.VMMProvider = (*LibkrunVM)(nil)
 
-// NewLibkrunVM creates a new libkrun VM instance with the provided configuration.
-//
-// This function does not allocate any libkrun resources yet. Call Create()
-// to actually configure the VM.
-func NewLibkrunVM(cfg *vmconfig.VMConfig) *LibkrunVM {
+func NewLibkrunVM(vmc *vmconfig.VMConfig) *LibkrunVM {
 	return &LibkrunVM{
-		config: cfg,
-		state:  stateNew,
+		vmc:   vmc,
+		state: stateNew,
 	}
 }
 
-// GetVMConfigure returns the VM configuration.
-// This implements the vm.Provider interface.
 func (vm *LibkrunVM) GetVMConfigure() (*vmconfig.VMConfig, error) {
-	if vm.config == nil {
+	if vm.vmc == nil {
 		return nil, fmt.Errorf("vm configuration is nil")
 	}
-	return vm.config, nil
+	return vm.vmc, nil
 }
 
-// StartNetwork starts the network backend (gvproxy) for the VM.
-// This should be called before Create() to ensure the network is ready
-// when the VM starts.
-//
-// This implements the vm.Provider interface.
 func (vm *LibkrunVM) StartNetwork(ctx context.Context) error {
-	logrus.Infof("starting network backend (gvproxy)")
-	return gvproxy.Run(ctx, vm.config)
+	return gvproxy.Run(ctx, vm.vmc)
 }
 
-// Create configures the VM based on the provided configuration.
-// This must be called before Start().
-//
-// This method:
-//   - Creates the libkrun context
-//   - Configures all VM resources (CPU, memory, disks, etc.)
-//   - Sets up networking, GPU, and other devices
-//   - Does NOT start the VM execution
-//
-// This implements the vm.Provider interface.
 func (vm *LibkrunVM) Create(ctx context.Context) error {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
@@ -241,7 +202,7 @@ func (vm *LibkrunVM) Create(ctx context.Context) error {
 
 	// Initialize libkrun logging BEFORE creating context
 	// This MUST be called before krun_create_ctx()
-	if err := initLogging(vm.config.LogFile); err != nil {
+	if err := initLogging(logger.LogFd); err != nil {
 		return fmt.Errorf("failed to initialize logging: %w", err)
 	}
 
@@ -252,21 +213,17 @@ func (vm *LibkrunVM) Create(ctx context.Context) error {
 	}
 	vm.ctxID = uint32(ctxID)
 
-	logrus.Infof("created libkrun context with ID: %d", vm.ctxID)
-
 	// Apply all VM configurations
-	if err := vm.configureVM(ctx); err != nil {
+	if err := vm.configureLibKRUN(ctx); err != nil {
 		return fmt.Errorf("failed to configure VM: %w", err)
 	}
 
 	vm.state = stateConfigured
-	logrus.Info("VM configuration completed successfully")
 	return nil
 }
 
-// configureVM applies all VM configuration settings.
-// Configuration is organized into logical phases for clarity.
-func (vm *LibkrunVM) configureVM(ctx context.Context) error {
+// configureLibKRUN applies all VM configuration settings.
+func (vm *LibkrunVM) configureLibKRUN(ctx context.Context) error {
 	var err error
 
 	// Phase 1: Core VM resources
@@ -285,7 +242,7 @@ func (vm *LibkrunVM) configureVM(ctx context.Context) error {
 	}
 
 	// Phase 4: Networking
-	if err = vm.configureNetwork(); err != nil {
+	if err = vm.configureNetwork(ctx); err != nil {
 		return err
 	}
 
@@ -299,8 +256,7 @@ func (vm *LibkrunVM) configureVM(ctx context.Context) error {
 
 // configureResources sets CPU, memory, and resource limits.
 func (vm *LibkrunVM) configureResources() error {
-	cfg := vm.config
-	logrus.Infof("configuring VM resources: %d MB memory, %d CPUs", cfg.MemoryInMB, cfg.Cpus)
+	cfg := vm.vmc
 
 	ret := C.krun_set_vm_config(
 		C.uint32_t(vm.ctxID),
@@ -319,9 +275,6 @@ func (vm *LibkrunVM) configureResources() error {
 	)
 	limits := newCStringArray([]string{limitSpec})
 	defer limits.Free()
-
-	logrus.Infof("configuring resource limits: NPROC soft=%d hard=%d",
-		defaultNProcSoftLimit, defaultNProcHardLimit)
 
 	ret = C.krun_set_rlimits(C.uint32_t(vm.ctxID), limits.Ptr())
 	if ret != 0 {
@@ -345,10 +298,9 @@ func (vm *LibkrunVM) configureDevices() error {
 	errFd := C.int(os.Stderr.Fd())
 
 	// If log file is specified, redirect console output to log file
-	if vm.config.LogFile != nil {
-		outputFd = C.int(vm.config.LogFile.Fd())
-		errFd = C.int(vm.config.LogFile.Fd())
-		logrus.Infof("console output will be written to log file: %q", vm.config.LogFile.Name())
+	if logger.LogFd != nil {
+		outputFd = C.int(logger.LogFd.Fd())
+		errFd = C.int(logger.LogFd.Fd())
 	}
 
 	ret = C.krun_add_virtio_console_default(
@@ -360,7 +312,6 @@ func (vm *LibkrunVM) configureDevices() error {
 	if ret != 0 {
 		return fmt.Errorf("krun_add_virtio_console_default failed with code %d", ret)
 	}
-	logrus.Infof("configured virtio-console device")
 
 	// VSock: disable implicit and add explicit
 	ret = C.krun_disable_implicit_vsock(C.uint32_t(vm.ctxID))
@@ -372,14 +323,12 @@ func (vm *LibkrunVM) configureDevices() error {
 	if ret != 0 {
 		return fmt.Errorf("krun_add_vsock failed with code %d", ret)
 	}
-	logrus.Infof("configured vsock device")
 
 	// GPU
 	ret = C.krun_set_gpu_options(C.uint32_t(vm.ctxID), C.uint32_t(defaultGPUFlags))
 	if ret != 0 {
 		return fmt.Errorf("krun_set_gpu_options failed with code %d", ret)
 	}
-	logrus.Infof("configured GPU (Venus/Vulkan)")
 
 	return nil
 }
@@ -387,30 +336,29 @@ func (vm *LibkrunVM) configureDevices() error {
 // configureStorage sets up rootfs, block devices, and shared directories.
 func (vm *LibkrunVM) configureStorage() error {
 	// Root filesystem
-	runMode := vm.config.RunMode
+	runMode := vm.vmc.RunMode
 	if runMode != define.ContainerMode.String() && runMode != define.RootFsMode.String() {
 		return fmt.Errorf("unsupported run mode: %q (supported: %q, %q)",
 			runMode, define.ContainerMode.String(), define.RootFsMode.String())
 	}
 
-	rootfs := newCString(vm.config.RootFS)
+	rootfs := newCString(vm.vmc.RootFS)
 	defer rootfs.Free()
 
-	logrus.Infof("configuring rootfs: %q (mode: %s)", vm.config.RootFS, runMode)
 	ret := C.krun_set_root(C.uint32_t(vm.ctxID), rootfs.Ptr())
 	if ret != 0 {
 		return fmt.Errorf("krun_set_root failed with code %d", ret)
 	}
 
 	// Block devices
-	for i, disk := range vm.config.BlkDevs {
+	for i, disk := range vm.vmc.BlkDevs {
 		if err := vm.addBlockDevice(disk.Path); err != nil {
 			return fmt.Errorf("failed to add block device %d (%q): %w", i, disk.Path, err)
 		}
 	}
 
 	// Shared directories (VirtIO-FS)
-	for i, mount := range vm.config.Mounts {
+	for i, mount := range vm.vmc.Mounts {
 		if err := vm.addVirtIOFS(mount.Tag, mount.Source); err != nil {
 			return fmt.Errorf("failed to add virtiofs mount %d (tag=%q): %w", i, mount.Tag, err)
 		}
@@ -420,9 +368,9 @@ func (vm *LibkrunVM) configureStorage() error {
 }
 
 // configureNetwork sets up the network backend and VSock port mappings.
-func (vm *LibkrunVM) configureNetwork() error {
+func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
 	// Parse network backend address
-	backend := vm.config.NetworkStackBackend
+	backend := vm.vmc.GvisorTapVsockNetwork
 	addr, err := network.ParseUnixAddr(backend)
 	if err != nil {
 		return fmt.Errorf("failed to parse network backend address %q: %w", backend, err)
@@ -437,9 +385,6 @@ func (vm *LibkrunVM) configureNetwork() error {
 		mac[i] = C.uint8_t(b)
 	}
 
-	logrus.Infof("adding virtio-net: socket=%q, mac=%02x:%02x:%02x:%02x:%02x:%02x",
-		addr.Path, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
-
 	ret := C.krun_add_net_unixgram(
 		C.uint32_t(vm.ctxID),
 		socketPath.Ptr(),
@@ -452,17 +397,16 @@ func (vm *LibkrunVM) configureNetwork() error {
 		return fmt.Errorf("krun_add_net_unixgram failed with code %d", ret)
 	}
 
-	// VSock port mapping for ignition provisioner
-	ignAddr, err := network.ParseUnixAddr(vm.config.VMConfigProvisionerAddr)
+	// VSock port mapping for ignition server
+	ignAddr, err := network.ParseUnixAddr(vm.vmc.IgnitionServerCfg.ListenUnixSockAddr)
 	if err != nil {
-		return fmt.Errorf("failed to parse ignition server address: %w", err)
+		return fmt.Errorf("failed to parse ignition httpserver address: %w", err)
 	}
 
 	ignSocketPath := newCString(ignAddr.Path)
 	defer ignSocketPath.Free()
 
 	vsockPort := uint32(define.DefaultVSockPort)
-	logrus.Infof("adding vsock port mapping: port=%d → %q", vsockPort, ignAddr.Path)
 
 	ret = C.krun_add_vsock_port2(
 		C.uint32_t(vm.ctxID),
@@ -471,7 +415,7 @@ func (vm *LibkrunVM) configureNetwork() error {
 		false,
 	)
 	if ret != 0 {
-		return fmt.Errorf("krun_add_vsock_port2 failed with code %d", ret)
+		return fmt.Errorf("krun_add_vsock_port2 failed with code %v", ret)
 	}
 
 	return nil
@@ -482,14 +426,12 @@ func (vm *LibkrunVM) configureAdvancedFeatures() error {
 	ret := C.krun_check_nested_virt()
 	switch ret {
 	case 0:
-		logrus.Infof("nested virtualization not supported, skipping")
 		return nil
 	case 1:
 		ret = C.krun_set_nested_virt(C.uint32_t(vm.ctxID), true)
 		if ret != 0 {
 			return fmt.Errorf("krun_set_nested_virt failed with code %d", ret)
 		}
-		logrus.Info("enabled nested virtualization")
 	default:
 		return fmt.Errorf("krun_check_nested_virt failed with code %d", ret)
 	}
@@ -525,7 +467,6 @@ func initLogging(logFile *os.File) error {
 	if logFile != nil {
 		targetFd = C.int(logFile.Fd())
 		style = C.KRUN_LOG_STYLE_NEVER // disable colors when writing to file
-		logrus.Infof("libkrun logs will be written to: %q", logFile.Name())
 	}
 
 	ret := C.krun_init_log(
@@ -538,7 +479,6 @@ func initLogging(logFile *os.File) error {
 		return fmt.Errorf("krun_init_log failed with code %d", ret)
 	}
 
-	logrus.Infof("initialized libkrun logging with level %d", level)
 	return nil
 }
 
@@ -562,7 +502,6 @@ func (vm *LibkrunVM) addBlockDevice(diskPath string) error {
 	diskPathC := newCString(diskPath)
 	defer diskPathC.Free()
 
-	logrus.Infof("adding block device: %q (size: %d MB)", diskPath, stat.Size()/(1024*1024))
 	ret := C.krun_add_disk2(
 		C.uint32_t(vm.ctxID),
 		diskID.Ptr(),
@@ -571,7 +510,7 @@ func (vm *LibkrunVM) addBlockDevice(diskPath string) error {
 		false, // read-write
 	)
 	if ret != 0 {
-		return fmt.Errorf("krun_add_disk2 failed with code %d", ret)
+		return fmt.Errorf("krun_add_disk2 failed with code %v", ret)
 	}
 
 	return nil
@@ -607,7 +546,6 @@ func (vm *LibkrunVM) addVirtIOFS(tag, hostPath string) error {
 	pathC := newCString(resolvedPath)
 	defer pathC.Free()
 
-	logrus.Infof("adding virtio-fs: %q → tag=%q", resolvedPath, tag)
 	ret := C.krun_add_virtiofs2(
 		C.uint32_t(vm.ctxID),
 		tagC.Ptr(),
@@ -632,8 +570,6 @@ func (vm *LibkrunVM) Start(ctx context.Context) error {
 	vm.state = stateRunning
 	vm.mu.Unlock()
 
-	logrus.Info("starting VM execution")
-
 	// Set host process resource limits
 	if err := system.Rlimit(); err != nil {
 		vm.mu.Lock()
@@ -643,7 +579,7 @@ func (vm *LibkrunVM) Start(ctx context.Context) error {
 	}
 
 	// Configure the command line to execute inside the VM
-	if err := vm.setCommandLine(); err != nil {
+	if err := vm.applyGuestAgentCfg(); err != nil {
 		vm.mu.Lock()
 		vm.state = stateConfigured // Restore state on failure
 		vm.mu.Unlock()
@@ -660,45 +596,36 @@ func (vm *LibkrunVM) Start(ctx context.Context) error {
 	return err
 }
 
-// setCommandLine configures the command, arguments, and environment for the guest.
-func (vm *LibkrunVM) setCommandLine() error {
-	cmdline := vm.config.Cmdline
-
-	// Set working directory
-	workdir := newCString(cmdline.Workspace)
+// applyGuestAgentCfg configures the command, arguments, and environment for the guest.
+//
+// The first program executed by the virtual machine is `init`, provided by krun, and the second program is always the guest-agent.
+func (vm *LibkrunVM) applyGuestAgentCfg() error {
+	workdir := newCString(vm.vmc.GuestAgentCfg.Workdir)
 	defer workdir.Free()
 
-	logrus.Infof("setting working directory: %q", cmdline.Workspace)
-	ret := C.krun_set_workdir(C.uint32_t(vm.ctxID), workdir.Ptr())
-	if ret != 0 {
-		return fmt.Errorf("krun_set_workdir failed with code %d", ret)
+	if ret := C.krun_set_workdir(C.uint32_t(vm.ctxID), workdir.Ptr()); ret != 0 {
+		return fmt.Errorf("krun_set_workdir failed with code %v", ret)
 	}
 
-	// Set executable (guest agent binary)
-	executable := newCString(cmdline.GuestAgent)
+	executable := newCString(define.GuestAgentPathInGuest)
 	defer executable.Free()
 
-	// Set arguments to pass to the guest agent
-	args := newCStringArray(cmdline.GuestAgentArgs)
+	// guest-agent does not need any args, guest-agent read vmconfig to decide what to do
+	args := newCStringArray(vm.vmc.GuestAgentCfg.Args)
 	defer args.Free()
 
 	// Set environment variables
-	envs := newCStringArray(cmdline.Env)
+	envs := newCStringArray(vm.vmc.GuestAgentCfg.Env)
 	defer envs.Free()
 
-	logrus.Infof("configuring guest-agent: %q (args: %v)", cmdline.GuestAgent, cmdline.GuestAgentArgs)
-	if len(cmdline.Env) > 0 {
-		logrus.Infof("passing %d environment variable(s) to guest", len(cmdline.Env))
-	}
-
-	ret = C.krun_set_exec(
+	ret := C.krun_set_exec(
 		C.uint32_t(vm.ctxID),
 		executable.Ptr(),
 		args.Ptr(),
 		envs.Ptr(),
 	)
 	if ret != 0 {
-		return fmt.Errorf("krun_set_exec failed with code %d", ret)
+		return fmt.Errorf("krun_set_exec failed with code %v", ret)
 	}
 
 	return nil
@@ -711,14 +638,12 @@ func (vm *LibkrunVM) enterVMLifecycle(ctx context.Context) error {
 
 	// Start VM in a goroutine so we can handle context cancellation
 	go func() {
-		logrus.Infof("entering VM execution loop (ctx_id=%d)", vm.ctxID)
 		ret := C.krun_start_enter(C.uint32_t(vm.ctxID))
 		if ret != 0 {
 			// Convert negative error code to errno for better error messages
 			errno := syscall.Errno(-ret)
 			errChan <- fmt.Errorf("VM execution failed: %w (libkrun code: %d)", errno, ret)
 		} else {
-			logrus.Info("VM execution completed successfully")
 			errChan <- nil
 		}
 	}()
@@ -729,7 +654,6 @@ func (vm *LibkrunVM) enterVMLifecycle(ctx context.Context) error {
 		// Context cancelled - VM might still be running
 		// Note: libkrun doesn't provide a clean shutdown mechanism
 		// The VM process will be forcefully terminated when the host process exits
-		logrus.Warn("VM execution cancelled by context")
 		return fmt.Errorf("VM execution cancelled: %w", ctx.Err())
 	case err := <-errChan:
 		return err
@@ -738,25 +662,17 @@ func (vm *LibkrunVM) enterVMLifecycle(ctx context.Context) error {
 
 // Stop requests the VM to stop.
 //
-// Note: libkrun doesn't provide a graceful stop mechanism.
-// The VM terminates when the init process exits or context is cancelled.
+// Note: libkrun doesn't provide a graceful stop mechanism. so we have to implement a forceful shutdown
 func (vm *LibkrunVM) Stop(_ context.Context) error {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
 
-	logrus.Infof("stop requested for VM (ctx_id=%d, state=%s)", vm.ctxID, vm.state)
-	return nil
+	return fmt.Errorf("not implemented yet")
 }
 
-// Close releases all resources associated with the VM.
-// Safe to call multiple times.
-func (vm *LibkrunVM) Close() error {
-	vm.closeOnce.Do(func() {
-		vm.mu.Lock()
-		defer vm.mu.Unlock()
-
-		logrus.Infof("closing VM (ctx_id=%d, state=%s)", vm.ctxID, vm.state)
-		vm.state = stateClosed
-	})
-	return nil
+func (vm *LibkrunVM) StartIgnServer(ctx context.Context) error {
+	return httpserver.NewIgnitionServer(vm.vmc).Start(ctx)
+}
+func (vm *LibkrunVM) StartVMCtlServer(ctx context.Context) error {
+	return httpserver.NewManagementAPIServer(vm.vmc).Start(ctx)
 }
