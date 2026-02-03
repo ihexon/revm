@@ -279,6 +279,7 @@ func (v *VMConfig) SetupIgnitionServerCfg() error {
 	if err != nil {
 		return err
 	}
+	logrus.Infof("ignition server port will listen in: %d", port)
 
 	unixUSL := &url.URL{
 		Scheme: "unix",

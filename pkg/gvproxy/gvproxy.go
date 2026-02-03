@@ -73,6 +73,7 @@ func InitCfg(vmc *vmconfig.VMConfig) (*GvproxyConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	logrus.Infof("ssh listen port: %d", port)
 
 	sshLocalForwardAddr := fmt.Sprintf("%s:%d", define.LocalHost, port)
 	sshServerGuestAddr := fmt.Sprintf("%s:%d", define.GuestIP, define.GuestSSHServerPort)
@@ -100,7 +101,6 @@ func Run(ctx context.Context, vmc *vmconfig.VMConfig) error {
 	if err != nil {
 		return err
 	}
-	logrus.Info("gvproxy network ready")
 
 	for _, endpoint := range config.Listen {
 		ln, err := transport.Listen(endpoint)

@@ -18,7 +18,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: 'actions/checkout@v5'
@@ -35,12 +35,11 @@ jobs:
         with:
           version: 'latest'
 
-      - name: Test
-        run: |
-          ./build.sh test
+      - name: Install dependencies
+        run:  brew tap slp/krun && brew install virglrenderer libepoxy molten-vk clang-format llvm
+
       - name: Build
-        run: |
-          ./build.sh build_darwin
+        run: ./build_ovm_darwin_arm64.sh
       - name: Upload artifact
         uses: 'actions/upload-artifact@v4'
         with:

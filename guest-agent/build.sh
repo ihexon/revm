@@ -1,4 +1,4 @@
-#! /usr/bin/env bash
+#! /opt/homebrew/bin/bash
 set -ex
 
 set_env_linux_arm64() {
