@@ -22,18 +22,12 @@ type DropbearConfig struct {
 
 // Dropbear provides dropbear SSH server functionality.
 type Dropbear struct {
-	path string
-	cfg  DropbearConfig
+	cfg DropbearConfig
 }
 
 // NewDropbear creates a new Dropbear instance with the given configuration.
-func NewDropbear(cfg DropbearConfig) (*Dropbear, error) {
-	path, err := DropbearmultiBinary.ExtractToDir(define.GuestHiddenBinDir)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Dropbear{path: path, cfg: cfg}, nil
+func NewDropbear(cfg DropbearConfig) *Dropbear {
+	return &Dropbear{cfg: cfg}
 }
 
 // GenerateHostKey generates a new dropbear host key.
@@ -42,7 +36,7 @@ func (d *Dropbear) GenerateHostKey(ctx context.Context) error {
 		return fmt.Errorf("create key dir: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, d.path, "dropbearkey", "-t", "ed25519", "-f", d.cfg.PrivateKeyPath)
+	cmd := exec.CommandContext(ctx, DropbearmultiPath(), "dropbearkey", "-t", "ed25519", "-f", d.cfg.PrivateKeyPath)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stderr
 
@@ -79,7 +73,7 @@ func (d *Dropbear) Start(ctx context.Context) error {
 		args = append(args, "-P", d.cfg.PidFile)
 	}
 
-	cmd := exec.CommandContext(ctx, d.path, args...)
+	cmd := exec.CommandContext(ctx, DropbearmultiPath(), args...)
 	cmd.Env = append(os.Environ(), "PASS_FILEPEM_CHECK=1")
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stderr
@@ -98,10 +92,7 @@ func StartGuestSSHServer(ctx context.Context, vmc *define.VMConfig) error {
 		PidFile:            define.DropBearPidFile,
 	}
 
-	dropbear, err := NewDropbear(cfg)
-	if err != nil {
-		return fmt.Errorf("create dropbear: %w", err)
-	}
+	dropbear := NewDropbear(cfg)
 
 	if err := dropbear.GenerateHostKey(ctx); err != nil {
 		return fmt.Errorf("generate host key: %w", err)

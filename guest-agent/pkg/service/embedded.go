@@ -3,9 +3,10 @@ package service
 import (
 	_ "embed"
 	"fmt"
+	"linuxvm/pkg/define"
 	"os"
 	"path/filepath"
-	"sync"
+	"syscall"
 
 	"github.com/sirupsen/logrus"
 )
@@ -16,57 +17,49 @@ var busyboxBytes []byte
 //go:embed dropbearmulti
 var dropbearmultiBytes []byte
 
-// EmbeddedBinary represents an embedded binary that can be extracted to disk.
-type EmbeddedBinary struct {
+// embeddedBinary represents an embedded binary that can be extracted to disk.
+type embeddedBinary struct {
 	name  string
 	bytes []byte
-	path  string
-	once  sync.Once
 }
 
 var (
-	BusyboxBinary       = &EmbeddedBinary{name: "busybox", bytes: busyboxBytes}
-	DropbearmultiBinary = &EmbeddedBinary{name: "dropbearmulti", bytes: dropbearmultiBytes}
+	busyboxBinary       = &embeddedBinary{name: "busybox", bytes: busyboxBytes}
+	dropbearmultiBinary = &embeddedBinary{name: "dropbearmulti", bytes: dropbearmultiBytes}
 )
 
-// ExtractToDir writes the embedded binary to the specified directory.
-// It's safe to call multiple times - extraction only happens once.
-func (e *EmbeddedBinary) ExtractToDir(dir string) (string, error) {
-	var extractErr error
+// InitBinDir mounts tmpfs to /.bin and extracts all embedded binaries.
+// This must be called early in the boot process before any other services.
+func InitBinDir() error {
+	binDir := define.GuestHiddenBinDir
 
-	e.once.Do(func() {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			extractErr = err
-			return
-		}
-
-		e.path = filepath.Join(dir, e.name)
-
-		// Skip if already exists
-		if _, err := os.Stat(e.path); err == nil {
-			logrus.Debugf("embedded binary %q already exists, skipping extraction", e.path)
-			return
-		}
-
-		logrus.Debugf("extracting embedded binary %q to %q", e.name, e.path)
-		if err := os.WriteFile(e.path, e.bytes, 0755); err != nil {
-			extractErr = err
-			return
-		}
-	})
-
-	if extractErr != nil {
-		return "", extractErr
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		return fmt.Errorf("create bin dir: %w", err)
 	}
 
-	if e.path == "" {
-		return "", fmt.Errorf("binary %s not extracted", e.name)
+	if err := syscall.Mount("tmpfs", binDir, "tmpfs", 0, "mode=0755"); err != nil {
+		return fmt.Errorf("mount tmpfs to %s: %w", binDir, err)
 	}
 
-	return e.path, nil
+	// Extract all binaries
+	binaries := []*embeddedBinary{busyboxBinary, dropbearmultiBinary}
+	for _, bin := range binaries {
+		path := filepath.Join(binDir, bin.name)
+		if err := os.WriteFile(path, bin.bytes, 0755); err != nil {
+			return fmt.Errorf("extract %s: %w", bin.name, err)
+		}
+		logrus.Infof("extracted %q to %q", bin.name, path)
+	}
+
+	return nil
 }
 
-// Path returns the extracted binary path. Must call ExtractToDir first.
-func (e *EmbeddedBinary) Path() string {
-	return e.path
+// BusyboxPath returns the path to the busybox binary.
+func BusyboxPath() string {
+	return filepath.Join(define.GuestHiddenBinDir, busyboxBinary.name)
+}
+
+// DropbearmultiPath returns the path to the dropbearmulti binary.
+func DropbearmultiPath() string {
+	return filepath.Join(define.GuestHiddenBinDir, dropbearmultiBinary.name)
 }
