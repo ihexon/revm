@@ -102,8 +102,7 @@ func ExtractEmbeddedRawDisk(ctx context.Context, filePath string) error {
 		return err
 	}
 
-	err = os.MkdirAll(filepath.Dir(filePath), 0755)
-	if err != nil {
+	if err = os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return err
 	}
 
@@ -120,8 +119,7 @@ func ExtractBuiltinRootfs(ctx context.Context, dstDir string) error {
 	if err != nil {
 		return err
 	}
-	err = os.MkdirAll(dstDir, 0755)
-	if err != nil {
+	if err = os.MkdirAll(dstDir, 0755); err != nil {
 		return err
 	}
 

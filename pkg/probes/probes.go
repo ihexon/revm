@@ -234,6 +234,7 @@ func (p *GuestSSHProbe) ProbeUntilReady(ctx context.Context) error {
 				logrus.Warnf("failed to close SSH client: %v", err)
 			}
 			p.once.Do(func() { close(p.Ch) })
+			logrus.Info("guest SSH service is ready")
 			return nil
 		}
 	}
@@ -296,6 +297,7 @@ func (p *PodmanProbe) ProbeUntilReady(ctx context.Context) error {
 
 			network.CloseResponse(resp)
 			p.once.Do(func() { close(p.Ch) })
+			logrus.Info("Podman API service is ready")
 			return nil
 		}
 	}

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/sirupsen/logrus"
 )
 
 //go:embed busybox.static
@@ -42,9 +44,11 @@ func (e *EmbeddedBinary) ExtractToDir(dir string) (string, error) {
 
 		// Skip if already exists
 		if _, err := os.Stat(e.path); err == nil {
+			logrus.Debugf("embedded binary %q already exists, skipping extraction", e.path)
 			return
 		}
 
+		logrus.Debugf("extracting embedded binary %q to %q", e.name, e.path)
 		if err := os.WriteFile(e.path, e.bytes, 0755); err != nil {
 			extractErr = err
 			return

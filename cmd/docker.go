@@ -115,10 +115,9 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		); err != nil {
 			return err
 		}
-		logrus.Infof("podman api proxy listen in: %q", vmc.PodmanInfo.LocalPodmanProxyAddr)
+		logrus.Infof("Podman API ready: %s", vmc.PodmanInfo.LocalPodmanProxyAddr)
 		return nil
 	})
 
-	err = g.Wait()
-	return err
+	return g.Wait()
 }

@@ -100,10 +100,9 @@ func Run(ctx context.Context, vmc *vmconfig.VMConfig) error {
 	if err != nil {
 		return err
 	}
-	logrus.Info("gvproxy virtual network waiting for clients...")
+	logrus.Info("gvproxy network ready")
 
 	for _, endpoint := range config.Listen {
-		logrus.Infof("listening %s", endpoint)
 		ln, err := transport.Listen(endpoint)
 		if err != nil {
 			return fmt.Errorf("cannot listen: %w", err)
@@ -112,7 +111,6 @@ func Run(ctx context.Context, vmc *vmconfig.VMConfig) error {
 	}
 
 	if config.Services != "" {
-		logrus.Infof("enabling probes API. Listening %s", config.Services)
 		ln, err := transport.Listen(config.Services)
 		if err != nil {
 			return fmt.Errorf("cannot listen: %w", err)

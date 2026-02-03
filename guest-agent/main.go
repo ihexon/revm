@@ -57,11 +57,7 @@ func mountAllFs(ctx context.Context, vmc *define.VMConfig) error {
 		return err
 	}
 
-	if err := service.MountVirtiofs(ctx, vmc); err != nil {
-		return err
-	}
-
-	return nil
+	return service.MountVirtiofs(ctx, vmc)
 }
 
 func run(ctx context.Context, _ *cli.Command) error {
@@ -93,7 +89,7 @@ func run(ctx context.Context, _ *cli.Command) error {
 }
 
 func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
-	logrus.Infof("run user command line mode")
+	logrus.Info("running in rootfs mode")
 
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -117,6 +113,8 @@ func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
 }
 
 func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
+	logrus.Info("running in container mode")
+
 	if !service.IsMounted(define.ContainerStorageMountPoint) {
 		return fmt.Errorf("container storage is not mounted")
 	}

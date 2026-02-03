@@ -10,9 +10,9 @@ import (
 const NTPServer = "time.cloudflare.com"
 
 func SyncRTCTime(ctx context.Context) error {
-	syncTimeFromNtpServer(ctx) // try sync time from ntp server at first
+	syncTimeFromNtpServer(ctx)
 
-	ticker := time.NewTicker(60 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
@@ -25,5 +25,5 @@ func SyncRTCTime(ctx context.Context) error {
 }
 
 func syncTimeFromNtpServer(ctx context.Context) {
-	_ = Busybox.Exec(ctx, "ntpd", "-q", "-n", "-p", NTPServer)
+	_ = Busybox.ExecQuiet(ctx, "ntpd", "-q", "-n", "-p", NTPServer)
 }

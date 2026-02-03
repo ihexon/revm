@@ -61,6 +61,7 @@ func main() {
 				return
 			case <-ticker.C:
 				if os.Getppid() == 1 {
+					logrus.Warn("parent process exited, shutting down...")
 					cancel()
 					return
 				}

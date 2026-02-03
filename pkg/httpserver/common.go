@@ -59,12 +59,7 @@ func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...
 	errChan := make(chan error, 1)
 
 	go func() {
-		defer func() {
-			if err := client.Close(); err != nil {
-				logrus.Errorf("failed to close ssh client: %v", err)
-			}
-		}()
-
+		defer client.Close()
 		defer func() {
 			close(errChan)
 			_ = stdoutWriter.Close()

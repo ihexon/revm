@@ -71,38 +71,30 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 	)
 
 	vmc := vmconfig.NewVMConfig(runMode)
-	logrus.Infof("set run mode: %q", vmc.RunMode)
 
 	if err = vmc.SetLogLevel(logLevel, saveLogTo); err != nil {
 		return nil, err
 	}
-	logrus.Infof("set log level: %s", logLevel)
 
 	if err = vmc.SetupWorkspace(workspacePath); err != nil {
 		return nil, err
 	}
-	logrus.Infof("workspace configure done, path: %q", workspacePath)
 
 	if err = vmc.WithResources(memoryInMB, cpus); err != nil {
 		return nil, err
 	}
-	logrus.Infof("set memory: %dMB, cpus: %d", memoryInMB, cpus)
 
 	if err = vmc.WithGivenRAWDisk(ctx, rawDisks); err != nil {
 		return nil, err
 	}
-	logrus.Infof("given raw disks: %v", rawDisks)
 
-	logrus.Infof("user provided mounts: %v", command.StringSlice(define.FlagMount))
-	err = vmc.WithMounts(command.StringSlice(define.FlagMount))
-	if err != nil {
+	if err = vmc.WithMounts(command.StringSlice(define.FlagMount)); err != nil {
 		return nil, err
 	}
 
 	if err = vmc.SetupIgnitionServerCfg(); err != nil {
 		return nil, err
 	}
-	logrus.Infof("ignition configure done")
 
 	switch vmc.RunMode {
 	case define.RootFsMode.String():
@@ -110,22 +102,18 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 			if err = vmc.WithBuiltInAlpineRootfs(ctx); err != nil {
 				return nil, err
 			}
-			logrus.Infof("user not provided rootfs, use built-in rootfs: %q", vmc.RootFS)
 		} else {
 			if err = vmc.WithRootfs(ctx, rootfsPath); err != nil {
 				return nil, err
 			}
-			logrus.Infof("user provided rootfs path: %q", rootfsPath)
 		}
 
 		if err = vmc.SetupCmdLine(runBinWorkdir, runBin, runBinArgs, runBinEnvs, usingSystemProxy); err != nil {
 			return nil, fmt.Errorf("setup cmdline failed: %w", err)
 		}
-		logrus.Infof("run %q with args %q in %q, using proxy: %t", runBin, runBinArgs, runBinWorkdir, usingSystemProxy)
 
 	case define.ContainerMode.String():
-		err = vmc.WithBuiltInAlpineRootfs(ctx)
-		if err != nil {
+		if err = vmc.WithBuiltInAlpineRootfs(ctx); err != nil {
 			return nil, err
 		}
 
@@ -144,5 +132,6 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 		return nil, err
 	}
 
+	logrus.Infof("VM configured: mode=%s, cpus=%d, memory=%dMB", vmc.RunMode, cpus, memoryInMB)
 	return vmc, nil
 }

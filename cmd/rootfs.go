@@ -88,12 +88,10 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	})
 
 	g.Go(func() error {
-		err := probes.WaitAll(ctx,
+		if err := probes.WaitAll(ctx,
 			probes.NewGVProxyProbe(vmc.GvisorTapVsockEndpoint),
 			probes.NewIgnServerProbe(vmc.IgnitionServerCfg.ListenUnixSockAddr),
-		)
-
-		if err != nil {
+		); err != nil {
 			return err
 		}
 

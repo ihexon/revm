@@ -106,6 +106,7 @@ type PodmanInfo struct {
 
 type GuestAgentCfg struct {
 	Workdir string   `json:"workdir,omitempty"`
+	Args    []string `json:"args,omitempty"`
 	Env     []string `json:"env,omitempty"`
 }
 

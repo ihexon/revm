@@ -38,7 +38,7 @@ func (v *VMConfig) Lock() error {
 	}
 
 	if !ifLocked {
-		return fmt.Errorf("file %q is locked by another vm instance", fileLock.Path())
+		return fmt.Errorf("workspace %q is locked by another instance", fileLock.Path())
 	}
 
 	return nil
@@ -63,6 +63,7 @@ func (v *VMConfig) generateRAWDisk(ctx context.Context, rawDiskPath string, give
 		return err
 	}
 
+	logrus.Infof("raw disk created: %s", rawDiskPath)
 	return nil
 }
 
@@ -72,14 +73,11 @@ func (v *VMConfig) GetContainerStorageDiskPath() string {
 
 func (v *VMConfig) AutoAttachContainerStorageRawDisk(ctx context.Context) error {
 	f := v.GetContainerStorageDiskPath()
-	_, err := os.Stat(f)
-	if err != nil {
-		logrus.Infof("try to generate container storage raw disk: %q", f)
+	if _, err := os.Stat(f); err != nil {
 		if err = v.generateRAWDisk(ctx, f, define.ContainerDiskUUID); err != nil {
 			return fmt.Errorf("failed to generate container storage raw disk: %w", err)
 		}
 	}
-
 	return v.attachRAWDisk(ctx, f)
 }
 
@@ -112,6 +110,7 @@ func (v *VMConfig) attachRAWDisk(ctx context.Context, rawDiskPath string) error 
 	}
 
 	v.BlkDevs = append(v.BlkDevs, blkDev)
+	logrus.Infof("attached raw disk: %q (UUID: %s, mount: %s)", rawDiskPath, info.UUID, info.MountTo)
 
 	return nil
 }
@@ -121,8 +120,6 @@ func (v *VMConfig) BindUserHomeDir(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
-	logrus.Infof("in container mode, directory %q will be auto mount to guest %q", homeDir, homeDir)
 	return v.WithMounts([]string{fmt.Sprintf("%s:%s", homeDir, homeDir)})
 }
 
@@ -186,15 +183,11 @@ func (v *VMConfig) SetupCmdLine(workdir, bin string, args, envs []string, usingS
 		}
 
 		if proxyInfo.HTTP != nil {
-			httpProxy := fmt.Sprintf("http_proxy=http://%s:%d", proxyInfo.HTTP.Host, proxyInfo.HTTP.Port)
-			logrus.Infof("using http proxy: %q", httpProxy)
-			envs = append(envs, httpProxy)
+			envs = append(envs, fmt.Sprintf("http_proxy=http://%s:%d", proxyInfo.HTTP.Host, proxyInfo.HTTP.Port))
 		}
 
 		if proxyInfo.HTTPS != nil {
-			httpsProxy := fmt.Sprintf("https_proxy=http://%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port)
-			logrus.Infof("using https proxy: %q", httpsProxy)
-			envs = append(envs, httpsProxy)
+			envs = append(envs, fmt.Sprintf("https_proxy=http://%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port))
 		}
 	}
 
@@ -333,18 +326,13 @@ func (v *VMConfig) SetLogLevel(level string, logFile string) error {
 			return err
 		}
 		logFile = filepath.Clean(logFile)
-		// Check file size and truncate if > 100MB
 		if info, err := os.Stat(logFile); err == nil && info.Size() > maxSizeBytes {
-			if err = os.Truncate(logFile, 0); err != nil {
-				logrus.Warnf("failed to truncate log file: %v", err)
-			}
-			logrus.Infof("log file truncated: %s", logFile)
+			_ = os.Truncate(logFile, 0)
 		}
 
 		if f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
 			logrus.SetOutput(f)
 			logger.LogFd = f
-			logrus.Infof("log file: %s", logFile)
 		}
 	}
 
@@ -488,36 +476,25 @@ func (v *VMConfig) SetupWorkspace(workspacePath string) error {
 		return err
 	}
 
-	// first we lock the workspace, only one vm instance can access the workspace at a time
-	err = v.Lock()
-	if err != nil {
+	if err = v.Lock(); err != nil {
 		return err
 	}
-	logrus.Infof("workspace locked, current running instance pid: %d", os.Getpid())
 
 	if v.RunMode == define.ContainerMode.String() {
 		if err = v.withPodmanCfg(); err != nil {
 			return err
 		}
-		logrus.Infof("podman api proxy addr: %q", v.PodmanInfo.LocalPodmanProxyAddr)
 	}
 
 	if err = v.withVMControlCfg(); err != nil {
 		return err
 	}
-	logrus.Infof("vm control API listen in: %q", v.VMCtlAddress)
 
 	if err = v.withGvisorTapVsockCfg(); err != nil {
 		return err
 	}
-	logrus.Infof("gvisor-tap-vsock control endpoint: %q, network: %q", v.GvisorTapVsockEndpoint, v.GvisorTapVsockNetwork)
 
-	if err = v.generateSSHCfg(); err != nil {
-		return err
-	}
-	logrus.Infof("ssh key pair generated in: %q", v.SSHInfo.HostSSHPrivateKeyFile)
-
-	return nil
+	return v.generateSSHCfg()
 }
 
 func NewVMConfig(mode define.RunMode) *VMConfig {

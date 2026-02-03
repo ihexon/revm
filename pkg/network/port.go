@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/sirupsen/logrus"
 )
 
 func GetAvailablePort(preferredPort uint16) (uint64, error) {
@@ -18,8 +20,11 @@ func GetAvailablePort(preferredPort uint16) (uint64, error) {
 	l, err := net.ListenTCP("tcp4", addr)
 	if err == nil {
 		_ = l.Close()
+		logrus.Debugf("using preferred port %d", preferredPort)
 		return uint64(preferredPort), nil
 	}
+
+	logrus.Debugf("preferred port %d unavailable, finding ephemeral port...", preferredPort)
 
 	// Fallback to ephemeral port.
 	addr, err = net.ResolveTCPAddr("tcp4", "0.0.0.0:0")
@@ -34,7 +39,9 @@ func GetAvailablePort(preferredPort uint16) (uint64, error) {
 
 	defer l.Close()
 
-	return uint64(l.Addr().(*net.TCPAddr).Port), nil
+	port := uint64(l.Addr().(*net.TCPAddr).Port)
+	logrus.Debugf("allocated ephemeral port %d", port)
+	return port, nil
 }
 
 type Addr struct {

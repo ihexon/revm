@@ -26,7 +26,12 @@ func DHClient4(ctx context.Context, ifName string, attempts int) error {
 		return fmt.Errorf("failed to get dhcp config: %w", err)
 	}
 
-	return netboot.ConfigureInterface(ifName, &bootConf.NetConf)
+	if err := netboot.ConfigureInterface(ifName, &bootConf.NetConf); err != nil {
+		return err
+	}
+
+	logrus.Infof("network configured: %s (mac: %s)", ifName, ife.HardwareAddr)
+	return nil
 }
 
 func bringInterfaceUpFast(ifName string) (*net.Interface, error) {
@@ -72,21 +77,19 @@ func dhclient4(ctx context.Context, iface *net.Interface, attempts int) (*netboo
 		lease, err = client.Request(ctx)
 		if err == nil {
 			if lease == nil || lease.ACK == nil || lease.Offer == nil {
-				logrus.Warnf("dhcp request succeeded but lease/ack/lease.Offer is nil, try again")
+				logrus.Warnf("DHCP incomplete response (attempt %d/%d)", attempt+1, attempts)
 				continue
 			}
-
 			return netboot.ConversationToNetconfv4([]*dhcpv4.DHCPv4{lease.Offer, lease.ACK})
 		}
 
-		logrus.Warnf("request dhcp fail with: %v, try again", err)
+		logrus.Warnf("DHCP failed (attempt %d/%d): %v", attempt+1, attempts, err)
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-time.After(10 * time.Millisecond):
 		}
-		continue
 	}
 
-	return nil, err
+	return nil, fmt.Errorf("DHCP failed after %d attempts: %w", attempts, err)
 }

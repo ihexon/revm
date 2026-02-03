@@ -43,6 +43,7 @@ func TunnelHostUnixToGuest(ctx context.Context, gvproxyCtlUnixAddr, listenUnixAd
 		closeLn()
 	}()
 
+	logrus.Infof("tunnel ready: %s → %s:%d", listenUnixAddr, targetIP, targetPort)
 	return acceptLoop(ctx, ln, gvproxyPath, targetIP, targetPort)
 }
 
@@ -83,6 +84,7 @@ func acceptLoop(ctx context.Context, ln net.Listener, gvproxyPath, targetIP stri
 				return fmt.Errorf("listener %q closed", ln.Addr())
 			}
 
+			logrus.Warnf("tunnel accept error: %v", err)
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
@@ -96,13 +98,13 @@ func handleTunnelConn(clientConn net.Conn, gvproxyPath, targetIP string, targetP
 
 	guestConn, err := net.Dial("unix", gvproxyPath)
 	if err != nil {
-		logrus.Errorf("dial gvproxy socket %q: %v", gvproxyPath, err)
+		logrus.Errorf("dial gvproxy: %v", err)
 		return
 	}
 	defer guestConn.Close()
 
 	if err := transport.Tunnel(guestConn, targetIP, int(targetPort)); err != nil {
-		logrus.Errorf("setup tunnel to %s:%d: %v", targetIP, targetPort, err)
+		logrus.Errorf("tunnel setup failed: %v", err)
 		return
 	}
 

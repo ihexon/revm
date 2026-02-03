@@ -11,8 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/sirupsen/logrus"
 )
 
 type Manager interface {
@@ -70,13 +68,9 @@ func (b RawDiskManager) Format(ctx context.Context, blkPath, fsType string) erro
 	case "ext4":
 		mke2fs := b.mke2fs
 		cmd := exec.CommandContext(ctx, mke2fs, "-t", fsType, "-E", "discard", "-F", blkPath)
-		if logrus.GetLevel() == logrus.DebugLevel {
-			cmd.Stderr = os.Stderr
-			cmd.Stdout = os.Stderr
-		}
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stderr
 		cmd.Stdin = nil
-
-		logrus.Infof("mke2fs cmdline: %q", cmd.Args)
 		return cmd.Run()
 	default:
 		return fmt.Errorf("unsupported filesystem type: %s", fsType)
@@ -85,9 +79,8 @@ func (b RawDiskManager) Format(ctx context.Context, blkPath, fsType string) erro
 
 func (b RawDiskManager) inspect(ctx context.Context, blkPath string, info string) (string, error) {
 	cmd := exec.CommandContext(ctx, b.blkid, "-c", filepath.Join(os.TempDir(), "blkid.cache"), "-s", info, "-o", "value", blkPath)
-	if logrus.GetLevel() == logrus.DebugLevel {
-		cmd.Stderr = os.Stderr
-	}
+	cmd.Stderr = os.Stderr
+
 	var result bytes.Buffer
 	cmd.Stdin = nil
 	cmd.Stdout = &result
@@ -128,12 +121,7 @@ func (b RawDiskManager) Create(ctx context.Context, blkPath string, sizeInMib ui
 	if err != nil {
 		return err
 	}
-
-	defer func(f *os.File) {
-		if err := f.Close(); err != nil {
-			logrus.Errorf("failed to close file: %v", err)
-		}
-	}(f)
+	defer f.Close()
 
 	return f.Truncate(int64(filesystem.MiB(sizeInMib).ToBytes()))
 }
@@ -145,18 +133,13 @@ func (b RawDiskManager) FsCheck(ctx context.Context, blkPath string) error {
 	}
 
 	if info.FsType != "ext4" {
-		logrus.Warnf("filesystem integrity check only support ext4 filesystem")
 		return nil
 	}
 
 	cmd := exec.CommandContext(ctx, b.e2fsck, "-p", blkPath)
-	if logrus.GetLevel() == logrus.DebugLevel {
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stderr
-	}
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stderr
 	cmd.Stdin = nil
-
-	logrus.Debugf("fsck.ext4 cmdline: %q", cmd.Args)
 	return cmd.Run()
 }
 

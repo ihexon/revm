@@ -107,10 +107,10 @@ func StartGuestSSHServer(ctx context.Context, vmc *define.VMConfig) error {
 		return fmt.Errorf("generate host key: %w", err)
 	}
 
-	// inject public key into authorized_keys for dropbear
 	if err := dropbear.WriteAuthorizedKeys(vmc.SSHInfo.HostSSHPublicKey); err != nil {
 		return fmt.Errorf("write authorized_keys: %w", err)
 	}
 
+	logrus.Infof("SSH server starting on port %d", cfg.ListenPort)
 	return dropbear.Start(ctx)
 }

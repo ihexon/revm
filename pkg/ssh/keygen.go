@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"github.com/charmbracelet/keygen"
+	"github.com/sirupsen/logrus"
 )
 
 // KeyPair represents an SSH key pair with its metadata
@@ -24,6 +25,8 @@ func DefaultKeyGenOptions() KeyGenOptions {
 }
 
 func GenerateKeyPair(keyFile string, opts KeyGenOptions) (*KeyPair, error) {
+	logrus.Debugf("generating SSH key pair (type: %v) at %q", opts.KeyType, keyFile)
+
 	keygenOpts := []keygen.Option{
 		keygen.WithKeyType(opts.KeyType),
 	}
@@ -34,6 +37,7 @@ func GenerateKeyPair(keyFile string, opts KeyGenOptions) (*KeyPair, error) {
 	// Generate the key pair
 	kp, err := keygen.New(keyFile, keygenOpts...)
 	if err != nil {
+		logrus.Errorf("failed to generate SSH key pair: %v", err)
 		return nil, err
 	}
 

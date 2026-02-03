@@ -32,5 +32,6 @@ func GetVMConfig(ctx context.Context) (*define.VMConfig, error) {
 		return nil, err
 	}
 
+	logrus.Infof("VM config received (mode: %s)", vmc.RunMode)
 	return vmc, vmc.WriteToJsonFile(define.VMConfigFilePathInGuest)
 }
