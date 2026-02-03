@@ -8,6 +8,38 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type VMConfig struct {
+	WorkspacePath string `json:"workspacePath,omitempty"`
+
+	MemoryInMB uint64 `json:"memoryInMB,omitempty"`
+	Cpus       int8   `json:"cpus,omitempty"`
+	RootFS     string `json:"rootFS,omitempty"`
+
+	// data disk will map into /dev/vdX and automount by guest-agent process
+	BlkDevs []BlkDev `json:"blkDevs,omitempty"`
+	// GVproxy control endpoint
+	GvisorTapVsockEndpoint string `json:"GvisorTapVsockEndpoint,omitempty"`
+	// GvisorTapVsockNetwork is the network stack backend to use. which provided
+	// by gvproxy
+	GvisorTapVsockNetwork string            `json:"gvisorTapVsockNetwork,omitempty"`
+	LogFilePath           string            `json:"logFilePath,omitempty"`
+	Mounts                []Mount           `json:"mounts,omitempty"`
+	SSHInfo               SSHInfo           `json:"sshInfo,omitempty"`
+	PodmanInfo            PodmanInfo        `json:"podmanInfo,omitempty"`
+	VMCtlAddress          string            `json:"vmCTLAddress,omitempty"`
+	RunMode               string            `json:"runMode,omitempty"`
+	IgnitionServerCfg     IgnitionServerCfg `json:"ignitionServerCfg,omitempty"`
+	GuestAgentCfg         GuestAgentCfg     `json:"guestAgentCfg,omitempty"`
+	Cmdline               Cmdline           `json:"cmdline,omitempty"`
+}
+
+type Cmdline struct {
+	Envs    []string `json:"envs,omitempty"`
+	Bin     string   `json:"bin,omitempty"`
+	Args    []string `json:"args,omitempty"`
+	WorkDir string   `json:"workdir,omitempty"`
+}
+
 type Mount struct {
 	ReadOnly bool   `json:"readOnly"`
 	Source   string `json:"source"`
@@ -19,37 +51,24 @@ type Mount struct {
 }
 
 type SSHInfo struct {
-	// HostSSHKeyPairFile is the path to the host ssh keypair file
-	HostSSHKeyPairFile string `json:"hostSSHKeyFile,omitempty"`
+	// HostSSHPrivateKeyFile is the path to the host ssh private key
+	HostSSHPrivateKeyFile string `json:"hostSSHKeyFile,omitempty"`
 
 	HostSSHPublicKey  string `json:"sshPublicKey,omitempty"`
 	HostSSHPrivateKey string `json:"sshPrivateKey,omitempty"`
+
+	SSHLocalForwardAddr string `json:"sshLocalForwardAddr,omitempty"`
 }
 
-type VMConfig struct {
-	MemoryInMB uint64 `json:"memoryInMB,omitempty"`
-	Cpus       int8   `json:"cpus,omitempty"`
-	RootFS     string `json:"rootFS,omitempty"`
+type ProxySetting struct {
+	HTTPProxy  string `json:"httpProxy,omitempty"`
+	HTTPSProxy string `json:"httpsProxy,omitempty"`
+	Use        bool   `json:"use,omitempty"`
+}
 
-	// data disk will map into /dev/vdX and automount by guest-agent process
-	BlkDevs []BlkDev `json:"blkDevs,omitempty"`
-	// GVproxy control endpoint
-	GVproxyEndpoint string `json:"GVproxyEndpoint,omitempty"`
-	// NetworkStackBackend is the network stack backend to use. which provided
-	// by gvproxy
-	NetworkStackBackend     string        `json:"networkStackBackend,omitempty"`
-	LogLevel                string        `json:"logLevel,omitempty"`
-	LogFilePath             string        `json:"logFilePath,omitempty"`
-	Mounts                  []Mount       `json:"mounts,omitempty"`
-	SSHInfo                 SSHInfo       `json:"sshInfo,omitempty"`
-	Cmdline                 Cmdline       `json:"cmdline,omitempty"`
-	PodmanInfo              PodmanInfo    `json:"podmanInfo,omitempty"`
-	RestAPIAddress          string        `json:"restAPIAddress,omitempty"`
-	RunMode                 string        `json:"runMode,omitempty"`
-	VMConfigProvisionerAddr string        `json:"VMConfigProvisionerAddr,omitempty"`
-	ExternalTools           ExternalTools `json:"externalTools,omitempty"`
-
-	LogFile *os.File `json:"-"` // opened log file, not serialized
+type IgnitionServerCfg struct {
+	ListenUnixSockAddr string `json:"ListenUnixSockAddr,omitempty"`
+	ListenTcpAddr      string `json:"ListenTcpAddr,omitempty"` // not implemented yet
 }
 
 type LinuxTools struct {
@@ -60,10 +79,9 @@ type LinuxTools struct {
 }
 
 type DarwinTools struct {
-	Mke2fs     string `json:"mkfs.ext4,omitempty"`
-	FsckExt4   string `json:"fsck.ext4,omitempty"`
-	Blkid      string `json:"blkid,omitempty"`
-	GuestAgent string `json:"guestAgent,omitempty"`
+	E2fsck  string `json:"e2fsck,omitempty"`
+	Blkid   string `json:"blkid,omitempty"`
+	Tune2fs string `json:"tune2fs,omitempty"`
 }
 
 type ExternalTools struct {
@@ -73,30 +91,23 @@ type ExternalTools struct {
 
 // BlkDev represents the configuration of a data disk, including its file system type, path, and mount point.
 type BlkDev struct {
-	IsContainerStorage bool   `json:"isContainerStorage,omitempty"`
-	FsType             string `json:"fsType,omitempty"`
-	UUID               string `json:"UUID,omitempty"`
-	Path               string `json:"path,omitempty"`
-	MountTo            string `json:"mountTo,omitempty"`
-	SizeInMib          uint64 `json:"sizeInMIB,omitempty"`
+	FsType    string `json:"fsType,omitempty"`
+	UUID      string `json:"UUID,omitempty"`
+	Path      string `json:"path,omitempty"`
+	MountTo   string `json:"mountTo,omitempty"`
+	SizeInMib uint64 `json:"sizeInMIB,omitempty"`
 }
 
 type PodmanInfo struct {
-	UnixSocksAddr string `json:"unixSocksAddr,omitempty"`
+	LocalPodmanProxyAddr string `json:"localPodmanProxyAddr,omitempty"`
+	GuestPodmanAPIIP     string `json:"GuestPodmanAPIIP,omitempty"`
+	GuestPodmanAPIPort   uint16 `json:"GuestPodmanAPIPort,omitempty"`
 }
 
-// Cmdline exec cmdline within rootfs
-type Cmdline struct {
-	// GuestAgent is a process that runs under PID 1. As a secondary init, GuestAgent incubates all user child processes.
-	GuestAgent     string   `json:"guestagent,omitempty"`
-	GuestAgentArgs []string `json:"guestAgentArgs,omitempty"`
-	Workspace      string   `json:"workspace,omitempty"`
-	// TargetBin is the binary to run by guest-agent.
-	TargetBin string `json:"targetBin,omitempty"`
-	// TargetBinArgs is the arguments to pass to the target binary.
-	TargetBinArgs []string `json:"targetBinArgs,omitempty"`
-	// Env is the environment variables to set for the guest-agent process and target binary, in the form of KEY=VALUE.
-	Env []string `json:"env,omitempty"`
+type GuestAgentCfg struct {
+	Workdir string   `json:"workdir,omitempty"`
+	Args    []string `json:"args,omitempty"`
+	Env     []string `json:"env,omitempty"`
 }
 
 func LoadVMCFromFile(file string) (*VMConfig, error) {

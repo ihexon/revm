@@ -12,17 +12,21 @@ import (
 
 // TarOpts contains configuration options for tar operations.
 type TarOpts struct {
-	members      []string  // Files to extract (extract only)
-	excludes     []string  // Files to exclude
-	transformPat []string  // Path transformation patterns
-	sparse       bool      // Handle sparse files
-	verbose      bool      // verbose output
-	removeOld    bool      // Remove old files before extraction
-	append       bool      // append mode (archive only)
-	toStdout     bool      // Extract file contents to stdout instead of disk (extract only)
-	stdout       io.Writer // Output to writer instead of disk
-	stderr       io.Writer // stderr writer
-	stdin        io.Reader // stdin reader
+	members      []string // Files to extract (extract only)
+	excludes     []string // Files to exclude
+	transformPat []string // Path transformation patterns
+	sparse       bool     // Handle sparse files
+	verbose      bool     // verbose output
+	removeOld    bool     // Remove old files before extraction
+	append       bool     // append mode (archive only)
+
+	toStdout  bool // ExtractToDir file contents to stdout instead of disk (extract only)
+	fromStdin bool // Read from stdin instead of file
+	// fastRead  bool
+
+	stdout io.Writer // Output to writer instead of disk
+	stderr io.Writer // stderr writer
+	stdin  io.Reader // stdin reader
 }
 
 // Tar implements tar archive operations.
@@ -80,7 +84,7 @@ func (t *Tar) Append(b bool) *Tar {
 	return t
 }
 
-func (t *Tar) ToStdout(b bool) *Tar {
+func (t *Tar) ExtractToStdout(b bool) *Tar {
 	t.opts.toStdout = b
 	return t
 }
@@ -96,18 +100,19 @@ func (t *Tar) Stderr(w io.Writer) *Tar {
 }
 
 func (t *Tar) Stdin(r io.Reader) *Tar {
+	t.opts.fromStdin = true
 	t.opts.stdin = r
 	return t
 }
 
-func (t *Tar) Unarchive(ctx context.Context, src, dst string) error {
-	if dst != "" && !t.opts.toStdout {
-		if err := os.MkdirAll(dst, 0755); err != nil {
+func (t *Tar) Unarchive(ctx context.Context, src, dstDir string) error {
+	if dstDir != "" && !t.opts.toStdout {
+		if err := os.MkdirAll(dstDir, 0755); err != nil {
 			return err
 		}
 	}
 
-	tarCmd := exec.CommandContext(ctx, t.tarBinPath, t.buildExtractArgs(src, dst)...)
+	tarCmd := exec.CommandContext(ctx, t.tarBinPath, t.buildExtractArgs(src, dstDir)...)
 	if t.opts.stdin != nil {
 		tarCmd.Stdin = t.opts.stdin
 	}
@@ -118,7 +123,7 @@ func (t *Tar) Unarchive(ctx context.Context, src, dst string) error {
 		tarCmd.Stderr = t.opts.stderr
 	}
 
-	logrus.Infof("tar cmdline: %v", tarCmd.Args)
+	logrus.Debugf("tar cmdline: %q", tarCmd.Args)
 	return tarCmd.Run()
 }
 
@@ -136,20 +141,18 @@ func (t *Tar) Archive(ctx context.Context, srcDir, dstFile string) error {
 		tarCmd.Stderr = t.opts.stderr
 	}
 
-	logrus.Infof("tar cmdline: %v", tarCmd.Args)
+	logrus.Debugf("tar cmdline: %v", tarCmd.Args)
 	return tarCmd.Run()
 }
 
-func (t *Tar) buildExtractArgs(src, dst string) []string {
+func (t *Tar) buildExtractArgs(src, dstDir string) []string {
 	args := []string{"--extract"}
 
-	if t.opts.toStdout {
-		args = append(args, "--to-stdout")
-	} else if dst != "" {
-		args = append(args, "--directory", dst)
+	if dstDir != "" {
+		args = append(args, "--directory", dstDir)
 	}
 
-	// bsdtar uses -s /old/new/[flags] for path transformation (no long option available)
+	// bsdtar uses -s |old|new| for path transformation (no long option available)
 	for _, pat := range t.opts.transformPat {
 		args = append(args, "-s", pat)
 	}
@@ -162,17 +165,25 @@ func (t *Tar) buildExtractArgs(src, dst string) []string {
 		args = append(args, "--exclude", ex)
 	}
 
-	// bsdtar: -S extracts files as sparse files (no long option available)
 	if t.opts.sparse {
 		args = append(args, "-S")
+		args = append(args, "--read-sparse")
 	}
 
 	if t.opts.verbose {
 		args = append(args, "--verbose")
 	}
 
-	if src != "" {
+	if src != "" && src != "-" {
 		args = append(args, "--file", src)
+	}
+
+	if t.opts.fromStdin {
+		args = append(args, "--file", "-")
+	}
+
+	if t.opts.toStdout {
+		args = append(args, "--to-stdout")
 	}
 
 	args = append(args, t.opts.members...)
@@ -181,9 +192,6 @@ func (t *Tar) buildExtractArgs(src, dst string) []string {
 
 func (t *Tar) buildArchiveArgs(srcDir, dstFile string) []string {
 	var args []string
-
-	// bsdtar: --read-sparse is default for create mode, no need to specify
-	// GNU tar's --sparse is not available in bsdtar
 
 	if t.opts.append {
 		args = append(args, "--append")

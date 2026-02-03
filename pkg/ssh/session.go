@@ -107,7 +107,7 @@ func (s *Session) RequestPTY(ctx context.Context, termType string, width, height
 		}
 	}
 
-	// Request PTY from SSH server
+	// Request PTY from SSH httpserver
 	if err := s.session.RequestPty(termType, height, width, modes); err != nil {
 		return fmt.Errorf("%w: %v", ErrPTYRequestFailed, err)
 	}
@@ -135,9 +135,9 @@ func (s *Session) RequestPTY(ctx context.Context, termType string, width, height
 				}
 
 				if err := session.WindowChange(newHeight, newWidth); err != nil {
-					logrus.Infof("Failed to change window size: %v", err)
+					logrus.Warnf("Failed to change window size: %v", err)
 				} else {
-					logrus.Infof("Terminal resized to %dx%d", newWidth, newHeight)
+					logrus.Debugf("Terminal resized to %dx%d", newWidth, newHeight)
 				}
 			}
 		}

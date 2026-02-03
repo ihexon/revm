@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package server
+package httpserver
 
 import (
 	"context"
@@ -9,27 +9,19 @@ import (
 	"linuxvm/pkg/vmconfig"
 )
 
-// GuestConfigServer provides VM configuration to the guest agent.
-// It listens on a VSock port, allowing the guest to fetch its configuration
-// during the provisioning phase.
-//
-// Endpoints:
-//   - GET /healthz  - Health check
-//   - GET /vmconfig - Returns the complete VM configuration as JSON
 type GuestConfigServer struct {
 	vmc *vmconfig.VMConfig
 	srv *httpServer
 }
 
-// NewGuestConfigServer creates a server that provides configuration to the guest.
-func NewGuestConfigServer(vmc *vmconfig.VMConfig) *GuestConfigServer {
+// NewIgnitionServer creates a httpserver that provides configuration to the guest.
+func NewIgnitionServer(vmc *vmconfig.VMConfig) *GuestConfigServer {
 	return &GuestConfigServer{
 		vmc: vmc,
-		srv: newHTTPServer("guest-config", vmc.VMConfigProvisionerAddr),
+		srv: newUnixSockHTTPServer("ignition-httpserver", vmc.IgnitionServerCfg.ListenUnixSockAddr),
 	}
 }
 
-// Start begins serving requests. Blocks until context is cancelled.
 func (s *GuestConfigServer) Start(ctx context.Context) error {
 	s.srv.mux.HandleFunc("/healthz", s.handleHealth)
 	s.srv.mux.HandleFunc("/vmconfig", s.handleVMConfig)

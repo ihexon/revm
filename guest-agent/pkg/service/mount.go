@@ -37,7 +37,7 @@ const (
 )
 
 func IsMounted(target string) bool {
-	if err := Busybox.Exec(context.Background(), "mountpoint", target); err != nil {
+	if err := Busybox.Exec(context.Background(), "mountpoint", "-q", target); err != nil {
 		return false
 	}
 	return true
@@ -168,19 +168,25 @@ func MountAllPseudoMnt(ctx context.Context) error {
 
 	for _, mnt := range pseudoMnts {
 		if IsMounted(mnt.Target) {
-			logrus.Warnf("mount point %q is already mounted, skip", mnt.Target)
+			logrus.Debugf("mount point %q is already mounted, skip", mnt.Target)
 			continue
 		}
 
 		if err := mnt.Mount(ctx, PseudoFsAction); err != nil {
 			return err
 		}
+		logrus.Debugf("mounted %s on %s", mnt.Type, mnt.Target)
 	}
 
 	return nil
 }
 
 func MountVirtiofs(ctx context.Context, vmc *define.VMConfig) error {
+	if len(vmc.Mounts) == 0 {
+		logrus.Debug("no virtiofs mounts configured")
+		return nil
+	}
+
 	for _, virtiofsMnt := range vmc.Mounts {
 		mnt := &Mnt{
 			Tag:    virtiofsMnt.Tag,
@@ -189,18 +195,25 @@ func MountVirtiofs(ctx context.Context, vmc *define.VMConfig) error {
 		}
 
 		if IsMounted(mnt.Target) {
-			logrus.Warnf("mount point %q is already mounted, skip", mnt.Target)
+			logrus.Debugf("mount point %q is already mounted, skip", mnt.Target)
 			continue
 		}
 
+		logrus.Infof("mounting virtiofs %q to %q", mnt.Tag, mnt.Target)
 		if err := mnt.Mount(ctx, VirtioFsAction); err != nil {
-			return fmt.Errorf("mount %q: %w", mnt.Target, err)
+			return fmt.Errorf("mount virtio-fs failed: %q: %w", mnt.Target, err)
 		}
 	}
+
 	return nil
 }
 
 func MountBlockDevices(ctx context.Context, vmc *define.VMConfig) error {
+	if len(vmc.BlkDevs) == 0 {
+		logrus.Debug("no block devices will be mounted, skip")
+		return nil
+	}
+
 	for _, dataDiskMnt := range vmc.BlkDevs {
 		mnt := &Mnt{
 			Opts:   "rw,discard",
@@ -210,10 +223,11 @@ func MountBlockDevices(ctx context.Context, vmc *define.VMConfig) error {
 		}
 
 		if IsMounted(mnt.Target) {
-			logrus.Warnf("mount point %q is already mounted, skip", mnt.Target)
+			logrus.Debugf("mount point %q is already mounted, skip", mnt.Target)
 			continue
 		}
 
+		logrus.Infof("mounting block device src=%q UUID=%q fs=%q to %q", mnt.Source, mnt.UUID, mnt.Type, mnt.Target)
 		if err := mnt.Mount(ctx, UUIDAction); err != nil {
 			return err
 		}

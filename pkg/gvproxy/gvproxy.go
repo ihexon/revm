@@ -5,25 +5,21 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"linuxvm/pkg/define"
+	"linuxvm/pkg/network"
 	"linuxvm/pkg/vmconfig"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 	"time"
 
-	"github.com/containers/gvisor-tap-vsock/pkg/sshclient"
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	yaml "gopkg.in/yaml.v3"
-)
-
-const (
-	sshHostPort = "192.168.127.2:22"
 )
 
 type GvproxyConfig struct {
@@ -57,20 +53,38 @@ func InitCfg(vmc *vmconfig.VMConfig) (*GvproxyConfig, error) {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
 	}
 
-	config.Listen = append(config.Listen, vmc.GVproxyEndpoint)
-	config.Interfaces.Vfkit = vmc.NetworkStackBackend
+	config.Listen = append(config.Listen, vmc.GvisorTapVsockEndpoint)
+	config.Interfaces.Vfkit = vmc.GvisorTapVsockNetwork
 
 	uri, err := url.Parse(config.Interfaces.Vfkit)
 	if err != nil || uri == nil {
 		return nil, fmt.Errorf("invalid value for vfkit listen address: %w", err)
 	}
 	if uri.Scheme != "unixgram" {
-		return nil, errors.New("vfkit listen address must be unixgram:// address")
+		return nil, fmt.Errorf("vfkit listen address must be unixgram:// address")
 	}
 
 	_ = os.Remove(uri.Path)
 
 	config.Stack.Protocol = types.VfkitProtocol
+
+	// BUG: Port TOCTOU, but we don't care about it for now
+	port, err := network.GetAvailablePort(define.SSHLocalForwardListenPort)
+	if err != nil {
+		return nil, err
+	}
+	logrus.Infof("ssh listen port: %d", port)
+
+	sshLocalForwardAddr := fmt.Sprintf("%s:%d", define.LocalHost, port)
+	sshServerGuestAddr := fmt.Sprintf("%s:%d", define.GuestIP, define.GuestSSHServerPort)
+
+	// ssh local forward: sshLocalForwardAddr -> sshServerGuestAddr
+	// 						HOST					GUEST
+	config.Stack.Forwards = map[string]string{
+		sshLocalForwardAddr: sshServerGuestAddr,
+	}
+
+	vmc.SSHInfo.SSHLocalForwardAddr = sshLocalForwardAddr
 
 	return &config, nil
 }
@@ -87,10 +101,8 @@ func Run(ctx context.Context, vmc *vmconfig.VMConfig) error {
 	if err != nil {
 		return err
 	}
-	logrus.Info("gvproxy virtual network waiting for clients...")
 
 	for _, endpoint := range config.Listen {
-		logrus.Infof("listening %s", endpoint)
 		ln, err := transport.Listen(endpoint)
 		if err != nil {
 			return fmt.Errorf("cannot listen: %w", err)
@@ -99,7 +111,6 @@ func Run(ctx context.Context, vmc *vmconfig.VMConfig) error {
 	}
 
 	if config.Services != "" {
-		logrus.Infof("enabling probes API. Listening %s", config.Services)
 		ln, err := transport.Listen(config.Services)
 		if err != nil {
 			return fmt.Errorf("cannot listen: %w", err)
@@ -139,58 +150,6 @@ func Run(ctx context.Context, vmc *vmconfig.VMConfig) error {
 				return fmt.Errorf("vfkit accept error: %w", err)
 			}
 			return vn.AcceptVfkit(ctx, vfkitConn)
-		})
-	}
-
-	for i := range config.Forwards {
-		var (
-			src *url.URL
-			err error
-		)
-		if strings.Contains(config.Forwards[i].Socket, "://") {
-			src, err = url.Parse(config.Forwards[i].Socket)
-			if err != nil {
-				return err
-			}
-		} else {
-			src = &url.URL{
-				Scheme: "unix",
-				Path:   config.Forwards[i].Socket,
-			}
-		}
-
-		dest := &url.URL{
-			Scheme: "ssh",
-			User:   url.User(config.Forwards[i].User),
-			Host:   sshHostPort,
-			Path:   config.Forwards[i].Dest,
-		}
-		j := i
-		g.Go(func() error {
-			defer os.Remove(config.Forwards[j].Socket)
-			forward, err := sshclient.CreateSSHForward(ctx, src, dest, config.Forwards[j].Identity, vn)
-			if err != nil {
-				return err
-			}
-			go func() {
-				<-ctx.Done()
-				// Abort pending accepts
-				forward.Close()
-			}()
-		loop:
-			for {
-				select {
-				case <-ctx.Done():
-					break loop
-				default:
-					// proceed
-				}
-				err := forward.AcceptAndTunnel(ctx)
-				if err != nil {
-					logrus.Infof("Error occurred handling ssh forwarded connection: %q", err)
-				}
-			}
-			return nil
 		})
 	}
 

@@ -3,8 +3,6 @@ package service
 import (
 	"context"
 	"guestAgent/pkg/network"
-
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -13,24 +11,5 @@ const (
 )
 
 func ConfigureNetwork(ctx context.Context) error {
-	logrus.Infof("configure guest network: start")
-	errChan := make(chan error, 1)
-
-	go func() {
-		verbose := false
-
-		if logrus.IsLevelEnabled(logrus.DebugLevel) {
-			verbose = true
-		}
-
-		errChan <- network.DHClient4(eth0, attempts, verbose)
-		logrus.Infof("configure guest network: done")
-	}()
-
-	select {
-	case <-ctx.Done():
-		return context.Cause(ctx)
-	case err := <-errChan:
-		return err
-	}
+	return network.DHClient4(ctx, eth0, attempts)
 }

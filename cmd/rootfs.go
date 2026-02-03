@@ -3,15 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
-	"time"
-
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/network"
 	"linuxvm/pkg/probes"
-	"linuxvm/pkg/server"
-	"linuxvm/pkg/system"
 
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 )
@@ -24,28 +18,26 @@ var startRootfs = cli.Command{
 	Description: "run any rootfs with the given command",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
-			Name:     define.FlagRootfs,
-			Usage:    "rootfs path, e.g. /var/lib/libkrun/rootfs/alpine-3.15.0",
-			Required: true,
+			Name:  define.FlagRootfs,
+			Usage: "your custom rootfs path",
 		},
 		&cli.Int8Flag{
 			Name:  define.FlagCPUS,
 			Usage: "given how many cpu cores",
-			Value: int8(system.GetCPUCores()),
+			Value: 1,
 		},
 		&cli.Uint64Flag{
-			Name:  define.FlagMemory,
+			Name:  define.FlagMemoryInMB,
 			Usage: "set memory in MB",
-			Value: setMaxMemory(),
+			Value: 512,
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagEnvs,
 			Usage: "set envs for cmdline, e.g. --envs=FOO=bar --envs=BAZ=qux",
 		},
 		&cli.StringSliceFlag{
-			Name:    define.FlagDiskDisk,
-			Aliases: []string{"disk"},
-			Usage:   "attach one or more data disk and automount into /var/tmp/data_disk/<UUID>",
+			Name:  define.FlagRawDisk,
+			Usage: "create/attach one or more data disk and automount into guest",
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagMount,
@@ -54,101 +46,54 @@ var startRootfs = cli.Command{
 		&cli.BoolFlag{
 			Name:  define.FlagUsingSystemProxy,
 			Usage: "use system proxy, set environment http(s)_proxy to guest",
-			Value: false,
+		},
+		&cli.StringFlag{
+			Name:  define.FlagWorkDir,
+			Usage: "set cmdline workdir in rootfs",
+			Value: "/",
 		},
 	},
 	Action: rootfsLifeCycle,
 }
 
 func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
-	if err := showVersionAndOSInfo(); err != nil {
-		logrus.Warn("can not get Build version/OS information")
-	}
+	showVersionAndOSInfo()
 
 	if command.Args().Len() < 1 {
 		return fmt.Errorf("no command specified")
 	}
 
-	vmp, err := vmProviderFactory(ctx, define.RootFsMode, command)
+	vmc, err := ConfigureVM(ctx, command, define.RootFsMode)
 	if err != nil {
-		return fmt.Errorf("create run configure failed: %w", err)
+		return fmt.Errorf("configure vm fail: %w", err)
 	}
 
-	vmc, err := vmp.GetVMConfigure()
+	vmp, err := GetVMM(vmc)
 	if err != nil {
-		return fmt.Errorf("failed to get vm configure: %w", err)
+		return fmt.Errorf("get vmm fail: %w", err)
 	}
-
-	// ========= Initialize service probes ============
-	addr, err := network.ParseUnixAddr(vmc.GVproxyEndpoint)
-	if err != nil {
-		return err
-	}
-	gvProxyServiceProbe := probes.NewGVProxyService(addr.Path)
-	sshServiceProbe := probes.NewGuestSSHService(addr.Path, vmc.SSHInfo.HostSSHKeyPairFile)
-
-	addr, err = network.ParseUnixAddr(vmc.VMConfigProvisionerAddr)
-	if err != nil {
-		return err
-	}
-	vmCfgProvisionerProbe := probes.NewVMConfigProvisionerServer(addr.Path)
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	// Optional: Management API server for host-side control
-	if command.IsSet(define.FlagRestAPIListenAddr) && command.String(define.FlagRestAPIListenAddr) != "" {
-		g.Go(func() error {
-			defer logrus.Infof("management API server exited")
-			return server.NewManagementAPIServer(vmc).Start(ctx)
-		})
-	}
-
-	// Service readiness prober
 	g.Go(func() error {
-		defer logrus.Infof("service prober exited")
-
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-
-		g, ctx := errgroup.WithContext(ctx)
-
-		g.Go(func() error {
-			return gvProxyServiceProbe.ProbeUntilReady(ctx)
-		})
-
-		g.Go(func() error {
-			return vmCfgProvisionerProbe.ProbeUntilReady(ctx)
-		})
-
-		g.Go(func() error {
-			return sshServiceProbe.ProbeUntilReady(ctx)
-		})
-
-		if err := g.Wait(); err != nil {
-			return fmt.Errorf("failed to probe services: %w", err)
-		}
-
-		return nil
+		return vmp.StartIgnServer(ctx)
 	})
 
-	// Guest config server (provides VM config to guest agent via VSock)
 	g.Go(func() error {
-		defer logrus.Infof("guest-config server exited")
-		return server.NewGuestConfigServer(vmc).Start(ctx)
+		return vmp.StartVMCtlServer(ctx)
 	})
 
-	// Network backend (gvproxy)
 	g.Go(func() error {
-		defer logrus.Infof("network backend exited")
 		return vmp.StartNetwork(ctx)
 	})
 
-	// VM lifecycle: wait for dependencies, then create and start
 	g.Go(func() error {
-		defer logrus.Infof("VM exited")
-
-		gvProxyServiceProbe.WaitUntilReady(ctx)
-		vmCfgProvisionerProbe.WaitUntilReady(ctx)
+		if err := probes.WaitAll(ctx,
+			probes.NewGVProxyProbe(vmc.GvisorTapVsockEndpoint),
+			probes.NewIgnServerProbe(vmc.IgnitionServerCfg.ListenUnixSockAddr),
+		); err != nil {
+			return err
+		}
 
 		if err := vmp.Create(ctx); err != nil {
 			return fmt.Errorf("failed to create vm: %w", err)

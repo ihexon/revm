@@ -70,10 +70,10 @@ func (v VirtIoFs) ToMount() define.Mount {
 	}
 }
 
-const virtIOFs = "virtiofs"
+const VirtIOFs = "virtiofs"
 
 func (v VirtIoFs) Kind() string {
-	return virtIOFs
+	return VirtIOFs
 }
 
 func NewVirtIoFsMount(src, target string, readOnly bool) VirtIoFs {
