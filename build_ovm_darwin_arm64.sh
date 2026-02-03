@@ -15,7 +15,10 @@ readonly HOMEBREW_DYLIBS=(
 readonly RED="\033[31m" GREEN="\033[32m" RESET="\033[0m"
 
 log_info() { echo -e "${GREEN}[INFO]${RESET} $*"; }
-log_err()  { echo -e "${RED}[ERROR]${RESET} $*" >&2; exit 1; }
+log_err() {
+    echo -e "${RED}[ERROR]${RESET} $*" >&2
+    exit 1
+}
 
 # Download and extract a tarball
 fetch_asset() {
@@ -48,7 +51,7 @@ restore_placeholders() {
         files+=("$static/e2fsprogs/$bin")
     done
     for f in "${files[@]}"; do
-        : > "$f"
+        : >"$f"
     done
 }
 
@@ -68,7 +71,7 @@ build() {
 
     # 2. Fetch dependencies
     fetch_asset "e2fsprogs" "$ASSETS_BASE/e2fsprogs-Darwin-arm64.tar.zst" "$depsdir/e2fsprogs"
-    fetch_asset "libkrun"   "$ASSETS_BASE/libkrun-Darwin-arm64.tar.zst"   "$depsdir/libkrun"
+    fetch_asset "libkrun" "$ASSETS_BASE/libkrun-Darwin-arm64.tar.zst" "$depsdir/libkrun"
     fetch_asset "libkrunfw" "$ASSETS_BASE/libkrunfw-Darwin-arm64.tar.zst" "$depsdir/libkrunfw"
 
     log_info "Fetching rootfs..."
@@ -103,6 +106,9 @@ build() {
     for dylib in "${HOMEBREW_DYLIBS[@]}"; do
         fix_dylib "$bindir/$(basename "$dylib")"
     done
+
+    # golang-ci lint
+    golangci-lint run
 
     # 4. Build revm (after dylibs are ready)
     local version commit
