@@ -308,8 +308,9 @@ func (p *PodmanProbe) ProbeUntilReady(ctx context.Context) error {
 func WaitAll(ctx context.Context, probeList ...Probe) error {
 	g, ctx := errgroup.WithContext(ctx)
 	for _, p := range probeList {
+		probe := p // go compiler < Go 1.22+ has bug, so we need this
 		g.Go(func() error {
-			return p.ProbeUntilReady(ctx)
+			return probe.ProbeUntilReady(ctx)
 		})
 	}
 	return g.Wait()
