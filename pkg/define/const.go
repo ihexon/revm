@@ -58,6 +58,7 @@ const (
 	FlagEnvs             = "envs"
 	FlagReportURL        = "report-url"
 	FlagSaveLogTo        = "save-logs"
+	FlagNetwork          = "network"
 
 	ContainerDiskUUID = "44f7d1c0-122c-4402-a20e-c1166cbbad6d"
 	UserDataDiskUUID  = "254879c7-7107-4267-a2c6-d25e27a5358d"
@@ -65,6 +66,8 @@ const (
 
 const (
 	EnvLogLevel = "LOG_LEVEL"
+	GvisorNet   = "gvisor"
+	TSI         = "TSI"
 )
 
 const (

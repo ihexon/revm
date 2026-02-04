@@ -90,17 +90,6 @@ func (g *GVProxyProbe) ProbeUntilReady(ctx context.Context) error {
 	}
 }
 
-// WaitUntilReady blocks until the gvproxy service is ready or the context is cancelled.
-// Unlike ProbeUntilReady, this method does not actively poll - it only waits on the channel.
-func (g *GVProxyProbe) WaitUntilReady(ctx context.Context) {
-	select {
-	case <-ctx.Done():
-		return
-	case <-g.Ch:
-		return
-	}
-}
-
 // IgnServerProbe polls the ignition server until it responds to health checks.
 type IgnServerProbe struct {
 	unixURL string
@@ -161,16 +150,6 @@ func (p *IgnServerProbe) ProbeUntilReady(ctx context.Context) error {
 			logrus.Info("ignition server is ready")
 			return nil
 		}
-	}
-}
-
-// WaitUntilReady blocks until the ignition server is ready or the context is cancelled.
-func (p *IgnServerProbe) WaitUntilReady(ctx context.Context) {
-	select {
-	case <-ctx.Done():
-		return
-	case <-p.Ch:
-		return
 	}
 }
 
@@ -303,15 +282,17 @@ func (p *PodmanProbe) ProbeUntilReady(ctx context.Context) error {
 	}
 }
 
-// WaitAll waits for all probes to be ready in parallel.
-// Returns the first error encountered, or nil if all probes succeed.
-func WaitAll(ctx context.Context, probeList ...Probe) error {
+func WaitAll(ctx context.Context, probes ...Probe) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	g, ctx := errgroup.WithContext(ctx)
-	for _, p := range probeList {
-		probe := p // go compiler < Go 1.22+ has bug, so we need this
+	for _, probe := range probes {
+		p := probe
 		g.Go(func() error {
-			return probe.ProbeUntilReady(ctx)
+			return p.ProbeUntilReady(ctx)
 		})
 	}
+
 	return g.Wait()
 }

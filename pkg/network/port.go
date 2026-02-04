@@ -11,7 +11,6 @@ import (
 )
 
 func GetAvailablePort(preferredPort uint16) (uint64, error) {
-	// 使用 127.0.0.1 检查，因为实际使用时绑定的是 localhost
 	addr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("127.0.0.1:%d", preferredPort))
 	if err != nil {
 		return 0, err

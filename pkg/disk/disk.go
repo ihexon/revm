@@ -28,7 +28,7 @@ type RawDiskManager struct {
 	mke2fs  string
 }
 
-func NewBlkManagerHost() (*RawDiskManager, error) {
+func NewBlkManager() (*RawDiskManager, error) {
 	tune2fs, err := static_resources.GetBuiltinTool(os.TempDir(), "tune2fs")
 	if err != nil {
 		return nil, err
@@ -52,15 +52,6 @@ func NewBlkManagerHost() (*RawDiskManager, error) {
 		e2fsck:  e2fsck,
 		mke2fs:  mke2fs,
 	}, nil
-}
-
-func NewBlkManager(tune2fs, blkid, e2fsck, mke2fs string) *RawDiskManager {
-	return &RawDiskManager{
-		tune2fs: tune2fs,
-		blkid:   blkid,
-		e2fsck:  e2fsck,
-		mke2fs:  mke2fs,
-	}
 }
 
 func (b RawDiskManager) Format(ctx context.Context, blkPath, fsType string) error {
