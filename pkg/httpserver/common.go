@@ -37,7 +37,7 @@ type ProcessOutput struct {
 // GuestExec executes a command in the guest VM via SSH.
 // Returns a ProcessOutput that streams stdout/stderr and signals completion.
 func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...string) (*ProcessOutput, error) {
-	endpoint, err := url.Parse(vmc.GvisorTapVsockEndpoint)
+	endpoint, err := url.Parse(vmc.GVPCtl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
 	}

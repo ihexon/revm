@@ -18,7 +18,7 @@ type GuestConfigServer struct {
 func NewIgnitionServer(vmc *vmconfig.VMConfig) *GuestConfigServer {
 	return &GuestConfigServer{
 		vmc: vmc,
-		srv: newUnixSockHTTPServer("ignition-httpserver", vmc.IgnitionServerCfg.ListenUnixSockAddr),
+		srv: newUnixSockHTTPServer("ignition-httpserver", vmc.IgnitionServerCfg.ListenSockAddr),
 	}
 }
 

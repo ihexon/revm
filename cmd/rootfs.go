@@ -52,6 +52,11 @@ var startRootfs = cli.Command{
 			Usage: "set cmdline workdir in rootfs",
 			Value: "/",
 		},
+		&cli.StringFlag{
+			Name:  define.FlagNetwork,
+			Usage: "network stack provider, on macos(gvisor), linux(gvisor,tsi)",
+			Value: define.GvisorNet,
+		},
 	},
 	Action: rootfsLifeCycle,
 }
@@ -88,11 +93,19 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	})
 
 	g.Go(func() error {
-		if err := probes.WaitAll(ctx,
-			probes.NewGVProxyProbe(vmc.GvisorTapVsockEndpoint),
-			probes.NewIgnServerProbe(vmc.IgnitionServerCfg.ListenUnixSockAddr),
+		if err = probes.WaitAll(ctx,
+			probes.NewIgnServerProbe(vmc.IgnitionServerCfg.ListenSockAddr),
 		); err != nil {
 			return err
+		}
+
+		// TSI mode doesn't need gvisor-tap-vsock service
+		if !vmc.TSI {
+			if err = probes.WaitAll(ctx,
+				probes.NewGVProxyProbe(vmc.GVPCtl),
+			); err != nil {
+				return err
+			}
 		}
 
 		if err := vmp.Create(ctx); err != nil {

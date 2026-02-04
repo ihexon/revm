@@ -13,11 +13,9 @@ import (
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh"
 	"linuxvm/pkg/static_resources"
-	"net"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/gofrs/flock"
@@ -50,7 +48,7 @@ func (v *VMConfig) generateRAWDisk(ctx context.Context, rawDiskPath string, give
 		return err
 	}
 
-	diskMgr, err := disk.NewBlkManagerHost()
+	diskMgr, err := disk.NewBlkManager()
 	if err != nil {
 		return err
 	}
@@ -87,7 +85,7 @@ func (v *VMConfig) attachRAWDisk(ctx context.Context, rawDiskPath string) error 
 		return err
 	}
 
-	diskMgr, err := disk.NewBlkManagerHost()
+	diskMgr, err := disk.NewBlkManager()
 	if err != nil {
 		return err
 	}
@@ -283,12 +281,7 @@ func (v *VMConfig) SetupIgnitionServerCfg() error {
 
 	unixUSL := &url.URL{
 		Scheme: "unix",
-		Path:   v.GetSocksPath("ign.sock"),
-	}
-
-	tcpURL := &url.URL{
-		Scheme: "tcp",
-		Host:   net.JoinHostPort(define.LocalHost, strconv.Itoa(int(port))),
+		Path:   v.GetIgnAddr(),
 	}
 
 	if err = os.MkdirAll(filepath.Dir(unixUSL.Path), 0755); err != nil {
@@ -298,8 +291,7 @@ func (v *VMConfig) SetupIgnitionServerCfg() error {
 	_ = os.Remove(unixUSL.Path)
 
 	v.IgnitionServerCfg = define.IgnitionServerCfg{
-		ListenTcpAddr:      tcpURL.String(),
-		ListenUnixSockAddr: unixUSL.String(),
+		ListenSockAddr: unixUSL.String(),
 	}
 
 	return nil
@@ -387,7 +379,7 @@ func (v *VMConfig) WithRunMode(runMode define.RunMode) {
 	v.RunMode = runMode.String()
 }
 
-func (v *VMConfig) GetSocksPath(name string) string {
+func (v *VMConfig) getSocksPath(name string) string {
 	return filepath.Clean(filepath.Join(v.WorkspacePath, "socks", name))
 }
 
@@ -399,7 +391,7 @@ func (v *VMConfig) withPodmanCfg() error {
 	unixAddr := &url.URL{
 		Scheme: "unix",
 		Host:   "",
-		Path:   v.GetSocksPath("podman-listen.sock"),
+		Path:   v.GetPodmanListenAddr(),
 	}
 
 	v.PodmanInfo = define.PodmanInfo{
@@ -415,7 +407,7 @@ func (v *VMConfig) withVMControlCfg() error {
 	unixAddr := &url.URL{
 		Scheme: "unix",
 		Host:   "",
-		Path:   v.GetSocksPath("vm-control.sock"),
+		Path:   v.GetVMCtlAddr(),
 	}
 
 	v.VMCtlAddress = unixAddr.String()
@@ -427,14 +419,17 @@ func (v *VMConfig) withGvisorTapVsockCfg() error {
 	unixAddr := &url.URL{
 		Scheme: "unix",
 		Host:   "",
-		Path:   v.GetSocksPath("gvpctl.sock"),
+		Path:   v.GetGVPCtlAddr(),
 	}
 
-	v.GvisorTapVsockEndpoint = unixAddr.String()
-	v.GvisorTapVsockNetwork = fmt.Sprintf("unixgram://%s", v.GetSocksPath("gvpnet.sock"))
+	v.GVPCtl = unixAddr.String()
 
-	_ = os.Remove(v.GetSocksPath("gvpctl.sock"))
-	_ = os.Remove(v.GetSocksPath("gvpnet.sock"))
+	v.VNet = fmt.Sprintf("unixgram://%s", v.GetVNetListenAddr())
+
+	_ = os.Remove(v.GetGVPCtlAddr())
+	_ = os.Remove(v.GetVNetListenAddr())
+
+	v.TSI = false // disable libkrun TSI networking backend when using gvisor-tap-vsock virtualNet
 
 	return os.MkdirAll(filepath.Dir(unixAddr.Path), 0755)
 }
@@ -504,4 +499,36 @@ func NewVMConfig(mode define.RunMode) *VMConfig {
 	}
 
 	return vmc
+}
+
+func (v *VMConfig) GetPodmanListenAddr() string {
+	return v.getSocksPath("podman-api.sock")
+}
+
+func (v *VMConfig) GetVNetListenAddr() string {
+	return v.getSocksPath("vnet.sock")
+}
+
+func (v *VMConfig) GetGVPCtlAddr() string {
+	return v.getSocksPath("gvpctl.sock")
+}
+
+func (v *VMConfig) GetVMCtlAddr() string {
+	return v.getSocksPath("vmctl.sock")
+}
+
+func (v *VMConfig) GetIgnAddr() string {
+	return v.getSocksPath("ign.sock")
+}
+
+func (v *VMConfig) WithNetworkTSI() error {
+	// clean gvisor-tap-vsock sockets
+	_ = os.Remove(v.GetGVPCtlAddr())
+	_ = os.Remove(v.GetVNetListenAddr())
+	v.VNet = ""
+	v.GVPCtl = ""
+
+	v.TSI = true
+
+	return nil
 }

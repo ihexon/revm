@@ -7,7 +7,7 @@ require (
 	github.com/charmbracelet/keygen v0.5.4
 	github.com/gofrs/flock v0.13.0
 	github.com/google/uuid v1.6.0
-	github.com/ihexon/libarchive-go v0.0.0-20260130150032-cf3ec39e997f
+	github.com/ihexon/libarchive-go v0.0.0-20260204040343-1577f1563344
 	github.com/mattn/go-isatty v0.0.20
 	github.com/oomol-lab/sysproxy v0.0.0-20250609040630-bacc3356fc00
 	github.com/pkg/errors v0.9.1

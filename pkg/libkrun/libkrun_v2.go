@@ -18,6 +18,7 @@ import (
 	"linuxvm/pkg/logger"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -189,6 +190,10 @@ func (vm *LibkrunVM) GetVMConfigure() (*vmconfig.VMConfig, error) {
 }
 
 func (vm *LibkrunVM) StartNetwork(ctx context.Context) error {
+	if vm.vmc.TSI {
+		logrus.Infof("in tsi mode, skip network configuring")
+		return nil
+	}
 	return gvproxy.Run(ctx, vm.vmc)
 }
 
@@ -319,7 +324,19 @@ func (vm *LibkrunVM) configureDevices() error {
 		return fmt.Errorf("krun_disable_implicit_vsock failed with code %d", ret)
 	}
 
-	ret = C.krun_add_vsock(C.uint32_t(vm.ctxID), 0) // No TSI hijacking
+	var vsockFeat = C.uint32_t(0)
+	if vm.vmc.TSI {
+		if runtime.GOOS == "linux" {
+			vsockFeat = C.KRUN_TSI_HIJACK_INET | C.KRUN_TSI_HIJACK_UNIX
+		}
+		// macOS do not support KRUN_TSI_HIJACK_UNIX
+		// see issue: https://github.com/containers/libkrun/issues/526
+		if runtime.GOOS == "darwin" {
+			vsockFeat = C.KRUN_TSI_HIJACK_INET
+		}
+	}
+
+	ret = C.krun_add_vsock(C.uint32_t(vm.ctxID), vsockFeat)
 	if ret != 0 {
 		return fmt.Errorf("krun_add_vsock failed with code %d", ret)
 	}
@@ -327,7 +344,7 @@ func (vm *LibkrunVM) configureDevices() error {
 	// GPU
 	ret = C.krun_set_gpu_options(C.uint32_t(vm.ctxID), C.uint32_t(defaultGPUFlags))
 	if ret != 0 {
-		return fmt.Errorf("krun_set_gpu_options failed with code %d", ret)
+		return fmt.Errorf("krun_set_gpu_options failed with code %v", ret)
 	}
 
 	return nil
@@ -369,36 +386,36 @@ func (vm *LibkrunVM) configureStorage() error {
 
 // configureNetwork sets up the network backend and VSock port mappings.
 func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
-	// Parse network backend address
-	backend := vm.vmc.GvisorTapVsockNetwork
-	addr, err := network.ParseUnixAddr(backend)
-	if err != nil {
-		return fmt.Errorf("failed to parse network backend address %q: %w", backend, err)
-	}
+	if !vm.vmc.TSI {
+		logrus.Infof("Using gvisor-tap-vsock network backend")
+		// Parse network backend address
+		backend := vm.vmc.VNet
+		addr, err := network.ParseUnixAddr(backend)
+		if err != nil {
+			return fmt.Errorf("failed to parse network backend address %q: %w", backend, err)
+		}
 
-	socketPath := newCString(addr.Path)
-	defer socketPath.Free()
+		socketPath := newCString(addr.Path)
+		defer socketPath.Free()
 
-	// Convert Go byte array to C uint8_t array
-	var mac [6]C.uint8_t
-	for i, b := range guestMACAddress {
-		mac[i] = C.uint8_t(b)
-	}
+		// Convert Go byte array to C uint8_t array
+		var mac [6]C.uint8_t
+		for i, b := range guestMACAddress {
+			mac[i] = C.uint8_t(b)
+		}
 
-	ret := C.krun_add_net_unixgram(
-		C.uint32_t(vm.ctxID),
-		socketPath.Ptr(),
-		C.int(-1),
-		&mac[0],
-		C.COMPAT_NET_FEATURES,
-		C.NET_FLAG_VFKIT,
-	)
-	if ret != 0 {
-		return fmt.Errorf("krun_add_net_unixgram failed with code %d", ret)
+		if ret := C.krun_add_net_unixgram(C.uint32_t(vm.ctxID), socketPath.Ptr(), C.int(-1), &mac[0],
+			C.COMPAT_NET_FEATURES,
+			C.NET_FLAG_VFKIT,
+		); ret != 0 {
+			return fmt.Errorf("krun_add_net_unixgram failed with code %v", ret)
+		}
+	} else {
+		logrus.Infof("Using libkrun TSI network backend which out of box")
 	}
 
 	// VSock port mapping for ignition server
-	ignAddr, err := network.ParseUnixAddr(vm.vmc.IgnitionServerCfg.ListenUnixSockAddr)
+	ignAddr, err := network.ParseUnixAddr(vm.vmc.IgnitionServerCfg.ListenSockAddr)
 	if err != nil {
 		return fmt.Errorf("failed to parse ignition httpserver address: %w", err)
 	}
@@ -408,15 +425,15 @@ func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
 
 	vsockPort := uint32(define.DefaultVSockPort)
 
-	ret = C.krun_add_vsock_port2(
+	if ret := C.krun_add_vsock_port2(
 		C.uint32_t(vm.ctxID),
 		C.uint32_t(vsockPort),
 		ignSocketPath.Ptr(),
 		false,
-	)
-	if ret != 0 {
+	); ret != 0 {
 		return fmt.Errorf("krun_add_vsock_port2 failed with code %v", ret)
 	}
+	logrus.Infof("VSock port %d mapped to ignition httpserver", vsockPort)
 
 	return nil
 }
@@ -442,23 +459,33 @@ func (vm *LibkrunVM) configureAdvancedFeatures() error {
 // initLogging initializes libkrun's logging subsystem.
 // IMPORTANT: This MUST be called BEFORE krun_create_ctx().
 // Do NOT call krun_set_log_level() if using this function - they conflict.
+//
+// Log level is controlled by LIBKRUN_DEBUG environment variable:
+//   - LIBKRUN_DEBUG=trace -> TRACE level
+//   - LIBKRUN_DEBUG=debug -> DEBUG level
+//   - LIBKRUN_DEBUG=info  -> INFO level
+//   - LIBKRUN_DEBUG=warn  -> WARN level
+//   - LIBKRUN_DEBUG=error -> ERROR level
+//   - LIBKRUN_DEBUG=1     -> DEBUG level (for compatibility)
+//   - unset or empty      -> ERROR level (quiet by default)
 func initLogging(logFile *os.File) error {
 	var level C.uint32_t
 
-	// Map logrus levels to libkrun levels
-	switch logrus.GetLevel() {
-	case logrus.TraceLevel:
+	// Get log level from LIBKRUN_DEBUG environment variable
+	debugEnv := os.Getenv("LIBKRUN_DEBUG")
+	switch debugEnv {
+	case "trace":
 		level = C.KRUN_LOG_LEVEL_TRACE
-	case logrus.DebugLevel:
+	case "debug", "1":
 		level = C.KRUN_LOG_LEVEL_DEBUG
-	case logrus.InfoLevel:
+	case "info":
 		level = C.KRUN_LOG_LEVEL_INFO
-	case logrus.WarnLevel:
+	case "warn":
 		level = C.KRUN_LOG_LEVEL_WARN
-	case logrus.ErrorLevel, logrus.FatalLevel, logrus.PanicLevel:
+	case "error":
 		level = C.KRUN_LOG_LEVEL_ERROR
 	default:
-		level = C.KRUN_LOG_LEVEL_INFO
+		level = C.KRUN_LOG_LEVEL_ERROR // quiet by default
 	}
 
 	// Determine target fd: log file or default (stderr)

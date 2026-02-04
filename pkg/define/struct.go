@@ -18,20 +18,29 @@ type VMConfig struct {
 	// data disk will map into /dev/vdX and automount by guest-agent process
 	BlkDevs []BlkDev `json:"blkDevs,omitempty"`
 	// GVproxy control endpoint
-	GvisorTapVsockEndpoint string `json:"GvisorTapVsockEndpoint,omitempty"`
-	// GvisorTapVsockNetwork is the network stack backend to use. which provided
+	GVPCtl string `json:"GVPCtl,omitempty"`
+	// VNet is the network stack backend to use. which provided
 	// by gvproxy
-	GvisorTapVsockNetwork string            `json:"gvisorTapVsockNetwork,omitempty"`
-	LogFilePath           string            `json:"logFilePath,omitempty"`
-	Mounts                []Mount           `json:"mounts,omitempty"`
-	SSHInfo               SSHInfo           `json:"sshInfo,omitempty"`
-	PodmanInfo            PodmanInfo        `json:"podmanInfo,omitempty"`
-	VMCtlAddress          string            `json:"vmCTLAddress,omitempty"`
-	RunMode               string            `json:"runMode,omitempty"`
-	IgnitionServerCfg     IgnitionServerCfg `json:"ignitionServerCfg,omitempty"`
-	GuestAgentCfg         GuestAgentCfg     `json:"guestAgentCfg,omitempty"`
-	Cmdline               Cmdline           `json:"cmdline,omitempty"`
+	VNet string `json:"VNet,omitempty"`
+
+	// libkrun TSI backend
+	//  see:
+	//   https://github.com/containers/libkrunfw/blob/main/patches/0010-tsi-allow-hijacking-sockets-tsi_hijack.patch
+	//   https://github.com/containers/libkrunfw/blob/main/patches/0009-Transparent-Socket-Impersonation-implementation.patch
+	TSI bool `json:"tsi,omitempty"`
+
+	LogFilePath       string            `json:"logFilePath,omitempty"`
+	Mounts            []Mount           `json:"mounts,omitempty"`
+	SSHInfo           SSHInfo           `json:"sshInfo,omitempty"`
+	PodmanInfo        PodmanInfo        `json:"podmanInfo,omitempty"`
+	VMCtlAddress      string            `json:"vmCTLAddress,omitempty"`
+	RunMode           string            `json:"runMode,omitempty"`
+	IgnitionServerCfg IgnitionServerCfg `json:"ignitionServerCfg,omitempty"`
+	GuestAgentCfg     GuestAgentCfg     `json:"guestAgentCfg,omitempty"`
+	Cmdline           Cmdline           `json:"cmdline,omitempty"`
 }
+
+type VMNetMode string
 
 type Cmdline struct {
 	Envs    []string `json:"envs,omitempty"`
@@ -67,8 +76,7 @@ type ProxySetting struct {
 }
 
 type IgnitionServerCfg struct {
-	ListenUnixSockAddr string `json:"ListenUnixSockAddr,omitempty"`
-	ListenTcpAddr      string `json:"ListenTcpAddr,omitempty"` // not implemented yet
+	ListenSockAddr string `json:"ListenSockAddr,omitempty"`
 }
 
 type LinuxTools struct {
