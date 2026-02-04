@@ -68,6 +68,8 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 		runBinArgs    = command.Args().Tail()
 		runBinWorkdir = command.String(define.FlagWorkDir)
 		runBinEnvs    = command.StringSlice(define.FlagEnvs)
+
+		networkType = command.String(define.FlagNetwork)
 	)
 
 	vmc := vmconfig.NewVMConfig(runMode)
@@ -130,6 +132,12 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 
 	if err = vmc.SetupGuestAgentCfg(); err != nil {
 		return nil, err
+	}
+
+	if networkType == "tsi" {
+		if err = vmc.WithNetworkTSI(); err != nil {
+			return nil, err
+		}
 	}
 
 	logrus.Infof("VM configured: mode=%s, cpus=%d, memory=%dMB", vmc.RunMode, cpus, memoryInMB)

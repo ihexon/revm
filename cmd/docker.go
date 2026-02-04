@@ -82,10 +82,11 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	})
 
 	g.Go(func() error {
-		if err := probes.WaitAll(ctx,
-			probes.NewGVProxyProbe(vmc.GvisorTapVsockEndpoint),
-			probes.NewIgnServerProbe(vmc.IgnitionServerCfg.ListenUnixSockAddr),
-		); err != nil {
+		if err = probes.WaitAll(ctx, probes.NewIgnServerProbe(vmc.IgnitionServerCfg.ListenSockAddr)); err != nil {
+			return err
+		}
+
+		if err := probes.WaitAll(ctx, probes.NewGVProxyProbe(vmc.GVPCtl)); err != nil {
 			return err
 		}
 
@@ -97,22 +98,20 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	g.Go(func() error {
 		if err := probes.WaitAll(ctx,
-			probes.NewGVProxyProbe(vmc.GvisorTapVsockEndpoint),
+			probes.NewGVProxyProbe(vmc.GVPCtl),
 		); err != nil {
 			return err
 		}
 
 		return gvproxy.TunnelHostUnixToGuest(ctx,
-			vmc.GvisorTapVsockEndpoint,
+			vmc.GVPCtl,
 			vmc.PodmanInfo.LocalPodmanProxyAddr,
 			vmc.PodmanInfo.GuestPodmanAPIIP,
 			vmc.PodmanInfo.GuestPodmanAPIPort)
 	})
 
 	g.Go(func() error {
-		if err = probes.WaitAll(ctx,
-			probes.NewPodmanProbe(vmc.PodmanInfo.LocalPodmanProxyAddr),
-		); err != nil {
+		if err = probes.WaitAll(ctx, probes.NewPodmanProbe(vmc.PodmanInfo.LocalPodmanProxyAddr)); err != nil {
 			return err
 		}
 		logrus.Infof("Podman API ready: %s", vmc.PodmanInfo.LocalPodmanProxyAddr)
