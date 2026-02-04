@@ -34,7 +34,6 @@ func setupLogger() error {
 
 func (h stageHook) Levels() []logrus.Level { return logrus.AllLevels }
 
-
 type stageHook struct{}
 
 func (h stageHook) Fire(e *logrus.Entry) error {
@@ -105,9 +104,11 @@ func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	g.Go(func() error {
-		return service.ConfigureNetwork(ctx)
-	})
+	if !vmc.TSI {
+		g.Go(func() error {
+			return service.ConfigureNetwork(ctx)
+		})
+	}
 
 	g.Go(func() error {
 		return service.StartGuestSSHServer(ctx, vmc)
@@ -133,9 +134,11 @@ func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	g.Go(func() error {
-		return service.ConfigureNetwork(ctx)
-	})
+	if !vmc.TSI {
+		g.Go(func() error {
+			return service.ConfigureNetwork(ctx)
+		})
+	}
 
 	g.Go(func() error {
 		return service.StartPodmanAPIServices(ctx)

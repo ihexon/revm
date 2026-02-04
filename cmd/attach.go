@@ -52,7 +52,7 @@ func attachConsole(ctx context.Context, command *cli.Command) (err error) {
 	cmdline := command.Args().Tail()
 
 	// Parse gvproxy endpoint
-	endpoint, err := url.Parse(vmc.GvisorTapVsockEndpoint)
+	endpoint, err := url.Parse(vmc.GVPCtl)
 	if err != nil {
 		return fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
 	}
