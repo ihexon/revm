@@ -8,13 +8,14 @@ import (
 	"fmt"
 	"io"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/ssh"
+	"linuxvm/pkg/network"
+	ssh2 "linuxvm/pkg/ssh_v2"
 	"linuxvm/pkg/vmconfig"
 	"net/http"
-	"net/url"
+	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/sirupsen/logrus"
-	gossh "golang.org/x/crypto/ssh"
 )
 
 // WriteJSON writes a JSON response with the given status code.
@@ -37,21 +38,9 @@ type ProcessOutput struct {
 // GuestExec executes a command in the guest VM via SSH.
 // Returns a ProcessOutput that streams stdout/stderr and signals completion.
 func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...string) (*ProcessOutput, error) {
-	endpoint, err := url.Parse(vmc.GVPCtl)
+	sshClient, err := MakeSSHClient(ctx, vmc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse gvproxy endpoint: %w", err)
-	}
-
-	cfg := ssh.NewClientConfig(
-		define.GuestIP,
-		uint16(define.GuestSSHServerPort),
-		define.DefaultGuestUser,
-		vmc.SSHInfo.HostSSHPrivateKeyFile,
-	).WithGVProxySocket(endpoint.Path)
-
-	client, err := ssh.NewClient(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to guest: %w", err)
+		return nil, err
 	}
 
 	stdoutReader, stdoutWriter := io.Pipe()
@@ -59,20 +48,16 @@ func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...
 	errChan := make(chan error, 1)
 
 	go func() {
-		defer client.Close()
-		defer func() {
-			close(errChan)
-			_ = stdoutWriter.Close()
-			_ = stderrWriter.Close()
-		}()
-
-		cmdSlice := append([]string{bin}, args...)
-		errChan <- ssh.NewExecutor(client).Exec(ctx, &ssh.ExecOptions{
-			Stdout:       stdoutWriter,
-			Stderr:       stderrWriter,
-			EnablePTY:    false,
-			CancelSignal: gossh.SIGKILL,
-		}, cmdSlice...)
+		// 谁创建，谁关闭
+		defer sshClient.Close()
+		defer stdoutWriter.Close()
+		defer stderrWriter.Close()
+		errChan <- sshClient.RunWith(
+			ctx,
+			shellescape.QuoteCommand(append([]string{bin}, args...)),
+			nil,
+			stdoutWriter,
+			stderrWriter)
 	}()
 
 	return &ProcessOutput{
@@ -80,4 +65,41 @@ func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...
 		StderrPipeReader: stderrReader,
 		errChan:          errChan,
 	}, nil
+}
+
+func MakeSSHClient(ctx context.Context, vmc *vmconfig.VMConfig) (*ssh2.Client, error) {
+	var (
+		client    *ssh2.Client
+		err       error
+		gvCtlAddr *network.Addr
+	)
+	if vmc.TSI {
+		guestSSHAddr := fmt.Sprintf("%s:%d", define.LocalHost, define.GuestSSHServerPort)
+		client, err = ssh2.Dial(ctx, guestSSHAddr,
+			ssh2.WithUser(define.DefaultGuestUser),
+			ssh2.WithPrivateKey(vmc.SSHInfo.HostSSHPrivateKeyFile),
+			ssh2.WithTimeout(2*time.Second),
+			ssh2.WithKeepalive(2*time.Second))
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		gvCtlAddr, err = network.ParseUnixAddr(vmc.GVPCtlAddr)
+		if err != nil {
+			return nil, err
+		}
+		guestAddr := fmt.Sprintf("%s:%d", define.GuestIP, define.GuestSSHServerPort)
+		client, err = ssh2.Dial(ctx, guestAddr,
+			ssh2.WithUser(define.DefaultGuestUser),
+			ssh2.WithPrivateKey(vmc.SSHInfo.HostSSHPrivateKeyFile),
+			ssh2.WithTimeout(2*time.Second),
+			ssh2.WithKeepalive(2*time.Second),
+			ssh2.WithTunnel(gvCtlAddr.Path),
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return client, nil
 }

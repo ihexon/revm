@@ -1,12 +1,13 @@
-package probes
+package service
 
 import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
-	"linuxvm/pkg/ssh"
+	"linuxvm/pkg/vmconfig"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -156,21 +157,19 @@ func (p *IgnServerProbe) ProbeUntilReady(ctx context.Context) error {
 // GuestSSHProbe polls the guest SSH service until it accepts connections.
 // It connects through gvproxy's vsock tunnel to verify SSH is ready.
 type GuestSSHProbe struct {
-	// gvproxyUnixURL is required to establish vsock tunnel to the guest SSH service.
+	// gvpCtlAddr is required to establish vsock tunnel to the guest SSH service.
 	// See: https://github.com/containers/gvisor-tap-vsock/blob/main/cmd/ssh-over-vsock/main.go
-	gvproxyUnixURL    string
-	sshPrivateKeyPath string
-	Ch                chan struct{}
-	once              sync.Once
+	vmc  *vmconfig.VMConfig
+	Ch   chan struct{}
+	once sync.Once
 }
 
 // NewGuestSSHProbe creates a new GuestSSHProbe that monitors SSH readiness through the given gvproxy socket.
-// The gvproxyUnixURL can be either a unix:// URL or a raw socket path.
-func NewGuestSSHProbe(gvproxyUnixURL, sshPrivateKeyPath string) *GuestSSHProbe {
+// The gvpCtlAddr can be either a unix:// URL or a raw socket path.
+func NewGuestSSHProbe(vmc *vmconfig.VMConfig) *GuestSSHProbe {
 	return &GuestSSHProbe{
-		gvproxyUnixURL:    gvproxyUnixURL,
-		sshPrivateKeyPath: sshPrivateKeyPath,
-		Ch:                make(chan struct{}, 1),
+		vmc: vmc,
+		Ch:  make(chan struct{}, 1),
 	}
 }
 
@@ -186,15 +185,6 @@ func (p *GuestSSHProbe) ProbeUntilReady(ctx context.Context) error {
 	default:
 	}
 
-	socketPath, err := network.ParseUnixAddr(p.gvproxyUnixURL)
-	if err != nil {
-		return fmt.Errorf("invalid unix URL %q: %w", p.gvproxyUnixURL, err)
-	}
-
-	cfg := ssh.NewClientConfig(define.GuestIP, uint16(define.GuestSSHServerPort), define.DefaultGuestUser, p.sshPrivateKeyPath)
-	cfg.WithGVProxySocket(socketPath.Path)
-	cfg.WithDialTimeout(defaultProbeTimeout)
-
 	ticker := time.NewTicker(defaultSSHProbeTimeout)
 	defer ticker.Stop()
 
@@ -203,16 +193,23 @@ func (p *GuestSSHProbe) ProbeUntilReady(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			client, err := ssh.NewClient(ctx, cfg)
+			client, err := MakeSSHClient(ctx, p.vmc)
 			if err != nil {
-				logrus.Warnf("SSH probe via %s failed: %v", socketPath.Path, err)
+				logrus.Debugf("SSH probe failed: %v", err)
 				continue
 			}
 
-			if err = client.Close(); err != nil {
-				logrus.Warnf("failed to close SSH client: %v", err)
+			// run busybox to verify SSH is ready, remember to close the client
+			if err = client.Run(ctx, filepath.Join(define.GuestHiddenBinDir, "busybox")); err != nil {
+				_ = client.Close()
+				logrus.Debugf("run busybox command failed: %v", err)
+				continue
 			}
-			p.once.Do(func() { close(p.Ch) })
+			_ = client.Close()
+
+			p.once.Do(func() {
+				close(p.Ch)
+			})
 			logrus.Info("guest SSH service is ready")
 			return nil
 		}
@@ -240,6 +237,7 @@ func NewPodmanProbe(unixURL string) *PodmanProbe {
 // It blocks until the service is ready or the context is cancelled.
 // The Ch channel is closed when the service becomes ready.
 // Returns nil on success, ctx.Err() on context cancellation/timeout.
+// TODO: support TSI network
 func (p *PodmanProbe) ProbeUntilReady(ctx context.Context) error {
 	// Fast-path: already ready
 	select {
@@ -253,7 +251,7 @@ func (p *PodmanProbe) ProbeUntilReady(ctx context.Context) error {
 		return fmt.Errorf("invalid unix URL %q: %w", p.unixURL, err)
 	}
 
-	client := network.NewUnixClient(socketPath.Path, network.WithTimeout(50*time.Millisecond))
+	client := network.NewUnixClient(socketPath.Path, network.WithTimeout(defaultProbeTimeout))
 	defer client.Close()
 
 	ticker := time.NewTicker(defaultPodmanProbeTimeout)

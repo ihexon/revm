@@ -1,13 +1,5 @@
 package define
 
-import (
-	"encoding/json"
-	"fmt"
-	"os"
-
-	"github.com/sirupsen/logrus"
-)
-
 type VMConfig struct {
 	WorkspacePath string `json:"workspacePath,omitempty"`
 
@@ -18,10 +10,10 @@ type VMConfig struct {
 	// data disk will map into /dev/vdX and automount by guest-agent process
 	BlkDevs []BlkDev `json:"blkDevs,omitempty"`
 	// GVproxy control endpoint
-	GVPCtl string `json:"GVPCtl,omitempty"`
-	// VNet is the network stack backend to use. which provided
+	GVPCtlAddr string `json:"GVPCtlAddr,omitempty"`
+	// GVPVNetAddr is the network stack backend to use. which provided
 	// by gvproxy
-	VNet string `json:"VNet,omitempty"`
+	GVPVNetAddr string `json:"GVPVNetAddr,omitempty"`
 
 	// libkrun TSI backend
 	//  see:
@@ -116,33 +108,4 @@ type GuestAgentCfg struct {
 	Workdir string   `json:"workdir,omitempty"`
 	Args    []string `json:"args,omitempty"`
 	Env     []string `json:"env,omitempty"`
-}
-
-func LoadVMCFromFile(file string) (*VMConfig, error) {
-	f, err := os.Open(file)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file %s: %w", file, err)
-	}
-	defer func(f *os.File) {
-		err := f.Close()
-		if err != nil {
-			logrus.Errorf("failed to close file: %v", err)
-		}
-	}(f)
-
-	vmc := &VMConfig{}
-
-	if err = json.NewDecoder(f).Decode(vmc); err != nil {
-		return nil, fmt.Errorf("failed to decode file %s: %w", file, err)
-	}
-	return vmc, nil
-}
-
-func (vmc *VMConfig) WriteToJsonFile(file string) error {
-	b, err := json.Marshal(vmc)
-	if err != nil {
-		return fmt.Errorf("failed to marshal vmconfig: %v", err)
-	}
-
-	return os.WriteFile(file, b, 0644)
 }

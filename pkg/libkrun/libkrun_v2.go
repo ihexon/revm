@@ -389,7 +389,7 @@ func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
 	if !vm.vmc.TSI {
 		logrus.Infof("Using gvisor-tap-vsock network backend")
 		// Parse network backend address
-		backend := vm.vmc.VNet
+		backend := vm.vmc.GVPVNetAddr
 		addr, err := network.ParseUnixAddr(backend)
 		if err != nil {
 			return fmt.Errorf("failed to parse network backend address %q: %w", backend, err)

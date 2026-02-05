@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/probes"
+	"linuxvm/pkg/service"
 
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
@@ -54,8 +54,8 @@ var startRootfs = cli.Command{
 		},
 		&cli.StringFlag{
 			Name:  define.FlagNetwork,
-			Usage: "network stack provider, on macos(gvisor), linux(gvisor,tsi)",
-			Value: define.GvisorNet,
+			Usage: "network stack provider (gvisor,TSI)",
+			Value: string(define.GvisorNet),
 		},
 	},
 	Action: rootfsLifeCycle,
@@ -93,16 +93,16 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	})
 
 	g.Go(func() error {
-		if err = probes.WaitAll(ctx,
-			probes.NewIgnServerProbe(vmc.IgnitionServerCfg.ListenSockAddr),
+		if err = service.WaitAll(ctx,
+			service.NewIgnServerProbe(vmc.IgnitionServerCfg.ListenSockAddr),
 		); err != nil {
 			return err
 		}
 
 		// TSI mode doesn't need gvisor-tap-vsock service
 		if !vmc.TSI {
-			if err = probes.WaitAll(ctx,
-				probes.NewGVProxyProbe(vmc.GVPCtl),
+			if err = service.WaitAll(ctx,
+				service.NewGVProxyProbe(vmc.GVPCtlAddr),
 			); err != nil {
 				return err
 			}

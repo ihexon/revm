@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/gvproxy"
-	"linuxvm/pkg/probes"
+	"linuxvm/pkg/service"
 	"linuxvm/pkg/system"
 
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 )
@@ -82,40 +80,26 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	})
 
 	g.Go(func() error {
-		if err = probes.WaitAll(ctx, probes.NewIgnServerProbe(vmc.IgnitionServerCfg.ListenSockAddr)); err != nil {
+		if err := service.WaitAll(ctx, service.NewIgnServerProbe(vmc.IgnitionServerCfg.ListenSockAddr)); err != nil {
 			return err
 		}
 
-		if err := probes.WaitAll(ctx, probes.NewGVProxyProbe(vmc.GVPCtl)); err != nil {
+		if err := service.WaitAll(ctx, service.NewGVProxyProbe(vmc.GVPCtlAddr)); err != nil {
 			return err
 		}
 
-		if err = vmp.Create(ctx); err != nil {
+		if err := vmp.Create(ctx); err != nil {
 			return fmt.Errorf("create vm: %w", err)
 		}
 		return vmp.Start(ctx)
 	})
 
 	g.Go(func() error {
-		if err := probes.WaitAll(ctx,
-			probes.NewGVProxyProbe(vmc.GVPCtl),
-		); err != nil {
-			return err
-		}
-
-		return gvproxy.TunnelHostUnixToGuest(ctx,
-			vmc.GVPCtl,
-			vmc.PodmanInfo.LocalPodmanProxyAddr,
-			vmc.PodmanInfo.GuestPodmanAPIIP,
-			vmc.PodmanInfo.GuestPodmanAPIPort)
+		return service.PodmanAPIProxy(ctx, vmc)
 	})
 
 	g.Go(func() error {
-		if err = probes.WaitAll(ctx, probes.NewPodmanProbe(vmc.PodmanInfo.LocalPodmanProxyAddr)); err != nil {
-			return err
-		}
-		logrus.Infof("Podman API ready: %s", vmc.PodmanInfo.LocalPodmanProxyAddr)
-		return nil
+		return service.SendPodmanReady(ctx, vmc)
 	})
 
 	return g.Wait()

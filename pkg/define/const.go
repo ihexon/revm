@@ -65,9 +65,9 @@ const (
 )
 
 const (
-	EnvLogLevel = "LOG_LEVEL"
-	GvisorNet   = "gvisor"
-	TSI         = "TSI"
+	EnvLogLevel           = "LOG_LEVEL"
+	GvisorNet   VMNetMode = "gvisor"
+	TSI         VMNetMode = "TSI"
 )
 
 const (
