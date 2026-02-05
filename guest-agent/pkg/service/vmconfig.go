@@ -2,10 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"guestAgent/pkg/vsock"
-
 	"linuxvm/pkg/define"
+	"os"
 
 	"github.com/sirupsen/logrus"
 )
@@ -33,5 +34,14 @@ func GetVMConfig(ctx context.Context) (*define.VMConfig, error) {
 	}
 
 	logrus.Infof("VM config received (mode: %s)", vmc.RunMode)
-	return vmc, vmc.WriteToJsonFile(define.VMConfigFilePathInGuest)
+	return vmc, WriteToJsonFile(vmc, define.VMConfigFilePathInGuest)
+}
+
+func WriteToJsonFile(vmc *define.VMConfig, file string) error {
+	b, err := json.Marshal(vmc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal vmconfig: %v", err)
+	}
+
+	return os.WriteFile(file, b, 0644)
 }
