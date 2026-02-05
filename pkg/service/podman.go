@@ -27,7 +27,7 @@ func PodmanAPIProxy(ctx context.Context, vmc *vmconfig.VMConfig) error {
 }
 
 func SendPodmanReady(ctx context.Context, vmc *vmconfig.VMConfig) error {
-	if err := WaitAll(ctx, NewPodmanProbe(vmc.PodmanInfo.LocalPodmanProxyAddr)); err != nil {
+	if err := WaitAll(ctx, NewPodmanProbe(vmc)); err != nil {
 		return err
 	}
 	logrus.Infof("Podman API ready: %s", vmc.PodmanInfo.LocalPodmanProxyAddr)
