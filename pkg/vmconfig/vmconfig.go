@@ -5,13 +5,14 @@ package vmconfig
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/disk"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/logger"
 	"linuxvm/pkg/network"
-	"linuxvm/pkg/ssh"
+	sshv2 "linuxvm/pkg/ssh_v2"
 	"linuxvm/pkg/static_resources"
 	"net/url"
 	"os"
@@ -422,9 +423,9 @@ func (v *VMConfig) withGvisorTapVsockCfg() error {
 		Path:   v.GetGVPCtlAddr(),
 	}
 
-	v.GVPCtl = unixAddr.String()
+	v.GVPCtlAddr = unixAddr.String()
 
-	v.VNet = fmt.Sprintf("unixgram://%s", v.GetVNetListenAddr())
+	v.GVPVNetAddr = fmt.Sprintf("unixgram://%s", v.GetVNetListenAddr())
 
 	_ = os.Remove(v.GetGVPCtlAddr())
 	_ = os.Remove(v.GetVNetListenAddr())
@@ -435,25 +436,30 @@ func (v *VMConfig) withGvisorTapVsockCfg() error {
 }
 
 func (v *VMConfig) generateSSHCfg() error {
-	keyPair, err := ssh.GenerateKeyPair(v.GetSSHPrivateKeyFile(), ssh.DefaultKeyGenOptions())
+	keyPath := v.GetSSHPrivateKeyFile()
+	pubKeyPath := keyPath + ".pub"
+	if err := os.MkdirAll(filepath.Dir(keyPath), 0700); err != nil {
+		return err
+	}
+
+	privateKey, publicKey, err := sshv2.GenerateKey()
 	if err != nil {
+		return err
+	}
+	if err = os.WriteFile(keyPath, privateKey, 0600); err != nil {
+		return err
+	}
+	if err = os.WriteFile(pubKeyPath, publicKey, 0644); err != nil {
 		return err
 	}
 
 	v.SSHInfo = define.SSHInfo{
-		HostSSHPublicKey:      keyPair.AuthorizedKey(),
-		HostSSHPrivateKey:     string(keyPair.RawProtectedPrivateKey()),
-		HostSSHPrivateKeyFile: v.GetSSHPrivateKeyFile(),
+		HostSSHPublicKey:      string(publicKey),
+		HostSSHPrivateKey:     string(privateKey),
+		HostSSHPrivateKeyFile: keyPath,
 	}
 
-	if err := os.MkdirAll(filepath.Dir(v.SSHInfo.HostSSHPrivateKeyFile), 0700); err != nil {
-		return err
-	}
-
-	_ = os.Remove(v.SSHInfo.HostSSHPrivateKeyFile)
-	_ = os.Remove(v.SSHInfo.HostSSHPrivateKeyFile + ".pub")
-
-	return keyPair.WriteKeys()
+	return nil
 }
 
 func (v *VMConfig) SetupWorkspace(workspacePath string) error {
@@ -525,10 +531,39 @@ func (v *VMConfig) WithNetworkTSI() error {
 	// clean gvisor-tap-vsock sockets
 	_ = os.Remove(v.GetGVPCtlAddr())
 	_ = os.Remove(v.GetVNetListenAddr())
-	v.VNet = ""
-	v.GVPCtl = ""
+	v.GVPVNetAddr = ""
+	v.GVPCtlAddr = ""
 
 	v.TSI = true
 
 	return nil
+}
+
+func LoadVMCFromFile(file string) (*VMConfig, error) {
+	f, err := os.Open(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file %s: %w", file, err)
+	}
+	defer func(f *os.File) {
+		err := f.Close()
+		if err != nil {
+			logrus.Errorf("failed to close file: %v", err)
+		}
+	}(f)
+
+	vmc := &VMConfig{}
+
+	if err = json.NewDecoder(f).Decode(vmc); err != nil {
+		return nil, fmt.Errorf("failed to decode file %s: %w", file, err)
+	}
+	return vmc, nil
+}
+
+func (v *VMConfig) WriteToJsonFile(file string) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("failed to marshal vmconfig: %v", err)
+	}
+
+	return os.WriteFile(file, b, 0644)
 }

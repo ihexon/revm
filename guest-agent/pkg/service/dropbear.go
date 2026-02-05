@@ -78,7 +78,7 @@ func (d *Dropbear) Start(ctx context.Context) error {
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stderr
 
-	logrus.Infof("dropbear: %v", cmd.Args)
+	logrus.Debugf("dropbear: %v", cmd.Args)
 	return cmd.Run()
 }
 

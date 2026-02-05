@@ -13,7 +13,7 @@ require (
 )
 
 require (
-	github.com/google/go-cmp v0.5.9 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/jsimonetti/rtnetlink v1.3.5 // indirect
 	github.com/mdlayher/netlink v1.7.2 // indirect

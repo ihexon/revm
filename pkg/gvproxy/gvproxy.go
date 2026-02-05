@@ -53,8 +53,8 @@ func InitCfg(vmc *vmconfig.VMConfig) (*GvproxyConfig, error) {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
 	}
 
-	config.Listen = append(config.Listen, vmc.GVPCtl)
-	config.Interfaces.Vfkit = vmc.VNet
+	config.Listen = append(config.Listen, vmc.GVPCtlAddr)
+	config.Interfaces.Vfkit = vmc.GVPVNetAddr
 
 	uri, err := url.Parse(config.Interfaces.Vfkit)
 	if err != nil || uri == nil {
