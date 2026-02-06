@@ -119,10 +119,7 @@ func (s *ManagementAPIServer) handleRequestVMStop(w http.ResponseWriter, r *http
 	}
 
 	WriteJSON(w, http.StatusOK, nil)
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
-	s.vmc.CancelFn()
+	close(s.vmc.StopCh)
 }
 
 // execRequest represents a command execution request.
