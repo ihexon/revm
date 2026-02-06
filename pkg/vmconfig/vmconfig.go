@@ -7,13 +7,16 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/disk"
 	"linuxvm/pkg/filesystem"
-	"linuxvm/pkg/logger"
 	"linuxvm/pkg/network"
-	sshv2 "linuxvm/pkg/ssh_v2"
+	"linuxvm/pkg/networkmode"
 	"linuxvm/pkg/static_resources"
+	"linuxvm/pkg/vmconfig/internal"
+	vnetwork "linuxvm/pkg/vmconfig/network"
+	"linuxvm/pkg/vmconfig/services"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -74,32 +77,16 @@ func (v *VMConfig) generateRAWDisk(ctx context.Context, rawDiskPath string, give
 }
 
 func (v *VMConfig) GetContainerStorageDiskPath() string {
-	return filepath.Join(v.WorkspacePath, "raw-disk", "container-storage.ext4")
+	return internal.NewPathManager(v.WorkspacePath).GetContainerStorageDiskPath()
 }
 
-func (v *VMConfig) ConfigurePodmanUsingSystemProxy() error {
-	var envs []string
-
-	logrus.Warnf("your system proxy must support CONNECT method")
-	proxyInfo, err := network.GetAndNormalizeSystemProxy()
-	if err != nil {
-		return fmt.Errorf("failed to get and normalize system proxy: %w", err)
-	}
-
-	if proxyInfo.HTTP != nil {
-		envs = append(envs, fmt.Sprintf("http_proxy=http://%s:%d", proxyInfo.HTTP.Host, proxyInfo.HTTP.Port))
-	}
-
-	if proxyInfo.HTTPS != nil {
-		envs = append(envs, fmt.Sprintf("https_proxy=http://%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port))
-	}
-
-	v.PodmanInfo.Envs = append(v.PodmanInfo.Envs, envs...)
-
-	return nil
+func (v *VMConfig) ConfigureGuestPodman(ifUsingSystemProxy bool) error {
+	pathMgr := internal.NewPathManager(v.WorkspacePath)
+	configurator := services.NewPodmanConfigurator(pathMgr)
+	return configurator.Configure(context.Background(), (*define.VMConfig)(v), ifUsingSystemProxy)
 }
 
-func (v *VMConfig) AttachOrGenerateContainerStorageRawDisk(ctx context.Context) error {
+func (v *VMConfig) ConfigureContainerRAWDisk(ctx context.Context) error {
 	rawDiskFilePath := v.GetContainerStorageDiskPath()
 	if _, err := os.Stat(rawDiskFilePath); err != nil {
 		if err = v.generateRAWDisk(ctx, rawDiskFilePath, define.ContainerDiskUUID); err != nil {
@@ -142,15 +129,15 @@ func (v *VMConfig) addRAWDiskToBlkList(ctx context.Context, rawDiskPath string) 
 	return nil
 }
 
-func (v *VMConfig) BindUserHomeDir(ctx context.Context) error {
+func (v *VMConfig) WithMountUserHome(ctx context.Context) error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
-	return v.WithMounts([]string{fmt.Sprintf("%s:%s", homeDir, homeDir)})
+	return v.withUserProvidedMounts([]string{fmt.Sprintf("%s:%s", homeDir, homeDir)})
 }
 
-func (v *VMConfig) WithUserProvidedStorageRAWDisk(ctx context.Context, rawDiskS []string) error {
+func (v *VMConfig) withUserProvidedStorageRAWDisk(ctx context.Context, rawDiskS []string) error {
 	for _, f := range rawDiskS {
 		if f == "" {
 			return fmt.Errorf("raw disk path is empty")
@@ -224,41 +211,6 @@ func (v *VMConfig) SetupCmdLine(workdir, bin string, args, envs []string, usingS
 	return nil
 }
 
-// SetupGuestAgentCfg must be called after the rootfs is set up
-func (v *VMConfig) SetupGuestAgentCfg() error {
-	if v.RootFS == "" {
-		return fmt.Errorf("rootfs path is empty")
-	}
-
-	// inject user-given envs to guest-agent
-	var finalEnv []string
-	finalEnv = append(finalEnv, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
-	finalEnv = append(finalEnv, "LC_ALL=C.UTF-8")
-	finalEnv = append(finalEnv, "LANG=C.UTF-8")
-	finalEnv = append(finalEnv, "TMPDIR=/tmp")
-
-	// In the virtualNetwork, HOST_DOMAIN is the domain name of the host, and the guest can access network resources on the host through HOST_DOMAIN.
-	finalEnv = append(finalEnv, fmt.Sprintf("HOST_DOMAIN=%s", define.HostDomainInGVPNet))
-	finalEnv = append(finalEnv, fmt.Sprintf("%s=%s", define.EnvLogLevel, logrus.GetLevel().String()))
-
-	guestAgentFilePath := filepath.Join(v.RootFS, ".bin", "guest-agent")
-
-	if err := os.MkdirAll(filepath.Dir(guestAgentFilePath), 0755); err != nil {
-		return err
-	}
-
-	if err := os.WriteFile(guestAgentFilePath, static_resources.GuestAgentBytes, 0755); err != nil {
-		return fmt.Errorf("failed to write guest-agent file to %q: %w", guestAgentFilePath, err)
-	}
-
-	v.GuestAgentCfg = define.GuestAgentCfg{
-		Workdir: "/",
-		Env:     finalEnv,
-	}
-
-	return nil
-}
-
 func (v *VMConfig) WithResources(memoryInMB uint64, cpus int8) error {
 	if cpus <= 0 {
 		return fmt.Errorf("1 cpu cores is the minimum value")
@@ -274,7 +226,7 @@ func (v *VMConfig) WithResources(memoryInMB uint64, cpus int8) error {
 	return nil
 }
 
-func (v *VMConfig) WithMounts(dirs []string) error {
+func (v *VMConfig) withUserProvidedMounts(dirs []string) error {
 	if len(dirs) == 0 || dirs == nil {
 		return nil
 	}
@@ -292,85 +244,66 @@ func (v *VMConfig) WithMounts(dirs []string) error {
 	return nil
 }
 
-// SetupIgnitionServerCfg extracts the guest-agent into the rootfs and sets up the ignition unix-socket listening address
-func (v *VMConfig) SetupIgnitionServerCfg() error {
-	if v.WorkspacePath == "" {
-		return fmt.Errorf("workspace path is empty")
-	}
-
-	port, err := network.GetAvailablePort(62234)
-	if err != nil {
-		return err
-	}
-	logrus.Infof("ignition server port will listen in: %d", port)
-
-	unixUSL := &url.URL{
-		Scheme: "unix",
-		Path:   v.GetIgnAddr(),
-	}
-
-	if err = os.MkdirAll(filepath.Dir(unixUSL.Path), 0755); err != nil {
-		return err
-	}
-
-	_ = os.Remove(unixUSL.Path)
-
-	v.IgnitionServerCfg = define.IgnitionServerCfg{
-		ListenSockAddr: unixUSL.String(),
-	}
-
-	return nil
+func (v *VMConfig) ConfigureGuestAgent() error {
+	pathMgr := internal.NewPathManager(v.WorkspacePath)
+	configurator := services.NewGuestAgentConfigurator(pathMgr)
+	return configurator.Configure(context.Background(), (*define.VMConfig)(v))
 }
 
-func (v *VMConfig) SetLogLevel(level string, logFile string) error {
-	logrus.SetOutput(os.Stderr)
-	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp:   true,
-		ForceColors:     true,
-		TimestampFormat: "2006-01-02 15:04:05.000",
-	})
-
+func (v *VMConfig) SetupLogLevel(level string) error {
 	l, err := logrus.ParseLevel(level)
 	if err != nil {
 		return fmt.Errorf("invalid log level: %w", err)
 	}
 
 	logrus.SetLevel(l)
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp:   true,
+		ForceColors:     true,
+		TimestampFormat: "2006-01-02 15:04:05.000",
+	})
 
-	maxSizeBytes := int64(filesystem.MiB(10).ToBytes())
-	if logFile != "" {
-		logFile, err = filepath.Abs(logFile)
-		if err != nil {
-			return err
-		}
-		logFile = filepath.Clean(logFile)
-		if info, err := os.Stat(logFile); err == nil && info.Size() > maxSizeBytes {
-			_ = os.Truncate(logFile, 0)
-		}
-
-		if f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
-			logrus.SetOutput(f)
-			logger.LogFd = f
-		}
+	logFile := v.GetVMMRunLogsFile()
+	if err := os.MkdirAll(filepath.Dir(logFile), 0755); err != nil {
+		return fmt.Errorf("create log dir: %w", err)
 	}
+
+	if info, err := os.Stat(logFile); err == nil && info.Size() > int64(filesystem.MiB(10).ToBytes()) {
+		_ = os.Truncate(logFile, 0)
+	}
+
+	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("open log file: %w", err)
+	}
+
+	logrus.SetOutput(io.MultiWriter(os.Stderr, f))
 
 	return nil
 }
 
-func (v *VMConfig) WithBuiltInAlpineRootfs(ctx context.Context) error {
-	alpineRootfsPath := filepath.Join(v.WorkspacePath, "rootfs")
-	if err := os.MkdirAll(alpineRootfsPath, 0755); err != nil {
-		return err
-	}
-
-	if err := static_resources.ExtractBuiltinRootfs(ctx, alpineRootfsPath); err != nil {
-		return err
-	}
-
-	return v.WithRootfs(ctx, alpineRootfsPath)
+func (v *VMConfig) getRootfsDir() string {
+	return internal.NewPathManager(v.WorkspacePath).GetRootfsDir()
 }
 
-func (v *VMConfig) WithRootfs(ctx context.Context, rootfsPath string) error {
+func (v *VMConfig) WithBuiltInAlpineRootfs(ctx context.Context) error {
+	if v.WorkspacePath == "" {
+		return fmt.Errorf("workspace path is empty")
+	}
+
+	alpineRootfsDir := v.getRootfsDir()
+	if err := os.MkdirAll(alpineRootfsDir, 0755); err != nil {
+		return err
+	}
+
+	if err := static_resources.ExtractBuiltinRootfs(ctx, alpineRootfsDir); err != nil {
+		return err
+	}
+
+	return v.WithUserProvidedRootfs(ctx, alpineRootfsDir)
+}
+
+func (v *VMConfig) WithUserProvidedRootfs(ctx context.Context, rootfsPath string) error {
 	if rootfsPath == "" {
 		return fmt.Errorf("rootfs path is empty")
 	}
@@ -387,48 +320,14 @@ func (v *VMConfig) WithRootfs(ctx context.Context, rootfsPath string) error {
 
 	v.RootFS = rootfsPath
 
-	// flock do not need release
-	ok, err := flock.New(filepath.Join(v.RootFS, ".lock")).TryLock()
-	if err != nil {
-		return err
-	}
-
-	if !ok {
-		return fmt.Errorf("rootfs %q is locked by another instance", rootfsPath)
-	}
-
 	return nil
 }
 
-func (v *VMConfig) WithRunMode(runMode define.RunMode) {
-	v.RunMode = runMode.String()
-}
-
-func (v *VMConfig) getSocksPath(name string) string {
-	return filepath.Clean(filepath.Join(v.WorkspacePath, "socks", name))
-}
-
 func (v *VMConfig) GetSSHPrivateKeyFile() string {
-	return filepath.Clean(filepath.Join(v.WorkspacePath, "ssh", "key"))
+	return internal.NewPathManager(v.WorkspacePath).GetSSHPrivateKeyFile()
 }
 
-func (v *VMConfig) withPodmanCfg() error {
-	unixAddr := &url.URL{
-		Scheme: "unix",
-		Host:   "",
-		Path:   v.GetPodmanListenAddr(),
-	}
-
-	v.PodmanInfo = define.PodmanInfo{
-		LocalPodmanProxyAddr: unixAddr.String(),
-		GuestPodmanAPIIP:     define.GuestIP,
-		GuestPodmanAPIPort:   define.GuestPodmanAPIPort,
-	}
-
-	return os.MkdirAll(filepath.Dir(unixAddr.Path), 0755)
-}
-
-func (v *VMConfig) withVMControlCfg() error {
+func (v *VMConfig) configureVirtualMachineControlAPI() error {
 	unixAddr := &url.URL{
 		Scheme: "unix",
 		Host:   "",
@@ -437,53 +336,51 @@ func (v *VMConfig) withVMControlCfg() error {
 
 	v.VMCtlAddress = unixAddr.String()
 
-	return os.MkdirAll(filepath.Dir(unixAddr.Path), 0755)
-}
-
-func (v *VMConfig) withGvisorTapVsockCfg() error {
-	unixAddr := &url.URL{
-		Scheme: "unix",
-		Host:   "",
-		Path:   v.GetGVPCtlAddr(),
-	}
-
-	v.GVPCtlAddr = unixAddr.String()
-
-	v.GVPVNetAddr = fmt.Sprintf("unixgram://%s", v.GetVNetListenAddr())
-
-	_ = os.Remove(v.GetGVPCtlAddr())
-	_ = os.Remove(v.GetVNetListenAddr())
-
-	v.TSI = false // disable libkrun TSI networking backend when using gvisor-tap-vsock virtualNet
-
-	return os.MkdirAll(filepath.Dir(unixAddr.Path), 0755)
-}
-
-func (v *VMConfig) generateSSHCfg() error {
-	keyPath := v.GetSSHPrivateKeyFile()
-	pubKeyPath := keyPath + ".pub"
-	if err := os.MkdirAll(filepath.Dir(keyPath), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(unixAddr.Path), 0755); err != nil {
 		return err
 	}
+	if err := os.Remove(unixAddr.Path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
 
-	privateKey, publicKey, err := sshv2.GenerateKey()
+func (v *VMConfig) ResetOrReuseContainerRAWDisk(ctx context.Context, containerDiskVersionXATTR string) error {
+	resetBool, err := v.WithRAWDiskVersionXATTR(containerDiskVersionXATTR).needsDiskRegeneration(ctx)
 	if err != nil {
-		return err
-	}
-	if err = os.WriteFile(keyPath, privateKey, 0600); err != nil {
-		return err
-	}
-	if err = os.WriteFile(pubKeyPath, publicKey, 0644); err != nil {
-		return err
+		return fmt.Errorf("failed to check RAW disk needs to regenerate: %w", err)
 	}
 
-	v.SSHInfo = define.SSHInfo{
-		HostSSHPublicKey:      string(publicKey),
-		HostSSHPrivateKey:     string(privateKey),
-		HostSSHPrivateKeyFile: keyPath,
+	if resetBool {
+		if err := os.Remove(v.GetContainerStorageDiskPath()); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+
+		if err := v.ConfigureContainerRAWDisk(ctx); err != nil {
+			return fmt.Errorf("failed to attach container storage raw disk: %w", err)
+		}
 	}
 
 	return nil
+}
+
+func (v *VMConfig) ConfigureVirtualNetwork(ctx context.Context, mode define.VNetMode) error {
+	v.VirtualNetworkMode = mode.String()
+
+	// Use strategy pattern for network configuration
+	strategy := vnetwork.GetNetworkStrategy(mode)
+	if strategy == nil {
+		return fmt.Errorf("invalid virtual network mode: %s", mode)
+	}
+
+	pathMgr := internal.NewPathManager(v.WorkspacePath)
+	return strategy.Configure(ctx, (*define.VMConfig)(v), pathMgr)
+}
+
+func (v *VMConfig) generateSSHCfg() error {
+	pathMgr := internal.NewPathManager(v.WorkspacePath)
+	configurator := services.NewSSHConfigurator(pathMgr)
+	return configurator.Configure(context.Background(), (*define.VMConfig)(v))
 }
 
 func (v *VMConfig) SetupWorkspace(workspacePath string) error {
@@ -515,20 +412,6 @@ func (v *VMConfig) SetupWorkspace(workspacePath string) error {
 		return err
 	}
 
-	if v.RunMode == define.ContainerMode.String() {
-		if err = v.withPodmanCfg(); err != nil {
-			return err
-		}
-	}
-
-	if err = v.withVMControlCfg(); err != nil {
-		return err
-	}
-
-	if err = v.withGvisorTapVsockCfg(); err != nil {
-		return err
-	}
-
 	return v.generateSSHCfg()
 }
 
@@ -542,7 +425,11 @@ func NewVMConfig(mode define.RunMode) *VMConfig {
 	return vmc
 }
 
-func (v *VMConfig) NeedsDiskRegeneration(ctx context.Context) (bool, error) {
+func (v *VMConfig) GetVMMRunLogsFile() string {
+	return filepath.Join(internal.NewPathManager(v.WorkspacePath).GetLogsDir(), "vm.log")
+}
+
+func (v *VMConfig) needsDiskRegeneration(ctx context.Context) (bool, error) {
 	xattrKey := define.XATTRRawDiskVersionKey
 	xattrProcesser := filesystem.NewXATTRManager()
 
@@ -567,35 +454,29 @@ func (v *VMConfig) WithRAWDiskVersionXATTR(value string) *VMConfig {
 }
 
 func (v *VMConfig) GetPodmanListenAddr() string {
-	return v.getSocksPath("podman-api.sock")
+	return internal.NewPathManager(v.WorkspacePath).GetPodmanListenAddr()
 }
 
 func (v *VMConfig) GetVNetListenAddr() string {
-	return v.getSocksPath("vnet.sock")
+	return internal.NewPathManager(v.WorkspacePath).GetVNetListenAddr()
 }
 
 func (v *VMConfig) GetGVPCtlAddr() string {
-	return v.getSocksPath("gvpctl.sock")
+	return internal.NewPathManager(v.WorkspacePath).GetGVPCtlAddr()
 }
 
 func (v *VMConfig) GetVMCtlAddr() string {
-	return v.getSocksPath("vmctl.sock")
+	return internal.NewPathManager(v.WorkspacePath).GetVMCtlAddr()
 }
 
 func (v *VMConfig) GetIgnAddr() string {
-	return v.getSocksPath("ign.sock")
+	return internal.NewPathManager(v.WorkspacePath).GetIgnAddr()
 }
 
-func (v *VMConfig) WithNetworkTSI() error {
-	// clean gvisor-tap-vsock sockets
-	_ = os.Remove(v.GetGVPCtlAddr())
-	_ = os.Remove(v.GetVNetListenAddr())
-	v.GVPVNetAddr = ""
-	v.GVPCtlAddr = ""
-
-	v.TSI = true
-
-	return nil
+// GetNetworkMode returns the network mode as a first-class Mode object.
+// This provides a clean abstraction over network mode differences.
+func (v *VMConfig) GetNetworkMode() networkmode.Mode {
+	return networkmode.FromString(v.VirtualNetworkMode)
 }
 
 func LoadVMCFromFile(file string) (*VMConfig, error) {

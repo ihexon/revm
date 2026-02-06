@@ -53,6 +53,11 @@ var startDocker = cli.Command{
 			Usage: "workspace path",
 			Value: fmt.Sprintf("/tmp/.revm-%s", FastRandomStr()),
 		},
+		&cli.StringFlag{
+			Name:  define.FlagVNetworkType,
+			Usage: "network stack provider (gvisor,TSI)",
+			Value: define.GVISOR.String(),
+		},
 	},
 	Action: dockerModeLifeCycle,
 }
@@ -85,12 +90,19 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		return vmp.StartIgnServer(ctx)
 	})
 
+	// Start network stack based on mode
+	mode := vmc.GetNetworkMode()
 	g.Go(func() error {
-		return vmp.StartNetwork(ctx)
+		return mode.StartNetworkStack(ctx, (*define.VMConfig)(vmc))
 	})
 
 	g.Go(func() error {
 		return vmp.StartVMCtlServer(ctx)
+	})
+
+	// Start Podman API proxy based on mode
+	g.Go(func() error {
+		return mode.StartPodmanProxy(ctx, (*define.VMConfig)(vmc))
 	})
 
 	g.Go(func() error {
@@ -98,7 +110,8 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 			return err
 		}
 
-		if err := service.WaitAll(ctx, service.NewGVProxyProbe(vmc.GVPCtlAddr)); err != nil {
+		// Wait for network stack to be ready
+		if err := mode.WaitNetworkReady(ctx, (*define.VMConfig)(vmc)); err != nil {
 			return err
 		}
 
@@ -108,12 +121,9 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		return vmp.Start(ctx)
 	})
 
+	// Wait for Podman API to be ready
 	g.Go(func() error {
-		return service.PodmanAPIProxy(ctx, vmc)
-	})
-
-	g.Go(func() error {
-		return service.SendPodmanReady(ctx, vmc)
+		return mode.WaitPodmanReady(ctx, (*define.VMConfig)(vmc))
 	})
 
 	return g.Wait()

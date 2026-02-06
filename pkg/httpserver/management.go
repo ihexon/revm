@@ -68,7 +68,7 @@ func (s *ManagementAPIServer) handleInfo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	podmanProxyaddr, err := url.Parse(s.vmc.PodmanInfo.LocalPodmanProxyAddr)
+	podmanProxyaddr, err := url.Parse(s.vmc.PodmanInfo.PodmanProxyAddr)
 	if err != nil {
 		WriteJSON(w, http.StatusInternalServerError, ErrResponse{Error: err.Error()})
 		return
