@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/service"
+	"os"
 
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 )
@@ -56,6 +58,11 @@ var startRootfs = cli.Command{
 			Name:  define.FlagNetwork,
 			Usage: "network stack provider (gvisor,TSI)",
 			Value: string(define.GvisorNet),
+		},
+		&cli.StringFlag{
+			Name:  define.FlagWorkspace,
+			Usage: "workspace path",
+			Value: fmt.Sprintf("/tmp/.revm-%s", FastRandomStr()),
 		},
 	},
 	Action: rootfsLifeCycle,
@@ -114,5 +121,12 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 		return vmp.Start(ctx)
 	})
 
-	return g.Wait()
+	err = g.Wait()
+
+	logrus.Infof("removing workspace %s", vmc.WorkspacePath)
+	if errClean := os.RemoveAll(vmc.WorkspacePath); errClean != nil {
+		logrus.Warnf("failed to remove workspace path %s: %v", vmc.WorkspacePath, errClean)
+	}
+
+	return err
 }
