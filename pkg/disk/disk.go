@@ -91,12 +91,12 @@ func (b RawDiskManager) Inspect(ctx context.Context, blkPath string) (*define.Bl
 
 	fsUUID, err := b.inspect(ctx, blkPath, "UUID")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot inspect blk device uuid %q: %w", blkPath, err)
 	}
 
 	fsType, err := b.inspect(ctx, blkPath, "TYPE")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot inspect blk device type %q: %w", blkPath, err)
 	}
 
 	return &define.BlkDev{

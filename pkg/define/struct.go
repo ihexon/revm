@@ -30,7 +30,12 @@ type VMConfig struct {
 	IgnitionServerCfg IgnitionServerCfg `json:"ignitionServerCfg,omitempty"`
 	GuestAgentCfg     GuestAgentCfg     `json:"guestAgentCfg,omitempty"`
 	Cmdline           Cmdline           `json:"cmdline,omitempty"`
+	XATTRSRawDisk     map[string]string `json:"XATTRSRawDisk,omitempty"`
 }
+
+const (
+	XATTRRawDiskVersionKey = "user.vm.rawdisk.version"
+)
 
 type VMNetMode string
 

@@ -55,14 +55,21 @@ func (v *VMConfig) generateRAWDisk(ctx context.Context, rawDiskPath string, give
 	}
 
 	if err = static_resources.ExtractEmbeddedRawDisk(ctx, rawDiskPath); err != nil {
-		return err
+		return fmt.Errorf("failed to extract embedded raw disk: %w", err)
 	}
 
 	if err = diskMgr.NewUUID(ctx, givenUUID, rawDiskPath); err != nil {
-		return err
+		return fmt.Errorf("failed to write UUID for raw disk %q: %w", rawDiskPath, err)
 	}
 
-	logrus.Infof("raw disk created: %s", rawDiskPath)
+	xattrWriter := filesystem.NewXATTRManager()
+
+	for xattrKind, xattrValue := range v.XATTRSRawDisk {
+		if err = xattrWriter.WriteXATTR(ctx, rawDiskPath, xattrKind, xattrValue, true); err != nil {
+			return fmt.Errorf("failed to write xattr %s to %s: %w", xattrKind, rawDiskPath, err)
+		}
+	}
+
 	return nil
 }
 
@@ -70,17 +77,18 @@ func (v *VMConfig) GetContainerStorageDiskPath() string {
 	return filepath.Join(v.WorkspacePath, "raw-disk", "container-storage.ext4")
 }
 
-func (v *VMConfig) AutoAttachContainerStorageRawDisk(ctx context.Context) error {
-	f := v.GetContainerStorageDiskPath()
-	if _, err := os.Stat(f); err != nil {
-		if err = v.generateRAWDisk(ctx, f, define.ContainerDiskUUID); err != nil {
-			return fmt.Errorf("failed to generate container storage raw disk: %w", err)
+func (v *VMConfig) AttachOrGenerateContainerStorageRawDisk(ctx context.Context) error {
+	rawDiskFilePath := v.GetContainerStorageDiskPath()
+	if _, err := os.Stat(rawDiskFilePath); err != nil {
+		if err = v.generateRAWDisk(ctx, rawDiskFilePath, define.ContainerDiskUUID); err != nil {
+			return err
 		}
 	}
-	return v.attachRAWDisk(ctx, f)
+
+	return v.addRAWDiskToBlkList(ctx, rawDiskFilePath)
 }
 
-func (v *VMConfig) attachRAWDisk(ctx context.Context, rawDiskPath string) error {
+func (v *VMConfig) addRAWDiskToBlkList(ctx context.Context, rawDiskPath string) error {
 	rawDiskPath, err := filepath.Abs(filepath.Clean(rawDiskPath))
 	if err != nil {
 		return err
@@ -96,7 +104,6 @@ func (v *VMConfig) attachRAWDisk(ctx context.Context, rawDiskPath string) error 
 		return err
 	}
 
-	// raw disk with ContainerDiskUUID should mount to ContainerStorageMountPoint
 	if info.UUID == define.ContainerDiskUUID {
 		info.MountTo = define.ContainerStorageMountPoint
 	}
@@ -109,7 +116,6 @@ func (v *VMConfig) attachRAWDisk(ctx context.Context, rawDiskPath string) error 
 	}
 
 	v.BlkDevs = append(v.BlkDevs, blkDev)
-	logrus.Infof("attached raw disk: %q (UUID: %s, mount: %s)", rawDiskPath, info.UUID, info.MountTo)
 
 	return nil
 }
@@ -122,7 +128,7 @@ func (v *VMConfig) BindUserHomeDir(ctx context.Context) error {
 	return v.WithMounts([]string{fmt.Sprintf("%s:%s", homeDir, homeDir)})
 }
 
-func (v *VMConfig) WithGivenRAWDisk(ctx context.Context, rawDiskS []string) error {
+func (v *VMConfig) WithUserProvidedStorageRAWDisk(ctx context.Context, rawDiskS []string) error {
 	for _, f := range rawDiskS {
 		if f == "" {
 			return fmt.Errorf("raw disk path is empty")
@@ -132,18 +138,14 @@ func (v *VMConfig) WithGivenRAWDisk(ctx context.Context, rawDiskS []string) erro
 		if err != nil {
 			return err
 		}
-
-		if _, err = os.Stat(rawDiskPath); err == nil {
-			if err = v.attachRAWDisk(ctx, rawDiskPath); err != nil {
-				return err
-			}
-		} else {
+		if _, err = os.Stat(rawDiskPath); err != nil {
 			if err = v.generateRAWDisk(ctx, rawDiskPath, uuid.NewString()); err != nil {
 				return err
 			}
-			if err = v.attachRAWDisk(ctx, rawDiskPath); err != nil {
-				return err
-			}
+		}
+
+		if err = v.addRAWDiskToBlkList(ctx, rawDiskPath); err != nil {
+			return err
 		}
 	}
 
@@ -501,10 +503,35 @@ func (v *VMConfig) SetupWorkspace(workspacePath string) error {
 
 func NewVMConfig(mode define.RunMode) *VMConfig {
 	vmc := &VMConfig{
-		RunMode: mode.String(),
+		RunMode:       mode.String(),
+		XATTRSRawDisk: map[string]string{},
 	}
 
 	return vmc
+}
+
+func (v *VMConfig) CheckRAWDiskNeedReset(ctx context.Context) (bool, error) {
+	xattrKey := define.XATTRRawDiskVersionKey
+	xattrProcesser := filesystem.NewXATTRManager()
+
+	value1, _ := xattrProcesser.GetXATTR(ctx, v.GetContainerStorageDiskPath(), xattrKey)
+	value2 := v.XATTRSRawDisk[xattrKey]
+	if value2 == "" {
+		return false, fmt.Errorf("vmc XATTRSRawDisk not set")
+	}
+
+	if value1 != value2 {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (v *VMConfig) WithRAWDiskVersionXATTR(value string) *VMConfig {
+	v.XATTRSRawDisk = map[string]string{
+		define.XATTRRawDiskVersionKey: value,
+	}
+	return v
 }
 
 func (v *VMConfig) GetPodmanListenAddr() string {
@@ -557,13 +584,4 @@ func LoadVMCFromFile(file string) (*VMConfig, error) {
 		return nil, fmt.Errorf("failed to decode file %s: %w", file, err)
 	}
 	return vmc, nil
-}
-
-func (v *VMConfig) WriteToJsonFile(file string) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Errorf("failed to marshal vmconfig: %v", err)
-	}
-
-	return os.WriteFile(file, b, 0644)
 }
