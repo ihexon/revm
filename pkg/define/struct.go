@@ -24,12 +24,12 @@ type VMConfig struct {
 	LogFilePath       string            `json:"logFilePath,omitempty"`
 	Mounts            []Mount           `json:"mounts,omitempty"`
 	SSHInfo           SSHInfo           `json:"sshInfo,omitempty"`
-	PodmanInfo        PodmanInfo        `json:"podmanInfo,omitempty"`
+	PodmanInfo        PodmanInfo        `json:"podmanInfo,omitempty"` // 仅仅在 docker mode 下有意义
 	VMCtlAddress      string            `json:"vmCTLAddress,omitempty"`
 	RunMode           string            `json:"runMode,omitempty"`
 	IgnitionServerCfg IgnitionServerCfg `json:"ignitionServerCfg,omitempty"`
 	GuestAgentCfg     GuestAgentCfg     `json:"guestAgentCfg,omitempty"`
-	Cmdline           Cmdline           `json:"cmdline,omitempty"`
+	Cmdline           Cmdline           `json:"cmdline,omitempty"` // 仅仅在 rootfs mode 有意义
 	XATTRSRawDisk     map[string]string `json:"XATTRSRawDisk,omitempty"`
 }
 
@@ -104,9 +104,10 @@ type BlkDev struct {
 }
 
 type PodmanInfo struct {
-	LocalPodmanProxyAddr string `json:"localPodmanProxyAddr,omitempty"`
-	GuestPodmanAPIIP     string `json:"GuestPodmanAPIIP,omitempty"`
-	GuestPodmanAPIPort   uint16 `json:"GuestPodmanAPIPort,omitempty"`
+	LocalPodmanProxyAddr string   `json:"localPodmanProxyAddr,omitempty"`
+	GuestPodmanAPIIP     string   `json:"GuestPodmanAPIIP,omitempty"`
+	GuestPodmanAPIPort   uint16   `json:"GuestPodmanAPIPort,omitempty"`
+	Envs                 []string `json:"envs,omitempty"`
 }
 
 type GuestAgentCfg struct {

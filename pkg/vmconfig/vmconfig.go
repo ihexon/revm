@@ -77,6 +77,28 @@ func (v *VMConfig) GetContainerStorageDiskPath() string {
 	return filepath.Join(v.WorkspacePath, "raw-disk", "container-storage.ext4")
 }
 
+func (v *VMConfig) ConfigurePodmanUsingSystemProxy() error {
+	var envs []string
+
+	logrus.Warnf("your system proxy must support CONNECT method")
+	proxyInfo, err := network.GetAndNormalizeSystemProxy()
+	if err != nil {
+		return fmt.Errorf("failed to get and normalize system proxy: %w", err)
+	}
+
+	if proxyInfo.HTTP != nil {
+		envs = append(envs, fmt.Sprintf("http_proxy=http://%s:%d", proxyInfo.HTTP.Host, proxyInfo.HTTP.Port))
+	}
+
+	if proxyInfo.HTTPS != nil {
+		envs = append(envs, fmt.Sprintf("https_proxy=http://%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port))
+	}
+
+	v.PodmanInfo.Envs = append(v.PodmanInfo.Envs, envs...)
+
+	return nil
+}
+
 func (v *VMConfig) AttachOrGenerateContainerStorageRawDisk(ctx context.Context) error {
 	rawDiskFilePath := v.GetContainerStorageDiskPath()
 	if _, err := os.Stat(rawDiskFilePath); err != nil {
@@ -519,7 +541,7 @@ func NewVMConfig(mode define.RunMode) *VMConfig {
 	return vmc
 }
 
-func (v *VMConfig) CheckRAWDiskNeedReset(ctx context.Context) (bool, error) {
+func (v *VMConfig) NeedsDiskRegeneration(ctx context.Context) (bool, error) {
 	xattrKey := define.XATTRRawDiskVersionKey
 	xattrProcesser := filesystem.NewXATTRManager()
 
