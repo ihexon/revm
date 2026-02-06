@@ -8,9 +8,11 @@ import (
 	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
+	"math/rand"
 	"os"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -142,4 +144,16 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 
 	logrus.Infof("VM configured: mode=%s, cpus=%d, memory=%dMB", vmc.RunMode, cpus, memoryInMB)
 	return vmc, nil
+}
+
+const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+
+func FastRandomStr() string {
+	b := make([]byte, 8)
+	for i := range b {
+		b[i] = base62[rng.Intn(62)]
+	}
+	return string(b)
 }

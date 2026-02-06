@@ -474,6 +474,15 @@ func (v *VMConfig) SetupWorkspace(workspacePath string) error {
 		return err
 	}
 
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	if workspacePath == homeDir {
+		return fmt.Errorf("workspace can not be the home dir")
+	}
+
 	v.WorkspacePath = workspacePath
 
 	if err = os.MkdirAll(v.WorkspacePath, 0755); err != nil {
