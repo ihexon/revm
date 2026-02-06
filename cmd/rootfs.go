@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/service"
-	"os"
 
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 )
@@ -121,12 +119,5 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 		return vmp.Start(ctx)
 	})
 
-	err = g.Wait()
-
-	logrus.Infof("removing workspace %s", vmc.WorkspacePath)
-	if errClean := os.RemoveAll(vmc.WorkspacePath); errClean != nil {
-		logrus.Warnf("failed to remove workspace path %s: %v", vmc.WorkspacePath, errClean)
-	}
-
-	return err
+	return g.Wait()
 }

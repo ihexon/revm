@@ -6,9 +6,7 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/service"
 	"linuxvm/pkg/system"
-	"os"
 
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 )
@@ -109,12 +107,5 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		return service.SendPodmanReady(ctx, vmc)
 	})
 
-	err = g.Wait()
-
-	logrus.Infof("removing workspace %s", vmc.WorkspacePath)
-	if errClean := os.RemoveAll(vmc.WorkspacePath); errClean != nil {
-		logrus.Warnf("failed to remove workspace path %s: %v", vmc.WorkspacePath, errClean)
-	}
-
-	return err
+	return g.Wait()
 }

@@ -78,8 +78,7 @@ const (
 	FlagReportURL        = "report-url"
 	FlagSaveLogTo        = "save-logs"
 	FlagNetwork          = "network"
-
-	FlagBuiltinRAWDiskVersion = "raw-disk-version-control-xattr" // hidden flag
+	FlagWorkspace        = "workspace"
 
 	ContainerDiskUUID = "44f7d1c0-122c-4402-a20e-c1166cbbad6d"
 	UserDataDiskUUID  = "254879c7-7107-4267-a2c6-d25e27a5358d"
@@ -96,8 +95,6 @@ const (
 const (
 	FlagInit  = "init"
 	FlagStart = "start"
-
-	FlagWorkspace = "workspace"
 
 	// FlagBoot is a rootfs tar archive that automatically
 	// extracts to the specified directory as a bootable rootfs
