@@ -206,6 +206,7 @@ func MountBlockDevices(ctx context.Context, vmc *define.VMConfig) error {
 
 	for _, dataDiskMnt := range vmc.BlkDevs {
 		mnt := &Mnt{
+			Source: dataDiskMnt.Path,
 			Opts:   "rw,discard",
 			UUID:   dataDiskMnt.UUID,
 			Type:   dataDiskMnt.FsType,
