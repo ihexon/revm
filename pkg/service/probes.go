@@ -142,7 +142,6 @@ type GuestSSHProbe struct {
 	once sync.Once
 }
 
-
 func NewGuestSSHProbe(vmc *vmconfig.VMConfig) *GuestSSHProbe {
 	return &GuestSSHProbe{
 		vmc: vmc,

@@ -86,7 +86,7 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 		return nil, err
 	}
 
-	if err = vmc.WithGivenRAWDisk(ctx, rawDisks); err != nil {
+	if err = vmc.WithUserProvidedStorageRAWDisk(ctx, rawDisks); err != nil {
 		return nil, err
 	}
 
@@ -123,7 +123,7 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 			return nil, err
 		}
 
-		if err = vmc.AutoAttachContainerStorageRawDisk(ctx); err != nil {
+		if err = vmc.AttachOrGenerateContainerStorageRawDisk(ctx); err != nil {
 			return nil, err
 		}
 	default:
