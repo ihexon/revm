@@ -141,7 +141,7 @@ func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
 	}
 
 	g.Go(func() error {
-		return service.StartPodmanAPIServices(ctx)
+		return service.StartPodmanAPIServices(ctx, vmc)
 	})
 
 	g.Go(func() error {
