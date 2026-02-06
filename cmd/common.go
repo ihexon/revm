@@ -80,6 +80,14 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 		return nil, err
 	}
 
+	// save the cancel Fn to vmc, so we can call CancelFn in vm lifycycle any time
+	cancelFn, ok := ctx.Value(define.CancelFnKey).(context.CancelFunc)
+	if !ok {
+		return nil, fmt.Errorf("cancel function can not set")
+	}
+
+	vmc.CancelFn = cancelFn
+
 	if err = vmc.SetupWorkspace(workspacePath); err != nil {
 		return nil, err
 	}

@@ -45,6 +45,8 @@ func main() {
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
+	// save the cancel fn to ctx, so we can call cancel in vmctl api /stop
+	ctx = context.WithValue(ctx, define.CancelFnKey, cancel)
 
 	// Orphan process detection mechanism
 	go func() {
