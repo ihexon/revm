@@ -1,7 +1,5 @@
 package define
 
-import "context"
-
 type VMConfig struct {
 	WorkspacePath string `json:"workspacePath,omitempty"`
 
@@ -34,14 +32,8 @@ type VMConfig struct {
 	Cmdline           Cmdline           `json:"cmdline,omitempty"` // 仅仅在 rootfs mode 有意义
 	XATTRSRawDisk     map[string]string `json:"XATTRSRawDisk,omitempty"`
 
-	CancelFn context.CancelFunc `json:"-"`
+	StopCh chan struct{} `json:"-"`
 }
-
-type CtxKey string
-
-const (
-	CancelFnKey CtxKey = "cancelFn"
-)
 
 const (
 	XATTRRawDiskVersionKey = "user.vm.rawdisk.version"
