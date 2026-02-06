@@ -86,6 +86,15 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-vmc.StopCh:
+			return fmt.Errorf("VM stop requested via API")
+		}
+	})
+
+	g.Go(func() error {
 		return vmp.StartIgnServer(ctx)
 	})
 

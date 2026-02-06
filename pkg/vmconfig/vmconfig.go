@@ -536,6 +536,7 @@ func NewVMConfig(mode define.RunMode) *VMConfig {
 	vmc := &VMConfig{
 		RunMode:       mode.String(),
 		XATTRSRawDisk: map[string]string{},
+		StopCh:        make(chan struct{}),
 	}
 
 	return vmc
