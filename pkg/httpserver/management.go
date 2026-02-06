@@ -6,10 +6,13 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"net/http"
-	"sync"
-
+	"fmt"
+	"linuxvm/pkg/define"
 	"linuxvm/pkg/vmconfig"
+	"net/http"
+	"net/url"
+	"strconv"
+	"sync"
 
 	"github.com/google/uuid"
 )
@@ -41,8 +44,56 @@ func (s *ManagementAPIServer) Start(ctx context.Context) error {
 	s.srv.mux.HandleFunc("/healthz", s.handleHealth)
 	s.srv.mux.HandleFunc("/vmconfig", s.handleVMConfig)
 	s.srv.mux.HandleFunc("/exec", s.handleExec)
+	s.srv.mux.HandleFunc("/stop", s.handleRequestVMStop)
+
+	// Legacy API for compat
+	if s.vmc.RunMode == define.OVMode.String() {
+		s.srv.mux.HandleFunc("/info", s.handleInfo)
+	}
 
 	return s.srv.serve(ctx)
+}
+
+type Info struct {
+	PodmanAPIProxyOnHost string `json:"podmanSocketPath"`
+	SSHProxyPortOnHost   int    `json:"sshPort"`
+	SSHUserOnGuest       string `json:"sshUser"`
+	HostDNSInGVPNetwork  string `json:"hostEndpoint"`
+}
+
+// handleInfo Legacy API for OVM mode
+func (s *ManagementAPIServer) handleInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		WriteJSON(w, http.StatusMethodNotAllowed, nil)
+		return
+	}
+
+	podmanProxyaddr, err := url.Parse(s.vmc.PodmanInfo.LocalPodmanProxyAddr)
+	if err != nil {
+		WriteJSON(w, http.StatusInternalServerError, ErrResponse{Error: err.Error()})
+		return
+	}
+
+	sshProxyAddr, err := url.Parse(fmt.Sprintf("tcp://%s", s.vmc.SSHInfo.SSHLocalForwardAddr))
+	if err != nil {
+		WriteJSON(w, http.StatusInternalServerError, ErrResponse{Error: err.Error()})
+		return
+	}
+
+	sshPort, err := strconv.Atoi(sshProxyAddr.Port())
+	if err != nil {
+		WriteJSON(w, http.StatusInternalServerError, ErrResponse{Error: err.Error()})
+		return
+	}
+
+	info := Info{
+		PodmanAPIProxyOnHost: podmanProxyaddr.Path,
+		SSHProxyPortOnHost:   sshPort,
+		SSHUserOnGuest:       define.DefaultGuestUser,
+		HostDNSInGVPNetwork:  define.HostDomainInGVPNet,
+	}
+
+	WriteJSON(w, http.StatusOK, info)
 }
 
 func (s *ManagementAPIServer) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -59,6 +110,19 @@ func (s *ManagementAPIServer) handleVMConfig(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	WriteJSON(w, http.StatusOK, s.vmc)
+}
+
+func (s *ManagementAPIServer) handleRequestVMStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		WriteJSON(w, http.StatusMethodNotAllowed, nil)
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, nil)
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	s.vmc.CancelFn()
 }
 
 // execRequest represents a command execution request.

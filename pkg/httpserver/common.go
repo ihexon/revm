@@ -18,6 +18,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type ErrResponse struct {
+	Error string `json:"error"`
+}
+
 // WriteJSON writes a JSON response with the given status code.
 func WriteJSON(w http.ResponseWriter, code int, value interface{}) {
 	w.Header().Set("Content-Type", "application/json")
