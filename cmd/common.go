@@ -128,6 +128,12 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 		if err = vmc.AttachOrGenerateContainerStorageRawDisk(ctx); err != nil {
 			return nil, err
 		}
+
+		if usingSystemProxy {
+			if err = vmc.ConfigurePodmanUsingSystemProxy(); err != nil {
+				return nil, fmt.Errorf("failed to configure podman using system proxy: %w", err)
+			}
+		}
 	default:
 		return nil, fmt.Errorf("unsupported mode %q", vmc.RunMode)
 	}
