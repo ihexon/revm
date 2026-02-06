@@ -1,8 +1,27 @@
 package define
 
-type (
-	RunMode int
+const (
+	ContainerMode RunMode = iota
+	RootFsMode
+
+	// OVMode As the underlying virtual machine running mode for Oomol Studio, this mode bundles many default business logic
+	OVMode
 )
+
+type RunMode int32
+
+func (m RunMode) String() string {
+	switch m {
+	case ContainerMode:
+		return "container"
+	case RootFsMode:
+		return "rootfs"
+	case OVMode:
+		return "oomol-studio"
+	default:
+		return "unknown"
+	}
+}
 
 const (
 	GuestAgentPathInGuest   = "/.bin/guest-agent"
@@ -60,6 +79,8 @@ const (
 	FlagSaveLogTo        = "save-logs"
 	FlagNetwork          = "network"
 
+	FlagBuiltinRAWDiskVersion = "raw-disk-version-control-xattr" // hidden flag
+
 	ContainerDiskUUID = "44f7d1c0-122c-4402-a20e-c1166cbbad6d"
 	UserDataDiskUUID  = "254879c7-7107-4267-a2c6-d25e27a5358d"
 )
@@ -70,33 +91,11 @@ const (
 	TSI         VMNetMode = "TSI"
 )
 
-const (
-	ContainerMode RunMode = iota
-	RootFsMode
-
-	OOMOLStudioMode
-)
-
-func (m RunMode) String() string {
-	switch m {
-	case ContainerMode:
-		return "container"
-	case RootFsMode:
-		return "rootfs"
-	case OOMOLStudioMode:
-		return "oomol-studio"
-	default:
-		return "unknown"
-	}
-}
-
-// OVM-specific configuration
-
-type OVMRawDiskType string
+// OVMode-specific configuration
 
 const (
-	OVMUserDataRawDisk             OVMRawDiskType = "userDataRawDisk"
-	OVMUserContainerStorageRawDisk OVMRawDiskType = "userContainerStorageRawDisk"
+	FlagInit  = "init"
+	FlagStart = "start"
 
 	FlagWorkspace = "workspace"
 
@@ -108,8 +107,9 @@ const (
 	// although it is not frequently used.
 	FlagBootVersion = "boot-version"
 
-	// FlagDataVersion is no need anymore, the purpose of keeping it is solely for compatibility with ovm-js
-	FlagDataVersion = "data-version"
+	// FlagContainerRAWVersionXATTR controls whether container-disk.ext4 needs to be updated. If the new field value differs from the old one, container-disk.ext4 will be deleted and regenerated.
+	// The name "data-version" is not semantically accurate, but it's kept for compatibility reasons. It may be renamed to "container-disk-version" in the future.
+	FlagContainerRAWVersionXATTR = "data-version"
 
 	// FlagPPID is no need anymore, the purpose of keeping it is solely for compatibility with ovm-js
 	FlagPPID = "ppid"
