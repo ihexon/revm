@@ -35,11 +35,6 @@ func main() {
 				Name:  define.FlagSaveLogTo,
 				Usage: "save log to file",
 			},
-			&cli.StringFlag{
-				Name:  define.FlagWorkspace,
-				Usage: "workspace path",
-				Value: "/tmp/.revm-workspace",
-			},
 		},
 	}
 
