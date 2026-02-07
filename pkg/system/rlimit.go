@@ -8,28 +8,17 @@ import (
 	"syscall"
 
 	"github.com/shirou/gopsutil/v4/mem"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 )
 
-func Rlimit() error {
+func RaiseSystemLimit() error {
 	rlimit := syscall.Rlimit{}
 	if err := syscall.Getrlimit(unix.RLIMIT_NOFILE, &rlimit); err != nil {
-		return fmt.Errorf("getrlimit error: %v", err)
+		return err
 	}
-	logrus.Infof("current Rlimit.Cur: %d, Rlimit.Max: %d", rlimit.Cur, rlimit.Max)
 
 	rlimit.Cur = rlimit.Max
-	if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rlimit); err != nil {
-		return fmt.Errorf("failed to set rlimit: %v", err)
-	}
-
-	if err := syscall.Getrlimit(unix.RLIMIT_NOFILE, &rlimit); err != nil {
-		return fmt.Errorf("getrlimit error: %v", err)
-	}
-	logrus.Infof("current Rlimit.Cur: %d, Rlimit.Max: %d", rlimit.Cur, rlimit.Max)
-
-	return nil
+	return syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rlimit)
 }
 
 func GetCPUCores() int {
