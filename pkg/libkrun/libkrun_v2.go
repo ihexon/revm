@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"linuxvm/pkg/httpserver"
 	"linuxvm/pkg/interfaces"
-	"linuxvm/pkg/logger"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -24,7 +23,6 @@ import (
 	"unsafe"
 
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
@@ -189,14 +187,6 @@ func (vm *LibkrunVM) GetVMConfigure() (*vmconfig.VMConfig, error) {
 	return vm.vmc, nil
 }
 
-func (vm *LibkrunVM) StartNetwork(ctx context.Context) error {
-	if vm.vmc.TSI {
-		logrus.Infof("in tsi mode, skip network configuring")
-		return nil
-	}
-	return gvproxy.Run(ctx, vm.vmc)
-}
-
 func (vm *LibkrunVM) Create(ctx context.Context) error {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
@@ -207,7 +197,7 @@ func (vm *LibkrunVM) Create(ctx context.Context) error {
 
 	// Initialize libkrun logging BEFORE creating context
 	// This MUST be called before krun_create_ctx()
-	if err := initLogging(logger.LogFd); err != nil {
+	if err := initLogging(); err != nil {
 		return fmt.Errorf("failed to initialize logging: %w", err)
 	}
 
@@ -297,16 +287,9 @@ func (vm *LibkrunVM) configureDevices() error {
 		return fmt.Errorf("krun_disable_implicit_console failed with code %d", ret)
 	}
 
-	// Default: use stdin/stdout/stderr for console
 	inputFd := C.int(os.Stdin.Fd())
 	outputFd := C.int(os.Stdout.Fd())
 	errFd := C.int(os.Stderr.Fd())
-
-	// If log file is specified, redirect console output to log file
-	if logger.LogFd != nil {
-		outputFd = C.int(logger.LogFd.Fd())
-		errFd = C.int(logger.LogFd.Fd())
-	}
 
 	ret = C.krun_add_virtio_console_default(
 		C.uint32_t(vm.ctxID),
@@ -325,7 +308,9 @@ func (vm *LibkrunVM) configureDevices() error {
 	}
 
 	var vsockFeat = C.uint32_t(0)
-	if vm.vmc.TSI {
+	// TSI mode needs socket hijacking features
+	if vm.vmc.VirtualNetworkMode == define.TSI.String() {
+		// TSI mode
 		if runtime.GOOS == "linux" {
 			vsockFeat = C.KRUN_TSI_HIJACK_INET | C.KRUN_TSI_HIJACK_UNIX
 		}
@@ -386,7 +371,7 @@ func (vm *LibkrunVM) configureStorage() error {
 
 // configureNetwork sets up the network backend and VSock port mappings.
 func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
-	if !vm.vmc.TSI {
+	if vm.vmc.VirtualNetworkMode == define.GVISOR.String() {
 		logrus.Infof("Using gvisor-tap-vsock network backend")
 		// Parse network backend address
 		backend := vm.vmc.GVPVNetAddr
@@ -468,10 +453,9 @@ func (vm *LibkrunVM) configureAdvancedFeatures() error {
 //   - LIBKRUN_DEBUG=error -> ERROR level
 //   - LIBKRUN_DEBUG=1     -> DEBUG level (for compatibility)
 //   - unset or empty      -> ERROR level (quiet by default)
-func initLogging(logFile *os.File) error {
+func initLogging() error {
 	var level C.uint32_t
 
-	// Get log level from LIBKRUN_DEBUG environment variable
 	debugEnv := os.Getenv("LIBKRUN_DEBUG")
 	switch debugEnv {
 	case "trace":
@@ -485,21 +469,13 @@ func initLogging(logFile *os.File) error {
 	case "error":
 		level = C.KRUN_LOG_LEVEL_ERROR
 	default:
-		level = C.KRUN_LOG_LEVEL_ERROR // quiet by default
-	}
-
-	// Determine target fd: log file or default (stderr)
-	targetFd := C.int(C.KRUN_LOG_TARGET_DEFAULT)
-	style := C.uint32_t(C.KRUN_LOG_STYLE_AUTO)
-	if logFile != nil {
-		targetFd = C.int(logFile.Fd())
-		style = C.KRUN_LOG_STYLE_NEVER // disable colors when writing to file
+		level = C.KRUN_LOG_LEVEL_ERROR
 	}
 
 	ret := C.krun_init_log(
-		targetFd,
+		C.int(C.KRUN_LOG_TARGET_DEFAULT),
 		level,
-		style,
+		C.uint32_t(C.KRUN_LOG_STYLE_AUTO),
 		C.KRUN_LOG_OPTION_NO_ENV,
 	)
 	if ret != 0 {

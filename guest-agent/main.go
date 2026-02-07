@@ -104,7 +104,7 @@ func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	if !vmc.TSI {
+	if vmc.NeedsGuestNetworkConfig() {
 		g.Go(func() error {
 			return service.ConfigureNetwork(ctx)
 		})
@@ -134,7 +134,7 @@ func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	if !vmc.TSI {
+	if vmc.NeedsGuestNetworkConfig() {
 		g.Go(func() error {
 			return service.ConfigureNetwork(ctx)
 		})

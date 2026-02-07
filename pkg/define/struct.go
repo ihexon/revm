@@ -15,11 +15,7 @@ type VMConfig struct {
 	// by gvproxy
 	GVPVNetAddr string `json:"GVPVNetAddr,omitempty"`
 
-	// libkrun TSI backend
-	//  see:
-	//   https://github.com/containers/libkrunfw/blob/main/patches/0010-tsi-allow-hijacking-sockets-tsi_hijack.patch
-	//   https://github.com/containers/libkrunfw/blob/main/patches/0009-Transparent-Socket-Impersonation-implementation.patch
-	TSI bool `json:"tsi,omitempty"`
+	VirtualNetworkMode string `json:"virtualNetworkMode,omitempty"`
 
 	LogFilePath       string            `json:"logFilePath,omitempty"`
 	Mounts            []Mount           `json:"mounts,omitempty"`
@@ -38,8 +34,6 @@ type VMConfig struct {
 const (
 	XATTRRawDiskVersionKey = "user.vm.rawdisk.version"
 )
-
-type VMNetMode string
 
 type Cmdline struct {
 	Envs    []string `json:"envs,omitempty"`
@@ -106,14 +100,21 @@ type BlkDev struct {
 }
 
 type PodmanInfo struct {
-	LocalPodmanProxyAddr string   `json:"localPodmanProxyAddr,omitempty"`
-	GuestPodmanAPIIP     string   `json:"GuestPodmanAPIIP,omitempty"`
-	GuestPodmanAPIPort   uint16   `json:"GuestPodmanAPIPort,omitempty"`
-	Envs                 []string `json:"envs,omitempty"`
+	PodmanProxyAddr    string   `json:"podmanProxyAddr,omitempty"`
+	GuestPodmanAPIIP   string   `json:"GuestPodmanAPIIP,omitempty"`
+	GuestPodmanAPIPort uint16   `json:"GuestPodmanAPIPort,omitempty"`
+	Envs               []string `json:"envs,omitempty"`
 }
 
 type GuestAgentCfg struct {
 	Workdir string   `json:"workdir,omitempty"`
 	Args    []string `json:"args,omitempty"`
 	Env     []string `json:"env,omitempty"`
+}
+
+// NeedsGuestNetworkConfig returns true if the guest needs to configure network.
+// TSI mode handles networking transparently, so guest doesn't need to configure.
+// GVISOR mode requires guest to configure network via tap interface.
+func (v *VMConfig) NeedsGuestNetworkConfig() bool {
+	return v.VirtualNetworkMode != TSI.String()
 }
