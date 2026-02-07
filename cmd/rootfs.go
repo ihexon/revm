@@ -53,9 +53,9 @@ var startRootfs = cli.Command{
 			Value: "/",
 		},
 		&cli.StringFlag{
-			Name:  define.FlagNetwork,
+			Name:  define.FlagVNetworkType,
 			Usage: "network stack provider (gvisor,TSI)",
-			Value: string(define.GvisorNet),
+			Value: define.GVISOR.String(),
 		},
 		&cli.StringFlag{
 			Name:  define.FlagWorkspace,
@@ -102,8 +102,10 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 		return vmp.StartVMCtlServer(ctx)
 	})
 
+	// Start network stack based on mode
+	mode := vmc.GetNetworkMode()
 	g.Go(func() error {
-		return vmp.StartNetwork(ctx)
+		return mode.StartNetworkStack(ctx, (*define.VMConfig)(vmc))
 	})
 
 	g.Go(func() error {
@@ -113,13 +115,9 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 			return err
 		}
 
-		// TSI mode doesn't need gvisor-tap-vsock service
-		if !vmc.TSI {
-			if err = service.WaitAll(ctx,
-				service.NewGVProxyProbe(vmc.GVPCtlAddr),
-			); err != nil {
-				return err
-			}
+		// Wait for network stack to be ready
+		if err = mode.WaitNetworkReady(ctx, (*define.VMConfig)(vmc)); err != nil {
+			return err
 		}
 
 		if err := vmp.Create(ctx); err != nil {

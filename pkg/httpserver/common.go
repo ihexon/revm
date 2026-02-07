@@ -5,14 +5,11 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/network"
-	ssh2 "linuxvm/pkg/ssh_v2"
+	"linuxvm/pkg/service"
 	"linuxvm/pkg/vmconfig"
 	"net/http"
-	"time"
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/sirupsen/logrus"
@@ -42,7 +39,7 @@ type ProcessOutput struct {
 // GuestExec executes a command in the guest VM via SSH.
 // Returns a ProcessOutput that streams stdout/stderr and signals completion.
 func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...string) (*ProcessOutput, error) {
-	sshClient, err := MakeSSHClient(ctx, vmc)
+	sshClient, err := service.MakeSSHClient(ctx, (*define.VMConfig)(vmc))
 	if err != nil {
 		return nil, err
 	}
@@ -69,41 +66,4 @@ func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...
 		StderrPipeReader: stderrReader,
 		errChan:          errChan,
 	}, nil
-}
-
-func MakeSSHClient(ctx context.Context, vmc *vmconfig.VMConfig) (*ssh2.Client, error) {
-	var (
-		client    *ssh2.Client
-		err       error
-		gvCtlAddr *network.Addr
-	)
-	if vmc.TSI {
-		guestSSHAddr := fmt.Sprintf("%s:%d", define.LocalHost, define.GuestSSHServerPort)
-		client, err = ssh2.Dial(ctx, guestSSHAddr,
-			ssh2.WithUser(define.DefaultGuestUser),
-			ssh2.WithPrivateKey(vmc.SSHInfo.HostSSHPrivateKeyFile),
-			ssh2.WithTimeout(2*time.Second),
-			ssh2.WithKeepalive(2*time.Second))
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		gvCtlAddr, err = network.ParseUnixAddr(vmc.GVPCtlAddr)
-		if err != nil {
-			return nil, err
-		}
-		guestAddr := fmt.Sprintf("%s:%d", define.GuestIP, define.GuestSSHServerPort)
-		client, err = ssh2.Dial(ctx, guestAddr,
-			ssh2.WithUser(define.DefaultGuestUser),
-			ssh2.WithPrivateKey(vmc.SSHInfo.HostSSHPrivateKeyFile),
-			ssh2.WithTimeout(2*time.Second),
-			ssh2.WithKeepalive(2*time.Second),
-			ssh2.WithTunnel(gvCtlAddr.Path),
-		)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return client, nil
 }

@@ -55,101 +55,49 @@ func GetVMM(vmc *vmconfig.VMConfig) (interfaces.VMMProvider, error) {
 }
 
 func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMode) (*vmconfig.VMConfig, error) {
-	var (
-		err              error
-		logLevel         = command.String(define.FlagLogLevel)
-		saveLogTo        = command.String(define.FlagSaveLogTo)
-		workspacePath    = command.String(define.FlagWorkspace)
-		cpus             = command.Int8(define.FlagCPUS)
-		memoryInMB       = command.Uint64(define.FlagMemoryInMB)
-		rawDisks         = command.StringSlice(define.FlagRawDisk)
-		rootfsPath       = command.String(define.FlagRootfs)
-		usingSystemProxy = command.Bool(define.FlagUsingSystemProxy)
+	// Setup logging first (not part of VMConfig)
+	logLevel := command.String(define.FlagLogLevel)
 
-		runBin        = command.Args().First()
-		runBinArgs    = command.Args().Tail()
-		runBinWorkdir = command.String(define.FlagWorkDir)
-		runBinEnvs    = command.StringSlice(define.FlagEnvs)
+	// Extract command-line parameters
+	workspacePath := command.String(define.FlagWorkspace)
+	cpus := command.Int8(define.FlagCPUS)
+	memoryInMB := command.Uint64(define.FlagMemoryInMB)
+	rawDisks := command.StringSlice(define.FlagRawDisk)
+	mountDirs := command.StringSlice(define.FlagMount)
+	networkType := command.String(define.FlagVNetworkType)
+	usingSystemProxy := command.Bool(define.FlagUsingSystemProxy)
 
-		networkType = command.String(define.FlagNetwork)
-	)
+	// Build VMConfig using builder
+	builder := vmconfig.NewVMConfigBuilder(runMode).
+		SetWorkspace(workspacePath).
+		SetResources(cpus, memoryInMB).
+		SetNetworkMode(define.String2NetworkMode(networkType)).
+		SetUsingSystemProxy(usingSystemProxy).
+		SetRawDisks(rawDisks).
+		SetMounts(mountDirs).
+		SetLogLevel(logLevel)
 
-	vmc := vmconfig.NewVMConfig(runMode)
-
-	if err = vmc.SetLogLevel(logLevel, saveLogTo); err != nil {
-		return nil, err
-	}
-
-	if err = vmc.SetupWorkspace(workspacePath); err != nil {
-		return nil, err
-	}
-
-	if err = vmc.WithResources(memoryInMB, cpus); err != nil {
-		return nil, err
-	}
-
-	if err = vmc.WithUserProvidedStorageRAWDisk(ctx, rawDisks); err != nil {
-		return nil, err
-	}
-
-	if err = vmc.WithMounts(command.StringSlice(define.FlagMount)); err != nil {
-		return nil, err
-	}
-
-	if err = vmc.SetupIgnitionServerCfg(); err != nil {
-		return nil, err
-	}
-
-	switch vmc.RunMode {
-	case define.RootFsMode.String():
-		if rootfsPath == "" {
-			if err = vmc.WithBuiltInAlpineRootfs(ctx); err != nil {
-				return nil, err
-			}
+	if runMode == define.RootFsMode {
+		rootfsPath := command.String(define.FlagRootfs)
+		if rootfsPath != "" {
+			builder.SetRootfs(rootfsPath)
 		} else {
-			if err = vmc.WithRootfs(ctx, rootfsPath); err != nil {
-				return nil, err
-			}
+			builder.WithBuiltInRootfs()
 		}
-
-		if err = vmc.SetupCmdLine(runBinWorkdir, runBin, runBinArgs, runBinEnvs, usingSystemProxy); err != nil {
-			return nil, fmt.Errorf("setup cmdline failed: %w", err)
-		}
-
-	case define.ContainerMode.String():
-		if err = vmc.WithBuiltInAlpineRootfs(ctx); err != nil {
-			return nil, err
-		}
-
-		if err = vmc.BindUserHomeDir(ctx); err != nil {
-			return nil, err
-		}
-
-		if err = vmc.AttachOrGenerateContainerStorageRawDisk(ctx); err != nil {
-			return nil, err
-		}
-
-		if usingSystemProxy {
-			if err = vmc.ConfigurePodmanUsingSystemProxy(); err != nil {
-				return nil, fmt.Errorf("failed to configure podman using system proxy: %w", err)
-			}
-		}
-	default:
-		return nil, fmt.Errorf("unsupported mode %q", vmc.RunMode)
+		builder.SetCmdline(
+			command.String(define.FlagWorkDir),
+			command.Args().First(),
+			command.Args().Tail(),
+			command.StringSlice(define.FlagEnvs),
+		)
 	}
 
-	if err = vmc.SetupGuestAgentCfg(); err != nil {
+	vmc, err := builder.Build(ctx)
+	if err != nil {
 		return nil, err
 	}
 
-	if networkType == "tsi" {
-		if err = vmc.WithNetworkTSI(); err != nil {
-			return nil, err
-		}
-	}
-
-	logrus.Infof("VM configured: mode=%s, cpus=%d, memory=%dMB", vmc.RunMode, cpus, memoryInMB)
-	return vmc, nil
+	return (*vmconfig.VMConfig)(vmc), nil
 }
 
 const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"

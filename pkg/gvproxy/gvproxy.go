@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
-	"linuxvm/pkg/vmconfig"
 	"net"
 	"net/http"
 	"net/url"
@@ -46,7 +45,7 @@ type GvproxyConfigForward struct {
 //go:embed config.yaml
 var configYaml []byte
 
-func InitCfg(vmc *vmconfig.VMConfig) (*GvproxyConfig, error) {
+func InitCfg(vmc *define.VMConfig) (*GvproxyConfig, error) {
 	var config GvproxyConfig
 
 	if err := yaml.Unmarshal(configYaml, &config); err != nil {
@@ -89,7 +88,7 @@ func InitCfg(vmc *vmconfig.VMConfig) (*GvproxyConfig, error) {
 	return &config, nil
 }
 
-func Run(ctx context.Context, vmc *vmconfig.VMConfig) error {
+func Run(ctx context.Context, vmc *define.VMConfig) error {
 	config, err := InitCfg(vmc)
 	if err != nil {
 		return err
@@ -138,10 +137,11 @@ func Run(ctx context.Context, vmc *vmconfig.VMConfig) error {
 		g.Go(func() error {
 			<-ctx.Done()
 			if err := conn.Close(); err != nil {
-				logrus.Errorf("error closing %s: %q", config.Interfaces.Vfkit, err)
+				logrus.Warnf("error closing %s: %q", config.Interfaces.Vfkit, err)
 			}
 			vfkitSocketURI, _ := url.Parse(config.Interfaces.Vfkit)
-			return os.Remove(vfkitSocketURI.Path)
+			_ = os.Remove(vfkitSocketURI.Path)
+			return nil
 		})
 
 		g.Go(func() error {

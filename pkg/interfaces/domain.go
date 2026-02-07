@@ -6,7 +6,6 @@ import (
 )
 
 type VMMProvider interface {
-	StartNetwork(ctx context.Context) error
 	Create(ctx context.Context) error
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error

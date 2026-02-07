@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
-	"linuxvm/pkg/vmconfig"
 	"net/http"
 	"path/filepath"
 	"sync"
@@ -137,12 +136,12 @@ func (p *IgnServerProbe) ProbeUntilReady(ctx context.Context) error {
 }
 
 type GuestSSHProbe struct {
-	vmc  *vmconfig.VMConfig
+	vmc  *define.VMConfig
 	Ch   chan struct{}
 	once sync.Once
 }
 
-func NewGuestSSHProbe(vmc *vmconfig.VMConfig) *GuestSSHProbe {
+func NewGuestSSHProbe(vmc *define.VMConfig) *GuestSSHProbe {
 	return &GuestSSHProbe{
 		vmc: vmc,
 		Ch:  make(chan struct{}, 1),
@@ -189,12 +188,12 @@ func (p *GuestSSHProbe) ProbeUntilReady(ctx context.Context) error {
 }
 
 type PodmanProbe struct {
-	vmc  *vmconfig.VMConfig
+	vmc  *define.VMConfig
 	Ch   chan struct{}
 	once sync.Once
 }
 
-func NewPodmanProbe(vmc *vmconfig.VMConfig) *PodmanProbe {
+func NewPodmanProbe(vmc *define.VMConfig) *PodmanProbe {
 	return &PodmanProbe{
 		vmc: vmc,
 		Ch:  make(chan struct{}, 1),
@@ -209,21 +208,32 @@ func (p *PodmanProbe) ProbeUntilReady(ctx context.Context) error {
 	default:
 	}
 
-	var (
-		client *network.Client
-	)
+	// Use network mode to determine connection type
+	var addr string
+	var useUnixSocket bool
 
-	if p.vmc.TSI {
-		client = network.NewTCPClient(fmt.Sprintf("%s:%d", define.LocalHost, define.GuestPodmanAPIPort), network.WithTimeout(defaultProbeTimeout))
-		defer client.Close()
+	if p.vmc.VirtualNetworkMode == define.GVISOR.String() {
+		// GVISOR mode uses Unix socket proxy
+		addr = p.vmc.PodmanInfo.PodmanProxyAddr
+		useUnixSocket = true
 	} else {
-		socketPath, err := network.ParseUnixAddr(p.vmc.PodmanInfo.LocalPodmanProxyAddr)
+		// TSI mode uses direct TCP connection
+		addr = fmt.Sprintf("%s:%d", define.LocalHost, define.GuestPodmanAPIPort)
+		useUnixSocket = false
+	}
+
+	var client *network.Client
+	if useUnixSocket {
+		socketPath, err := network.ParseUnixAddr(addr)
 		if err != nil {
 			return err
 		}
 		client = network.NewUnixClient(socketPath.Path, network.WithTimeout(defaultProbeTimeout))
-		defer client.Close()
+	} else {
+		// TSI mode uses TCP
+		client = network.NewTCPClient(addr, network.WithTimeout(defaultProbeTimeout))
 	}
+	defer client.Close()
 
 	ticker := time.NewTicker(defaultPodmanProbeTimeout)
 	defer ticker.Stop()

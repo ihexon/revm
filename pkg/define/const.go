@@ -23,6 +23,36 @@ func (m RunMode) String() string {
 	}
 }
 
+type VNetMode uint32
+
+const (
+	GVISOR VNetMode = iota
+	TSI
+	UNKNOWN
+)
+
+func (v VNetMode) String() string {
+	switch v {
+	case GVISOR:
+		return "GVISOR"
+	case TSI:
+		return "TSI"
+	default:
+		return "unknown"
+	}
+}
+
+func String2NetworkMode(s string) VNetMode {
+	switch s {
+	case GVISOR.String():
+		return GVISOR
+	case TSI.String():
+		return TSI
+	default:
+		return UNKNOWN
+	}
+}
+
 const (
 	GuestAgentPathInGuest   = "/.bin/guest-agent"
 	GuestHiddenBinDir       = "/.bin"
@@ -76,8 +106,7 @@ const (
 	FlagPTY              = "pty"
 	FlagEnvs             = "envs"
 	FlagReportURL        = "report-url"
-	FlagSaveLogTo        = "save-logs"
-	FlagNetwork          = "network"
+	FlagVNetworkType     = "network"
 	FlagWorkspace        = "workspace"
 
 	ContainerDiskUUID = "44f7d1c0-122c-4402-a20e-c1166cbbad6d"
@@ -85,9 +114,7 @@ const (
 )
 
 const (
-	EnvLogLevel           = "LOG_LEVEL"
-	GvisorNet   VMNetMode = "gvisor"
-	TSI         VMNetMode = "TSI"
+	EnvLogLevel = "LOG_LEVEL"
 )
 
 // OVMode-specific configuration
