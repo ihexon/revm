@@ -5,15 +5,21 @@ import (
 	"errors"
 	"fmt"
 	"guestAgent/pkg/service"
+	"io"
 	"linuxvm/pkg/define"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 )
+
+// guestLogPortName must match libkrun.GuestLogPortName on the host side.
+
 
 func setupLogger() error {
 	level, err := logrus.ParseLevel(os.Getenv(define.EnvLogLevel))
@@ -27,9 +33,44 @@ func setupLogger() error {
 		ForceColors:     true,
 		TimestampFormat: "2006-01-02 15:04:05.000",
 	})
+
 	logrus.SetOutput(os.Stderr)
 	logrus.AddHook(stageHook{})
 	return nil
+}
+
+// attachGuestLogPort finds the "guest-logs" virtio-console port and adds it
+// as an additional logrus output. Must be called after /sys is mounted.
+func attachGuestLogPort() {
+	f, err := openVirtioPortByName(define.GuestLogConsolePort)
+	if err != nil {
+		logrus.Debugf("guest-log port not available: %v", err)
+		return
+	}
+	logrus.SetOutput(io.MultiWriter(os.Stderr, f))
+	logrus.Infof("guest logs attached to virtio port %s", f.Name())
+}
+
+// openVirtioPortByName scans /sys/class/virtio-ports/*/name to find
+// the device node for the given port name, then opens it for writing.
+func openVirtioPortByName(name string) (*os.File, error) {
+	matches, err := filepath.Glob("/sys/class/virtio-ports/*/name")
+	if err != nil {
+		return nil, err
+	}
+
+	for _, path := range matches {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if strings.TrimSpace(string(data)) == name {
+			// path: /sys/class/virtio-ports/vport1p0/name → device: /dev/vport1p0
+			devName := filepath.Base(filepath.Dir(path))
+			return os.OpenFile("/dev/"+devName, os.O_WRONLY, 0)
+		}
+	}
+	return nil, fmt.Errorf("virtio port %q not found", name)
 }
 
 func (h stageHook) Levels() []logrus.Level { return logrus.AllLevels }
@@ -79,6 +120,9 @@ func run(ctx context.Context, _ *cli.Command) error {
 	if err := service.MountAllPseudoMnt(ctx); err != nil {
 		return err
 	}
+
+	// Now that /sys is available, attach the guest-logs virtio port
+	attachGuestLogPort()
 
 	// 4. Mount block devices and virtiofs
 	if err := service.MountBlockDevices(ctx, vmc); err != nil {

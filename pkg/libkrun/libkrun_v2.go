@@ -157,13 +157,22 @@ func (s vmState) String() string {
 	}
 }
 
+// ConsolePort defines an I/O port on the virtio-console multiport device.
+// The guest sees it as /dev/vportNpM and can identify it by name
+// via /sys/class/virtio-ports/vportNpM/name.
+type ConsolePort struct {
+	Name     string
+	InputFd  int // host → guest (host writes, guest reads)
+	OutputFd int // guest → host (guest writes, host reads)
+}
+
 type LibkrunVM struct {
 	vmc   *vmconfig.VMConfig
 	ctxID uint32
 
-	mu        sync.Mutex
-	state     vmState
-	closeOnce sync.Once
+	mu           sync.Mutex
+	state        vmState
+	consolePorts []ConsolePort
 }
 
 // guestMACAddress is the fixed MAC address for the guest VM network interface.
@@ -178,6 +187,35 @@ func NewLibkrunVM(vmc *vmconfig.VMConfig) *LibkrunVM {
 		vmc:   vmc,
 		state: stateNew,
 	}
+}
+
+// AddConsolePort adds an I/O port to the virtio-console device.
+// Ports appear in the guest as /dev/vportNpM where N is the global virtio device number
+// (not just console device number - includes balloon, rng, and other virtio devices)
+// and M is the port number on that console device (starting from 0).
+// Must be called before Create().
+func (vm *LibkrunVM) AddConsolePort(port ConsolePort) {
+	vm.consolePorts = append(vm.consolePorts, port)
+}
+
+// SetupGuestLogPort creates a virtio-console port for capturing guest log output.
+// It opens the specified log file in append mode and configures a write-only console port
+// that the guest can use to send logs to the host. The port is named according to
+// define.GuestLogConsolePort and will be available as /dev/vportNpM inside the guest VM,
+// where N is the global virtio device number (typically virtio3 after balloon, rng, and main console).
+func (vm *LibkrunVM) SetupGuestLogPort(ctx context.Context, logFile string) error {
+	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("open log file %q: %w", logFile, err)
+	}
+
+	vm.AddConsolePort(ConsolePort{
+		Name:     define.GuestLogConsolePort,
+		InputFd:  -1,
+		OutputFd: int(f.Fd()),
+	})
+
+	return nil
 }
 
 func (vm *LibkrunVM) GetVMConfigure() (*vmconfig.VMConfig, error) {
@@ -227,7 +265,7 @@ func (vm *LibkrunVM) configureLibKRUN(ctx context.Context) error {
 	}
 
 	// Phase 2: Virtual devices (console, vsock, GPU)
-	if err = vm.configureDevices(); err != nil {
+	if err = vm.configureDevices(ctx); err != nil {
 		return err
 	}
 
@@ -280,25 +318,33 @@ func (vm *LibkrunVM) configureResources() error {
 }
 
 // configureDevices sets up virtual devices: console, vsock, and GPU.
-func (vm *LibkrunVM) configureDevices() error {
-	// Console: disable implicit and add explicit
+func (vm *LibkrunVM) configureDevices(ctx context.Context) error {
 	ret := C.krun_disable_implicit_console(C.uint32_t(vm.ctxID))
 	if ret != 0 {
 		return fmt.Errorf("krun_disable_implicit_console failed with code %d", ret)
 	}
 
-	inputFd := C.int(os.Stdin.Fd())
-	outputFd := C.int(os.Stdout.Fd())
-	errFd := C.int(os.Stderr.Fd())
-
+	// Main console (after implicit balloon and rng, typically becomes virtio2).
 	ret = C.krun_add_virtio_console_default(
 		C.uint32_t(vm.ctxID),
-		inputFd,
-		outputFd,
-		errFd,
+		C.int(os.Stdin.Fd()),
+		C.int(os.Stdout.Fd()),
+		C.int(os.Stderr.Fd()),
 	)
 	if ret != 0 {
 		return fmt.Errorf("krun_add_virtio_console_default failed with code %d", ret)
+	}
+
+	// Setup guest log port before configuring other console devices
+	if err := vm.SetupGuestLogPort(ctx, vm.vmc.GetVMMRunLogsFile()); err != nil {
+		return fmt.Errorf("setup guest log port: %w", err)
+	}
+
+	// Multiport console for additional named I/O ports (typically becomes virtio3).
+	if len(vm.consolePorts) > 0 {
+		if err := vm.configureMultiportConsole(); err != nil {
+			return err
+		}
 	}
 
 	// VSock: disable implicit and add explicit
@@ -330,6 +376,35 @@ func (vm *LibkrunVM) configureDevices() error {
 	ret = C.krun_set_gpu_options(C.uint32_t(vm.ctxID), C.uint32_t(defaultGPUFlags))
 	if ret != 0 {
 		return fmt.Errorf("krun_set_gpu_options failed with code %v", ret)
+	}
+
+	return nil
+}
+
+// configureMultiportConsole sets up a second virtio-console device (explicit multiport)
+// for additional named I/O ports. The main console is virtio2 via krun_add_virtio_console_default.
+// This creates the multiport console (typically virtio3, after balloon and rng devices).
+func (vm *LibkrunVM) configureMultiportConsole() error {
+	consoleID := C.krun_add_virtio_console_multiport(C.uint32_t(vm.ctxID))
+	if consoleID < 0 {
+		return fmt.Errorf("krun_add_virtio_console_multiport failed with code %d", consoleID)
+	}
+	logrus.Debugf("Created multiport console with ID: %d", consoleID)
+
+	for _, port := range vm.consolePorts {
+		name := newCString(port.Name)
+		ret := C.krun_add_console_port_inout(
+			C.uint32_t(vm.ctxID),
+			C.uint32_t(consoleID),
+			name.Ptr(),
+			C.int(port.InputFd),
+			C.int(port.OutputFd),
+		)
+		name.Free()
+		if ret != 0 {
+			return fmt.Errorf("krun_add_console_port_inout(%q) failed with code %d", port.Name, ret)
+		}
+		logrus.Debugf("Added console port %q to console device %d", port.Name, consoleID)
 	}
 
 	return nil
@@ -566,37 +641,20 @@ func (vm *LibkrunVM) addVirtIOFS(tag, hostPath string) error {
 // This blocks until the VM terminates or the context is cancelled.
 func (vm *LibkrunVM) Start(ctx context.Context) error {
 	vm.mu.Lock()
-	if vm.state != stateConfigured {
-		vm.mu.Unlock()
-		return fmt.Errorf("cannot start VM in state %s (must be 'configured')", vm.state)
-	}
 	vm.state = stateRunning
-	vm.mu.Unlock()
+	defer vm.mu.Unlock()
 
 	// Set host process resource limits
 	if err := system.Rlimit(); err != nil {
-		vm.mu.Lock()
-		vm.state = stateConfigured // Restore state on failure
-		vm.mu.Unlock()
 		return fmt.Errorf("failed to set host process resource limits: %w", err)
 	}
 
 	// Configure the command line to execute inside the VM
 	if err := vm.applyGuestAgentCfg(); err != nil {
-		vm.mu.Lock()
-		vm.state = stateConfigured // Restore state on failure
-		vm.mu.Unlock()
 		return fmt.Errorf("failed to set VM command line: %w", err)
 	}
 
-	// Start VM execution (blocks until VM exits)
-	err := vm.enterVMLifecycle(ctx)
-
-	vm.mu.Lock()
-	vm.state = stateStopped
-	vm.mu.Unlock()
-
-	return err
+	return vm.enterVMLifecycle(ctx)
 }
 
 // applyGuestAgentCfg configures the command, arguments, and environment for the guest.
@@ -654,9 +712,6 @@ func (vm *LibkrunVM) enterVMLifecycle(ctx context.Context) error {
 	// Wait for either VM completion or context cancellation
 	select {
 	case <-ctx.Done():
-		// Context cancelled - VM might still be running
-		// Note: libkrun doesn't provide a clean shutdown mechanism
-		// The VM process will be forcefully terminated when the host process exits
 		return fmt.Errorf("VM execution cancelled: %w", ctx.Err())
 	case err := <-errChan:
 		return err
@@ -667,10 +722,13 @@ func (vm *LibkrunVM) enterVMLifecycle(ctx context.Context) error {
 //
 // Note: libkrun doesn't provide a graceful stop mechanism. so we have to implement a forceful shutdown
 func (vm *LibkrunVM) Stop(_ context.Context) error {
-	vm.mu.Lock()
-	defer vm.mu.Unlock()
+	if vm.state != stateRunning {
+		return nil
+	}
 
-	return fmt.Errorf("not implemented yet")
+	// TODO: implement STOP
+
+	return nil
 }
 
 func (vm *LibkrunVM) StartIgnServer(ctx context.Context) error {

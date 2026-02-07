@@ -111,6 +111,8 @@ const (
 
 	ContainerDiskUUID = "44f7d1c0-122c-4402-a20e-c1166cbbad6d"
 	UserDataDiskUUID  = "254879c7-7107-4267-a2c6-d25e27a5358d"
+
+	GuestLogConsolePort = "guest-logs"
 )
 
 const (
