@@ -28,6 +28,7 @@ type VMConfig struct {
 	Cmdline           Cmdline           `json:"cmdline,omitempty"` // 仅仅在 rootfs mode 有意义
 	XATTRSRawDisk     map[string]string `json:"XATTRSRawDisk,omitempty"`
 
+	TTY    bool          `json:"TTY"`
 	StopCh chan struct{} `json:"-"`
 }
 

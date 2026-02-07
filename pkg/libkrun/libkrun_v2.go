@@ -312,7 +312,7 @@ func (vm *LibkrunVM) configureDevices(ctx context.Context) error {
 			vsockFeat = C.KRUN_TSI_HIJACK_INET | C.KRUN_TSI_HIJACK_UNIX
 		}
 		// macOS do not support KRUN_TSI_HIJACK_UNIX
-		// see issue: https://github.com/containers/libkrun/issues/526
+		//   see issue: https://github.com/containers/libkrun/issues/526
 		if runtime.GOOS == "darwin" {
 			vsockFeat = C.KRUN_TSI_HIJACK_INET
 		}
@@ -323,7 +323,6 @@ func (vm *LibkrunVM) configureDevices(ctx context.Context) error {
 		return fmt.Errorf("krun_add_vsock failed with code %d", ret)
 	}
 
-	// GPU
 	ret = C.krun_set_gpu_options(C.uint32_t(vm.ctxID), C.uint32_t(defaultGPUFlags))
 	if ret != 0 {
 		return fmt.Errorf("krun_set_gpu_options failed with code %v", ret)
@@ -341,9 +340,14 @@ func (vm *LibkrunVM) configureMultiportConsole() error {
 	var isTTy bool
 	if term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) && term.IsTerminal(int(os.Stderr.Fd())) {
 		isTTy = true
+		// Setting TTY mode to true will force the guest-agent reopening the active console
+		// provided full ioctl control of terminal like TIOCGWINSZ & TIOCSWINSZ
+		vm.vmc.TTY = true
 	}
 
 	if !isTTy {
+		// Setting TTY mode to false will prevent the guest-agent reopening the active console
+		vm.vmc.TTY = false
 		ret = C.krun_add_virtio_console_default(
 			C.uint32_t(vm.ctxID),
 			C.int(os.Stdin.Fd()),
@@ -376,7 +380,7 @@ func (vm *LibkrunVM) configureMultiportConsole() error {
 		}
 	}
 
-	// guestLogFile no need to close, and can not be closed !
+	// Do not close the guestLogFile.
 	// TODO: guestLogFile my GC by golang, but it not real problem because the chance are so small
 	guestLogFile, err := os.OpenFile(vm.vmc.GetVMMRunLogsFile(), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
@@ -455,7 +459,6 @@ func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
 		socketPath := newCString(addr.Path)
 		defer socketPath.Free()
 
-		// Convert Go byte array to C uint8_t array
 		var mac [6]C.uint8_t
 		for i, b := range guestMACAddress {
 			mac[i] = C.uint8_t(b)
@@ -516,15 +519,7 @@ func (vm *LibkrunVM) configureAdvancedFeatures() error {
 // initLogging initializes libkrun's logging subsystem.
 // IMPORTANT: This MUST be called BEFORE krun_create_ctx().
 // Do NOT call krun_set_log_level() if using this function - they conflict.
-//
-// Log level is controlled by LIBKRUN_DEBUG environment variable:
-//   - LIBKRUN_DEBUG=trace -> TRACE level
-//   - LIBKRUN_DEBUG=debug -> DEBUG level
-//   - LIBKRUN_DEBUG=info  -> INFO level
-//   - LIBKRUN_DEBUG=warn  -> WARN level
-//   - LIBKRUN_DEBUG=error -> ERROR level
-//   - LIBKRUN_DEBUG=1     -> DEBUG level (for compatibility)
-//   - unset or empty      -> ERROR level (quiet by default)
+// TODO: save log into logs
 func initLogging() error {
 	var level C.uint32_t
 
@@ -551,7 +546,7 @@ func initLogging() error {
 		C.KRUN_LOG_OPTION_NO_ENV,
 	)
 	if ret != 0 {
-		return fmt.Errorf("krun_init_log failed with code %d", ret)
+		return fmt.Errorf("krun_init_log failed with code %v", ret)
 	}
 
 	return nil
