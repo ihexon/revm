@@ -42,6 +42,7 @@ func setupLogger() error {
 // attachGuestLogPort finds the "guest-logs" virtio-console port and adds it
 // as an additional logrus output. Must be called after /sys is mounted.
 func attachGuestLogPort() {
+	// f no need to be close
 	f, err := openVirtioPortByName(define.GuestLogConsolePort)
 	if err != nil {
 		logrus.Debugf("guest-log port not available: %v", err)
