@@ -113,6 +113,8 @@ const (
 	UserDataDiskUUID  = "254879c7-7107-4267-a2c6-d25e27a5358d"
 
 	GuestLogConsolePort = "guest-logs"
+	GuestTTYConsoleName = "default-tty-console"
+	GuestNONTTYConsole  = "default-nontty-console"
 )
 
 const (

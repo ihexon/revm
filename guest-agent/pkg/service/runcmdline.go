@@ -61,15 +61,6 @@ func DoExecCmdLine(ctx context.Context, vmc *define.VMConfig) error {
 
 	stdin, stdout, stderr := os.Stdin, os.Stdout, os.Stderr
 
-	if console, err := openActiveConsole(); err == nil {
-		logrus.Infof("reopened stdio via %s for TTY support", console.Name())
-		stdin = console
-		stdout = console
-		stderr = console
-	} else {
-		logrus.Warnf("falling back to inherited stdio: %v", err)
-	}
-
 	cmd := exec.CommandContext(ctx, vmc.Cmdline.Bin, vmc.Cmdline.Args...)
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
