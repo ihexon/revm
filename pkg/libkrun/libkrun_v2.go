@@ -30,6 +30,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shirou/gopsutil/v4/process"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/term"
 )
 
 // cstring provides safe management of C string memory with automatic cleanup.
@@ -157,10 +158,10 @@ func (s vmState) String() string {
 	}
 }
 
-// ConsolePort defines an I/O port on the virtio-console multiport device.
+// ConsolePortINOUT defines an I/O port on the virtio-console multiport device.
 // The guest sees it as /dev/vportNpM and can identify it by name
 // via /sys/class/virtio-ports/vportNpM/name.
-type ConsolePort struct {
+type ConsolePortINOUT struct {
 	Name     string
 	InputFd  int // host → guest (host writes, guest reads)
 	OutputFd int // guest → host (guest writes, host reads)
@@ -170,9 +171,9 @@ type LibkrunVM struct {
 	vmc   *vmconfig.VMConfig
 	ctxID uint32
 
-	mu           sync.Mutex
-	state        vmState
-	consolePorts []ConsolePort
+	mu                sync.Mutex
+	state             vmState
+	consolePortsINOUT []ConsolePortINOUT
 }
 
 // guestMACAddress is the fixed MAC address for the guest VM network interface.
@@ -189,33 +190,9 @@ func NewLibkrunVM(vmc *vmconfig.VMConfig) *LibkrunVM {
 	}
 }
 
-// AddConsolePort adds an I/O port to the virtio-console device.
-// Ports appear in the guest as /dev/vportNpM where N is the global virtio device number
-// (not just console device number - includes balloon, rng, and other virtio devices)
-// and M is the port number on that console device (starting from 0).
-// Must be called before Create().
-func (vm *LibkrunVM) AddConsolePort(port ConsolePort) {
-	vm.consolePorts = append(vm.consolePorts, port)
-}
-
-// SetupGuestLogPort creates a virtio-console port for capturing guest log output.
-// It opens the specified log file in append mode and configures a write-only console port
-// that the guest can use to send logs to the host. The port is named according to
-// define.GuestLogConsolePort and will be available as /dev/vportNpM inside the guest VM,
-// where N is the global virtio device number (typically virtio3 after balloon, rng, and main console).
-func (vm *LibkrunVM) SetupGuestLogPort(ctx context.Context, logFile string) error {
-	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return fmt.Errorf("open log file %q: %w", logFile, err)
-	}
-
-	vm.AddConsolePort(ConsolePort{
-		Name:     define.GuestLogConsolePort,
-		InputFd:  -1,
-		OutputFd: int(f.Fd()),
-	})
-
-	return nil
+func (vm *LibkrunVM) AddConsolePort(port ConsolePortINOUT) *LibkrunVM {
+	vm.consolePortsINOUT = append(vm.consolePortsINOUT, port)
+	return vm
 }
 
 func (vm *LibkrunVM) GetVMConfigure() (*vmconfig.VMConfig, error) {
@@ -317,38 +294,12 @@ func (vm *LibkrunVM) configureResources() error {
 	return nil
 }
 
-// configureDevices sets up virtual devices: console, vsock, and GPU.
 func (vm *LibkrunVM) configureDevices(ctx context.Context) error {
-	ret := C.krun_disable_implicit_console(C.uint32_t(vm.ctxID))
-	if ret != 0 {
-		return fmt.Errorf("krun_disable_implicit_console failed with code %d", ret)
+	if err := vm.configureMultiportConsole(); err != nil {
+		return err
 	}
 
-	// Main console (after implicit balloon and rng, typically becomes virtio2).
-	ret = C.krun_add_virtio_console_default(
-		C.uint32_t(vm.ctxID),
-		C.int(os.Stdin.Fd()),
-		C.int(os.Stdout.Fd()),
-		C.int(os.Stderr.Fd()),
-	)
-	if ret != 0 {
-		return fmt.Errorf("krun_add_virtio_console_default failed with code %d", ret)
-	}
-
-	// Setup guest log port before configuring other console devices
-	if err := vm.SetupGuestLogPort(ctx, vm.vmc.GetVMMRunLogsFile()); err != nil {
-		return fmt.Errorf("setup guest log port: %w", err)
-	}
-
-	// Multiport console for additional named I/O ports (typically becomes virtio3).
-	if len(vm.consolePorts) > 0 {
-		if err := vm.configureMultiportConsole(); err != nil {
-			return err
-		}
-	}
-
-	// VSock: disable implicit and add explicit
-	ret = C.krun_disable_implicit_vsock(C.uint32_t(vm.ctxID))
+	ret := C.krun_disable_implicit_vsock(C.uint32_t(vm.ctxID))
 	if ret != 0 {
 		return fmt.Errorf("krun_disable_implicit_vsock failed with code %d", ret)
 	}
@@ -381,30 +332,76 @@ func (vm *LibkrunVM) configureDevices(ctx context.Context) error {
 	return nil
 }
 
-// configureMultiportConsole sets up a second virtio-console device (explicit multiport)
-// for additional named I/O ports. The main console is virtio2 via krun_add_virtio_console_default.
-// This creates the multiport console (typically virtio3, after balloon and rng devices).
 func (vm *LibkrunVM) configureMultiportConsole() error {
+	ret := C.krun_disable_implicit_console(C.uint32_t(vm.ctxID))
+	if ret != 0 {
+		return fmt.Errorf("krun_disable_implicit_console failed with code %v", ret)
+	}
+
+	var isTTy bool
+	if term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) && term.IsTerminal(int(os.Stderr.Fd())) {
+		isTTy = true
+	}
+
+	if !isTTy {
+		ret = C.krun_add_virtio_console_default(
+			C.uint32_t(vm.ctxID),
+			C.int(os.Stdin.Fd()),
+			C.int(os.Stdout.Fd()),
+			C.int(os.Stderr.Fd()),
+		)
+		if ret != 0 {
+			return fmt.Errorf("krun_add_virtio_console_default failed with code %v", ret)
+		}
+	}
+
 	consoleID := C.krun_add_virtio_console_multiport(C.uint32_t(vm.ctxID))
 	if consoleID < 0 {
 		return fmt.Errorf("krun_add_virtio_console_multiport failed with code %d", consoleID)
 	}
-	logrus.Debugf("Created multiport console with ID: %d", consoleID)
 
-	for _, port := range vm.consolePorts {
-		name := newCString(port.Name)
+	if isTTy {
+		ttyFd, err := syscall.Dup(int(os.Stdin.Fd()))
+		if err != nil {
+			return fmt.Errorf("dup stdin: %w", err)
+		}
+
+		name := newCString(define.GuestTTYConsoleName)
+		logrus.Infof("running in tty mode (stdin, stdout and stderr are all terminals)")
+		ret := C.krun_add_console_port_tty(C.uint32_t(vm.ctxID), C.uint32_t(consoleID), name.Ptr(), C.int(ttyFd))
+		name.Free()
+		if ret != 0 {
+			_ = syscall.Close(ttyFd)
+			return fmt.Errorf("krun_add_console_port_tty failed with code %v", ret)
+		}
+	}
+
+	// guestLogFile no need to close, and can not be closed !
+	// TODO: guestLogFile my GC by golang, but it not real problem because the chance are so small
+	guestLogFile, err := os.OpenFile(vm.vmc.GetVMMRunLogsFile(), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		return err
+	}
+
+	vm.consolePortsINOUT = append(vm.consolePortsINOUT, ConsolePortINOUT{
+		Name:     define.GuestLogConsolePort,
+		InputFd:  -1,
+		OutputFd: int(guestLogFile.Fd()),
+	})
+
+	// additional in/out console
+	for _, inoutConsole := range vm.consolePortsINOUT {
+		name := newCString(inoutConsole.Name)
 		ret := C.krun_add_console_port_inout(
 			C.uint32_t(vm.ctxID),
 			C.uint32_t(consoleID),
 			name.Ptr(),
-			C.int(port.InputFd),
-			C.int(port.OutputFd),
-		)
+			C.int(inoutConsole.InputFd),
+			C.int(inoutConsole.OutputFd))
 		name.Free()
 		if ret != 0 {
-			return fmt.Errorf("krun_add_console_port_inout(%q) failed with code %d", port.Name, ret)
+			return fmt.Errorf("krun_add_console_port_inout failed with code %v", ret)
 		}
-		logrus.Debugf("Added console port %q to console device %d", port.Name, consoleID)
 	}
 
 	return nil
