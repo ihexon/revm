@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/interfaces"
 	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmconfig"
@@ -47,7 +46,7 @@ func setMaxMemory() uint64 {
 	return mb
 }
 
-func GetVMM(vmc *vmconfig.VMConfig) (interfaces.VMMProvider, error) {
+func GetVMM(vmc *vmconfig.VMConfig) (*libkrun.LibkrunVM, error) {
 	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
 		return libkrun.NewLibkrunVM(vmc), nil
 	}
