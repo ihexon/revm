@@ -20,7 +20,6 @@ import (
 
 // guestLogPortName must match libkrun.GuestLogPortName on the host side.
 
-
 func setupLogger() error {
 	level, err := logrus.ParseLevel(os.Getenv(define.EnvLogLevel))
 	if err != nil {

@@ -60,6 +60,16 @@ func DoExecCmdLine(ctx context.Context, vmc *define.VMConfig) error {
 	}
 
 	stdin, stdout, stderr := os.Stdin, os.Stdout, os.Stderr
+	if vmc.TTY {
+		activeConsole, err := openActiveConsole()
+		if err != nil {
+			return fmt.Errorf("open active console: %w", err)
+		}
+		defer activeConsole.Close()
+		stdin = activeConsole
+		stdout = activeConsole
+		stderr = activeConsole
+	}
 
 	cmd := exec.CommandContext(ctx, vmc.Cmdline.Bin, vmc.Cmdline.Args...)
 	cmd.Stdin = stdin
