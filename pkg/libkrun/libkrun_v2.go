@@ -18,7 +18,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sync"
 	"syscall"
 	"unsafe"
 
@@ -28,7 +27,6 @@ import (
 	"linuxvm/pkg/vmconfig"
 
 	"github.com/google/uuid"
-	"github.com/shirou/gopsutil/v4/process"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/term"
 )
@@ -106,10 +104,9 @@ func (csa *cstringArray) Ptr() **C.char {
 }
 
 // VM resource limits
-const (
-	defaultNProcSoftLimit = 4096
-	defaultNProcHardLimit = 8192
-)
+// guestNProcLimit is the RLIMIT_NPROC setting for the Linux guest.
+// Format: "rlimit_number=soft:hard" (Linux RLIMIT_NPROC = 6)
+const guestNProcLimit = "6=4096:8192"
 
 const (
 	gpuFlagVenus   = 1 << 6 // Enable Venus (Vulkan passthrough)
@@ -125,39 +122,6 @@ const (
 	defaultVirtIOFSMemoryWindow = 512 << 20
 )
 
-// vmState tracks the VM lifecycle state
-type vmState int
-
-const (
-	// stateNew indicates the VM has been created but not yet configured
-	stateNew vmState = iota
-	// stateConfigured indicates Create() has completed successfully
-	stateConfigured
-	// stateRunning indicates Start() is executing
-	stateRunning
-	// stateStopped indicates the VM has stopped execution
-	stateStopped
-	// stateClosed indicates Close() has been called and resources are freed
-	stateClosed
-)
-
-func (s vmState) String() string {
-	switch s {
-	case stateNew:
-		return "new"
-	case stateConfigured:
-		return "configured"
-	case stateRunning:
-		return "running"
-	case stateStopped:
-		return "stopped"
-	case stateClosed:
-		return "closed"
-	default:
-		return "unknown"
-	}
-}
-
 // ConsolePortINOUT defines an I/O port on the virtio-console multiport device.
 // The guest sees it as /dev/vportNpM and can identify it by name
 // via /sys/class/virtio-ports/vportNpM/name.
@@ -171,8 +135,6 @@ type LibkrunVM struct {
 	vmc   *vmconfig.VMConfig
 	ctxID uint32
 
-	mu                sync.Mutex
-	state             vmState
 	consolePortsINOUT []ConsolePortINOUT
 }
 
@@ -185,8 +147,7 @@ var _ interfaces.VMMProvider = (*LibkrunVM)(nil)
 
 func NewLibkrunVM(vmc *vmconfig.VMConfig) *LibkrunVM {
 	return &LibkrunVM{
-		vmc:   vmc,
-		state: stateNew,
+		vmc: vmc,
 	}
 }
 
@@ -202,63 +163,62 @@ func (vm *LibkrunVM) GetVMConfigure() (*vmconfig.VMConfig, error) {
 	return vm.vmc, nil
 }
 
-func (vm *LibkrunVM) Create(ctx context.Context) error {
-	vm.mu.Lock()
-	defer vm.mu.Unlock()
-
-	if vm.state != stateNew {
-		return fmt.Errorf("cannot create VM in state %s (must be in 'new' state)", vm.state)
-	}
-
-	// Initialize libkrun logging BEFORE creating context
-	// This MUST be called before krun_create_ctx()
-	if err := initLogging(); err != nil {
+func (vm *LibkrunVM) createVMCtxID() error {
+	if err := vm.initLogging(); err != nil {
 		return fmt.Errorf("failed to initialize logging: %w", err)
 	}
 
-	// Create libkrun context
 	ctxID := C.krun_create_ctx()
 	if ctxID < 0 {
 		return fmt.Errorf("failed to create libkrun context: krun_create_ctx returned %d", ctxID)
 	}
 	vm.ctxID = uint32(ctxID)
 
-	// Apply all VM configurations
-	if err := vm.configureLibKRUN(ctx); err != nil {
-		return fmt.Errorf("failed to configure VM: %w", err)
-	}
-
-	vm.state = stateConfigured
 	return nil
 }
 
-// configureLibKRUN applies all VM configuration settings.
-func (vm *LibkrunVM) configureLibKRUN(ctx context.Context) error {
-	var err error
-
-	// Phase 1: Core VM resources
-	if err = vm.configureResources(); err != nil {
+func (vm *LibkrunVM) Create(ctx context.Context) error {
+	if err := vm.createVMCtxID(); err != nil {
 		return err
 	}
 
-	// Phase 2: Virtual devices (console, vsock, GPU)
-	if err = vm.configureDevices(ctx); err != nil {
+	if err := vm.configureResources(); err != nil {
 		return err
 	}
 
-	// Phase 3: Storage (rootfs, block devices, shared directories)
-	if err = vm.configureStorage(); err != nil {
+	if err := vm.configureMultiportConsole(); err != nil {
 		return err
 	}
 
-	// Phase 4: Networking
-	if err = vm.configureNetwork(ctx); err != nil {
+	if err := vm.configureVSockDevices(); err != nil {
 		return err
 	}
 
-	// Phase 5: Advanced features
-	if err = vm.configureAdvancedFeatures(); err != nil {
+	if err := vm.configureGPU(); err != nil {
 		return err
+	}
+
+	if err := vm.configureRootFS(); err != nil {
+		return err
+	}
+
+	for i, disk := range vm.vmc.BlkDevs {
+		if err := vm.addBlockDevice(disk.Path); err != nil {
+			return fmt.Errorf("failed to add block device %d (%q): %w", i, disk.Path, err)
+		}
+	}
+
+	for i, mount := range vm.vmc.Mounts {
+		if err := vm.addVirtIOFS(mount.Tag, mount.Source); err != nil {
+			return fmt.Errorf("failed to add virtiofs mount %d (tag=%q): %w", i, mount.Tag, err)
+		}
+	}
+
+	if err := vm.configureNetwork(ctx); err != nil {
+		return fmt.Errorf("failed to configure VM: %w", err)
+	}
+	if err := vm.configureAdvancedFeatures(); err != nil {
+		return fmt.Errorf("failed to configure VM: %w", err)
 	}
 
 	return nil
@@ -278,12 +238,7 @@ func (vm *LibkrunVM) configureResources() error {
 	}
 
 	// Set guest process limits
-	limitSpec := fmt.Sprintf("%d=%d:%d",
-		process.RLIMIT_NPROC,
-		defaultNProcSoftLimit,
-		defaultNProcHardLimit,
-	)
-	limits := newCStringArray([]string{limitSpec})
+	limits := newCStringArray([]string{guestNProcLimit})
 	defer limits.Free()
 
 	ret = C.krun_set_rlimits(C.uint32_t(vm.ctxID), limits.Ptr())
@@ -294,11 +249,8 @@ func (vm *LibkrunVM) configureResources() error {
 	return nil
 }
 
-func (vm *LibkrunVM) configureDevices(ctx context.Context) error {
-	if err := vm.configureMultiportConsole(); err != nil {
-		return err
-	}
-
+// configureVSockDevices sets up the VSock device with TSI hijacking features and port mappings.
+func (vm *LibkrunVM) configureVSockDevices() error {
 	ret := C.krun_disable_implicit_vsock(C.uint32_t(vm.ctxID))
 	if ret != 0 {
 		return fmt.Errorf("krun_disable_implicit_vsock failed with code %d", ret)
@@ -307,7 +259,6 @@ func (vm *LibkrunVM) configureDevices(ctx context.Context) error {
 	var vsockFeat = C.uint32_t(0)
 	// TSI mode needs socket hijacking features
 	if vm.vmc.VirtualNetworkMode == define.TSI.String() {
-		// TSI mode
 		if runtime.GOOS == "linux" {
 			vsockFeat = C.KRUN_TSI_HIJACK_INET | C.KRUN_TSI_HIJACK_UNIX
 		}
@@ -321,157 +272,6 @@ func (vm *LibkrunVM) configureDevices(ctx context.Context) error {
 	ret = C.krun_add_vsock(C.uint32_t(vm.ctxID), vsockFeat)
 	if ret != 0 {
 		return fmt.Errorf("krun_add_vsock failed with code %d", ret)
-	}
-
-	ret = C.krun_set_gpu_options(C.uint32_t(vm.ctxID), C.uint32_t(defaultGPUFlags))
-	if ret != 0 {
-		return fmt.Errorf("krun_set_gpu_options failed with code %v", ret)
-	}
-
-	return nil
-}
-
-func (vm *LibkrunVM) configureMultiportConsole() error {
-	ret := C.krun_disable_implicit_console(C.uint32_t(vm.ctxID))
-	if ret != 0 {
-		return fmt.Errorf("krun_disable_implicit_console failed with code %v", ret)
-	}
-
-	var isTTy bool
-	if term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) && term.IsTerminal(int(os.Stderr.Fd())) {
-		isTTy = true
-		// Setting TTY mode to true will force the guest-agent reopening the active console
-		// provided full ioctl control of terminal like TIOCGWINSZ & TIOCSWINSZ
-		vm.vmc.TTY = true
-	}
-
-	if !isTTy {
-		// Setting TTY mode to false will prevent the guest-agent reopening the active console
-		vm.vmc.TTY = false
-		ret = C.krun_add_virtio_console_default(
-			C.uint32_t(vm.ctxID),
-			C.int(os.Stdin.Fd()),
-			C.int(os.Stdout.Fd()),
-			C.int(os.Stderr.Fd()),
-		)
-		if ret != 0 {
-			return fmt.Errorf("krun_add_virtio_console_default failed with code %v", ret)
-		}
-	}
-
-	consoleID := C.krun_add_virtio_console_multiport(C.uint32_t(vm.ctxID))
-	if consoleID < 0 {
-		return fmt.Errorf("krun_add_virtio_console_multiport failed with code %d", consoleID)
-	}
-
-	if isTTy {
-		ttyFd, err := syscall.Dup(int(os.Stdin.Fd()))
-		if err != nil {
-			return fmt.Errorf("dup stdin: %w", err)
-		}
-
-		name := newCString(define.GuestTTYConsoleName)
-		logrus.Infof("running in tty mode (stdin, stdout and stderr are all terminals)")
-		ret := C.krun_add_console_port_tty(C.uint32_t(vm.ctxID), C.uint32_t(consoleID), name.Ptr(), C.int(ttyFd))
-		name.Free()
-		if ret != 0 {
-			_ = syscall.Close(ttyFd)
-			return fmt.Errorf("krun_add_console_port_tty failed with code %v", ret)
-		}
-	}
-
-	// Do not close the guestLogFile.
-	// TODO: guestLogFile my GC by golang, but it not real problem because the chance are so small
-	guestLogFile, err := os.OpenFile(vm.vmc.GetVMMRunLogsFile(), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		return err
-	}
-
-	vm.consolePortsINOUT = append(vm.consolePortsINOUT, ConsolePortINOUT{
-		Name:     define.GuestLogConsolePort,
-		InputFd:  -1,
-		OutputFd: int(guestLogFile.Fd()),
-	})
-
-	// additional in/out console
-	for _, inoutConsole := range vm.consolePortsINOUT {
-		name := newCString(inoutConsole.Name)
-		ret := C.krun_add_console_port_inout(
-			C.uint32_t(vm.ctxID),
-			C.uint32_t(consoleID),
-			name.Ptr(),
-			C.int(inoutConsole.InputFd),
-			C.int(inoutConsole.OutputFd))
-		name.Free()
-		if ret != 0 {
-			return fmt.Errorf("krun_add_console_port_inout failed with code %v", ret)
-		}
-	}
-
-	return nil
-}
-
-// configureStorage sets up rootfs, block devices, and shared directories.
-func (vm *LibkrunVM) configureStorage() error {
-	// Root filesystem
-	runMode := vm.vmc.RunMode
-	if runMode != define.ContainerMode.String() && runMode != define.RootFsMode.String() {
-		return fmt.Errorf("unsupported run mode: %q (supported: %q, %q)",
-			runMode, define.ContainerMode.String(), define.RootFsMode.String())
-	}
-
-	rootfs := newCString(vm.vmc.RootFS)
-	defer rootfs.Free()
-
-	ret := C.krun_set_root(C.uint32_t(vm.ctxID), rootfs.Ptr())
-	if ret != 0 {
-		return fmt.Errorf("krun_set_root failed with code %d", ret)
-	}
-
-	// Block devices
-	for i, disk := range vm.vmc.BlkDevs {
-		if err := vm.addBlockDevice(disk.Path); err != nil {
-			return fmt.Errorf("failed to add block device %d (%q): %w", i, disk.Path, err)
-		}
-	}
-
-	// Shared directories (VirtIO-FS)
-	for i, mount := range vm.vmc.Mounts {
-		if err := vm.addVirtIOFS(mount.Tag, mount.Source); err != nil {
-			return fmt.Errorf("failed to add virtiofs mount %d (tag=%q): %w", i, mount.Tag, err)
-		}
-	}
-
-	return nil
-}
-
-// configureNetwork sets up the network backend and VSock port mappings.
-func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
-	if vm.vmc.VirtualNetworkMode == define.GVISOR.String() {
-		logrus.Infof("Using gvisor-tap-vsock network backend")
-		// Parse network backend address
-		backend := vm.vmc.GVPVNetAddr
-		addr, err := network.ParseUnixAddr(backend)
-		if err != nil {
-			return fmt.Errorf("failed to parse network backend address %q: %w", backend, err)
-		}
-
-		socketPath := newCString(addr.Path)
-		defer socketPath.Free()
-
-		var mac [6]C.uint8_t
-		for i, b := range guestMACAddress {
-			mac[i] = C.uint8_t(b)
-		}
-
-		if ret := C.krun_add_net_unixgram(C.uint32_t(vm.ctxID), socketPath.Ptr(), C.int(-1), &mac[0],
-			C.COMPAT_NET_FEATURES,
-			C.NET_FLAG_VFKIT,
-		); ret != 0 {
-			return fmt.Errorf("krun_add_net_unixgram failed with code %v", ret)
-		}
-	} else {
-		logrus.Infof("Using libkrun TSI network backend which out of box")
 	}
 
 	// VSock port mapping for ignition server
@@ -498,6 +298,176 @@ func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
 	return nil
 }
 
+// configureGPU enables GPU passthrough options.
+func (vm *LibkrunVM) configureGPU() error {
+	ret := C.krun_set_gpu_options(C.uint32_t(vm.ctxID), C.uint32_t(defaultGPUFlags))
+	if ret != 0 {
+		return fmt.Errorf("krun_set_gpu_options failed with code %v", ret)
+	}
+
+	return nil
+}
+
+func (vm *LibkrunVM) configureMultiportConsole() error {
+	ret := C.krun_disable_implicit_console(C.uint32_t(vm.ctxID))
+	if ret != 0 {
+		return fmt.Errorf("krun_disable_implicit_console failed with code %v", ret)
+	}
+
+	consoleID, err := vm.addPrimaryConsole()
+	if err != nil {
+		return err
+	}
+
+	if err := vm.addGuestConsoleLogPort(consoleID); err != nil {
+		return err
+	}
+
+	if err := vm.addOtherConsoleInOut(consoleID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// addPrimaryConsole configures the main console (TTY or default stdio)
+// and returns the multiport console ID for attaching additional ports.
+func (vm *LibkrunVM) addPrimaryConsole() (C.uint32_t, error) {
+	isTTy := term.IsTerminal(int(os.Stdin.Fd())) &&
+		term.IsTerminal(int(os.Stdout.Fd())) &&
+		term.IsTerminal(int(os.Stderr.Fd()))
+
+	vm.vmc.TTY = isTTy
+
+	if !isTTy {
+		logrus.Infof("running in non-tty mode")
+		ret := C.krun_add_virtio_console_default(
+			C.uint32_t(vm.ctxID),
+			C.int(os.Stdin.Fd()),
+			C.int(os.Stdout.Fd()),
+			C.int(os.Stderr.Fd()),
+		)
+		if ret != 0 {
+			return 0, fmt.Errorf("krun_add_virtio_console_default failed with code %v", ret)
+		}
+	}
+
+	consoleID := C.krun_add_virtio_console_multiport(C.uint32_t(vm.ctxID))
+	if consoleID < 0 {
+		return 0, fmt.Errorf("krun_add_virtio_console_multiport failed with code %d", consoleID)
+	}
+
+	if isTTy {
+		ttyFd, err := syscall.Dup(int(os.Stdin.Fd()))
+		if err != nil {
+			return 0, fmt.Errorf("dup stdin: %w", err)
+		}
+
+		name := newCString(define.GuestTTYConsoleName)
+		logrus.Infof("running in tty mode (stdin, stdout and stderr are all terminals)")
+		ret := C.krun_add_console_port_tty(C.uint32_t(vm.ctxID), C.uint32_t(consoleID), name.Ptr(), C.int(ttyFd))
+		name.Free()
+		if ret != 0 {
+			_ = syscall.Close(ttyFd)
+			return 0, fmt.Errorf("krun_add_console_port_tty failed with code %v", ret)
+		}
+	}
+
+	return C.uint32_t(consoleID), nil
+}
+
+// addGuestConsoleLogPort opens the guest log file and registers it as an inout console port.
+func (vm *LibkrunVM) addGuestConsoleLogPort(consoleID C.uint32_t) error {
+	// Do not close the guestLogFile.
+	// TODO: guestLogFile may be GC'd by golang, but it's not a real problem because the chance is very small
+	guestLogFile, err := os.OpenFile(vm.vmc.GetVMMRunLogsFile(), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		return err
+	}
+
+	name := newCString(define.GuestLogConsolePort)
+	defer name.Free()
+
+	ret := C.krun_add_console_port_inout(
+		C.uint32_t(vm.ctxID),
+		consoleID,
+		name.Ptr(),
+		C.int(-1),
+		C.int(guestLogFile.Fd()))
+	if ret != 0 {
+		return fmt.Errorf("krun_add_console_port_inout(%s) failed with code %v", define.GuestLogConsolePort, ret)
+	}
+
+	return nil
+}
+
+// addOtherConsoleInOut registers all queued inout console ports on the multiport device.
+func (vm *LibkrunVM) addOtherConsoleInOut(consoleID C.uint32_t) error {
+	for _, inoutConsole := range vm.consolePortsINOUT {
+		name := newCString(inoutConsole.Name)
+		ret := C.krun_add_console_port_inout(
+			C.uint32_t(vm.ctxID),
+			consoleID,
+			name.Ptr(),
+			C.int(inoutConsole.InputFd),
+			C.int(inoutConsole.OutputFd))
+		name.Free()
+		if ret != 0 {
+			return fmt.Errorf("krun_add_console_port_inout failed with code %v", ret)
+		}
+	}
+
+	return nil
+}
+
+// configureRootFS validates the run mode and sets the guest root filesystem.
+func (vm *LibkrunVM) configureRootFS() error {
+	rootfs := newCString(vm.vmc.RootFS)
+	defer rootfs.Free()
+
+	ret := C.krun_set_root(C.uint32_t(vm.ctxID), rootfs.Ptr())
+	if ret != 0 {
+		return fmt.Errorf("krun_set_root failed with code %d", ret)
+	}
+
+	return nil
+}
+
+// configureNetwork sets up the network backend.
+func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
+	switch vm.vmc.VirtualNetworkMode {
+	case define.GVISOR.String():
+		logrus.Infof("Using gvisor-tap-vsock network backend")
+		// Parse network backend address
+		backend := vm.vmc.GVPVNetAddr
+		addr, err := network.ParseUnixAddr(backend)
+		if err != nil {
+			return fmt.Errorf("failed to parse network backend address %q: %w", backend, err)
+		}
+
+		socketPath := newCString(addr.Path)
+		defer socketPath.Free()
+
+		var mac [6]C.uint8_t
+		for i, b := range guestMACAddress {
+			mac[i] = C.uint8_t(b)
+		}
+
+		if ret := C.krun_add_net_unixgram(C.uint32_t(vm.ctxID), socketPath.Ptr(), C.int(-1), &mac[0],
+			C.COMPAT_NET_FEATURES,
+			C.NET_FLAG_VFKIT,
+		); ret != 0 {
+			return fmt.Errorf("krun_add_net_unixgram failed with code %v", ret)
+		}
+		return nil
+	case define.TSI.String():
+		logrus.Infof("Using tsi-tap-vsock network backend")
+		return nil
+	default:
+		return fmt.Errorf("unknown network mode %q", vm.vmc.VirtualNetworkMode)
+	}
+}
+
 // configureAdvancedFeatures enables optional features like nested virtualization.
 func (vm *LibkrunVM) configureAdvancedFeatures() error {
 	ret := C.krun_check_nested_virt()
@@ -516,11 +486,8 @@ func (vm *LibkrunVM) configureAdvancedFeatures() error {
 	return nil
 }
 
-// initLogging initializes libkrun's logging subsystem.
-// IMPORTANT: This MUST be called BEFORE krun_create_ctx().
-// Do NOT call krun_set_log_level() if using this function - they conflict.
 // TODO: save log into logs
-func initLogging() error {
+func (vm *LibkrunVM) initLogging() error {
 	var level C.uint32_t
 
 	debugEnv := os.Getenv("LIBKRUN_DEBUG")
@@ -632,12 +599,8 @@ func (vm *LibkrunVM) addVirtIOFS(tag, hostPath string) error {
 // Start launches the VM and begins executing the configured command line.
 // This blocks until the VM terminates or the context is cancelled.
 func (vm *LibkrunVM) Start(ctx context.Context) error {
-	vm.mu.Lock()
-	vm.state = stateRunning
-	defer vm.mu.Unlock()
-
 	// Set host process resource limits
-	if err := system.Rlimit(); err != nil {
+	if err := system.RaiseSystemLimit(); err != nil {
 		return fmt.Errorf("failed to set host process resource limits: %w", err)
 	}
 
@@ -714,10 +677,6 @@ func (vm *LibkrunVM) enterVMLifecycle(ctx context.Context) error {
 //
 // Note: libkrun doesn't provide a graceful stop mechanism. so we have to implement a forceful shutdown
 func (vm *LibkrunVM) Stop(_ context.Context) error {
-	if vm.state != stateRunning {
-		return nil
-	}
-
 	// TODO: implement STOP
 
 	return nil
