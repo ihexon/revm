@@ -1,14 +1,11 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package vmconfig
+package vmbuilder
 
 import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/vmconfig/internal"
-	vnetwork "linuxvm/pkg/vmconfig/network"
-	"linuxvm/pkg/vmconfig/services"
 )
 
 // VMConfigBuilder provides a fluent API for building VMConfig instances.
@@ -16,7 +13,7 @@ import (
 // and Build() applies them in the correct order.
 type VMConfigBuilder struct {
 	vmc     *VMConfig
-	pathMgr *internal.PathManager
+	pathMgr *PathManager
 
 	// Configuration parameters (Set*)
 	runMode          define.RunMode
@@ -143,7 +140,7 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.VMConfig, error) {
 		return nil, fmt.Errorf("setup log level: %w", err)
 	}
 
-	b.pathMgr = internal.NewPathManager(b.vmc.WorkspacePath)
+	b.pathMgr = NewPathManager(b.vmc.WorkspacePath)
 
 	// 3. Resources
 	if err := b.vmc.WithResources(b.memoryInMB, b.cpus); err != nil {
@@ -151,7 +148,7 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.VMConfig, error) {
 	}
 
 	// 4. Network
-	networkStrategy := vnetwork.GetNetworkStrategy(b.networkMode)
+	networkStrategy := GetNetworkStrategy(b.networkMode)
 	if networkStrategy == nil {
 		return nil, fmt.Errorf("invalid network mode: %s", b.networkMode)
 	}
@@ -185,7 +182,7 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.VMConfig, error) {
 
 	// 8. Podman
 	if b.runMode == define.ContainerMode || b.runMode == define.OVMode {
-		podmanConfig := services.NewPodmanConfigurator(b.pathMgr)
+		podmanConfig := NewPodmanConfigurator(b.pathMgr)
 		if err := podmanConfig.Configure(ctx, (*define.VMConfig)(b.vmc), b.usingSystemProxy); err != nil {
 			return nil, fmt.Errorf("configure podman: %w", err)
 		}
@@ -226,7 +223,7 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.VMConfig, error) {
 	}
 
 	// 13. Guest Agent (always required)
-	guestAgentConfig := services.NewGuestAgentConfigurator(b.pathMgr)
+	guestAgentConfig := NewGuestAgentConfigurator(b.pathMgr)
 	if err := guestAgentConfig.Configure(ctx, (*define.VMConfig)(b.vmc)); err != nil {
 		return nil, fmt.Errorf("configure guest agent: %w", err)
 	}

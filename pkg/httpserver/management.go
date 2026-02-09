@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/vmconfig"
+	"linuxvm/pkg/vmbuilder"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -25,13 +25,13 @@ import (
 //   - GET  /vmconfig - Returns the complete VM configuration as JSON
 //   - POST /exec     - Execute a command in the guest (SSE streaming output)
 type ManagementAPIServer struct {
-	vmc *vmconfig.VMConfig
+	vmc *vmbuilder.VMConfig
 	srv *httpServer
 	sse *sseServer
 }
 
 // NewManagementAPIServer creates a httpserver for host-side VM management.
-func NewManagementAPIServer(vmc *vmconfig.VMConfig) *ManagementAPIServer {
+func NewManagementAPIServer(vmc *vmbuilder.VMConfig) *ManagementAPIServer {
 	return &ManagementAPIServer{
 		vmc: vmc,
 		srv: newUnixSockHTTPServer("management-api", vmc.VMCtlAddress),

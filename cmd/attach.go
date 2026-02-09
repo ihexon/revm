@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/service"
-	"linuxvm/pkg/vmconfig"
+	"linuxvm/pkg/vmbuilder"
 	"path/filepath"
 
 	"al.essio.dev/pkg/shellescape"
@@ -52,7 +52,7 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 	logrus.Infof("run cmdline: %v", cmdline)
 
 	// Load VM configuration
-	vmc, err := vmconfig.LoadVMCFromFile(filepath.Join(rootfsPath, define.VMConfigFilePathInGuest))
+	vmc, err := vmbuilder.LoadVMCFromFile(filepath.Join(rootfsPath, define.VMConfigFilePathInGuest))
 	if err != nil {
 		return err
 	}

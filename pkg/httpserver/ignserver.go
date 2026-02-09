@@ -6,16 +6,16 @@ import (
 	"context"
 	"net/http"
 
-	"linuxvm/pkg/vmconfig"
+	"linuxvm/pkg/vmbuilder"
 )
 
 type GuestConfigServer struct {
-	vmc *vmconfig.VMConfig
+	vmc *vmbuilder.VMConfig
 	srv *httpServer
 }
 
 // NewIgnitionServer creates a httpserver that provides configuration to the guest.
-func NewIgnitionServer(vmc *vmconfig.VMConfig) *GuestConfigServer {
+func NewIgnitionServer(vmc *vmbuilder.VMConfig) *GuestConfigServer {
 	return &GuestConfigServer{
 		vmc: vmc,
 		srv: newUnixSockHTTPServer("ignition-httpserver", vmc.IgnitionServerCfg.ListenSockAddr),

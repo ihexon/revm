@@ -25,7 +25,7 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/system"
-	"linuxvm/pkg/vmconfig"
+	"linuxvm/pkg/vmbuilder"
 
 	"github.com/google/uuid"
 	"github.com/shirou/gopsutil/v4/process"
@@ -168,7 +168,7 @@ type ConsolePortINOUT struct {
 }
 
 type LibkrunVM struct {
-	vmc   *vmconfig.VMConfig
+	vmc   *vmbuilder.VMConfig
 	ctxID uint32
 
 	mu                sync.Mutex
@@ -183,7 +183,7 @@ var guestMACAddress = [6]byte{0x5a, 0x94, 0xef, 0xe4, 0x0c, 0xee}
 // Compile-time check: LibkrunVM must implement vm.VMProvider
 var _ interfaces.VMMProvider = (*LibkrunVM)(nil)
 
-func NewLibkrunVM(vmc *vmconfig.VMConfig) *LibkrunVM {
+func NewLibkrunVM(vmc *vmbuilder.VMConfig) *LibkrunVM {
 	return &LibkrunVM{
 		vmc:   vmc,
 		state: stateNew,
@@ -195,7 +195,7 @@ func (vm *LibkrunVM) AddConsolePort(port ConsolePortINOUT) *LibkrunVM {
 	return vm
 }
 
-func (vm *LibkrunVM) GetVMConfigure() (*vmconfig.VMConfig, error) {
+func (vm *LibkrunVM) GetVMConfigure() (*vmbuilder.VMConfig, error) {
 	if vm.vmc == nil {
 		return nil, fmt.Errorf("vm configuration is nil")
 	}
