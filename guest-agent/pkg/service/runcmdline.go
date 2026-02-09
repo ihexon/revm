@@ -44,7 +44,7 @@ func openActiveConsole() (*os.File, error) {
 		return nil, err
 	}
 
-	fd, err := syscall.Open(devPath, syscall.O_RDWR|syscall.O_NOCTTY, 0)
+	fd, err := syscall.Open(devPath, syscall.O_RDWR|syscall.O_NOCTTY|syscall.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", devPath, err)
 	}
@@ -59,22 +59,24 @@ func DoExecCmdLine(ctx context.Context, vmc *define.VMConfig) error {
 		return err
 	}
 
-	stdin, stdout, stderr := os.Stdin, os.Stdout, os.Stderr
+	cmd := exec.CommandContext(ctx, vmc.Cmdline.Bin, vmc.Cmdline.Args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
 	if vmc.TTY {
-		activeConsole, err := openActiveConsole()
+		fdFile, err := openActiveConsole()
 		if err != nil {
 			return fmt.Errorf("open active console: %w", err)
 		}
-		defer activeConsole.Close()
-		stdin = activeConsole
-		stdout = activeConsole
-		stderr = activeConsole
+		defer fdFile.Close()
+
+		cmd.Stdin = fdFile
+		cmd.Stdout = fdFile
+		cmd.Stderr = fdFile
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
 	}
 
-	cmd := exec.CommandContext(ctx, vmc.Cmdline.Bin, vmc.Cmdline.Args...)
-	cmd.Stdin = stdin
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
 	cmd.Env = append(os.Environ(), vmc.Cmdline.Envs...)
 
 	if err := cmd.Run(); err != nil {

@@ -8,7 +8,7 @@ import (
 	"io"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/service"
-	"linuxvm/pkg/vmconfig"
+	"linuxvm/pkg/vmbuilder"
 	"net/http"
 
 	"al.essio.dev/pkg/shellescape"
@@ -38,7 +38,7 @@ type ProcessOutput struct {
 
 // GuestExec executes a command in the guest VM via SSH.
 // Returns a ProcessOutput that streams stdout/stderr and signals completion.
-func GuestExec(ctx context.Context, vmc *vmconfig.VMConfig, bin string, args ...string) (*ProcessOutput, error) {
+func GuestExec(ctx context.Context, vmc *vmbuilder.VMConfig, bin string, args ...string) (*ProcessOutput, error) {
 	sshClient, err := service.MakeSSHClient(ctx, (*define.VMConfig)(vmc))
 	if err != nil {
 		return nil, err

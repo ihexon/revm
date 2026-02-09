@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package vmconfig
+package vmbuilder
 
 import (
 	"context"
@@ -14,9 +14,6 @@ import (
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/networkmode"
 	"linuxvm/pkg/static_resources"
-	"linuxvm/pkg/vmconfig/internal"
-	vnetwork "linuxvm/pkg/vmconfig/network"
-	"linuxvm/pkg/vmconfig/services"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -77,12 +74,12 @@ func (v *VMConfig) generateRAWDisk(ctx context.Context, rawDiskPath string, give
 }
 
 func (v *VMConfig) GetContainerStorageDiskPath() string {
-	return internal.NewPathManager(v.WorkspacePath).GetContainerStorageDiskPath()
+	return NewPathManager(v.WorkspacePath).GetContainerStorageDiskPath()
 }
 
 func (v *VMConfig) ConfigureGuestPodman(ifUsingSystemProxy bool) error {
-	pathMgr := internal.NewPathManager(v.WorkspacePath)
-	configurator := services.NewPodmanConfigurator(pathMgr)
+	pathMgr := NewPathManager(v.WorkspacePath)
+	configurator := NewPodmanConfigurator(pathMgr)
 	return configurator.Configure(context.Background(), (*define.VMConfig)(v), ifUsingSystemProxy)
 }
 
@@ -245,8 +242,8 @@ func (v *VMConfig) withUserProvidedMounts(dirs []string) error {
 }
 
 func (v *VMConfig) ConfigureGuestAgent() error {
-	pathMgr := internal.NewPathManager(v.WorkspacePath)
-	configurator := services.NewGuestAgentConfigurator(pathMgr)
+	pathMgr := NewPathManager(v.WorkspacePath)
+	configurator := NewGuestAgentConfigurator(pathMgr)
 	return configurator.Configure(context.Background(), (*define.VMConfig)(v))
 }
 
@@ -283,7 +280,7 @@ func (v *VMConfig) SetupLogLevel(level string) error {
 }
 
 func (v *VMConfig) getRootfsDir() string {
-	return internal.NewPathManager(v.WorkspacePath).GetRootfsDir()
+	return NewPathManager(v.WorkspacePath).GetRootfsDir()
 }
 
 func (v *VMConfig) WithBuiltInAlpineRootfs(ctx context.Context) error {
@@ -324,7 +321,7 @@ func (v *VMConfig) WithUserProvidedRootfs(ctx context.Context, rootfsPath string
 }
 
 func (v *VMConfig) GetSSHPrivateKeyFile() string {
-	return internal.NewPathManager(v.WorkspacePath).GetSSHPrivateKeyFile()
+	return NewPathManager(v.WorkspacePath).GetSSHPrivateKeyFile()
 }
 
 func (v *VMConfig) configureVirtualMachineControlAPI() error {
@@ -368,18 +365,18 @@ func (v *VMConfig) ConfigureVirtualNetwork(ctx context.Context, mode define.VNet
 	v.VirtualNetworkMode = mode.String()
 
 	// Use strategy pattern for network configuration
-	strategy := vnetwork.GetNetworkStrategy(mode)
+	strategy := GetNetworkStrategy(mode)
 	if strategy == nil {
 		return fmt.Errorf("invalid virtual network mode: %s", mode)
 	}
 
-	pathMgr := internal.NewPathManager(v.WorkspacePath)
+	pathMgr := NewPathManager(v.WorkspacePath)
 	return strategy.Configure(ctx, (*define.VMConfig)(v), pathMgr)
 }
 
 func (v *VMConfig) generateSSHCfg() error {
-	pathMgr := internal.NewPathManager(v.WorkspacePath)
-	configurator := services.NewSSHConfigurator(pathMgr)
+	pathMgr := NewPathManager(v.WorkspacePath)
+	configurator := NewSSHConfigurator(pathMgr)
 	return configurator.Configure(context.Background(), (*define.VMConfig)(v))
 }
 
@@ -426,7 +423,7 @@ func NewVMConfig(mode define.RunMode) *VMConfig {
 }
 
 func (v *VMConfig) GetVMMRunLogsFile() string {
-	return filepath.Join(internal.NewPathManager(v.WorkspacePath).GetLogsDir(), "vm.log")
+	return filepath.Join(NewPathManager(v.WorkspacePath).GetLogsDir(), "vm.log")
 }
 
 func (v *VMConfig) needsDiskRegeneration(ctx context.Context) (bool, error) {
@@ -454,29 +451,79 @@ func (v *VMConfig) WithRAWDiskVersionXATTR(value string) *VMConfig {
 }
 
 func (v *VMConfig) GetPodmanListenAddr() string {
-	return internal.NewPathManager(v.WorkspacePath).GetPodmanListenAddr()
+	return NewPathManager(v.WorkspacePath).GetPodmanListenAddr()
 }
 
 func (v *VMConfig) GetVNetListenAddr() string {
-	return internal.NewPathManager(v.WorkspacePath).GetVNetListenAddr()
+	return NewPathManager(v.WorkspacePath).GetVNetListenAddr()
 }
 
 func (v *VMConfig) GetGVPCtlAddr() string {
-	return internal.NewPathManager(v.WorkspacePath).GetGVPCtlAddr()
+	return NewPathManager(v.WorkspacePath).GetGVPCtlAddr()
 }
 
 func (v *VMConfig) GetVMCtlAddr() string {
-	return internal.NewPathManager(v.WorkspacePath).GetVMCtlAddr()
+	return NewPathManager(v.WorkspacePath).GetVMCtlAddr()
 }
 
 func (v *VMConfig) GetIgnAddr() string {
-	return internal.NewPathManager(v.WorkspacePath).GetIgnAddr()
+	return NewPathManager(v.WorkspacePath).GetIgnAddr()
 }
 
 // GetNetworkMode returns the network mode as a first-class Mode object.
 // This provides a clean abstraction over network mode differences.
 func (v *VMConfig) GetNetworkMode() networkmode.Mode {
 	return networkmode.FromString(v.VirtualNetworkMode)
+}
+
+// PathManager handles all workspace-related path calculations.
+type PathManager struct {
+	workspacePath string
+}
+
+// NewPathManager creates a new PathManager for the given workspace path.
+func NewPathManager(workspacePath string) *PathManager {
+	return &PathManager{workspacePath: workspacePath}
+}
+
+func (p *PathManager) GetSocksPath(name string) string {
+	return filepath.Clean(filepath.Join(p.workspacePath, "socks", name))
+}
+
+func (p *PathManager) GetPodmanListenAddr() string {
+	return p.GetSocksPath("podman-api.sock")
+}
+
+func (p *PathManager) GetVNetListenAddr() string {
+	return p.GetSocksPath("vnet.sock")
+}
+
+func (p *PathManager) GetGVPCtlAddr() string {
+	return p.GetSocksPath("gvpctl.sock")
+}
+
+func (p *PathManager) GetVMCtlAddr() string {
+	return p.GetSocksPath("vmctl.sock")
+}
+
+func (p *PathManager) GetIgnAddr() string {
+	return p.GetSocksPath("ign.sock")
+}
+
+func (p *PathManager) GetSSHPrivateKeyFile() string {
+	return filepath.Clean(filepath.Join(p.workspacePath, "ssh", "key"))
+}
+
+func (p *PathManager) GetLogsDir() string {
+	return filepath.Join(p.workspacePath, "logs")
+}
+
+func (p *PathManager) GetRootfsDir() string {
+	return filepath.Join(p.workspacePath, "rootfs")
+}
+
+func (p *PathManager) GetContainerStorageDiskPath() string {
+	return filepath.Join(p.workspacePath, "raw-disk", "container-storage.ext4")
 }
 
 func LoadVMCFromFile(file string) (*VMConfig, error) {

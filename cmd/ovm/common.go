@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/vmconfig"
+	"linuxvm/pkg/vmbuilder"
 
 	"github.com/urfave/cli/v3"
 )
 
 func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMode) error {
-	_, err := vmconfig.NewVMConfigBuilder(runMode).
+	_, err := vmbuilder.NewVMConfigBuilder(runMode).
 		SetWorkspace(command.String(define.FlagWorkspace)).
 		SetLogLevel(command.String(define.FlagLogLevel)).
 		SetResources(command.Int8(define.FlagCPUS), command.Uint64(define.FlagMemoryInMB)).

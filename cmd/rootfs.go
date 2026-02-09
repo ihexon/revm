@@ -120,7 +120,7 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 			return err
 		}
 
-		if err := vmp.Create(ctx); err != nil {
+		if err = vmp.Create(ctx); err != nil {
 			return fmt.Errorf("failed to create vm: %w", err)
 		}
 
