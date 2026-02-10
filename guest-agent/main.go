@@ -167,8 +167,12 @@ func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
 	})
 
 	g.Go(func() error {
+		const sshKeyFilePath = "/.bin/sshkey"
+		if err := os.WriteFile(sshKeyFilePath, []byte(vmc.SSHInfo.HostSSHPrivateKey), 0600); err != nil {
+			return err
+		}
 		if err := service.WaitAndNotifyReady(ctx, "ssh",
-			fmt.Sprintf("%s:%d", define.UnspecifiedAddress, define.GuestSSHServerPort)); err != nil {
+			service.ProbeSSHFn(vmc, sshKeyFilePath)); err != nil {
 			logrus.Warnf("failed to notify ssh ready: %v", err)
 		}
 		return nil
@@ -206,15 +210,18 @@ func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
 
 	g.Go(func() error {
 		if err := service.WaitAndNotifyReady(ctx, "podman",
-			fmt.Sprintf("%s:%d", define.UnspecifiedAddress, define.GuestPodmanAPIPort)); err != nil {
+			service.ProbePodmanFn(vmc)); err != nil {
 			logrus.Warnf("failed to notify podman ready: %v", err)
 		}
 		return nil
 	})
 
 	g.Go(func() error {
-		if err := service.WaitAndNotifyReady(ctx, "ssh",
-			fmt.Sprintf("%s:%d", define.UnspecifiedAddress, define.GuestSSHServerPort)); err != nil {
+		const sshKeyFilePath = "/.bin/sshkey"
+		if err := os.WriteFile(sshKeyFilePath, []byte(vmc.SSHInfo.HostSSHPrivateKey), 0600); err != nil {
+			return err
+		}
+		if err := service.WaitAndNotifyReady(ctx, "ssh", service.ProbeSSHFn(vmc, sshKeyFilePath)); err != nil {
 			logrus.Warnf("failed to notify ssh ready: %v", err)
 		}
 		return nil

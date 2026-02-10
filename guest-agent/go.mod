@@ -13,17 +13,23 @@ require (
 )
 
 require (
+	github.com/charmbracelet/keygen v0.5.4 // indirect
+	github.com/containers/gvisor-tap-vsock v0.8.8-0.20260113072212-36a2ce3f6f7c // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/jsimonetti/rtnetlink v1.3.5 // indirect
+	github.com/linuxkit/virtsock v0.0.0-20241009230534-cb6a20cc0422 // indirect
 	github.com/mdlayher/netlink v1.7.2 // indirect
 	github.com/mdlayher/packet v1.1.2 // indirect
 	github.com/mdlayher/socket v0.5.1 // indirect
+	github.com/oomol-lab/sysproxy v0.0.0-20250609040630-bacc3356fc00 // indirect
 	github.com/pierrec/lz4/v4 v4.1.23 // indirect
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
+	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
+	golang.org/x/term v0.39.0 // indirect
 )
 
 replace linuxvm => ../

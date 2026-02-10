@@ -3,20 +3,18 @@ package service
 import (
 	"context"
 	"guestAgent/pkg/vsock"
-	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
-const defaultLocalProbeInterval = 10 * time.Millisecond
-
-// WaitAndNotifyReady probes a local TCP address until it's ready,
+// WaitAndNotifyReady polls with the given probe until the service is ready,
 // then notifies the host via the ignition server's /ready/{service} endpoint.
-func WaitAndNotifyReady(ctx context.Context, serviceName string, addr string) error {
-	if err := probeLocalTCP(ctx, addr, defaultLocalProbeInterval); err != nil {
+func WaitAndNotifyReady(ctx context.Context, serviceName string, probe ProbeFunc) error {
+	if err := pollUntilReady(ctx, probe); err != nil {
 		return err
 	}
-	logrus.Infof("%s is listening locally, notifying host", serviceName)
+
+	logrus.Infof("%s is ready, notifying ready event to host via vsock", serviceName)
 
 	svc := vsock.NewVSockService()
 	defer svc.Close()
