@@ -17,10 +17,11 @@ import (
 
 // httpServer provides common HTTP server functionality.
 type httpServer struct {
-	name     string
-	listener string
-	server   *http.Server
-	mux      *http.ServeMux
+	name        string
+	listener    string
+	server      *http.Server
+	mux         *http.ServeMux
+	onListening func() // called once after net.Listen succeeds
 }
 
 func newUnixSockHTTPServer(name, listener string) *httpServer {
@@ -45,6 +46,10 @@ func (s *httpServer) serve(ctx context.Context) error {
 		return fmt.Errorf("failed to listen on %q: %w", addr.Path, err)
 	}
 	defer os.Remove(addr.Path)
+
+	if s.onListening != nil {
+		s.onListening()
+	}
 
 	s.server = &http.Server{Handler: s.mux}
 

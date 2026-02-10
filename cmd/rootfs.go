@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/service"
+	"linuxvm/pkg/httpserver"
 
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
@@ -94,37 +94,33 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 		}
 	})
 
+	// start ign service
+	ignSrv := httpserver.NewIgnServer(vmc)
 	g.Go(func() error {
-		return vmp.StartIgnServer(ctx)
+		return ignSrv.Start(ctx)
 	})
 
-	g.Go(func() error {
-		return vmp.StartVMCtlServer(ctx)
-	})
-
-	// Start network stack based on mode
+	// start virtual network service
 	mode := vmc.GetNetworkMode()
 	g.Go(func() error {
 		return mode.StartNetworkStack(ctx, (*define.VMConfig)(vmc))
 	})
 
+	// start vmctl service
 	g.Go(func() error {
-		if err = service.WaitAll(ctx,
-			service.NewIgnServerProbe(vmc.IgnitionServerCfg.ListenSockAddr),
-		); err != nil {
-			return err
-		}
+		return vmp.StartVMCtlServer(ctx)
+	})
 
-		// Wait for network stack to be ready
-		if err = mode.WaitNetworkReady(ctx, (*define.VMConfig)(vmc)); err != nil {
-			return err
+	g.Go(func() error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ignSrv.VNetReady:
+			if err := vmp.Create(ctx); err != nil {
+				return fmt.Errorf("failed to create vm: %w", err)
+			}
+			return vmp.Start(ctx)
 		}
-
-		if err = vmp.Create(ctx); err != nil {
-			return fmt.Errorf("failed to create vm: %w", err)
-		}
-
-		return vmp.Start(ctx)
 	})
 
 	return g.Wait()

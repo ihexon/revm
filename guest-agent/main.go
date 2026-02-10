@@ -166,6 +166,14 @@ func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
 		return service.DoExecCmdLine(ctx, vmc)
 	})
 
+	g.Go(func() error {
+		if err := service.WaitAndNotifyReady(ctx, "ssh",
+			fmt.Sprintf("%s:%d", define.UnspecifiedAddress, define.GuestSSHServerPort)); err != nil {
+			logrus.Warnf("failed to notify ssh ready: %v", err)
+		}
+		return nil
+	})
+
 	return g.Wait()
 }
 
@@ -194,6 +202,22 @@ func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
 
 	g.Go(func() error {
 		return service.SyncRTCTime(ctx)
+	})
+
+	g.Go(func() error {
+		if err := service.WaitAndNotifyReady(ctx, "podman",
+			fmt.Sprintf("%s:%d", define.UnspecifiedAddress, define.GuestPodmanAPIPort)); err != nil {
+			logrus.Warnf("failed to notify podman ready: %v", err)
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		if err := service.WaitAndNotifyReady(ctx, "ssh",
+			fmt.Sprintf("%s:%d", define.UnspecifiedAddress, define.GuestSSHServerPort)); err != nil {
+			logrus.Warnf("failed to notify ssh ready: %v", err)
+		}
+		return nil
 	})
 
 	return g.Wait()
