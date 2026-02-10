@@ -354,6 +354,7 @@ func (vm *LibkrunVM) addPrimaryConsole() (C.uint32_t, error) {
 		}
 		go func() {
 			_, _ = io.Copy(stdinW, os.Stdin)
+			//_ = stdinW.Close()
 		}()
 
 		stdoutR, stdoutW, err := os.Pipe()
