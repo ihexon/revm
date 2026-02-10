@@ -51,7 +51,6 @@ func ProbePodmanFn(_ *define.VMConfig) ProbeFunc {
 		if resp.StatusCode != http.StatusOK {
 			network.CloseResponse(resp)
 			_ = client.Close()
-			return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 		}
 
 		network.CloseResponse(resp)
@@ -69,8 +68,17 @@ func pollUntilReady(ctx context.Context, probe ProbeFunc) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := probe(ctx); err == nil {
-				return nil
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- probe(ctx)
+			}()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case err := <-errCh:
+				if err == nil {
+					return nil
+				}
 			}
 		}
 	}

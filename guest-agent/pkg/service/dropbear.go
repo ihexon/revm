@@ -57,6 +57,64 @@ func (d *Dropbear) WriteAuthorizedKeys(publicKey string) error {
 	return nil
 }
 
+func chmodUpDirs(path string, mode os.FileMode, stopAt string) error {
+	path = filepath.Clean(path)
+	stopAt = filepath.Clean(stopAt)
+
+	dir := filepath.Dir(path)
+
+	for {
+		logrus.Debugf("chmod & chown up %s", dir)
+		if err := os.Chmod(dir, mode); err != nil {
+			return fmt.Errorf("chmod dir %s: %w", dir, err)
+		}
+		if err := os.Chown(dir, 0, 0); err != nil {
+			return fmt.Errorf("chown dir %s: %w", dir, err)
+		}
+
+		if dir == stopAt || dir == "/" {
+			break
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return nil
+}
+
+func (d *Dropbear) ChmodDropbearWorkdir() error {
+	stopAt := "/"
+
+	files := []struct {
+		path string
+		mode os.FileMode
+	}{
+		{d.cfg.AuthorizedKeysFile, 0700},
+		{d.cfg.PrivateKeyPath, 0700},
+	}
+
+	for _, f := range files {
+		p := filepath.Clean(f.path)
+
+		logrus.Debugf("chmod & chown %s", p)
+		if err := os.Chmod(p, f.mode); err != nil {
+			return fmt.Errorf("chmod %s: %w", p, err)
+		}
+		if err := os.Chown(p, 0, 0); err != nil {
+			return fmt.Errorf("chown %s: %w", p, err)
+		}
+
+		if err := chmodUpDirs(p, 0700, stopAt); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Start starts the dropbear SSH server. Blocks until the server exits.
 func (d *Dropbear) Start(ctx context.Context) error {
 	args := []string{
@@ -66,7 +124,6 @@ func (d *Dropbear) Start(ctx context.Context) error {
 		"-r", d.cfg.PrivateKeyPath,
 		"-F", // foreground
 		"-s", // disable password login
-		"-E", // log to stderr
 	}
 
 	if d.cfg.PidFile != "" {
@@ -79,6 +136,10 @@ func (d *Dropbear) Start(ctx context.Context) error {
 	cmd.Stdout = os.Stderr
 
 	logrus.Debugf("dropbear: %v", cmd.Args)
+	err := d.ChmodDropbearWorkdir()
+	if err != nil {
+		return fmt.Errorf("chmod dropbear runtime: %w", err)
+	}
 	return cmd.Run()
 }
 
