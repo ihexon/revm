@@ -132,7 +132,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ignSrv.PodmanReady:
-			logrus.Infof("Podman API ready: %s", mode.GetPodmanListenAddr((*define.VMConfig)(vmc)))
+			logrus.Infof("Podman API proxy listen in: %s", mode.GetPodmanListenAddr((*define.VMConfig)(vmc)))
 			return nil
 		}
 	})

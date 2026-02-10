@@ -50,7 +50,7 @@ func (s *IgnServer) Start(ctx context.Context) error {
 	s.srv.mux.HandleFunc("/vmconfig", s.handleVMConfig)
 	s.srv.mux.HandleFunc("/ready/ssh", s.handleReadySSH)
 	s.srv.mux.HandleFunc("/ready/podman", s.handleReadyPodman)
-	errChan := make(chan error,2)
+	errChan := make(chan error, 2)
 	go func() {
 		if err := s.waitVirtualNetworkOnline(ctx); err != nil {
 			errChan <- err
