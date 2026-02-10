@@ -54,6 +54,7 @@ func String2NetworkMode(s string) VNetMode {
 }
 
 const (
+	BuiltinBusybox          = "/.bin/busybox"
 	GuestAgentPathInGuest   = "/.bin/guest-agent"
 	GuestHiddenBinDir       = "/.bin"
 	VMConfigFilePathInGuest = "/vmconfig.json"

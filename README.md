@@ -1,130 +1,209 @@
 # revm
 
-A lightweight Linux VM launcher for macOS, powered by [libkrun](https://github.com/containers/libkrun) and Apple's Hypervisor.framework. Launch a Linux shell in under a second.
+A lightweight Linux sandbox and container launcher for macOS, powered
+by [libkrun](https://github.com/containers/libkrun). Boot a full Linux environment or a Podman container engine in under
+1 second.
 
 ## Features
 
-- **Fast startup** - Enter a Linux shell in ~1 second, no heavy VM overhead
-- **Zero configuration** - No system modifications, no daemons, just run
-- **Docker/Podman compatible** - Full Docker CLI compatibility via built-in Podman
-- **Two execution modes** - Rootfs mode for direct Linux execution, Container mode for Docker workflows
-- **Disk mounting** - Mount virtual disk images (ext4/btrfs/xfs) into the guest
-- **Directory sharing** - Share host directories with the guest via VirtIO-FS
-- **Multi-terminal** - Attach multiple terminals to a running instance via SSH
-- **Proxy passthrough** - Inherit host proxy settings in the guest
+- **Sub-second startup** — launch a Linux shell almost instantly via libkrun's lightweight VM
+- **Built-in Podman engine** — run containers with the standard `podman` CLI, no Docker Desktop required
+- **Zero configuration** — ships with a bundled Alpine rootfs and kernel; works out of the box
+- **Multi-terminal** — attach additional shells to a running VM via SSH over vsock
+- **Directory sharing** — mount host directories into the guest via VirtIO-FS
+- **Raw disk mounting** — attach ext4 disk images that are auto-mounted inside the guest
+- **Persistent workspaces** — optionally preserve the rootfs and data across runs
+- **Custom rootfs** — bring your own Linux rootfs (Ubuntu, Debian, etc.)
+- **Network flexibility** — choose between gvisor userspace networking or TSI (Transparent Socket Interception)
+- **System proxy passthrough** — forward host HTTP/HTTPS proxy settings into the guest
 
 ## Requirements
 
-- macOS 13.1+ (Ventura or later)
-- Apple Silicon (ARM64)
+macOS Sonoma or later (Apple Silicon)
 
 ## Installation
 
 ```bash
 # Download the latest release
-wget https://github.com/ihexon/revm/releases/latest/download/revm.tar.zst
+wget https://github.com/ihexon/revm/releases/download/v4.1.4/revm-Darwin-arm64.tar.zst
 
-# Remove quarantine attribute (required for downloaded binaries)
-xattr -d com.apple.quarantine revm.tar.zst
+# Remove macOS quarantine attribute
+xattr -d com.apple.quarantine revm-Darwin-arm64.tar.zst
 
 # Extract
-tar -xvf revm.tar.zst
-
-# Run
-./out/bin/revm --help
+tar -xvf revm-Darwin-arm64.tar.zst
 ```
 
 ## Quick Start
 
-### Rootfs Mode
-
-Run commands directly in a Linux rootfs:
-
 ```bash
-# Download Alpine Linux rootfs
-mkdir alpine && cd alpine
-wget -qO- https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.3-aarch64.tar.gz | tar -xz
-cd ..
+# Launch a Linux shell (uses built-in Alpine rootfs)
+revm run sh
 
-# Launch a shell
-revm rootfs-mode --rootfs ./alpine -- /bin/sh
+# Run a one-off command
+revm run -- uname -a
 
-# Or run a specific command
-revm rootfs-mode --rootfs ./alpine -- /bin/echo "Hello from Linux!"
+# Launch with more resources
+revm run --cpus 4 --memory 2048 sh
 ```
 
-### Container Mode
+## Commands
 
-Run Docker/Podman containers with persistent storage:
+### `revm run` — Run a Linux shell
 
-```bash
-# Start container engine (creates data.disk if not exists)
-revm docker-mode --data-storage ~/data.disk
-
-# In another terminal, use Docker CLI
-export DOCKER_HOST=unix:///tmp/docker_api.sock
-docker run --rm alpine echo "Hello from container!"
-
-# Or use Podman CLI
-export CONTAINER_HOST=unix:///tmp/docker_api.sock
-podman run --rm alpine echo "Hello from container!"
-```
-
-### Attach to Running Instance
+Boots a lightweight VM with the built-in (or custom) rootfs and executes the given command.
 
 ```bash
-# Attach a new terminal to a running VM
-revm attach ./alpine -- /bin/sh
-
-# Run a command in the running VM
-revm attach ./alpine -- cat /etc/os-release
+revm run [flags] <command> [args...]
 ```
 
-## Advanced Usage
+| Flag             | Description                                                    | Default               |
+|------------------|----------------------------------------------------------------|-----------------------|
+| `--cpus`         | Number of CPU cores                                            | `1`                   |
+| `--memory`       | Memory in MB                                                   | `512`                 |
+| `--workspace`    | Workspace directory for persistent state                       | `/tmp/.revm-<random>` |
+| `--rootfs`       | Path to a custom rootfs directory                              | built-in Alpine       |
+| `--workdir`      | Working directory inside the guest                             | `/`                   |
+| `--raw-disk`     | Attach a raw disk image (repeatable)                           | —                     |
+| `--mount`        | Mount a host directory (repeatable, format: `host:guest[:ro]`) | —                     |
+| `--envs`         | Set environment variables (repeatable, format: `KEY=value`)    | —                     |
+| `--network`      | Network stack: `GVISOR`                                        | `GVISOR`              |
+| `--system-proxy` | Forward host HTTP/HTTPS proxy to guest                         | `false`               |
 
-### Mount Disk Images
-
-Mount ext4/btrfs/xfs disk images into the guest:
+**Examples:**
 
 ```bash
-# Create a disk image (if needed)
-truncate -s 10G data.disk
+# Run with a custom rootfs
+revm run --rootfs ./my-ubuntu-rootfs bash
 
-# Mount disk images (auto-mounted at /var/tmp/mnt/...)
-revm rootfs-mode --rootfs ./alpine \
-  --data-disk ~/data1.disk \
-  --data-disk ~/data2.disk \
-  -- /bin/sh
+# Pass environment variables
+revm run --envs FOO=bar --envs BAZ=qux sh
+
+# Set working directory
+revm run --workdir /home sh
 ```
 
-### Share Host Directories
+### `revm container` — Launch the Podman container engine
+
+Boots a VM with a built-in Podman service and exposes the API via a Unix socket on the host. Uses all available CPU
+cores and memory by default.
+
+```bash
+revm container [flags]
+```
+
+| Flag             | Description                                | Default               |
+|------------------|--------------------------------------------|-----------------------|
+| `--cpus`         | Number of CPU cores                        | all cores             |
+| `--memory`, `-m` | Memory in MB                               | all available         |
+| `--workspace`    | Workspace directory                        | `/tmp/.revm-<random>` |
+| `--raw-disk`     | Attach a raw disk image (repeatable)       | —                     |
+| `--mount`        | Mount a host directory (repeatable)        | —                     |
+| `--network`      | Network stack: `GVISOR` or `TSI`           | `GVISOR`              |
+| `--system-proxy` | Forward host proxy to the container engine | `false`               |
+
+**Example:**
+
+```bash
+$ revm container --log-level info
+INFO Podman API proxy listen in: unix:///tmp/.revm-NI2kxCG2/socks/podman-api.sock
+
+# In another terminal, point podman at the socket
+$ export CONTAINER_HOST=unix:///tmp/.revm-NI2kxCG2/socks/podman-api.sock
+$ podman run --rm alpine echo hello
+hello
+```
+
+### `revm attach` — Attach to a running VM
+
+Opens an additional terminal session to a running VM instance via SSH. Useful for multi-terminal workflows.
+
+```bash
+revm attach [flags] <workspace-path> [command]
+```
+
+| Flag             | Description                                    | Default |
+|------------------|------------------------------------------------|---------|
+| `--pty`, `--tty` | Allocate a pseudo-terminal (interactive shell) | `false` |
+
+**Examples:**
+
+```bash
+# Open an interactive shell
+revm attach --pty ~/my_space
+
+# Run a command non-interactively
+revm attach ~/my_space ls -la /
+```
+
+### Global Flags
+
+| Flag           | Description                                                                | Default |
+|----------------|----------------------------------------------------------------------------|---------|
+| `--log-level`  | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic` | `warn`  |
+| `--report-url` | Endpoint to report VM events (e.g., `unix:///var/run/events.sock`)         | —       |
+
+## Workspace
+
+By default the guest filesystem is ephemeral (stored under `/tmp`). To persist data across runs, pass a stable workspace
+directory — all rootfs changes and SSH keys are saved there.
+
+```bash
+$ revm run --workspace ~/my_space -- sh -c 'echo hello > /hello.txt'
+$ revm run --workspace ~/my_space -- sh -c 'cat /hello.txt'
+hello
+```
+
+The workspace directory contains:
+
+- `rootfs/` — the guest root filesystem
+- `ssh/` — auto-generated SSH keypair for host-guest communication
+- `socks/` — Unix sockets (ignition, vmctl, podman API, network)
+- `logs/` — VM log files
+- `raw-disk/` — container storage disk (container mode)
+
+## Directory Sharing
 
 Mount host directories into the guest via VirtIO-FS:
 
 ```bash
-# Mount host directory to guest path
-revm rootfs-mode --rootfs ./alpine \
-  --mount /Users/me/projects:/mnt/projects \
-  -- /bin/sh
+# Read-write mount
+revm run --mount /Users/me/projects:/mnt/projects sh
+
+# Read-only mount
+revm run --mount /Users/me/data:/mnt/data:ro sh
+
+# Multiple mounts
+revm run --mount /path/a:/mnt/a --mount /path/b:/mnt/b sh
 ```
 
-### Proxy Passthrough
+## Raw Disk Mounting
 
-Inherit the host's HTTP/HTTPS proxy settings:
+Attach ext4 disk images that are automatically mounted at `/mnt/<UUID>` inside the guest:
 
 ```bash
-revm rootfs-mode --rootfs ./alpine --system-proxy -- /bin/sh
+$ revm run --raw-disk ~/mydisk.ext4 -- mount
+/dev/vda on /mnt/1f803bc6-db09-48b7-96af-e027fd616afe type ext4 (rw,relatime,discard,data=ordered)
 ```
 
-### Resource Configuration
+Multiple disks can be attached with repeated `--raw-disk` flags. If the disk file does not exist, it will be created and
+formatted automatically.
 
-```bash
-# Customize CPU and memory
-revm rootfs-mode --rootfs ./alpine \
-  --cpus 4 \
-  --memory 4096 \
-  -- /bin/sh
-```
+## Networking
+
+revm supports two network modes:
+
+- GVISOR
+- TSI (ToDo)
+
+### GVISOR (default)
+
+Uses [gvisor-tap-vsock](https://github.com/containers/gvisor-tap-vsock) as a userspace network stack. The guest always
+gets IP `192.168.127.2`. You can reach TCP services on the host from inside the guest via the domain
+`host.containers.internal`.
+
+### TSI (Transparent Socket Impersonation)
+TODO
 
 ## Bug Reports
 
@@ -132,4 +211,4 @@ https://github.com/ihexon/revm/issues
 
 ## License
 
-See [LICENSE](./LICENSE) for details.
+Apache License 2.0 — see [LICENSE](./LICENSE) for details.
