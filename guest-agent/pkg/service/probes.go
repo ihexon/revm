@@ -29,7 +29,7 @@ func ProbeSSHFn(vmc *define.VMConfig, sshKeyFile string) ProbeFunc {
 			return err
 		}
 
-		if err = client.RunWith(ctx, "busybox", nil, io.Discard, io.Discard); err != nil {
+		if err = client.RunWith(ctx, define.BuiltinBusybox, nil, io.Discard, io.Discard); err != nil {
 			_ = client.Close()
 			return err
 		}

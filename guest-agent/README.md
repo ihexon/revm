@@ -1,2 +1,3 @@
-# Guest Agent for revm
-This repository contains the guest agent for revm, an agent running on the host machine to setup all things like networking, filesystems, etc.
+# Guest Agent
+
+The guest agent runs inside the Linux VM as a child of PID 1. It bootstraps the guest environment — mounting filesystems, configuring networking, starting services (SSH, Podman API), and executing user commands.
