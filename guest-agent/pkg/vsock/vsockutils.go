@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"linuxvm/pkg/define"
+	"net/http"
 	"time"
 )
 
@@ -38,4 +39,16 @@ func (v *Service) GetVMConfig(ctx context.Context) (*define.VMConfig, error) {
 	}
 
 	return vmc, nil
+}
+
+func (v *Service) PostReady(ctx context.Context, serviceName string) error {
+	resp, err := v.client.Post(ctx, "/ready/"+serviceName, "", nil)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("POST /ready/%s returned %d", serviceName, resp.StatusCode)
+	}
+	return nil
 }

@@ -13,6 +13,7 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"io"
 	"linuxvm/pkg/httpserver"
 	"linuxvm/pkg/interfaces"
 	"os"
@@ -136,6 +137,7 @@ type LibkrunVM struct {
 	ctxID uint32
 
 	consolePortsINOUT []ConsolePortINOUT
+	pipeFiles         []*os.File // prevent GC from closing fds passed to C
 }
 
 // guestMACAddress is the fixed MAC address for the guest VM network interface.
@@ -341,11 +343,37 @@ func (vm *LibkrunVM) addPrimaryConsole() (C.uint32_t, error) {
 
 	if !isTTy {
 		logrus.Infof("running in non-tty mode")
+
+		// Use independent pipes to isolate stdin/stderr from libkrun's O_NONBLOCK.
+		// libkrun sets O_NONBLOCK on the fds it receives; since dup'd fds share the
+		// same file description, that flag would leak back to the terminal pty and
+		// cause other processes (e.g. xxd after `revm ... | xxd`) to get EAGAIN.
+		// stdout is typically already a pipe when piped, so it doesn't need isolation.
+		stdinR, stdinW, err := os.Pipe()
+		if err != nil {
+			return 0, fmt.Errorf("pipe for stdin isolation: %w", err)
+		}
+		go func() {
+			_, _ = io.Copy(stdinW, os.Stdin)
+		}()
+
+		stderrR, stderrW, err := os.Pipe()
+		if err != nil {
+			return 0, fmt.Errorf("pipe for stderr isolation: %w", err)
+		}
+		go func() {
+			_, _ = io.Copy(os.Stderr, stderrR)
+		}()
+
+		// Keep stdinR and stderrW alive so GC doesn't finalize and close
+		// the fds that were passed to C.
+		vm.pipeFiles = append(vm.pipeFiles, stdinR, stderrW)
+
 		ret := C.krun_add_virtio_console_default(
 			C.uint32_t(vm.ctxID),
-			C.int(os.Stdin.Fd()),
+			C.int(stdinR.Fd()),
 			C.int(os.Stdout.Fd()),
-			C.int(os.Stderr.Fd()),
+			C.int(stderrW.Fd()),
 		)
 		if ret != 0 {
 			return 0, fmt.Errorf("krun_add_virtio_console_default failed with code %v", ret)
@@ -682,9 +710,6 @@ func (vm *LibkrunVM) Stop(_ context.Context) error {
 	return nil
 }
 
-func (vm *LibkrunVM) StartIgnServer(ctx context.Context) error {
-	return httpserver.NewIgnitionServer(vm.vmc).Start(ctx)
-}
 func (vm *LibkrunVM) StartVMCtlServer(ctx context.Context) error {
 	return httpserver.NewManagementAPIServer(vm.vmc).Start(ctx)
 }

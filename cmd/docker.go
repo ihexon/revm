@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/service"
+	"linuxvm/pkg/httpserver"
 	"linuxvm/pkg/system"
 
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 )
@@ -86,44 +87,54 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		}
 	})
 
+	// start ign service
+	ignSrv := httpserver.NewIgnServer(vmc)
 	g.Go(func() error {
-		return vmp.StartIgnServer(ctx)
+		return ignSrv.Start(ctx)
 	})
 
-	// Start network stack based on mode
+	// start virtual network service
 	mode := vmc.GetNetworkMode()
 	g.Go(func() error {
 		return mode.StartNetworkStack(ctx, (*define.VMConfig)(vmc))
 	})
 
+	// start vmctl service
 	g.Go(func() error {
 		return vmp.StartVMCtlServer(ctx)
 	})
 
-	// Start Podman API proxy based on mode
+	// start podman proxy service
 	g.Go(func() error {
-		return mode.StartPodmanProxy(ctx, (*define.VMConfig)(vmc))
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ignSrv.VNetReady:
+			return mode.StartPodmanProxy(ctx, (*define.VMConfig)(vmc))
+		}
 	})
 
 	g.Go(func() error {
-		if err := service.WaitAll(ctx, service.NewIgnServerProbe(vmc.IgnitionServerCfg.ListenSockAddr)); err != nil {
-			return err
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ignSrv.VNetReady:
+			if err := vmp.Create(ctx); err != nil {
+				return fmt.Errorf("create virtual machine from libkrun builder fail: %v", err)
+			}
+			return vmp.Start(ctx)
 		}
-
-		// Wait for network stack to be ready
-		if err := mode.WaitNetworkReady(ctx, (*define.VMConfig)(vmc)); err != nil {
-			return err
-		}
-
-		if err := vmp.Create(ctx); err != nil {
-			return fmt.Errorf("create vm: %w", err)
-		}
-		return vmp.Start(ctx)
 	})
 
-	// Wait for Podman API to be ready
+	// Wait for Podman API to be ready (via guest notification)
 	g.Go(func() error {
-		return mode.WaitPodmanReady(ctx, (*define.VMConfig)(vmc))
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ignSrv.PodmanReady:
+			logrus.Infof("Podman API ready: %s", mode.GetPodmanListenAddr((*define.VMConfig)(vmc)))
+			return nil
+		}
 	})
 
 	return g.Wait()

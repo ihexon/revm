@@ -10,29 +10,15 @@ import (
 // Mode represents a virtual network mode with its specific capabilities and behaviors.
 // This interface encapsulates all network mode differences including service lifecycle.
 type Mode interface {
-	// Service lifecycle methods
-
 	// StartNetworkStack starts the network stack required by this mode.
 	// For GVISOR: starts gvisor-tap-vsock
 	// For TSI: no-op (uses built-in networking)
 	StartNetworkStack(ctx context.Context, vmc *define.VMConfig) error
 
-	// WaitNetworkReady waits for the network stack to be ready.
-	// For GVISOR: waits for GVProxy probe
-	// For TSI: no-op
-	WaitNetworkReady(ctx context.Context, vmc *define.VMConfig) error
-
 	// StartPodmanProxy starts the Podman API proxy if needed (docker mode only).
-	// For GVISOR: starts Unix socket proxy
+	// For GVISOR: starts Unix socket proxy (caller must ensure gvproxy is ready)
 	// For TSI: no-op (uses direct TCP)
 	StartPodmanProxy(ctx context.Context, vmc *define.VMConfig) error
-
-	// WaitPodmanReady waits for Podman API to be accessible.
-	// For GVISOR: waits for Unix socket proxy
-	// For TSI: waits for TCP connection
-	WaitPodmanReady(ctx context.Context, vmc *define.VMConfig) error
-
-	// Address getters
 
 	// GetPodmanListenAddr returns the address where Podman API should be accessed.
 	// For GVISOR: unix socket path
