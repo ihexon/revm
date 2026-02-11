@@ -98,6 +98,9 @@ func main() {
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
 
 	if err := app.Run(ctx, os.Args); err != nil && !errors.Is(err, service.ErrProcessExitNormal) {
+		if cause := context.Cause(ctx); cause != nil && cause != err {
+			logrus.Fatalf("guest-agent exit with error: %v (cause: %v)", err, cause)
+		}
 		logrus.Fatalf("guest-agent exit with error: %v", err)
 	}
 }
@@ -154,7 +157,6 @@ func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
 	})
 
 	g.Go(func() error {
-		defer logrus.Info("guest ssh server stopped")
 		return service.StartGuestSSHServer(ctx, vmc)
 	})
 
@@ -167,11 +169,7 @@ func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
 	})
 
 	g.Go(func() error {
-		const sshKeyFilePath = "/.bin/sshkey"
-		if err := os.WriteFile(sshKeyFilePath, []byte(vmc.SSHInfo.HostSSHPrivateKey), 0600); err != nil {
-			return err
-		}
-		return service.WaitAndNotifyReady(ctx, "ssh", define.DefaultProbeTimeout, service.ProbeSSHFn(vmc, sshKeyFilePath))
+		return machine.WaitGuestServiceReady(ctx, vmc)
 	})
 
 	return g.Wait()
@@ -203,16 +201,7 @@ func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
 	})
 
 	g.Go(func() error {
-		return service.WaitAndNotifyReady(ctx, define.ServiceNamePodman, define.DefaultProbeTimeout, service.ProbePodmanFn(vmc))
-	})
-
-	g.Go(func() error {
-		const sshKeyFilePath = "/.bin/sshkey"
-		if err := os.WriteFile(sshKeyFilePath, []byte(vmc.SSHInfo.HostSSHPrivateKey), 0600); err != nil {
-			return err
-		}
-
-		return service.WaitAndNotifyReady(ctx, "ssh", define.DefaultProbeTimeout, service.ProbeSSHFn(vmc, sshKeyFilePath))
+		return machine.WaitGuestServiceReady(ctx, vmc)
 	})
 
 	return g.Wait()

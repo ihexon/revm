@@ -50,7 +50,7 @@ var initCmd = cli.Command{
 	Action: initAction,
 }
 
-// init 现在被弃用，这里只发送 event 信号，为了兼容
+// initAction is deprecated; it only sends a success event for backward compatibility.
 func initAction(ctx context.Context, command *cli.Command) error {
 	return event.GetReporterFromCtx(ctx).SendEventInInitLifeCycle(ctx, event.Success, "")
 }

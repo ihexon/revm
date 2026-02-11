@@ -50,7 +50,7 @@ func GetVMM(vmc *vmbuilder.VMConfig) (*libkrun.LibkrunVM, error) {
 	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
 		return libkrun.NewLibkrunVM(vmc), nil
 	}
-	return nil, fmt.Errorf("not support this platform")
+	return nil, fmt.Errorf("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 }
 
 func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMode) (*vmbuilder.VMConfig, error) {

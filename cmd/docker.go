@@ -14,38 +14,37 @@ import (
 
 var startDocker = cli.Command{
 	Name:        define.FlagDockerMode,
-	Aliases:     []string{"docker", "podman", "podman-mode", "container-mode", "container"},
 	Usage:       "run in Docker-compatible mode",
 	UsageText:   define.FlagDockerMode + " [OPTIONS] [command]",
-	Description: "In Docker compatibility mode, the built-in Docker engine is used and a unix socks file is listened to as the API entry point used by the docker cli.",
+	Description: "In Docker-compatible mode, the built-in Podman engine is used and a Unix socket is exposed as the API endpoint for the docker/podman CLI.",
 	Flags: []cli.Flag{
 		&cli.Int8Flag{
 			Name:  define.FlagCPUS,
-			Usage: "given how many cpu cores",
+			Usage: "number of CPU cores",
 			Value: int8(system.GetCPUCores()),
 		},
 		&cli.Uint64Flag{
 			Name:    define.FlagMemoryInMB,
 			Aliases: []string{"m"},
-			Usage:   "given how many memory in MB",
+			Usage:   "memory size in MB",
 			Value:   setMaxMemory(),
 		},
 		&cli.BoolFlag{
 			Name:  define.FlagUsingSystemProxy,
-			Usage: "use system proxy, set environment http(s)_proxy to docker engine",
+			Usage: "forward host HTTP/HTTPS proxy settings to the container engine",
 			Value: false,
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagRawDisk,
-			Usage: "attach another raw disk into guest",
+			Usage: "attach a raw disk image to the guest",
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagMount,
-			Usage: "mount another host dir to guest",
+			Usage: "mount a host directory into the guest",
 		},
 		&cli.StringFlag{
 			Name:   define.FlagWorkDir,
-			Usage:  "set cmdline workdir",
+			Usage:  "working directory for the command inside the guest",
 			Hidden: true,
 			Value:  "/tmp",
 		},
@@ -55,9 +54,10 @@ var startDocker = cli.Command{
 			Value: fmt.Sprintf("/tmp/.revm-%s", FastRandomStr()),
 		},
 		&cli.StringFlag{
-			Name:  define.FlagVNetworkType,
-			Usage: "network stack provider (gvisor,TSI)",
-			Value: define.GVISOR.String(),
+			Name:   define.FlagVNetworkType,
+			Usage:  "network stack provider (GVISOR, TSI)",
+			Value:  define.GVISOR.String(),
+			Hidden: true,
 		},
 	},
 	Action: dockerModeLifeCycle,

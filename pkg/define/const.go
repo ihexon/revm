@@ -98,8 +98,8 @@ const (
 )
 
 const (
-	FlagDockerMode = "docker-mode"
-	FlagRootfsMode = "rootfs-mode"
+	FlagDockerMode = "docker"
+	FlagRootfsMode = "run"
 
 	FlagLogLevel         = "log-level"
 	FlagCPUS             = "cpus"
@@ -126,8 +126,9 @@ const (
 const (
 	EnvLogLevel = "LOG_LEVEL"
 
-	DefaultTimeTicker   = 100 * time.Millisecond
-	DefaultProbeTimeout = 10 * time.Second
+	DefaultTimeTicker       = 100 * time.Millisecond
+	DefaultProbeTimeout     = 10 * time.Second
+	DefaultHandshakeTimeout = 100 * time.Millisecond
 )
 
 // OVMode-specific configuration

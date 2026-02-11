@@ -36,20 +36,49 @@ tar -xvf revm-Darwin-arm64.tar.zst
 
 ## Quick Start
 
+### Run an ephemeral shell
+
+Without `--workspace`, everything is ephemeral (similar to `docker run --rm`).
+
 ```bash
-# Launch a Linux shell (uses built-in Alpine rootfs)
-revm run sh
+revm run sh             # start an ephemeral shell
+revm run -- uname -a    # run a single command
+```
 
-# Run a one-off command
-revm run -- uname -a
+### Launch a VM instance and attach to the guest shell
 
-# Launch with more resources
-revm run --cpus 4 --memory 2048 sh
+Use a long-running command (e.g. `sleep`) to keep the VM alive, then use `attach` from another terminal to open a shell
+or run commands inside the guest.
+
+```shell
+export WORKSPACE=/tmp/my_work
+revm run --workspace $WORKSPACE -- sleep 10000
+
+# Interactive shell
+revm attach --pty $WORKSPACE
+# Non-interactive command
+revm attach $WORKSPACE -- echo hello
+```
+
+### Launch the container engine
+
+The Podman API socket is exposed at `$WORKSPACE/socks/podman-api.sock`. Point your `docker`/`podman` CLI at it by
+setting the `CONTAINER_HOST` or `DOCKER_HOST` environment variable.
+
+```shell
+export WORKSPACE=/tmp/my_workspace
+revm docker --log-level info --workspace $WORKSPACE
+
+# In another terminal
+export WORKSPACE=/tmp/my_workspace
+export CONTAINER_HOST=unix:///$WORKSPACE/socks/podman-api.sock
+podman info
+podman run --rm -dit alpine:edge sh
 ```
 
 ## Commands
 
-### `revm run` — Run a Linux shell
+### `revm run` — Run a command in a Linux VM
 
 Boots a lightweight VM with the built-in (or custom) rootfs and executes the given command.
 
@@ -70,17 +99,10 @@ revm run [flags] <command> [args...]
 | `--network`      | Network stack: `GVISOR`                                        | `GVISOR`              |
 | `--system-proxy` | Forward host HTTP/HTTPS proxy to guest                         | `false`               |
 
-**Examples:**
+**Example:**
 
 ```bash
-# Run with a custom rootfs
-revm run --rootfs ./my-ubuntu-rootfs bash
-
-# Pass environment variables
-revm run --envs FOO=bar --envs BAZ=qux sh
-
-# Set working directory
-revm run --workdir /home sh
+revm run --workspace /tmp/my_workspace --rootfs ./my-ubuntu-rootfs bash
 ```
 
 ### `revm container` — Launch the Podman container engine
@@ -104,14 +126,15 @@ revm container [flags]
 
 **Example:**
 
-```bash
-$ revm container --log-level info
-INFO Podman API proxy listen in: unix:///tmp/.revm-NI2kxCG2/socks/podman-api.sock
+```shell
+export WORKSPACE=/tmp/my_workspace
+revm docker --log-level info --workspace $WORKSPACE
 
-# In another terminal, point podman at the socket
-$ export CONTAINER_HOST=unix:///tmp/.revm-NI2kxCG2/socks/podman-api.sock
-$ podman run --rm alpine echo hello
-hello
+# In another terminal
+export WORKSPACE=/tmp/my_workspace
+export CONTAINER_HOST=unix:///$WORKSPACE/socks/podman-api.sock
+podman info
+podman run --rm -dit alpine:edge sh
 ```
 
 ### `revm attach` — Attach to a running VM
@@ -119,7 +142,7 @@ hello
 Opens an additional terminal session to a running VM instance via SSH. Useful for multi-terminal workflows.
 
 ```bash
-revm attach [flags] <workspace-path> [command]
+revm attach [flags] <workspace-path> [-- command]
 ```
 
 | Flag             | Description                                    | Default |
@@ -133,20 +156,65 @@ revm attach [flags] <workspace-path> [command]
 revm attach --pty ~/my_space
 
 # Run a command non-interactively
-revm attach ~/my_space ls -la /
+revm attach ~/my_space -- ls -la /
 ```
 
 ### Global Flags
 
-| Flag           | Description                                                                | Default |
-|----------------|----------------------------------------------------------------------------|---------|
-| `--log-level`  | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic` | `warn`  |
-| `--report-url` | Endpoint to report VM events (e.g., `unix:///var/run/events.sock`)         | —       |
+| Flag          | Description                                                                | Default |
+|---------------|----------------------------------------------------------------------------|---------|
+| `--log-level` | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic` | `warn`  |
+
+## Mount host directory to guest
+
+Mount host directories into the guest via VirtIO-FS using the `--mount` flag.
+
+**Format:** `host_path:guest_path[:ro]`
+
+| Part         | Required | Description                                          |
+|--------------|----------|------------------------------------------------------|
+| `host_path`  | yes      | Absolute path on the host                            |
+| `guest_path` | no       | Mount point inside the guest (defaults to host path) |
+| `ro`         | no       | Mount as read-only (default is read-write)           |
+
+```bash
+# Read-write mount
+revm run --mount /Users/me/projects:/mnt/projects sh
+
+# Read-only mount
+revm run --mount /Users/me/data:/mnt/data:ro sh
+
+# Multiple mounts
+revm run --mount /path/a:/mnt/a --mount /path/b:/mnt/b sh
+
+# Omit guest path — mounts to the same path inside the guest
+revm run --mount /Users/me/projects sh
+```
+
+## Mount raw disk to guest
+
+Attach ext4 disk images using the `--raw-disk` flag. Each disk is automatically mounted at `/mnt/<UUID>` inside the
+guest with `rw,discard` options.
+
+- If the disk file does **not** exist, a 10 GB ext4 image is created and formatted automatically.
+- Multiple disks can be attached by repeating the `--raw-disk` flag.
+
+```bash
+# Attach a single disk (auto-created if missing)
+revm run --raw-disk ~/mydisk.ext4 sh
+
+# Inside the guest
+$ mount
+/dev/vda on /mnt/1f803bc6-db09-48b7-96af-e027fd616afe type ext4 (rw,relatime,discard,data=ordered)
+
+# Attach multiple disks
+revm run --raw-disk ~/disk1.ext4 --raw-disk ~/disk2.ext4 sh
+```
 
 ## Workspace
 
-By default the guest filesystem is ephemeral (stored under `/tmp`). To persist data across runs, pass a stable workspace
-directory — all rootfs changes and SSH keys are saved there.
+By default the guest filesystem is ephemeral (stored under `/tmp`). To persist data across runs, pass a stable
+`--workspace` directory — all rootfs changes and SSH keys are saved there.
 
 ```bash
 $ revm run --workspace ~/my_space -- sh -c 'echo hello > /hello.txt'
@@ -162,48 +230,13 @@ The workspace directory contains:
 - `logs/` — VM log files
 - `raw-disk/` — container storage disk (container mode)
 
-## Directory Sharing
-
-Mount host directories into the guest via VirtIO-FS:
-
-```bash
-# Read-write mount
-revm run --mount /Users/me/projects:/mnt/projects sh
-
-# Read-only mount
-revm run --mount /Users/me/data:/mnt/data:ro sh
-
-# Multiple mounts
-revm run --mount /path/a:/mnt/a --mount /path/b:/mnt/b sh
-```
-
-## Raw Disk Mounting
-
-Attach ext4 disk images that are automatically mounted at `/mnt/<UUID>` inside the guest:
-
-```bash
-$ revm run --raw-disk ~/mydisk.ext4 -- mount
-/dev/vda on /mnt/1f803bc6-db09-48b7-96af-e027fd616afe type ext4 (rw,relatime,discard,data=ordered)
-```
-
-Multiple disks can be attached with repeated `--raw-disk` flags. If the disk file does not exist, it will be created and
-formatted automatically.
-
 ## Networking
-
-revm supports two network modes:
-
-- GVISOR
-- TSI (ToDo)
 
 ### GVISOR (default)
 
-Uses [gvisor-tap-vsock](https://github.com/containers/gvisor-tap-vsock) as a userspace network stack. The guest always
-gets IP `192.168.127.2`. You can reach TCP services on the host from inside the guest via the domain
+revm uses [gvisor-tap-vsock](https://github.com/containers/gvisor-tap-vsock) as a userspace network stack. The guest
+always gets IP `192.168.127.2`. You can reach TCP services on the host from inside the guest via the domain
 `host.containers.internal`.
-
-### TSI (Transparent Socket Impersonation)
-TODO
 
 ## Bug Reports
 
