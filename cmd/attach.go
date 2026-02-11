@@ -4,10 +4,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/network"
 	"linuxvm/pkg/service"
 	"linuxvm/pkg/vmbuilder"
+	"net/http"
 	"path/filepath"
 
 	"al.essio.dev/pkg/shellescape"
@@ -18,8 +21,8 @@ import (
 var AttachConsole = cli.Command{
 	Name:        "attach",
 	Usage:       "attach to the guest and running command",
-	UsageText:   "attach [OPTIONS] [rootfs] [cmdline]",
-	Description: "attach to the console of the running rootfs, provide the interactive shell of the rootfs",
+	UsageText:   "attach [OPTIONS] <workspace> [-- cmdline]",
+	Description: "attach to the console of the running VM, provide the interactive shell",
 	Action:      attachConsole,
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
@@ -32,17 +35,12 @@ var AttachConsole = cli.Command{
 }
 
 func attachConsole(ctx context.Context, command *cli.Command) error {
-	rootfsPath := command.Args().First()
+	workspace := command.Args().First()
 	enablePTY := command.Bool(define.FlagPTY)
 	cmdline := command.Args().Tail()
 
-	if rootfsPath == "" {
-		return fmt.Errorf("no rootfs specified, please provide the rootfs path")
-	}
-
-	rootfsPath, err := filepath.Abs(filepath.Clean(rootfsPath))
-	if err != nil {
-		return err
+	if workspace == "" {
+		return fmt.Errorf("no workspace specified, please provide the workspace path")
 	}
 
 	// Extract command line arguments
@@ -51,13 +49,28 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 	}
 	logrus.Infof("run cmdline: %v", cmdline)
 
-	// Load VM configuration
-	vmc, err := vmbuilder.LoadVMCFromFile(filepath.Join(rootfsPath, define.VMConfigFilePathInGuest))
+	// Fetch VMConfig from ignition server
+	ignAddr := vmbuilder.NewPathManager(workspace).GetIgnAddr()
+
+	client := network.NewUnixClient(ignAddr)
+	defer client.Close()
+
+	resp, err := client.Get(define.RestAPIVMConfigURL).Do(ctx) //nolint:bodyclose
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to fetch vmconfig from ignition server: %w", err)
+	}
+	defer network.CloseResponse(resp)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("ignition server returned status %d", resp.StatusCode)
 	}
 
-	sshClient, err := service.MakeSSHClient(ctx, (*define.VMConfig)(vmc))
+	var vmc define.VMConfig
+	if err := json.NewDecoder(resp.Body).Decode(&vmc); err != nil {
+		return fmt.Errorf("failed to decode vmconfig: %w", err)
+	}
+
+	sshClient, err := service.MakeSSHClient(ctx, &vmc)
 	if err != nil {
 		return err
 	}

@@ -48,8 +48,8 @@ func NewIgnServer(vmc *vmbuilder.VMConfig) *IgnServer {
 func (s *IgnServer) Start(ctx context.Context) error {
 	s.srv.mux.HandleFunc("/healthz", s.handleHealth)
 	s.srv.mux.HandleFunc("/vmconfig", s.handleVMConfig)
-	s.srv.mux.HandleFunc("/ready/ssh", s.handleReadySSH)
-	s.srv.mux.HandleFunc("/ready/podman", s.handleReadyPodman)
+	s.srv.mux.HandleFunc(fmt.Sprintf("/ready/%s", define.ServiceNameSSH), s.handleReadySSH)
+	s.srv.mux.HandleFunc(fmt.Sprintf("/ready/%s", define.ServiceNamePodman), s.handleReadyPodman)
 	errChan := make(chan error, 2)
 	go func() {
 		if err := s.waitVirtualNetworkOnline(ctx); err != nil {
@@ -68,48 +68,47 @@ func (s *IgnServer) Start(ctx context.Context) error {
 	}
 }
 
-const defaultTimeOut = 10 * time.Millisecond
-
+// waitVirtualNetworkOnline must support TSI/Gvisor network mode
 func (s *IgnServer) waitVirtualNetworkOnline(ctx context.Context) error {
-	// The TSI network is readily available,
-	if s.vmc.VirtualNetworkMode == define.TSI.String() {
-		logrus.Infof("skip probe virtual-network online for TSI network mode")
-		s.vNetOnce.Do(func() { close(s.VNetReady) })
-		return nil
-	}
-
 	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()
 
-	addr, err := network.ParseUnixAddr(s.vmc.GVPCtlAddr)
-	if err != nil {
-		return fmt.Errorf("invalid gvproxy control address %q: %w", s.vmc.GVPCtlAddr, err)
-	}
+	switch s.vmc.VirtualNetworkMode {
+	case define.TSI.String():
+		s.vNetOnce.Do(func() { close(s.VNetReady) })
+		return nil
+	case define.GVISOR.String():
+		addr, err := network.ParseUnixAddr(s.vmc.GVPCtlAddr)
+		if err != nil {
+			return err
+		}
 
-	client := network.NewUnixClient(addr.Path, network.WithTimeout(defaultTimeOut))
-	defer client.Close()
+		client := network.NewUnixClient(addr.Path, network.WithTimeout(define.DefaultTimeTicker))
+		defer client.Close()
 
-	ticker := time.NewTicker(defaultTimeOut)
-	defer ticker.Stop()
+		ticker := time.NewTicker(define.DefaultTimeTicker)
+		defer ticker.Stop()
 
-	logrus.Infof("start probe gvisor virtual-network online")
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			resp, err := client.Get("/services/forwarder/all").Do(ctx) //nolint:bodyclose
-			if err != nil {
-				continue
-			}
-			network.CloseResponse(resp)
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+				resp, err := client.Get("/services/forwarder/all").Do(ctx) //nolint:bodyclose
+				if err != nil {
+					continue
+				}
+				network.CloseResponse(resp)
 
-			if resp.StatusCode == http.StatusOK {
-				s.vNetOnce.Do(func() { close(s.VNetReady) })
-				logrus.Infof("gvisor virtual-network online")
-				return nil
+				if resp.StatusCode == http.StatusOK {
+					logrus.Infof("gvisor virtual-network online")
+					s.vNetOnce.Do(func() { close(s.VNetReady) })
+					return nil
+				}
 			}
 		}
+	default:
+		return fmt.Errorf("unknown virtual network mode: %s", s.vmc.VirtualNetworkMode)
 	}
 }
 

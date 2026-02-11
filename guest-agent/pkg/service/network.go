@@ -3,6 +3,10 @@ package service
 import (
 	"context"
 	"guestAgent/pkg/network"
+	"linuxvm/pkg/define"
+	"os"
+
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -10,6 +14,17 @@ const (
 	attempts = 3
 )
 
-func ConfigureNetwork(ctx context.Context) error {
+const (
+	resolveFile       = "/etc/resolv.conf"
+	defaultNameServer = "nameserver 1.1.1.1"
+)
+
+// ConfigureNetwork must support TSI/Gvisor network
+func ConfigureNetwork(ctx context.Context, vnetType define.VNetMode) error {
+	if vnetType == define.TSI {
+		logrus.Infof("set the Guest's default DNS to 1.1.1.1")
+		return os.WriteFile(resolveFile, []byte(defaultNameServer), 0644)
+	}
+
 	return network.DHClient4(ctx, eth0, attempts)
 }

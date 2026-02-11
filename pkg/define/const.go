@@ -1,5 +1,7 @@
 package define
 
+import "time"
+
 const (
 	ContainerMode RunMode = iota
 	RootFsMode
@@ -86,6 +88,9 @@ const (
 	LocalHost          = "127.0.0.1"
 
 	SSHLocalForwardListenPort = 6123
+
+	ServiceNamePodman = "podman"
+	ServiceNameSSH    = "ssh"
 )
 
 const (
@@ -120,6 +125,9 @@ const (
 
 const (
 	EnvLogLevel = "LOG_LEVEL"
+
+	DefaultTimeTicker   = 100 * time.Millisecond
+	DefaultProbeTimeout = 10 * time.Second
 )
 
 // OVMode-specific configuration
