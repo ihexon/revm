@@ -34,22 +34,16 @@ func (g *GuestAgentConfigurator) Configure(ctx context.Context, vmc *define.VMCo
 		return fmt.Errorf("workspace path is empty")
 	}
 
-	port, err := network.GetAvailablePort(62234)
-	if err != nil {
-		return err
-	}
-	logrus.Infof("ignition server port will listen in: %d", port)
-
 	unixUSL := &url.URL{
 		Scheme: "unix",
 		Path:   g.pathMgr.GetIgnAddr(),
 	}
 
-	if err = os.MkdirAll(filepath.Dir(unixUSL.Path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(unixUSL.Path), 0755); err != nil {
 		return err
 	}
 
-	if err = os.Remove(unixUSL.Path); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(unixUSL.Path); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 

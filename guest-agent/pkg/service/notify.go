@@ -9,10 +9,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// WaitAndNotifyReady polls with the given probe until the service is ready,
-// then notifies the host via the ignition server's /ready/{service} endpoint.
-func WaitAndNotifyReady(ctx context.Context, serviceName string, probe ProbeFunc) error {
-	ctx, _ = context.WithTimeoutCause(ctx, 10*time.Second, fmt.Errorf("probe timed out"))
+func WaitAndNotifyReady(ctx context.Context, serviceName string, timeout time.Duration, probe ProbeFunc) error {
+	ctx, cancel := context.WithTimeoutCause(ctx, timeout, fmt.Errorf("probe %q timed out after %v", serviceName, timeout))
+	defer cancel()
+
 	if err := pollUntilReady(ctx, probe); err != nil {
 		return err
 	}

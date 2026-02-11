@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"guestAgent/pkg/machine"
 	"guestAgent/pkg/service"
 	"io"
 	"linuxvm/pkg/define"
@@ -148,13 +149,12 @@ func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	if vmc.NeedsGuestNetworkConfig() {
-		g.Go(func() error {
-			return service.ConfigureNetwork(ctx)
-		})
-	}
+	g.Go(func() error {
+		return service.ConfigureNetwork(ctx, (*machine.Machine)(vmc).GetVirtualNetworkType())
+	})
 
 	g.Go(func() error {
+		defer logrus.Info("guest ssh server stopped")
 		return service.StartGuestSSHServer(ctx, vmc)
 	})
 
@@ -163,7 +163,6 @@ func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
 	})
 
 	g.Go(func() error {
-		defer logrus.Debugf("command line exec finished")
 		return service.DoExecCmdLine(ctx, vmc)
 	})
 
@@ -172,10 +171,7 @@ func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
 		if err := os.WriteFile(sshKeyFilePath, []byte(vmc.SSHInfo.HostSSHPrivateKey), 0600); err != nil {
 			return err
 		}
-		if err := service.WaitAndNotifyReady(ctx, "ssh", service.ProbeSSHFn(vmc, sshKeyFilePath)); err != nil {
-			return err
-		}
-		return nil
+		return service.WaitAndNotifyReady(ctx, "ssh", define.DefaultProbeTimeout, service.ProbeSSHFn(vmc, sshKeyFilePath))
 	})
 
 	return g.Wait()
@@ -190,11 +186,9 @@ func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	if vmc.NeedsGuestNetworkConfig() {
-		g.Go(func() error {
-			return service.ConfigureNetwork(ctx)
-		})
-	}
+	g.Go(func() error {
+		return service.ConfigureNetwork(ctx, (*machine.Machine)(vmc).GetVirtualNetworkType())
+	})
 
 	g.Go(func() error {
 		return service.StartPodmanAPIServices(ctx, vmc)
@@ -209,10 +203,7 @@ func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
 	})
 
 	g.Go(func() error {
-		if err := service.WaitAndNotifyReady(ctx, "podman", service.ProbePodmanFn(vmc)); err != nil {
-			return err
-		}
-		return nil
+		return service.WaitAndNotifyReady(ctx, define.ServiceNamePodman, define.DefaultProbeTimeout, service.ProbePodmanFn(vmc))
 	})
 
 	g.Go(func() error {
@@ -220,10 +211,8 @@ func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
 		if err := os.WriteFile(sshKeyFilePath, []byte(vmc.SSHInfo.HostSSHPrivateKey), 0600); err != nil {
 			return err
 		}
-		if err := service.WaitAndNotifyReady(ctx, "ssh", service.ProbeSSHFn(vmc, sshKeyFilePath)); err != nil {
-			return err
-		}
-		return nil
+
+		return service.WaitAndNotifyReady(ctx, "ssh", define.DefaultProbeTimeout, service.ProbeSSHFn(vmc, sshKeyFilePath))
 	})
 
 	return g.Wait()

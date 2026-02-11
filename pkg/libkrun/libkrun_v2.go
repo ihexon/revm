@@ -137,7 +137,13 @@ type LibkrunVM struct {
 	ctxID uint32
 
 	consolePortsINOUT []ConsolePortINOUT
-	pipeFiles         []*os.File // prevent GC from closing fds passed to C
+
+	// Files whose fds are passed to C via libkrun.
+	// Stored here to prevent GC from finalizing and closing them.
+	stdinPipe    *os.File // read end → krun_add_virtio_console_default (non-TTY only)
+	stdoutPipe   *os.File // write end → krun_add_virtio_console_default (non-TTY only)
+	stderrPipe   *os.File // write end → krun_add_virtio_console_default (non-TTY only)
+	guestLogFile *os.File // → krun_add_console_port_inout
 }
 
 // guestMACAddress is the fixed MAC address for the guest VM network interface.
@@ -373,10 +379,6 @@ func (vm *LibkrunVM) addPrimaryConsole() (C.uint32_t, error) {
 			_, _ = io.Copy(os.Stderr, stderrR)
 		}()
 
-		// Keep pipe ends alive so GC doesn't finalize and close
-		// the fds that were passed to C.
-		vm.pipeFiles = append(vm.pipeFiles, stdinR, stdoutW, stderrW)
-
 		ret := C.krun_add_virtio_console_default(
 			C.uint32_t(vm.ctxID),
 			C.int(stdinR.Fd()),
@@ -386,6 +388,12 @@ func (vm *LibkrunVM) addPrimaryConsole() (C.uint32_t, error) {
 		if ret != 0 {
 			return 0, fmt.Errorf("krun_add_virtio_console_default failed with code %v", ret)
 		}
+
+		// Keep pipe ends alive so GC doesn't finalize and close
+		// the fds that were passed to C.
+		vm.stdinPipe = stdinR
+		vm.stdoutPipe = stdoutW
+		vm.stderrPipe = stderrW
 	}
 
 	consoleID := C.krun_add_virtio_console_multiport(C.uint32_t(vm.ctxID))
@@ -414,9 +422,7 @@ func (vm *LibkrunVM) addPrimaryConsole() (C.uint32_t, error) {
 
 // addGuestConsoleLogPort opens the guest log file and registers it as an inout console port.
 func (vm *LibkrunVM) addGuestConsoleLogPort(consoleID C.uint32_t) error {
-	// Do not close the guestLogFile.
-	// TODO: guestLogFile may be GC'd by golang, but it's not a real problem because the chance is very small
-	guestLogFile, err := os.OpenFile(vm.vmc.GetVMMRunLogsFile(), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	f, err := os.OpenFile(vm.vmc.GetVMMRunLogsFile(), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		return err
 	}
@@ -429,11 +435,12 @@ func (vm *LibkrunVM) addGuestConsoleLogPort(consoleID C.uint32_t) error {
 		consoleID,
 		name.Ptr(),
 		C.int(-1),
-		C.int(guestLogFile.Fd()))
+		C.int(f.Fd()))
 	if ret != 0 {
 		return fmt.Errorf("krun_add_console_port_inout(%s) failed with code %v", define.GuestLogConsolePort, ret)
 	}
 
+	vm.guestLogFile = f
 	return nil
 }
 
@@ -714,7 +721,6 @@ func (vm *LibkrunVM) enterVMLifecycle(ctx context.Context) error {
 // Note: libkrun doesn't provide a graceful stop mechanism. so we have to implement a forceful shutdown
 func (vm *LibkrunVM) Stop(_ context.Context) error {
 	// TODO: implement STOP
-
 	return nil
 }
 

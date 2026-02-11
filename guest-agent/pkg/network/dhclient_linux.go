@@ -5,6 +5,7 @@ package network
 import (
 	"context"
 	"fmt"
+	"linuxvm/pkg/define"
 	"net"
 	"time"
 
@@ -16,21 +17,23 @@ import (
 )
 
 func DHClient4(ctx context.Context, ifName string, attempts int) error {
+	logrus.Infof("bring interface %s up", ifName)
 	ife, err := bringInterfaceUpFast(ifName)
 	if err != nil {
-		return fmt.Errorf("failed to bring interface %q up: %w", ifName, err)
-	}
-
-	bootConf, err := dhclient4(ctx, ife, attempts)
-	if err != nil {
-		return fmt.Errorf("failed to get dhcp config: %w", err)
-	}
-
-	if err := netboot.ConfigureInterface(ifName, &bootConf.NetConf); err != nil {
 		return err
 	}
 
-	logrus.Infof("network configured: %s (mac: %s)", ifName, ife.HardwareAddr)
+	logrus.Infof("get netboot bootConf from DHCPv4 server")
+	bootConf, err := dhclient4(ctx, ife, attempts)
+	if err != nil {
+		return err
+	}
+
+	logrus.Infof("apply netboot configuration to %s", ifName)
+	if err = netboot.ConfigureInterface(ifName, &bootConf.NetConf); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -51,14 +54,13 @@ func bringInterfaceUpFast(ifName string) (*net.Interface, error) {
 	return iface, nil
 }
 
+
 func dhclient4(ctx context.Context, iface *net.Interface, attempts int) (*netboot.BootConf, error) {
-	if attempts < 1 {
-		attempts = 3
-	}
 	var (
-		err    error
-		lease  *nclient4.Lease
-		client *nclient4.Client
+		err         error
+		lease       *nclient4.Lease
+		client      *nclient4.Client
+		maxAttempts = attempts
 	)
 
 	client, err = nclient4.New(iface.Name)
@@ -67,29 +69,23 @@ func dhclient4(ctx context.Context, iface *net.Interface, attempts int) (*netboo
 	}
 	defer client.Close()
 
-	for attempt := 0; attempt < attempts; attempt++ {
+	ticker := time.NewTicker(define.DefaultTimeTicker)
+	defer ticker.Stop()
+
+	for {
+		if attempts == 0 {
+			return nil, fmt.Errorf("failed to obtain DHCP lease for %q after %d attempts: %w", iface.Name, maxAttempts, err)
+		}
+		attempts--
+
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		default:
-		}
-
-		lease, err = client.Request(ctx)
-		if err == nil {
-			if lease == nil || lease.ACK == nil || lease.Offer == nil {
-				logrus.Warnf("DHCP incomplete response (attempt %d/%d)", attempt+1, attempts)
-				continue
+		case <-ticker.C:
+			lease, err = client.Request(ctx)
+			if err == nil && lease != nil && lease.ACK != nil && lease.Offer != nil {
+				return netboot.ConversationToNetconfv4([]*dhcpv4.DHCPv4{lease.Offer, lease.ACK})
 			}
-			return netboot.ConversationToNetconfv4([]*dhcpv4.DHCPv4{lease.Offer, lease.ACK})
-		}
-
-		logrus.Warnf("DHCP failed (attempt %d/%d): %v", attempt+1, attempts, err)
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(10 * time.Millisecond):
 		}
 	}
-
-	return nil, fmt.Errorf("DHCP failed after %d attempts: %w", attempts, err)
 }

@@ -64,7 +64,6 @@ func chmodUpDirs(path string, mode os.FileMode, stopAt string) error {
 	dir := filepath.Dir(path)
 
 	for {
-		logrus.Debugf("chmod & chown up %s", dir)
 		if err := os.Chmod(dir, mode); err != nil {
 			return fmt.Errorf("chmod dir %s: %w", dir, err)
 		}
@@ -99,7 +98,6 @@ func (d *Dropbear) ChmodDropbearWorkdir() error {
 	for _, f := range files {
 		p := filepath.Clean(f.path)
 
-		logrus.Debugf("chmod & chown %s", p)
 		if err := os.Chmod(p, f.mode); err != nil {
 			return fmt.Errorf("chmod %s: %w", p, err)
 		}
@@ -143,7 +141,7 @@ func (d *Dropbear) Start(ctx context.Context) error {
 	return cmd.Run()
 }
 
-// StartGuestSSHServer starts the guest SSH server with default configuration.
+// StartGuestSSHServer support TSI/Gvisor network mode
 func StartGuestSSHServer(ctx context.Context, vmc *define.VMConfig) error {
 	cfg := DropbearConfig{
 		ListenAddr:         define.UnspecifiedAddress,

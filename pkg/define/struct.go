@@ -73,24 +73,6 @@ type IgnitionServerCfg struct {
 	ListenSockAddr string `json:"ListenSockAddr,omitempty"`
 }
 
-type LinuxTools struct {
-	Busybox     string `json:"busybox,omitempty"`
-	DropBear    string `json:"dropbear,omitempty"`
-	DropBearKey string `json:"dropbearkey,omitempty"`
-	GuestAgent  string `json:"guestAgent,omitempty"`
-}
-
-type DarwinTools struct {
-	E2fsck  string `json:"e2fsck,omitempty"`
-	Blkid   string `json:"blkid,omitempty"`
-	Tune2fs string `json:"tune2fs,omitempty"`
-}
-
-type ExternalTools struct {
-	LinuxTools  LinuxTools  `json:"linuxTools,omitempty"`
-	DarwinTools DarwinTools `json:"darwinTools,omitempty"`
-}
-
 // BlkDev represents the configuration of a data disk, including its file system type, path, and mount point.
 type BlkDev struct {
 	FsType    string `json:"fsType,omitempty"`
@@ -111,11 +93,4 @@ type GuestAgentCfg struct {
 	Workdir string   `json:"workdir,omitempty"`
 	Args    []string `json:"args,omitempty"`
 	Env     []string `json:"env,omitempty"`
-}
-
-// NeedsGuestNetworkConfig returns true if the guest needs to configure network.
-// TSI mode handles networking transparently, so guest doesn't need to configure.
-// GVISOR mode requires guest to configure network via tap interface.
-func (v *VMConfig) NeedsGuestNetworkConfig() bool {
-	return v.VirtualNetworkMode != TSI.String()
 }
