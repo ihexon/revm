@@ -12,50 +12,50 @@ import (
 
 var startRootfs = cli.Command{
 	Name:        define.FlagRootfsMode,
-	Aliases:     []string{"rootfs", "run"},
-	Usage:       "run the rootfs",
+	Usage:       "run a command in a Linux VM",
 	UsageText:   define.FlagRootfsMode + " [flags] [command]",
-	Description: "run any rootfs with the given command",
+	Description: "boot a Linux VM with the given rootfs and execute a command",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:  define.FlagRootfs,
-			Usage: "your custom rootfs path",
+			Usage: "path to a custom rootfs directory",
 		},
 		&cli.Int8Flag{
 			Name:  define.FlagCPUS,
-			Usage: "given how many cpu cores",
+			Usage: "number of CPU cores",
 			Value: 1,
 		},
 		&cli.Uint64Flag{
 			Name:  define.FlagMemoryInMB,
-			Usage: "set memory in MB",
+			Usage: "memory size in MB",
 			Value: 512,
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagEnvs,
-			Usage: "set envs for cmdline, e.g. --envs=FOO=bar --envs=BAZ=qux",
+			Usage: "set environment variables, e.g. --envs=FOO=bar --envs=BAZ=qux",
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagRawDisk,
-			Usage: "create/attach one or more data disk and automount into guest",
+			Usage: "attach a raw disk image (auto-created if not exists)",
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagMount,
-			Usage: "mount host dir to guest dir",
+			Usage: "mount a host directory into the guest (format: host:guest[:ro])",
 		},
 		&cli.BoolFlag{
 			Name:  define.FlagUsingSystemProxy,
-			Usage: "use system proxy, set environment http(s)_proxy to guest",
+			Usage: "forward host HTTP/HTTPS proxy settings to the guest",
 		},
 		&cli.StringFlag{
 			Name:  define.FlagWorkDir,
-			Usage: "set cmdline workdir in rootfs",
+			Usage: "working directory for the command inside the guest",
 			Value: "/",
 		},
 		&cli.StringFlag{
-			Name:  define.FlagVNetworkType,
-			Usage: "network stack provider (gvisor,TSI)",
-			Value: define.GVISOR.String(),
+			Name:   define.FlagVNetworkType,
+			Usage:  "network stack provider (GVISOR, TSI)",
+			Value:  define.GVISOR.String(),
+			Hidden: true,
 		},
 		&cli.StringFlag{
 			Name:  define.FlagWorkspace,

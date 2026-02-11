@@ -20,7 +20,7 @@ import (
 
 var AttachConsole = cli.Command{
 	Name:        "attach",
-	Usage:       "attach to the guest and running command",
+	Usage:       "attach to a running VM and execute a command",
 	UsageText:   "attach [OPTIONS] <workspace> [-- cmdline]",
 	Description: "attach to the console of the running VM, provide the interactive shell",
 	Action:      attachConsole,

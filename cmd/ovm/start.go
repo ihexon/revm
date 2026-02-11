@@ -13,21 +13,21 @@ var startCmd = cli.Command{
 	Aliases:     []string{"docker", "podman", "podman-mode", "container-mode", "container"},
 	Usage:       "run in Docker-compatible mode",
 	UsageText:   define.FlagDockerMode + " [OPTIONS] [command]",
-	Description: "In Docker compatibility mode, the built-in Docker engine is used and a unix socks file is listened to as the API entry point used by the docker cli.",
+	Description: "In Docker-compatible mode, the built-in Podman engine is used and a Unix socket is exposed as the API endpoint for the docker/podman CLI.",
 	Flags: []cli.Flag{
 		&cli.Int8Flag{
 			Name:  define.FlagCPUS,
-			Usage: "given how many cpu cores",
+			Usage: "number of CPU cores",
 			Value: int8(system.GetCPUCores()),
 		},
 		&cli.Uint64Flag{
 			Name:  define.FlagMemoryInMB,
-			Usage: "given how many memory in MB",
+			Usage: "memory size in MB",
 			Value: 512,
 		},
 		&cli.BoolFlag{
 			Name:  define.FlagUsingSystemProxy,
-			Usage: "use system proxy, set environment http(s)_proxy to docker engine",
+			Usage: "forward host HTTP/HTTPS proxy settings to the Podman engine",
 			Value: true,
 		},
 		&cli.StringFlag{
@@ -36,7 +36,7 @@ var startCmd = cli.Command{
 		},
 		&cli.StringFlag{
 			Name:  define.FlagVolume,
-			Usage: "mount host dir to guest",
+			Usage: "mount a host directory into the guest",
 		},
 		&cli.StringFlag{
 			Name:  define.FlagPPID,
@@ -52,7 +52,7 @@ var startCmd = cli.Command{
 		},
 		&cli.StringFlag{
 			Name:  define.FlagLogLevel,
-			Usage: "set log level, the logs will output in console, and also write into workspace log directory",
+			Usage: "log verbosity (trace, debug, info, warn, error, fatal, panic)",
 			Value: "info",
 		},
 		&cli.StringFlag{
@@ -61,7 +61,7 @@ var startCmd = cli.Command{
 		},
 		&cli.StringFlag{
 			Name:  define.FlagVNetworkType,
-			Usage: "set virtual network mode",
+			Usage: "network stack provider (GVISOR, TSI)",
 			Value: define.GVISOR.String(),
 		},
 	},
@@ -69,7 +69,7 @@ var startCmd = cli.Command{
 }
 
 func ovmLifeCycle(ctx context.Context, command *cli.Command) error {
-	// 配置 ovm 虚拟机需要的所有参数
+	// Configure all parameters required by the OVM virtual machine
 	if err := ConfigureVM(ctx, command, define.OVMode); err != nil {
 		return err
 	}
