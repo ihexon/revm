@@ -25,35 +25,12 @@ func (m RunMode) String() string {
 	}
 }
 
-type VNetMode uint32
+type VNetMode string
 
 const (
-	GVISOR VNetMode = iota
-	TSI
-	UNKNOWN
+	GVISOR VNetMode = "gvisor"
+	TSI    VNetMode = "tsi"
 )
-
-func (v VNetMode) String() string {
-	switch v {
-	case GVISOR:
-		return "gvisor"
-	case TSI:
-		return "tsi"
-	default:
-		return "unknown"
-	}
-}
-
-func String2NetworkMode(s string) VNetMode {
-	switch s {
-	case GVISOR.String():
-		return GVISOR
-	case TSI.String():
-		return TSI
-	default:
-		return UNKNOWN
-	}
-}
 
 const (
 	BuiltinBusybox          = "/.bin/busybox"

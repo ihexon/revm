@@ -19,7 +19,7 @@ func MakeSSHClient(ctx context.Context, vmc *define.VMConfig) (*ssh2.Client, err
 	}
 
 	var guestAddr string
-	if vmc.VirtualNetworkMode == define.GVISOR.String() {
+	if vmc.VirtualNetworkMode == define.GVISOR {
 		// GVISOR mode: use tunnel through gvproxy
 		gvCtlAddr, err := network.ParseUnixAddr(vmc.GVPCtlAddr)
 		if err != nil {

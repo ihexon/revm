@@ -129,9 +129,9 @@ func (s *IgnServer) waitVirtualNetworkOnline(ctx context.Context) error {
 	defer cancel()
 
 	switch s.vmc.VirtualNetworkMode {
-	case define.TSI.String():
+	case define.TSI:
 		return s.waitTSINetworkOnline(ctx)
-	case define.GVISOR.String():
+	case define.GVISOR:
 		return s.waitGvisorVSockTapOnline(ctx)
 	default:
 		return fmt.Errorf("unknown virtual network mode: %s", s.vmc.VirtualNetworkMode)

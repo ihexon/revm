@@ -15,7 +15,7 @@ type VMConfig struct {
 	// by gvproxy
 	GVPVNetAddr string `json:"GVPVNetAddr,omitempty"`
 
-	VirtualNetworkMode string `json:"virtualNetworkMode,omitempty"`
+	VirtualNetworkMode VNetMode `json:"virtualNetworkMode,omitempty"`
 
 	LogFilePath       string            `json:"logFilePath,omitempty"`
 	Mounts            []Mount           `json:"mounts,omitempty"`

@@ -80,7 +80,7 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 	builder := vmbuilder.NewVMConfigBuilder(runMode).
 		SetWorkspace(workspacePath).
 		SetResources(cpus, memoryInMB).
-		SetNetworkMode(define.String2NetworkMode(networkType)).
+		SetNetworkMode(define.VNetMode(networkType)).
 		SetUsingSystemProxy(usingSystemProxy).
 		SetRawDisks(rawDisks).
 		SetMounts(mountDirs).

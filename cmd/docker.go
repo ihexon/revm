@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/httpserver"
+	"linuxvm/pkg/service"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -55,7 +56,7 @@ var startDocker = cli.Command{
 		&cli.StringFlag{
 			Name:   define.FlagVNetworkType,
 			Usage:  "network stack provider (gvisor, tsi)",
-			Value:  define.GVISOR.String(),
+			Value:  string(define.GVISOR),
 			Hidden: false,
 		},
 	},
@@ -63,7 +64,6 @@ var startDocker = cli.Command{
 }
 
 func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
-	// TODO: save the os version information into vmc struct
 	showVersionAndOSInfo()
 
 	vmc, err := ConfigureVM(ctx, command, define.ContainerMode)
@@ -93,10 +93,9 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		return ignSrv.Start(ctx)
 	})
 
-	// start virtual network service
-	mode := vmc.GetNetworkMode()
+	svc := service.NewHostServiceManager(vmc.VirtualNetworkMode)
 	g.Go(func() error {
-		return mode.StartNetworkStack(ctx, (*define.VMConfig)(vmc))
+		return svc.StartNetworkStack(ctx, (*define.VMConfig)(vmc))
 	})
 
 	// start vmctl service
@@ -110,7 +109,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ignSrv.VNetHostReady:
-			return mode.StartPodmanProxy(ctx, (*define.VMConfig)(vmc))
+			return svc.StartPodmanProxy(ctx, (*define.VMConfig)(vmc))
 		}
 	})
 
@@ -132,7 +131,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ignSrv.PodmanReady:
-			logrus.Infof("Podman API proxy listen in: %s", mode.GetPodmanListenAddr((*define.VMConfig)(vmc)))
+			logrus.Infof("Podman API proxy listen in: %s", svc.GetPodmanListenAddr((*define.VMConfig)(vmc)))
 			return nil
 		}
 	})

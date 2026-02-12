@@ -14,7 +14,7 @@ import (
 type Machine define.VMConfig
 
 func (m *Machine) GetVirtualNetworkType() define.VNetMode {
-	if m.VirtualNetworkMode == define.TSI.String() {
+	if m.VirtualNetworkMode == define.TSI {
 		return define.TSI
 	}
 

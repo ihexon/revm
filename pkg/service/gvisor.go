@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package networkmode
+package service
 
 import (
 	"context"
@@ -32,5 +32,5 @@ func (g *GVisorMode) GetPodmanListenAddr(vmc *define.VMConfig) string {
 }
 
 func (g *GVisorMode) String() string {
-	return define.GVISOR.String()
+	return string(define.GVISOR)
 }

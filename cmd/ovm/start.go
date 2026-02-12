@@ -62,7 +62,7 @@ var startCmd = cli.Command{
 		&cli.StringFlag{
 			Name:  define.FlagVNetworkType,
 			Usage: "network stack provider (GVISOR, TSI)",
-			Value: define.GVISOR.String(),
+			Value: string(define.GVISOR),
 		},
 	},
 	Action: ovmLifeCycle,

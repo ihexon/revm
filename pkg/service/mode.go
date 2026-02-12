@@ -1,15 +1,15 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package networkmode
+package service
 
 import (
 	"context"
 	"linuxvm/pkg/define"
 )
 
-// Mode represents a virtual network mode with its specific capabilities and behaviors.
+// HostService represents a virtual network mode with its specific capabilities and behaviors.
 // This interface encapsulates all network mode differences including service lifecycle.
-type Mode interface {
+type HostService interface {
 	// StartNetworkStack starts the network stack required by this mode.
 	// For GVISOR: starts gvisor-tap-vsock
 	// For TSI: no-op (uses built-in networking)
@@ -29,20 +29,13 @@ type Mode interface {
 	String() string
 }
 
-// FromString creates a Mode instance from a string representation.
-// Returns nil if the mode string is invalid.
-func FromString(modeStr string) Mode {
-	switch modeStr {
-	case define.GVISOR.String():
+func NewHostServiceManager(mode define.VNetMode) HostService {
+	switch mode {
+	case define.GVISOR:
 		return &GVisorMode{}
-	case define.TSI.String():
+	case define.TSI:
 		return &TSIMode{}
 	default:
 		return nil
 	}
-}
-
-// FromVNetMode creates a Mode instance from VNetMode enum.
-func FromVNetMode(mode define.VNetMode) Mode {
-	return FromString(mode.String())
 }

@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package networkmode
+package service
 
 import (
 	"context"
@@ -29,5 +29,5 @@ func (t *TSIMode) GetPodmanListenAddr(vmc *define.VMConfig) string {
 }
 
 func (t *TSIMode) String() string {
-	return define.TSI.String()
+	return string(define.TSI)
 }
