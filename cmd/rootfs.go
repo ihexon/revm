@@ -115,7 +115,7 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ignSrv.VNetReady:
+		case <-ignSrv.VNetHostReady:
 			if err := vmp.Create(ctx); err != nil {
 				return fmt.Errorf("failed to create vm: %w", err)
 			}

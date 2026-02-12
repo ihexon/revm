@@ -53,6 +53,10 @@ func WaitGuestServiceReady(ctx context.Context, vmc *define.VMConfig) error {
 
 	g.Go(func() error {
 		if rd.IsInterfaceReady(gctx) {
+			if err := svc.PostReady(gctx, define.ServiceNameGuestNetwork); err != nil {
+				return err
+			}
+
 			return nil
 		}
 		return fmt.Errorf("[service] guest interface not ready")
