@@ -12,7 +12,7 @@ import (
 
 func startGuestPodmanService(ctx context.Context, vmc *define.VMConfig) error {
 	addr := fmt.Sprintf("tcp://%s:%d", define.UnspecifiedAddress, define.GuestPodmanAPIPort) //nolint:nosprintfhostport
-	cmd := exec.CommandContext(ctx, "podman", "system", "service", "--time=0", addr)
+	cmd := exec.CommandContext(ctx, "podman", "--log-level", logrus.GetLevel().String(), "system", "service", "--time=0", addr)
 	cmd.Stdin = nil
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -23,10 +23,10 @@ func startGuestPodmanService(ctx context.Context, vmc *define.VMConfig) error {
 }
 
 // StartPodmanAPIServices support TSI/Gvisor network
-func StartPodmanAPIServices(ctx context.Context,vmc *define.VMConfig) error {
+func StartPodmanAPIServices(ctx context.Context, vmc *define.VMConfig) error {
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- startGuestPodmanService(ctx,vmc)
+		errChan <- startGuestPodmanService(ctx, vmc)
 		close(errChan)
 	}()
 

@@ -22,12 +22,7 @@ func RaiseSystemLimit() error {
 }
 
 func GetCPUCores() int {
-	cores := runtime.NumCPU()
-	if cores < 1 {
-		cores = 1
-	}
-
-	return cores
+	return runtime.NumCPU()
 }
 
 func GetMaxMemoryInMB() (uint64, error) {

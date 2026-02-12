@@ -23,12 +23,12 @@ var startRootfs = cli.Command{
 		&cli.Int8Flag{
 			Name:  define.FlagCPUS,
 			Usage: "number of CPU cores",
-			Value: 1,
+			Value: setMaxCPUs(),
 		},
 		&cli.Uint64Flag{
 			Name:  define.FlagMemoryInMB,
 			Usage: "memory size in MB",
-			Value: 512,
+			Value: setMaxMemory(),
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagEnvs,
@@ -53,9 +53,9 @@ var startRootfs = cli.Command{
 		},
 		&cli.StringFlag{
 			Name:   define.FlagVNetworkType,
-			Usage:  "network stack provider (GVISOR, TSI)",
+			Usage:  "network stack provider (gvisor, tsi)",
 			Value:  define.GVISOR.String(),
-			Hidden: true,
+			Hidden: false,
 		},
 		&cli.StringFlag{
 			Name:  define.FlagWorkspace,
