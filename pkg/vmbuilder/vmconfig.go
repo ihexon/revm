@@ -75,12 +75,6 @@ func (v *VMConfig) GetContainerStorageDiskPath() string {
 	return NewPathManager(v.WorkspacePath).GetContainerStorageDiskPath()
 }
 
-func (v *VMConfig) ConfigureGuestPodman(ifUsingSystemProxy bool) error {
-	pathMgr := NewPathManager(v.WorkspacePath)
-	configurator := NewPodmanConfigurator(pathMgr)
-	return configurator.Configure(context.Background(), (*define.VMConfig)(v))
-}
-
 func (v *VMConfig) ConfigureContainerRAWDisk(ctx context.Context) error {
 	rawDiskFilePath := v.GetContainerStorageDiskPath()
 	if _, err := os.Stat(rawDiskFilePath); err != nil {

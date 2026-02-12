@@ -174,21 +174,23 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.VMConfig, error) {
 		}
 
 		if httpProxy == nil {
-			logrus.Warnf("system proxy is not enabled")
+			logrus.Warnf("system proxy is not enabled, do nothing")
 		} else {
 			// In GVISOR mode, localhost/127.0.0.1 refers host.containers.internal
 			// which is the host address on virtualNetwork( which provided by gvisor-vsock-tap)
 			if b.vmc.VirtualNetworkMode == define.GVISOR && (strings.Contains(httpProxy.String(), "127.0.0.1") ||
 				strings.Contains(httpProxy.String(), "localhost")) {
+				logrus.Debugf("in gvisor network mode, reset proxy to %s", define.HostDomainInGVPNet)
 				httpProxy.Host = define.HostDomainInGVPNet
 			}
 
 			ps.Use = true
+
+			logrus.Infof("set http/https proxy to %s", httpProxy.String())
 			ps.HTTPSProxy = httpProxy.String()
 			ps.HTTPProxy = httpProxy.String()
+			b.vmc.ProxySetting = ps
 		}
-
-		b.vmc.ProxySetting = ps
 	}
 
 	// 6. Rootfs
