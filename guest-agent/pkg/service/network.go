@@ -20,8 +20,8 @@ const (
 )
 
 // ConfigureNetwork must support TSI/Gvisor network
-func ConfigureNetwork(ctx context.Context, vnetType define.VNetMode) error {
-	if vnetType == define.TSI {
+func ConfigureNetwork(ctx context.Context, mode define.VNetMode) error {
+	if mode == define.TSI {
 		logrus.Infof("set the Guest's default DNS to 1.1.1.1")
 		return os.WriteFile(resolveFile, []byte(defaultNameServer), 0644)
 	}

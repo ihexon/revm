@@ -41,9 +41,8 @@ type VMConfigBuilder struct {
 // NewVMConfigBuilder creates a new builder for the specified run mode.
 func NewVMConfigBuilder(runMode define.RunMode) *VMConfigBuilder {
 	vmb := &VMConfigBuilder{
-		vmc:         NewVMConfig(runMode),
-		runMode:     runMode,
-		networkMode: define.UNKNOWN,
+		vmc:     NewVMConfig(runMode),
+		runMode: runMode,
 	}
 
 	if runMode == define.ContainerMode || runMode == define.OVMode {
@@ -153,7 +152,7 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.VMConfig, error) {
 		return nil, fmt.Errorf("invalid network mode: %s", b.networkMode)
 	}
 
-	b.vmc.VirtualNetworkMode = b.networkMode.String()
+	b.vmc.VirtualNetworkMode = b.networkMode
 	if err := networkStrategy.Configure(ctx, (*define.VMConfig)(b.vmc), b.pathMgr); err != nil {
 		return nil, fmt.Errorf("configure network: %w", err)
 	}

@@ -266,7 +266,7 @@ func (vm *LibkrunVM) configureVSockDevices() error {
 
 	var vsockFeat = C.uint32_t(0)
 	// TSI mode needs socket hijacking features
-	if vm.vmc.VirtualNetworkMode == define.TSI.String() {
+	if vm.vmc.VirtualNetworkMode == define.TSI {
 		if runtime.GOOS == "linux" {
 			vsockFeat = C.KRUN_TSI_HIJACK_INET | C.KRUN_TSI_HIJACK_UNIX
 		}
@@ -479,7 +479,7 @@ func (vm *LibkrunVM) configureRootFS() error {
 // configureNetwork sets up the network backend.
 func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
 	switch vm.vmc.VirtualNetworkMode {
-	case define.GVISOR.String():
+	case define.GVISOR:
 		logrus.Infof("Using gvisor-tap-vsock network backend")
 		// Parse network backend address
 		backend := vm.vmc.GVPVNetAddr
@@ -503,7 +503,7 @@ func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
 			return fmt.Errorf("krun_add_net_unixgram failed with code %v", ret)
 		}
 		return nil
-	case define.TSI.String():
+	case define.TSI:
 		logrus.Infof("Using tsi-tap-vsock network backend")
 		return nil
 	default:

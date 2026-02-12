@@ -109,9 +109,9 @@ func (r *Readiness) IsInterfaceReady(ctx context.Context) bool {
 
 	ifName := "lo"
 	switch r.vmc.VirtualNetworkMode {
-	case define.GVISOR.String():
+	case define.GVISOR:
 		ifName = "eth0"
-	case define.TSI.String():
+	case define.TSI:
 		ifName = "lo"
 	default:
 		return false

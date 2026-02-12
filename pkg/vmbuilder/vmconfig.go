@@ -12,7 +12,6 @@ import (
 	"linuxvm/pkg/disk"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/network"
-	"linuxvm/pkg/networkmode"
 	"linuxvm/pkg/static_resources"
 	"net/url"
 	"os"
@@ -362,7 +361,7 @@ func (v *VMConfig) ResetOrReuseContainerRAWDisk(ctx context.Context, containerDi
 }
 
 func (v *VMConfig) ConfigureVirtualNetwork(ctx context.Context, mode define.VNetMode) error {
-	v.VirtualNetworkMode = mode.String()
+	v.VirtualNetworkMode = mode
 
 	// Use strategy pattern for network configuration
 	strategy := GetNetworkStrategy(mode)
@@ -468,12 +467,6 @@ func (v *VMConfig) GetVMCtlAddr() string {
 
 func (v *VMConfig) GetIgnAddr() string {
 	return NewPathManager(v.WorkspacePath).GetIgnAddr()
-}
-
-// GetNetworkMode returns the network mode as a first-class Mode object.
-// This provides a clean abstraction over network mode differences.
-func (v *VMConfig) GetNetworkMode() networkmode.Mode {
-	return networkmode.FromString(v.VirtualNetworkMode)
 }
 
 // PathManager handles all workspace-related path calculations.

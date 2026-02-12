@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/httpserver"
+	"linuxvm/pkg/service"
 
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
@@ -54,7 +55,7 @@ var startRootfs = cli.Command{
 		&cli.StringFlag{
 			Name:   define.FlagVNetworkType,
 			Usage:  "network stack provider (gvisor, tsi)",
-			Value:  define.GVISOR.String(),
+			Value:  string(define.GVISOR),
 			Hidden: false,
 		},
 		&cli.StringFlag{
@@ -100,10 +101,9 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 		return ignSrv.Start(ctx)
 	})
 
-	// start virtual network service
-	mode := vmc.GetNetworkMode()
+	svc := service.NewHostServiceManager(vmc.VirtualNetworkMode)
 	g.Go(func() error {
-		return mode.StartNetworkStack(ctx, (*define.VMConfig)(vmc))
+		return svc.StartNetworkStack(ctx, (*define.VMConfig)(vmc))
 	})
 
 	// start vmctl service
