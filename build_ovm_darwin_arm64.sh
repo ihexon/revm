@@ -1,7 +1,7 @@
 #!/opt/homebrew/bin/bash
 set -euo pipefail
 
-readonly ASSETS_BASE="https://github.com/ihexon/revm-assets/releases/download/v2.0.2"
+readonly ASSETS_BASE="https://github.com/ihexon/revm-assets/releases/download/v2.0.3"
 readonly HOMEBREW_PREFIX="${HOMEBREW_PREFIX:-/opt/homebrew}"
 
 readonly E2FS_BINS=(blkid tune2fs mke2fs e2fsck)

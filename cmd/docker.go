@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/httpserver"
-	"linuxvm/pkg/system"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -21,7 +20,7 @@ var startDocker = cli.Command{
 		&cli.Int8Flag{
 			Name:  define.FlagCPUS,
 			Usage: "number of CPU cores",
-			Value: int8(system.GetCPUCores()),
+			Value: setMaxCPUs(),
 		},
 		&cli.Uint64Flag{
 			Name:    define.FlagMemoryInMB,
@@ -46,7 +45,7 @@ var startDocker = cli.Command{
 			Name:   define.FlagWorkDir,
 			Usage:  "working directory for the command inside the guest",
 			Hidden: true,
-			Value:  "/tmp",
+			Value:  "/",
 		},
 		&cli.StringFlag{
 			Name:  define.FlagWorkspace,
@@ -55,15 +54,16 @@ var startDocker = cli.Command{
 		},
 		&cli.StringFlag{
 			Name:   define.FlagVNetworkType,
-			Usage:  "network stack provider (GVISOR, TSI)",
+			Usage:  "network stack provider (gvisor, tsi)",
 			Value:  define.GVISOR.String(),
-			Hidden: true,
+			Hidden: false,
 		},
 	},
 	Action: dockerModeLifeCycle,
 }
 
 func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
+	// TODO: save the os version information into vmc struct
 	showVersionAndOSInfo()
 
 	vmc, err := ConfigureVM(ctx, command, define.ContainerMode)

@@ -36,9 +36,9 @@ const (
 func (v VNetMode) String() string {
 	switch v {
 	case GVISOR:
-		return "GVISOR"
+		return "gvisor"
 	case TSI:
-		return "TSI"
+		return "tsi"
 	default:
 		return "unknown"
 	}

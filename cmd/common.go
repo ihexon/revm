@@ -36,6 +36,16 @@ func showVersionAndOSInfo() {
 	logrus.Infof("%s version: %s", os.Args[0], version.String())
 }
 
+func setMaxCPUs() int8 {
+	cores := int8(system.GetCPUCores())
+	if cores < 1 {
+		logrus.Warnf("failed get max cpu core: %d", cores)
+		return 1
+	}
+
+	return cores
+}
+
 func setMaxMemory() uint64 {
 	mb, err := system.GetMaxMemoryInMB()
 	if err != nil {
