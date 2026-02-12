@@ -10,11 +10,15 @@ on:
       - main
       - dev
       - refactor
+    paths-ignore:
+      - '**/*.md'
   pull_request:
     branches:
       - main
       - dev
       - refactor
+    paths-ignore:
+      - '**/*.md'
 
 jobs:
   build:

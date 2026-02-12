@@ -1,5 +1,12 @@
 # revm
 
+[![build.yml](https://github.com/ihexon/revm/actions/workflows/build.yml/badge.svg)](https://github.com/ihexon/revm/actions/workflows/build.yml)
+
+> [!WARNING] 
+> This project is currently under heavy development, and any breaking changes may cause instability
+
+[README_EN](./README.md) | [README_ZH](./README_zh.md)
+
 A lightweight Linux sandbox and container launcher for macOS, powered
 by [libkrun](https://github.com/containers/libkrun). Boot a full Linux environment or a Podman container engine in under
 1 second.
@@ -25,7 +32,7 @@ macOS Sonoma or later (Apple Silicon)
 
 ```bash
 # Download the latest release
-wget https://github.com/ihexon/revm/releases/download/v4.1.4/revm-Darwin-arm64.tar.zst
+wget https://github.com/ihexon/revm/releases/download/<TAG>/revm-Darwin-arm64.tar.zst
 
 # Remove macOS quarantine attribute
 xattr -d com.apple.quarantine revm-Darwin-arm64.tar.zst
