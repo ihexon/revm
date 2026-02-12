@@ -7,16 +7,16 @@ require (
 	github.com/charmbracelet/keygen v0.5.4
 	github.com/gofrs/flock v0.13.0
 	github.com/google/uuid v1.6.0
+	github.com/ihexon/getSysProxy v0.0.0-20260212161208-c7b7a282814a
 	github.com/ihexon/libarchive-go v0.0.0-20260204040343-1577f1563344
 	github.com/mattn/go-isatty v0.0.20
-	github.com/oomol-lab/sysproxy v0.0.0-20250609040630-bacc3356fc00
 	github.com/pkg/errors v0.9.1
 	github.com/shirou/gopsutil/v4 v4.25.12
 	github.com/sirupsen/logrus v1.9.5-0.20260121091959-524506f8912c
 	github.com/tmaxmax/go-sse v0.11.0
 	github.com/urfave/cli/v3 v3.6.1
 	golang.org/x/sync v0.19.0
-	golang.org/x/sys v0.40.0
+	golang.org/x/sys v0.41.0
 	golang.org/x/term v0.39.0
 	gopkg.in/yaml.v3 v3.0.1
 )

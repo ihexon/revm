@@ -102,6 +102,7 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	})
 
 	svc := service.NewHostServiceManager(vmc.VirtualNetworkMode)
+
 	g.Go(func() error {
 		return svc.StartNetworkStack(ctx, (*define.VMConfig)(vmc))
 	})

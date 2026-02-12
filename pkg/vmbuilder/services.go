@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/network"
 	sshv2 "linuxvm/pkg/ssh_v2"
 	"linuxvm/pkg/static_resources"
 	"net/url"
@@ -97,23 +96,12 @@ func NewPodmanConfigurator(pathMgr *PathManager) *PodmanConfigurator {
 }
 
 // Configure sets up Podman API configuration including proxy settings.
-func (p *PodmanConfigurator) Configure(ctx context.Context, vmc *define.VMConfig, ifUsingSystemProxy bool) error {
+func (p *PodmanConfigurator) Configure(ctx context.Context, vmc *define.VMConfig) error {
 	var envs []string
 
-	if ifUsingSystemProxy {
-		logrus.Warnf("your system proxy must support CONNECT method")
-		proxyInfo, err := network.GetAndNormalizeSystemProxy()
-		if err != nil {
-			return fmt.Errorf("failed to get and normalize system proxy: %w", err)
-		}
-
-		if proxyInfo.HTTP != nil {
-			envs = append(envs, fmt.Sprintf("http_proxy=http://%s:%d", proxyInfo.HTTP.Host, proxyInfo.HTTP.Port))
-		}
-
-		if proxyInfo.HTTPS != nil {
-			envs = append(envs, fmt.Sprintf("https_proxy=http://%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port))
-		}
+	if vmc.ProxySetting.Use {
+		envs = append(envs, "http_proxy="+vmc.ProxySetting.HTTPProxy)
+		envs = append(envs, "https_proxy="+vmc.ProxySetting.HTTPSProxy)
 	}
 
 	podmanProxyAddr := &url.URL{

@@ -27,6 +27,7 @@ type VMConfig struct {
 	GuestAgentCfg     GuestAgentCfg     `json:"guestAgentCfg,omitempty"`
 	Cmdline           Cmdline           `json:"cmdline,omitempty"` // 仅仅在 rootfs mode 有意义
 	XATTRSRawDisk     map[string]string `json:"XATTRSRawDisk,omitempty"`
+	ProxySetting      ProxySetting      `json:"systemProxy,omitempty"`
 
 	TTY    bool          `json:"TTY"`
 	StopCh chan struct{} `json:"-"`

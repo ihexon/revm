@@ -11,7 +11,6 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/disk"
 	"linuxvm/pkg/filesystem"
-	"linuxvm/pkg/network"
 	"linuxvm/pkg/static_resources"
 	"net/url"
 	"os"
@@ -79,7 +78,7 @@ func (v *VMConfig) GetContainerStorageDiskPath() string {
 func (v *VMConfig) ConfigureGuestPodman(ifUsingSystemProxy bool) error {
 	pathMgr := NewPathManager(v.WorkspacePath)
 	configurator := NewPodmanConfigurator(pathMgr)
-	return configurator.Configure(context.Background(), (*define.VMConfig)(v), ifUsingSystemProxy)
+	return configurator.Configure(context.Background(), (*define.VMConfig)(v))
 }
 
 func (v *VMConfig) ConfigureContainerRAWDisk(ctx context.Context) error {
@@ -157,7 +156,7 @@ func (v *VMConfig) withUserProvidedStorageRAWDisk(ctx context.Context, rawDiskS 
 	return nil
 }
 
-func (v *VMConfig) SetupCmdLine(workdir, bin string, args, envs []string, usingSystemProxy bool) error {
+func (v *VMConfig) SetupCmdLine(workdir, bin string, args, envs []string) error {
 	if v.RunMode != define.RootFsMode.String() {
 		return fmt.Errorf("expect run mode %q, but got %q", define.RootFsMode.String(), v.RunMode)
 	}
@@ -181,20 +180,9 @@ func (v *VMConfig) SetupCmdLine(workdir, bin string, args, envs []string, usingS
 		}
 	}
 
-	if usingSystemProxy {
-		logrus.Warnf("your system proxy must support CONNECT method")
-		proxyInfo, err := network.GetAndNormalizeSystemProxy()
-		if err != nil {
-			return fmt.Errorf("failed to get and normalize system proxy: %w", err)
-		}
-
-		if proxyInfo.HTTP != nil {
-			envs = append(envs, fmt.Sprintf("http_proxy=http://%s:%d", proxyInfo.HTTP.Host, proxyInfo.HTTP.Port))
-		}
-
-		if proxyInfo.HTTPS != nil {
-			envs = append(envs, fmt.Sprintf("https_proxy=http://%s:%d", proxyInfo.HTTPS.Host, proxyInfo.HTTPS.Port))
-		}
+	if v.ProxySetting.Use {
+		envs = append(envs, "http_proxy="+v.ProxySetting.HTTPProxy)
+		envs = append(envs, "https_proxy="+v.ProxySetting.HTTPSProxy)
 	}
 
 	v.Cmdline = define.Cmdline{

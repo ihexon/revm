@@ -6,6 +6,10 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"strings"
+
+	sysproxy "github.com/ihexon/getSysProxy"
+	"github.com/sirupsen/logrus"
 )
 
 // VMConfigBuilder provides a fluent API for building VMConfig instances.
@@ -157,6 +161,36 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.VMConfig, error) {
 		return nil, fmt.Errorf("configure network: %w", err)
 	}
 
+	if b.usingSystemProxy {
+		// To simplify the code path, we only pick the http proxy from system proxy setting
+		// the proxy must support CONNECT Method which can tunnel any NON HTTP Data
+		httpProxy, err := sysproxy.GetHTTP()
+		if err != nil {
+			return nil, fmt.Errorf("get system proxy fail: %w", err)
+		}
+
+		ps := define.ProxySetting{
+			Use: false,
+		}
+
+		if httpProxy == nil {
+			logrus.Warnf("system proxy is not enabled")
+		} else {
+			// In GVISOR mode, localhost/127.0.0.1 refers host.containers.internal
+			// which is the host address on virtualNetwork( which provided by gvisor-vsock-tap)
+			if b.vmc.VirtualNetworkMode == define.GVISOR && (strings.Contains(httpProxy.String(), "127.0.0.1") ||
+				strings.Contains(httpProxy.String(), "localhost")) {
+				httpProxy.Host = define.HostDomainInGVPNet
+			}
+
+			ps.Use = true
+			ps.HTTPSProxy = httpProxy.String()
+			ps.HTTPProxy = httpProxy.String()
+		}
+
+		b.vmc.ProxySetting = ps
+	}
+
 	// 6. Rootfs
 	if b.runMode == define.RootFsMode {
 		if b.rootfsPath != "" {
@@ -182,7 +216,7 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.VMConfig, error) {
 	// 8. Podman
 	if b.runMode == define.ContainerMode || b.runMode == define.OVMode {
 		podmanConfig := NewPodmanConfigurator(b.pathMgr)
-		if err := podmanConfig.Configure(ctx, (*define.VMConfig)(b.vmc), b.usingSystemProxy); err != nil {
+		if err := podmanConfig.Configure(ctx, (*define.VMConfig)(b.vmc)); err != nil {
 			return nil, fmt.Errorf("configure podman: %w", err)
 		}
 	}
@@ -216,7 +250,7 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.VMConfig, error) {
 
 	// 12. Cmdline
 	if b.runMode == define.RootFsMode {
-		if err := b.vmc.SetupCmdLine(b.workdir, b.bin, b.args, b.envs, b.usingSystemProxy); err != nil {
+		if err := b.vmc.SetupCmdLine(b.workdir, b.bin, b.args, b.envs); err != nil {
 			return nil, fmt.Errorf("setup cmdline: %w", err)
 		}
 	}
