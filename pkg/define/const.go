@@ -89,8 +89,9 @@ const (
 
 	SSHLocalForwardListenPort = 6123
 
-	ServiceNamePodman = "podman"
-	ServiceNameSSH    = "ssh"
+	ServiceNamePodman       = "podman"
+	ServiceNameSSH          = "ssh"
+	ServiceNameGuestNetwork = "guest-network"
 )
 
 const (

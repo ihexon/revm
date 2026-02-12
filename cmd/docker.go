@@ -109,7 +109,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ignSrv.VNetReady:
+		case <-ignSrv.VNetHostReady:
 			return mode.StartPodmanProxy(ctx, (*define.VMConfig)(vmc))
 		}
 	})
@@ -118,7 +118,7 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ignSrv.VNetReady:
+		case <-ignSrv.VNetHostReady:
 			if err := vmp.Create(ctx); err != nil {
 				return fmt.Errorf("create virtual machine from libkrun builder fail: %v", err)
 			}
