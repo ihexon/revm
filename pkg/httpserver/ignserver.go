@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/event"
 	"net/http"
 	"sync"
 	"time"
@@ -32,7 +33,7 @@ type IgnServer struct {
 	VNetHostReady chan struct{}
 	vNetHostOnce  sync.Once
 
-	// VNetHostReady indicates the guest-side virtual network(bring up guest interface and get IP)
+	// VNetGuestReady indicates the guest-side virtual network(bring up guest interface and get IP)
 	VNetGuestReady chan struct{}
 	vNetGuestOnce  sync.Once
 }
@@ -55,6 +56,8 @@ func NewIgnServer(vmc *vmbuilder.VMConfig) *IgnServer {
 }
 
 func (s *IgnServer) Start(ctx context.Context) error {
+	event.Emit(event.StartIgnitionServer)
+
 	s.srv.mux.HandleFunc("/healthz", s.handleHealth)
 	s.srv.mux.HandleFunc("/vmconfig", s.handleVMConfig)
 	s.srv.mux.HandleFunc(fmt.Sprintf("/ready/%s", define.ServiceNameSSH), s.handleReadySSH)
@@ -67,6 +70,14 @@ func (s *IgnServer) Start(ctx context.Context) error {
 		if err := s.waitVirtualNetworkOnline(ctx); err != nil {
 			errChan <- err
 		}
+	}()
+
+	go func() {
+		<-s.SSHReady
+		<-s.PodmanReady
+		<-s.VNetHostReady
+		<-s.VNetGuestReady
+		event.Emit(event.AllThingsReady)
 	}()
 
 	go func() {
@@ -85,6 +96,7 @@ func (s *IgnServer) waitTSINetworkOnline(ctx context.Context) error {
 	s.vNetHostOnce.Do(func() {
 		logrus.Infof("[ign] TSI network online")
 		close(s.VNetHostReady)
+		event.Emit(event.HostNetworkReady)
 	})
 	return nil
 }
@@ -116,6 +128,7 @@ func (s *IgnServer) waitGvisorVSockTapOnline(ctx context.Context) error {
 				s.vNetHostOnce.Do(func() {
 					logrus.Infof("[ign] gvisor virtual-network online")
 					close(s.VNetHostReady)
+					event.Emit(event.HostNetworkReady)
 				})
 				return nil
 			}
@@ -162,6 +175,7 @@ func (s *IgnServer) handleReadySSH(w http.ResponseWriter, r *http.Request) {
 	s.sshOnce.Do(func() {
 		logrus.Info("[ign] guest ssh server online")
 		close(s.SSHReady)
+		event.Emit(event.GuestSSHReady)
 	})
 	WriteJSON(w, http.StatusOK, nil)
 }
@@ -174,6 +188,7 @@ func (s *IgnServer) handleReadyPodman(w http.ResponseWriter, r *http.Request) {
 	s.podmanOnce.Do(func() {
 		logrus.Infof("[ign] guest podman online")
 		close(s.PodmanReady)
+		event.Emit(event.GuestPodmanReady)
 	})
 	WriteJSON(w, http.StatusOK, nil)
 }
@@ -186,6 +201,7 @@ func (s *IgnServer) handleReadyGuestNetwork(w http.ResponseWriter, r *http.Reque
 	s.vNetGuestOnce.Do(func() {
 		logrus.Infof("[ign] guest network online")
 		close(s.VNetGuestReady)
+		event.Emit(event.GuestNetworkReady)
 	})
 	WriteJSON(w, http.StatusOK, nil)
 }

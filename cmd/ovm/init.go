@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/event"
 
 	"github.com/urfave/cli/v3"
 )
@@ -52,5 +51,5 @@ var initCmd = cli.Command{
 
 // initAction is deprecated; it only sends a success event for backward compatibility.
 func initAction(ctx context.Context, command *cli.Command) error {
-	return event.GetReporterFromCtx(ctx).SendEventInInitLifeCycle(ctx, event.Success, "")
+	return nil
 }

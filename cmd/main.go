@@ -6,9 +6,6 @@ import (
 	"context"
 	"linuxvm/pkg/define"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -29,7 +26,7 @@ func main() {
 			&cli.StringFlag{
 				Name:  define.FlagLogLevel,
 				Usage: "set log level (trace, debug, info, warn, error, fatal, panic)",
-				Value: "warn",
+				Value: "info",
 			},
 		},
 	}
@@ -40,27 +37,7 @@ func main() {
 		&startDocker,
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
-
-	// Orphan process detection mechanism
-	go func() {
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if os.Getppid() == 1 {
-					logrus.Warn("parent process exited, shutting down...")
-					cancel()
-					return
-				}
-			}
-		}
-	}()
-
-	if err := app.Run(ctx, os.Args); err != nil {
+	if err := app.Run(context.Background(), os.Args); err != nil {
 		logrus.Fatal(err)
 	}
 }

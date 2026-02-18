@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/event"
 	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmbuilder"
@@ -64,6 +65,8 @@ func GetVMM(vmc *vmbuilder.VMConfig) (*libkrun.LibkrunVM, error) {
 }
 
 func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMode) (*vmbuilder.VMConfig, error) {
+	event.Emit(event.ConfigureVirtualMachine)
+
 	// Setup logging first (not part of VMConfig)
 	logLevel := command.String(define.FlagLogLevel)
 

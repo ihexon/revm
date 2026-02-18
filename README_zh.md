@@ -3,7 +3,7 @@
 [![build.yml](https://github.com/ihexon/revm/actions/workflows/build.yml/badge.svg)](https://github.com/ihexon/revm/actions/workflows/build.yml)
 
 > [!WARNING]
-> 该项目目前处于重度开发阶段，任何破坏性的变化都可能导致不稳定
+> 该项目目前处于重度开发阶段
 
 基于 [libkrun](https://github.com/containers/libkrun) 的轻量级 macOS Linux 沙箱与容器启动器。可在 1 秒内启动完整的 Linux 环境或 Podman 容器引擎。
 
@@ -87,18 +87,18 @@ podman run --rm -dit alpine:edge sh
 revm run [flags] <command> [args...]
 ```
 
-| 参数             | 说明                                                  | 默认值                |
-|------------------|------------------------------------------------------|-----------------------|
-| `--cpus`         | CPU 核心数                                            | `1`                   |
-| `--memory`       | 内存大小（MB）                                        | `512`                 |
-| `--workspace`    | 持久化状态的工作区目录                                 | `/tmp/.revm-<random>` |
-| `--rootfs`       | 自定义 rootfs 目录路径                                 | 内置 Alpine           |
-| `--workdir`      | 客户机内的工作目录                                     | `/`                   |
-| `--raw-disk`     | 挂载裸磁盘镜像（可重复）                               | —                     |
-| `--mount`        | 挂载宿主机目录（可重复，格式：`host:guest[:ro]`）       | —                     |
-| `--envs`         | 设置环境变量（可重复，格式：`KEY=value`）               | —                     |
-| `--network`      | 网络栈：`GVISOR`                                      | `GVISOR`              |
-| `--system-proxy` | 将宿主机 HTTP/HTTPS 代理转发到客户机                    | `false`               |
+| 参数             | 说明                                | 默认值                   |
+|------------------|-----------------------------------|-----------------------|
+| `--cpus`         | CPU 核心数                           | `1`                   |
+| `--memory`       | 内存大小（MB）                          | `512`                 |
+| `--workspace`    | 持久化状态的工作区目录                       | `/tmp/.revm-<random>` |
+| `--rootfs`       | 自定义 rootfs 目录路径                   | 内置 Alpine             |
+| `--workdir`      | 客户机内的工作目录                         | `/`                   |
+| `--raw-disk`     | 挂载裸磁盘镜像（可重复）                      | —                     |
+| `--mount`        | 挂载宿主机目录（可重复，格式：`host:guest[:ro]`） | —                     |
+| `--envs`         | 设置环境变量（可重复，格式：`KEY=value`）        | —                     |
+| `--network`      | 网络栈：`gvisor/tsi`                  | `gvisor`              |
+| `--system-proxy` | 将宿主机 HTTP/HTTPS 代理转发到客户机          | `false`               |
 
 **示例：**
 

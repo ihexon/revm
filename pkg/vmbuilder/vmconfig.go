@@ -10,6 +10,7 @@ import (
 	"io"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/disk"
+	"linuxvm/pkg/event"
 	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/static_resources"
 	"net/url"
@@ -277,6 +278,7 @@ func (v *VMConfig) WithBuiltInAlpineRootfs(ctx context.Context) error {
 	if err := static_resources.ExtractBuiltinRootfs(ctx, alpineRootfsDir); err != nil {
 		return err
 	}
+	event.Emit(event.RootfsExtractedReady)
 
 	return v.WithUserProvidedRootfs(ctx, alpineRootfsDir)
 }

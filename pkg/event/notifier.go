@@ -6,46 +6,51 @@ import (
 	"time"
 )
 
-type ReportFuncKeyType string
-
-var ReportFuncKey ReportFuncKeyType = "ReportFuncKey"
+// global is the process-wide reporter singleton, set once at startup via Setup.
+var global *Reporter
 
 type Reporter struct {
 	client *network.Client
+	stage  StageName
 }
 
-func InitializeReporter(endpoint string) *Reporter {
+// Setup initializes the global reporter. Safe to call with empty endpoint (becomes no-op).
+func Setup(endpoint string, stageName StageName) {
 	if endpoint == "" {
-		return nil
+		return
+	}
+	if stageName == "" {
+		return
 	}
 
 	addr, err := network.ParseUnixAddr(endpoint)
 	if err != nil {
-		return nil
+		return
 	}
 
-	return &Reporter{
+	global = &Reporter{
 		client: network.NewUnixClient(addr.Path, network.WithTimeout(1*time.Second)),
+		stage:  stageName,
 	}
 }
 
-// SendEventInInitLifeCycle sends an event during the `init` stage, distinguishing between error and non-error cases.
-func (r *Reporter) SendEventInInitLifeCycle(ctx context.Context, evtName EvtName, errMsg string) error {
-	if errMsg != "" {
-		return r.sendEvent(ctx, Init, Error, errMsg)
+// Emit sends an event via the global reporter using the stage set at Setup. Nil-safe.
+func Emit(name EvtName) {
+	if global == nil {
+		return
 	}
-	return r.sendEvent(ctx, Init, evtName, errMsg)
+	_ = global.sendEvent(global.stage, name, "")
 }
 
-// SendEventInRunLifeCycle sends an event during the `run` stage, distinguishing between error and non-error cases.
-func (r *Reporter) SendEventInRunLifeCycle(ctx context.Context, evtName EvtName, errMsg string) error {
-	if errMsg != "" {
-		return r.sendEvent(ctx, Run, Error, errMsg)
+// EmitError sends an error event if err is non-nil. Nil-safe.
+func EmitError(err error) {
+	if err == nil || global == nil {
+		return
 	}
-	return r.sendEvent(ctx, Run, evtName, errMsg)
+	_ = global.sendEvent(global.stage, Error, err.Error())
 }
 
-func (r *Reporter) sendEvent(ctx context.Context, stage StageName, evtName EvtName, value string) error {
+func (r *Reporter) sendEvent(stage StageName, evtName EvtName, value string) error {
 	if r == nil || r.client == nil {
 		return nil
 	}
@@ -54,7 +59,7 @@ func (r *Reporter) sendEvent(ctx context.Context, stage StageName, evtName EvtNa
 		Query("stage", string(stage)).
 		Query("name", string(evtName)).
 		Query("value", value).
-		Do(ctx)
+		Do(context.Background())
 	if err != nil {
 		return err
 	}
@@ -63,28 +68,10 @@ func (r *Reporter) sendEvent(ctx context.Context, stage StageName, evtName EvtNa
 	return nil
 }
 
-// Close closes the reporter's HTTP client
-func (r *Reporter) Close() error {
-	if r != nil && r.client != nil {
-		return r.client.Close()
+// Close closes the global reporter's HTTP client.
+func Close() error {
+	if global != nil && global.client != nil {
+		return global.client.Close()
 	}
 	return nil
-}
-
-func GetReporterFromCtx(ctx context.Context) *Reporter {
-	if ctx == nil {
-		return nil
-	}
-
-	v := ctx.Value(ReportFuncKey)
-	if v == nil {
-		return nil
-	}
-
-	fn, ok := v.(*Reporter)
-	if !ok {
-		return nil
-	}
-
-	return fn
 }

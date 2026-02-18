@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"linuxvm/pkg/event"
 	"linuxvm/pkg/httpserver"
 	"linuxvm/pkg/interfaces"
 	"os"
@@ -642,6 +643,8 @@ func (vm *LibkrunVM) addVirtIOFS(tag, hostPath string) error {
 // Start launches the VM and begins executing the configured command line.
 // This blocks until the VM terminates or the context is cancelled.
 func (vm *LibkrunVM) Start(ctx context.Context) error {
+	event.Emit(event.StartVirtualMachine)
+
 	// Set host process resource limits
 	if err := system.RaiseSystemLimit(); err != nil {
 		return fmt.Errorf("failed to set host process resource limits: %w", err)
@@ -725,5 +728,6 @@ func (vm *LibkrunVM) Stop(_ context.Context) error {
 }
 
 func (vm *LibkrunVM) StartVMCtlServer(ctx context.Context) error {
+	event.Emit(event.StartManagementAPIServer)
 	return httpserver.NewManagementAPIServer(vm.vmc).Start(ctx)
 }

@@ -71,6 +71,6 @@ func (s *httpServer) serve(ctx context.Context) error {
 	case err := <-errChan:
 		return fmt.Errorf("%s httpserver error: %w", s.name, err)
 	case <-ctx.Done():
-		return context.Cause(ctx)
+		return ctx.Err()
 	}
 }

@@ -3,7 +3,7 @@
 [![build.yml](https://github.com/ihexon/revm/actions/workflows/build.yml/badge.svg)](https://github.com/ihexon/revm/actions/workflows/build.yml)
 
 > [!WARNING] 
-> This project is currently under heavy development, and any breaking changes may cause instability
+> This project is currently under heavy development
 
 [README_EN](./README.md) | [README_ZH](./README_zh.md)
 
@@ -103,7 +103,7 @@ revm run [flags] <command> [args...]
 | `--raw-disk`     | Attach a raw disk image (repeatable)                           | —                     |
 | `--mount`        | Mount a host directory (repeatable, format: `host:guest[:ro]`) | —                     |
 | `--envs`         | Set environment variables (repeatable, format: `KEY=value`)    | —                     |
-| `--network`      | Network stack: `GVISOR`                                        | `GVISOR`              |
+| `--network`      | Network stack: `gvisor/tsi`                                    | `gvisor`              |
 | `--system-proxy` | Forward host HTTP/HTTPS proxy to guest                         | `false`               |
 
 **Example:**

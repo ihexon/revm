@@ -4,8 +4,13 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/event"
 	"linuxvm/pkg/httpserver"
 	"linuxvm/pkg/service"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -66,6 +71,9 @@ var startDocker = cli.Command{
 func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	showVersionAndOSInfo()
 
+	event.Setup(command.String(define.FlagReportURL), event.Docker)
+	defer event.Emit(event.Exit)
+
 	vmc, err := ConfigureVM(ctx, command, define.ContainerMode)
 	if err != nil {
 		return fmt.Errorf("configure vm fail: %w", err)
@@ -77,6 +85,33 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
+		defer signal.Stop(sigCh)
+		select {
+		case <-ctx.Done():
+			return nil
+		case sig := <-sigCh:
+			return fmt.Errorf("received signal: %s", sig)
+		}
+	})
+
+	g.Go(func() error {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+				if os.Getppid() == 1 {
+					return fmt.Errorf("parent process exited, shutting down")
+				}
+			}
+		}
+	})
 
 	g.Go(func() error {
 		select {
@@ -136,5 +171,10 @@ func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
 		}
 	})
 
-	return g.Wait()
+	if err = g.Wait(); err != nil {
+		event.EmitError(err)
+		return err
+	}
+
+	return nil
 }

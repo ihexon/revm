@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/event"
 	"linuxvm/pkg/gvproxy"
 
 	"github.com/sirupsen/logrus"
@@ -15,11 +16,13 @@ import (
 type GVisorMode struct{}
 
 func (g *GVisorMode) StartNetworkStack(ctx context.Context, vmc *define.VMConfig) error {
+	event.Emit(event.StartVirtualNetwork)
 	logrus.Info("Starting gvisor-tap-vsock network stack")
 	return gvproxy.Run(ctx, vmc)
 }
 
 func (g *GVisorMode) StartPodmanProxy(ctx context.Context, vmc *define.VMConfig) error {
+	event.Emit(event.StartPodmanProxyServer)
 	return gvproxy.TunnelHostUnixToGuest(ctx,
 		vmc.GVPCtlAddr,
 		vmc.PodmanInfo.PodmanProxyAddr,
