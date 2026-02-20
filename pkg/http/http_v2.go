@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package httpserver
+package http
 
 import (
 	"context"
@@ -15,25 +15,25 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// httpServer provides common HTTP server functionality.
-type httpServer struct {
+// Server provides common HTTP server functionality.
+type Server struct {
 	name        string
 	listener    string
 	server      *http.Server
-	mux         *http.ServeMux
-	onListening func() // called once after net.Listen succeeds
+	Mux         *http.ServeMux
+	OnListening func() // called once after net.Listen succeeds
 }
 
-func newUnixSockHTTPServer(name, listener string) *httpServer {
-	return &httpServer{
+func NewUnixSockHTTPServer(name, listener string) *Server {
+	return &Server{
 		name:     name,
 		listener: listener,
-		mux:      http.NewServeMux(),
+		Mux:      http.NewServeMux(),
 	}
 }
 
-// serve starts the HTTP server and blocks until context is cancelled.
-func (s *httpServer) serve(ctx context.Context) error {
+// Serve starts the HTTP server and blocks until context is cancelled.
+func (s *Server) Serve(ctx context.Context) error {
 	addr, err := network.ParseUnixAddr(s.listener)
 	if err != nil {
 		return fmt.Errorf("failed to parse unix socket address: %w", err)
@@ -47,11 +47,11 @@ func (s *httpServer) serve(ctx context.Context) error {
 	}
 	defer os.Remove(addr.Path)
 
-	if s.onListening != nil {
-		s.onListening()
+	if s.OnListening != nil {
+		s.OnListening()
 	}
 
-	s.server = &http.Server{Handler: s.mux}
+	s.server = &http.Server{Handler: s.Mux}
 
 	errChan := make(chan error, 1)
 	go func() {

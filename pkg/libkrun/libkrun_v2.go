@@ -15,8 +15,8 @@ import (
 	"fmt"
 	"io"
 	"linuxvm/pkg/event"
-	"linuxvm/pkg/httpserver"
 	"linuxvm/pkg/interfaces"
+	"linuxvm/pkg/service"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -134,7 +134,7 @@ type ConsolePortINOUT struct {
 }
 
 type LibkrunVM struct {
-	vmc   *vmbuilder.VMConfig
+	vmc   *vmbuilder.VM
 	ctxID uint32
 
 	consolePortsINOUT []ConsolePortINOUT
@@ -154,7 +154,7 @@ var guestMACAddress = [6]byte{0x5a, 0x94, 0xef, 0xe4, 0x0c, 0xee}
 // Compile-time check: LibkrunVM must implement vm.VMProvider
 var _ interfaces.VMMProvider = (*LibkrunVM)(nil)
 
-func NewLibkrunVM(vmc *vmbuilder.VMConfig) *LibkrunVM {
+func NewLibkrunVM(vmc *vmbuilder.VM) *LibkrunVM {
 	return &LibkrunVM{
 		vmc: vmc,
 	}
@@ -165,7 +165,7 @@ func (vm *LibkrunVM) AddConsolePort(port ConsolePortINOUT) *LibkrunVM {
 	return vm
 }
 
-func (vm *LibkrunVM) GetVMConfigure() (*vmbuilder.VMConfig, error) {
+func (vm *LibkrunVM) GetVMConfigure() (*vmbuilder.VM, error) {
 	if vm.vmc == nil {
 		return nil, fmt.Errorf("vm configuration is nil")
 	}
@@ -729,5 +729,5 @@ func (vm *LibkrunVM) Stop(_ context.Context) error {
 
 func (vm *LibkrunVM) StartVMCtlServer(ctx context.Context) error {
 	event.Emit(event.StartManagementAPIServer)
-	return httpserver.NewManagementAPIServer(vm.vmc).Start(ctx)
+	return service.NewManagementAPIServer(vm.vmc).Start(ctx)
 }

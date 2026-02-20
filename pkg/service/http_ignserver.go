@@ -1,56 +1,37 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package httpserver
+package service
 
 import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/event"
+	http2 "linuxvm/pkg/http"
 	"net/http"
-	"sync"
 	"time"
 
 	"linuxvm/pkg/network"
-	"linuxvm/pkg/vmbuilder"
 
 	"github.com/sirupsen/logrus"
 )
 
 type IgnServer struct {
-	vmc *vmbuilder.VMConfig
-	srv *httpServer
+	vmc *define.Machine
+	srv *http2.Server
 
 	Listening chan struct{}
-
-	SSHReady chan struct{}
-	sshOnce  sync.Once
-
-	PodmanReady chan struct{}
-	podmanOnce  sync.Once
-
-	// VNetHostReady indicates the host-side virtual network(TSI, gvisor-tap-vsock)
-	VNetHostReady chan struct{}
-	vNetHostOnce  sync.Once
-
-	// VNetGuestReady indicates the guest-side virtual network(bring up guest interface and get IP)
-	VNetGuestReady chan struct{}
-	vNetGuestOnce  sync.Once
 }
 
 // NewIgnServer creates a httpserver that provides configuration to the guest.
-func NewIgnServer(vmc *vmbuilder.VMConfig) *IgnServer {
+func NewIgnServer(vmc *define.Machine) *IgnServer {
 	s := &IgnServer{
-		vmc:            vmc,
-		Listening:      make(chan struct{}),
-		SSHReady:       make(chan struct{}),
-		PodmanReady:    make(chan struct{}),
-		VNetHostReady:  make(chan struct{}),
-		VNetGuestReady: make(chan struct{}),
+		vmc:       vmc,
+		Listening: make(chan struct{}),
 	}
 
-	srv := newUnixSockHTTPServer("ignition-httpserver", vmc.IgnitionServerCfg.ListenSockAddr)
-	srv.onListening = func() { close(s.Listening) }
+	srv := http2.NewUnixSockHTTPServer("ignition-httpserver", vmc.IgnitionServerCfg.ListenSockAddr)
+	srv.OnListening = func() { close(s.Listening) }
 	s.srv = srv
 	return s
 }
@@ -58,11 +39,11 @@ func NewIgnServer(vmc *vmbuilder.VMConfig) *IgnServer {
 func (s *IgnServer) Start(ctx context.Context) error {
 	event.Emit(event.StartIgnitionServer)
 
-	s.srv.mux.HandleFunc("/healthz", s.handleHealth)
-	s.srv.mux.HandleFunc("/vmconfig", s.handleVMConfig)
-	s.srv.mux.HandleFunc(fmt.Sprintf("/ready/%s", define.ServiceNameSSH), s.handleReadySSH)
-	s.srv.mux.HandleFunc(fmt.Sprintf("/ready/%s", define.ServiceNamePodman), s.handleReadyPodman)
-	s.srv.mux.HandleFunc(fmt.Sprintf("/ready/%s", define.ServiceNameGuestNetwork), s.handleReadyGuestNetwork)
+	s.srv.Mux.HandleFunc("/healthz", s.handleHealth)
+	s.srv.Mux.HandleFunc("/vmconfig", s.handleVMConfig)
+	s.srv.Mux.HandleFunc(fmt.Sprintf("/ready/%s", define.ServiceNameSSH), s.handleReadySSH)
+	s.srv.Mux.HandleFunc(fmt.Sprintf("/ready/%s", define.ServiceNamePodman), s.handleReadyPodman)
+	s.srv.Mux.HandleFunc(fmt.Sprintf("/ready/%s", define.ServiceNameGuestNetwork), s.handleReadyGuestNetwork)
 
 	errChan := make(chan error, 2)
 
@@ -73,15 +54,15 @@ func (s *IgnServer) Start(ctx context.Context) error {
 	}()
 
 	go func() {
-		<-s.SSHReady
-		<-s.PodmanReady
-		<-s.VNetHostReady
-		<-s.VNetGuestReady
+		<-s.vmc.Readiness.SSHReady
+		<-s.vmc.Readiness.PodmanReady
+		<-s.vmc.Readiness.VNetHostReady
+		<-s.vmc.Readiness.VNetGuestReady
 		event.Emit(event.AllThingsReady)
 	}()
 
 	go func() {
-		errChan <- s.srv.serve(ctx)
+		errChan <- s.srv.Serve(ctx)
 	}()
 
 	select {
@@ -93,11 +74,10 @@ func (s *IgnServer) Start(ctx context.Context) error {
 }
 
 func (s *IgnServer) waitTSINetworkOnline(ctx context.Context) error {
-	s.vNetHostOnce.Do(func() {
+	if s.vmc.Readiness.SignalVNetHostReady() {
 		logrus.Infof("[ign] TSI network online")
-		close(s.VNetHostReady)
 		event.Emit(event.HostNetworkReady)
-	})
+	}
 	return nil
 }
 
@@ -125,11 +105,10 @@ func (s *IgnServer) waitGvisorVSockTapOnline(ctx context.Context) error {
 			network.CloseResponse(resp)
 
 			if resp.StatusCode == http.StatusOK {
-				s.vNetHostOnce.Do(func() {
+				if s.vmc.Readiness.SignalVNetHostReady() {
 					logrus.Infof("[ign] gvisor virtual-network online")
-					close(s.VNetHostReady)
 					event.Emit(event.HostNetworkReady)
-				})
+				}
 				return nil
 			}
 		}
@@ -172,11 +151,10 @@ func (s *IgnServer) handleReadySSH(w http.ResponseWriter, r *http.Request) {
 		WriteJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	s.sshOnce.Do(func() {
+	if s.vmc.Readiness.SignalSSHReady() {
 		logrus.Info("[ign] guest ssh server online")
-		close(s.SSHReady)
 		event.Emit(event.GuestSSHReady)
-	})
+	}
 	WriteJSON(w, http.StatusOK, nil)
 }
 
@@ -185,11 +163,10 @@ func (s *IgnServer) handleReadyPodman(w http.ResponseWriter, r *http.Request) {
 		WriteJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	s.podmanOnce.Do(func() {
+	if s.vmc.Readiness.SignalPodmanAPIProxyReady() {
 		logrus.Infof("[ign] guest podman online")
-		close(s.PodmanReady)
 		event.Emit(event.GuestPodmanReady)
-	})
+	}
 	WriteJSON(w, http.StatusOK, nil)
 }
 
@@ -198,10 +175,9 @@ func (s *IgnServer) handleReadyGuestNetwork(w http.ResponseWriter, r *http.Reque
 		WriteJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	s.vNetGuestOnce.Do(func() {
+	if s.vmc.Readiness.SignalVNetGuestReady() {
 		logrus.Infof("[ign] guest network online")
-		close(s.VNetGuestReady)
 		event.Emit(event.GuestNetworkReady)
-	})
+	}
 	WriteJSON(w, http.StatusOK, nil)
 }

@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package httpserver
+package sse
 
 import (
 	"net/http"
@@ -11,22 +11,22 @@ import (
 
 // SSE message types
 const (
-	sseTypeOut = "out"
-	sseTypeErr = "error"
+	TypeOut = "out"
+	TypeErr = "error"
 
-	sseTopicKey = "sseTopicKey"
+	TopicKey = "sseTopicKey"
 )
 
-// sseServer wraps the SSE server with helper methods.
-type sseServer struct {
+// Server wraps the SSE server with helper methods.
+type Server struct {
 	server *sse.Server
 }
 
-func newSSEServer() *sseServer {
-	return &sseServer{
+func NewSSEServer() *Server {
+	return &Server{
 		server: &sse.Server{
 			OnSession: func(w http.ResponseWriter, r *http.Request) ([]string, bool) {
-				topic, ok := r.Context().Value(sseTopicKey).(string)
+				topic, ok := r.Context().Value(TopicKey).(string)
 				if !ok || topic == "" {
 					logrus.Warn("sse: empty topic in session")
 					return nil, false
@@ -37,11 +37,11 @@ func newSSEServer() *sseServer {
 	}
 }
 
-func (s *sseServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.server.ServeHTTP(w, r)
 }
 
-func (s *sseServer) publish(topic, msgType, data string) {
+func (s *Server) Publish(topic, msgType, data string) {
 	msg := &sse.Message{}
 	msg.AppendData(data)
 	msg.Type = sse.Type(msgType)

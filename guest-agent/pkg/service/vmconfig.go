@@ -11,7 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func getVMConfig(ctx context.Context) (*define.VMConfig, error) {
+func getVMConfig(ctx context.Context) (*define.Machine, error) {
 	svc := vsock.NewVSockService()
 	defer func() {
 		if err := svc.Close(); err != nil {
@@ -27,7 +27,7 @@ func getVMConfig(ctx context.Context) (*define.VMConfig, error) {
 	return vmc, nil
 }
 
-func GetVMConfig(ctx context.Context) (*define.VMConfig, error) {
+func GetVMConfig(ctx context.Context) (*define.Machine, error) {
 	vmc, err := getVMConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func GetVMConfig(ctx context.Context) (*define.VMConfig, error) {
 	return vmc, WriteToJsonFile(vmc, define.VMConfigFilePathInGuest)
 }
 
-func WriteToJsonFile(vmc *define.VMConfig, file string) error {
+func WriteToJsonFile(vmc *define.Machine, file string) error {
 	b, err := json.Marshal(vmc)
 	if err != nil {
 		return fmt.Errorf("failed to marshal vmconfig: %v", err)

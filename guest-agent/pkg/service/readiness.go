@@ -16,10 +16,10 @@ import (
 )
 
 type Readiness struct {
-	vmc *define.VMConfig
+	vmc *define.Machine
 }
 
-func NewServiceReadiness(vmc *define.VMConfig) *Readiness {
+func NewServiceReadiness(vmc *define.Machine) *Readiness {
 	return &Readiness{
 		vmc: vmc,
 	}

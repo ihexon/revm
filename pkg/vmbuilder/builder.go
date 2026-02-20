@@ -12,11 +12,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// VMConfigBuilder provides a fluent API for building VMConfig instances.
+// VMConfigBuilder provides a fluent API for building VM instances.
 // Callers explicitly declare which features to enable via chain methods,
 // and Build() applies them in the correct order.
 type VMConfigBuilder struct {
-	vmc     *VMConfig
+	vmc     *VM
 	pathMgr *PathManager
 
 	// Configuration parameters (Set*)
@@ -45,7 +45,7 @@ type VMConfigBuilder struct {
 // NewVMConfigBuilder creates a new builder for the specified run mode.
 func NewVMConfigBuilder(runMode define.RunMode) *VMConfigBuilder {
 	vmb := &VMConfigBuilder{
-		vmc:     NewVMConfig(runMode),
+		vmc:     NewVirtualMachine(runMode),
 		runMode: runMode,
 	}
 
@@ -131,8 +131,8 @@ func (b *VMConfigBuilder) SetContainerDiskVersion(version string) *VMConfigBuild
 	return b
 }
 
-// Build constructs the VMConfig with all configurations applied in correct order.
-func (b *VMConfigBuilder) Build(ctx context.Context) (*define.VMConfig, error) {
+// Build constructs the VM with all configurations applied in correct order.
+func (b *VMConfigBuilder) Build(ctx context.Context) (*define.Machine, error) {
 	// 1. Workspace
 	if err := b.vmc.SetupWorkspace(b.workspace); err != nil {
 		return nil, fmt.Errorf("setup workspace: %w", err)
@@ -157,7 +157,7 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.VMConfig, error) {
 	}
 
 	b.vmc.VirtualNetworkMode = b.networkMode
-	if err := networkStrategy.Configure(ctx, (*define.VMConfig)(b.vmc), b.pathMgr); err != nil {
+	if err := networkStrategy.Configure(ctx, (*define.Machine)(b.vmc), b.pathMgr); err != nil {
 		return nil, fmt.Errorf("configure network: %w", err)
 	}
 
@@ -218,7 +218,7 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.VMConfig, error) {
 	// 8. Podman
 	if b.runMode == define.ContainerMode || b.runMode == define.OVMode {
 		podmanConfig := NewPodmanConfigurator(b.pathMgr)
-		if err := podmanConfig.Configure(ctx, (*define.VMConfig)(b.vmc)); err != nil {
+		if err := podmanConfig.Configure(ctx, (*define.Machine)(b.vmc)); err != nil {
 			return nil, fmt.Errorf("configure podman: %w", err)
 		}
 	}
@@ -259,7 +259,7 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.VMConfig, error) {
 
 	// 13. Guest Agent (always required)
 	guestAgentConfig := NewGuestAgentConfigurator(b.pathMgr)
-	if err := guestAgentConfig.Configure(ctx, (*define.VMConfig)(b.vmc)); err != nil {
+	if err := guestAgentConfig.Configure(ctx, (*define.Machine)(b.vmc)); err != nil {
 		return nil, fmt.Errorf("configure guest agent: %w", err)
 	}
 
@@ -268,5 +268,5 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.VMConfig, error) {
 		return nil, fmt.Errorf("configure vmctl API: %w", err)
 	}
 
-	return (*define.VMConfig)(b.vmc), nil
+	return (*define.Machine)(b.vmc), nil
 }

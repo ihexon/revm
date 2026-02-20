@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type Machine define.VMConfig
+type Machine define.Machine
 
 func (m *Machine) GetVirtualNetworkType() define.VNetMode {
 	if m.VirtualNetworkMode == define.TSI {
@@ -21,7 +21,7 @@ func (m *Machine) GetVirtualNetworkType() define.VNetMode {
 	return define.GVISOR
 }
 
-func WaitGuestServiceReady(ctx context.Context, vmc *define.VMConfig) error {
+func WaitGuestServiceReady(ctx context.Context, vmc *define.Machine) error {
 	ctx, cancel := context.WithTimeoutCause(ctx, define.DefaultProbeTimeout, fmt.Errorf("readiness timed out after %v", define.DefaultProbeTimeout))
 	defer cancel()
 

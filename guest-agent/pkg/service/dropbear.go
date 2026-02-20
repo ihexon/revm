@@ -142,7 +142,7 @@ func (d *Dropbear) Start(ctx context.Context) error {
 }
 
 // StartGuestSSHServer support TSI/Gvisor network mode
-func StartGuestSSHServer(ctx context.Context, vmc *define.VMConfig) error {
+func StartGuestSSHServer(ctx context.Context, vmc *define.Machine) error {
 	cfg := DropbearConfig{
 		ListenAddr:         define.UnspecifiedAddress,
 		ListenPort:         define.GuestSSHServerPort,

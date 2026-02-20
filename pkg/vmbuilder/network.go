@@ -17,9 +17,9 @@ import (
 // Different network modes (GVISOR, TSI) implement this interface to configure
 // the VM's network stack in their specific way.
 type NetworkConfigStrategy interface {
-	// Configure sets up network configuration on the given VMConfig.
+	// Configure sets up network configuration on the given VM.
 	// pathMgr is used to get workspace-relative paths for socket files.
-	Configure(ctx context.Context, vmc *define.VMConfig, pathMgr *PathManager) error
+	Configure(ctx context.Context, vmc *define.Machine, pathMgr *PathManager) error
 }
 
 // GetNetworkStrategy returns the appropriate NetworkConfigStrategy for the given network mode.
@@ -41,7 +41,7 @@ type GVisorNetworkConfig struct{}
 
 // Configure sets up the gvisor-tap-vsock network configuration.
 // It creates Unix socket paths for GVProxy control and virtual network communication.
-func (g *GVisorNetworkConfig) Configure(ctx context.Context, vmc *define.VMConfig, pathMgr *PathManager) error {
+func (g *GVisorNetworkConfig) Configure(ctx context.Context, vmc *define.Machine, pathMgr *PathManager) error {
 	logrus.Infof("Configuring gvisor-tap-vsock network mode")
 
 	unixAddr := &url.URL{
@@ -67,7 +67,7 @@ type TSINetworkConfig struct{}
 
 // Configure sets up TSI network mode.
 // TSI mode doesn't require gvisor network setup, so this is essentially a no-op.
-func (t *TSINetworkConfig) Configure(ctx context.Context, vmc *define.VMConfig, pathMgr *PathManager) error {
+func (t *TSINetworkConfig) Configure(ctx context.Context, vmc *define.Machine, pathMgr *PathManager) error {
 	logrus.Infof("Using TSI network mode (libkrun built-in networking)")
 	// TSI mode doesn't need gvisor network setup
 	return nil

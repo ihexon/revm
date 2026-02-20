@@ -9,6 +9,6 @@ type VMMProvider interface {
 	Create(ctx context.Context) error
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
-	GetVMConfigure() (*vmbuilder.VMConfig, error)
+	GetVMConfigure() (*vmbuilder.VM, error)
 	StartVMCtlServer(ctx context.Context) error
 }

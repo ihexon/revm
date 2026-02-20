@@ -117,7 +117,7 @@ build() {
     log_info "Building revm ($version-$commit)..."
 
     go build -ldflags="-X linuxvm/pkg/define.Version=$version -X linuxvm/pkg/define.CommitID=$commit" \
-        -o "$bindir/revm" "$workspace/cmd"
+        -o "$bindir/revm" "$workspace/cmd/revm"
 
     # 5. Fix revm dependencies and sign
     rewrite_dep "$bindir/revm" "libkrun.1.dylib" "libkrun.1.dylib"

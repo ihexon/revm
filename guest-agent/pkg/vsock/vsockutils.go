@@ -27,13 +27,13 @@ func NewVSockService() *Service {
 	}
 }
 
-func (v *Service) GetVMConfig(ctx context.Context) (*define.VMConfig, error) {
+func (v *Service) GetVMConfig(ctx context.Context) (*define.Machine, error) {
 	resp, err := v.client.GetJSON(ctx, define.RestAPIVMConfigURL)
 	if err != nil {
 		return nil, err
 	}
 
-	vmc := &define.VMConfig{}
+	vmc := &define.Machine{}
 	if err = json.Unmarshal(resp, vmc); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal vmconfig: %w", err)
 	}

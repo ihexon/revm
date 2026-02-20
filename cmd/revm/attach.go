@@ -49,7 +49,7 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 	}
 	logrus.Infof("run cmdline: %v", cmdline)
 
-	// Fetch VMConfig from ignition server
+	// Fetch Machine from ignition server
 	ignAddr := vmbuilder.NewPathManager(workspace).GetIgnAddr()
 
 	client := network.NewUnixClient(ignAddr)
@@ -65,7 +65,7 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("ignition server returned status %d", resp.StatusCode)
 	}
 
-	var vmc define.VMConfig
+	var vmc define.Machine
 	if err := json.NewDecoder(resp.Body).Decode(&vmc); err != nil {
 		return fmt.Errorf("failed to decode vmconfig: %w", err)
 	}

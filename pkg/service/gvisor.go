@@ -15,25 +15,17 @@ import (
 // This mode uses an external network stack (gvisor) with vsock communication.
 type GVisorMode struct{}
 
-func (g *GVisorMode) StartNetworkStack(ctx context.Context, vmc *define.VMConfig) error {
+func (g *GVisorMode) StartNetworkStack(ctx context.Context, vmc *define.Machine) error {
 	event.Emit(event.StartVirtualNetwork)
 	logrus.Info("Starting gvisor-tap-vsock network stack")
 	return gvproxy.Run(ctx, vmc)
 }
 
-func (g *GVisorMode) StartPodmanProxy(ctx context.Context, vmc *define.VMConfig) error {
+func (g *GVisorMode) StartPodmanProxy(ctx context.Context, vmc *define.Machine) error {
 	event.Emit(event.StartPodmanProxyServer)
 	return gvproxy.TunnelHostUnixToGuest(ctx,
 		vmc.GVPCtlAddr,
 		vmc.PodmanInfo.PodmanProxyAddr,
 		vmc.PodmanInfo.GuestPodmanAPIIP,
 		vmc.PodmanInfo.GuestPodmanAPIPort)
-}
-
-func (g *GVisorMode) GetPodmanListenAddr(vmc *define.VMConfig) string {
-	return vmc.PodmanInfo.PodmanProxyAddr
-}
-
-func (g *GVisorMode) String() string {
-	return string(define.GVISOR)
 }

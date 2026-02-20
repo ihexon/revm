@@ -147,7 +147,7 @@ func run(ctx context.Context, _ *cli.Command) error {
 	}
 }
 
-func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
+func userRootfsMode(ctx context.Context, vmc *define.Machine) error {
 	logrus.Info("running in rootfs mode")
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -175,7 +175,7 @@ func userRootfsMode(ctx context.Context, vmc *define.VMConfig) error {
 	return g.Wait()
 }
 
-func dockerEngineMode(ctx context.Context, vmc *define.VMConfig) error {
+func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
 	logrus.Info("running in container mode")
 
 	if !service.IsMounted(define.ContainerStorageMountPoint) {

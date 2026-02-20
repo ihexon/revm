@@ -5,12 +5,7 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/event"
-	"linuxvm/pkg/httpserver"
 	"linuxvm/pkg/service"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
@@ -82,12 +77,12 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("no command specified")
 	}
 
-	vmc, err := ConfigureVM(ctx, command, define.RootFsMode)
+	vm, err := ConfigureVM(ctx, command, define.RootFsMode)
 	if err != nil {
 		return fmt.Errorf("configure vm fail: %w", err)
 	}
 
-	vmp, err := GetVMM(vmc)
+	vmp, err := GetVMM(vm)
 	if err != nil {
 		return fmt.Errorf("get vmm fail: %w", err)
 	}
@@ -95,51 +90,23 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
-		defer signal.Stop(sigCh)
-		select {
-		case <-ctx.Done():
-			return nil
-		case sig := <-sigCh:
-			return fmt.Errorf("received signal: %s", sig)
-		}
+		return service.ListenSignal(ctx)
 	})
 
 	g.Go(func() error {
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-ticker.C:
-				if os.Getppid() == 1 {
-					return fmt.Errorf("parent process exited, shutting down")
-				}
-			}
-		}
+		return service.WatchParentProcess(ctx)
 	})
 
 	g.Go(func() error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-vmc.StopCh:
-			return fmt.Errorf("VM stop requested via API")
-		}
+		return service.WatchMachineExitChannel(ctx, (*define.Machine)(vm))
 	})
 
-	// start ign service
-	ignSrv := httpserver.NewIgnServer(vmc)
 	g.Go(func() error {
-		return ignSrv.Start(ctx)
+		return service.StartIgnitionService(ctx, (*define.Machine)(vm))
 	})
 
-	svc := service.NewHostServiceManager(vmc.VirtualNetworkMode)
-
 	g.Go(func() error {
-		return svc.StartNetworkStack(ctx, (*define.VMConfig)(vmc))
+		return service.StartNetworkStack(ctx, (*define.Machine)(vm))
 	})
 
 	// start vmctl service
@@ -151,9 +118,9 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ignSrv.VNetHostReady:
+		case <-(*define.Machine)(vm).Readiness.VNetHostReady:
 			if err := vmp.Create(ctx); err != nil {
-				return fmt.Errorf("failed to create vm: %w", err)
+				return fmt.Errorf("create virtual machine from libkrun builder fail: %v", err)
 			}
 			return vmp.Start(ctx)
 		}

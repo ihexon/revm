@@ -5,7 +5,6 @@ package vmbuilder
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"fmt"
 	"io"
 	"linuxvm/pkg/define"
@@ -24,10 +23,10 @@ import (
 )
 
 type (
-	VMConfig define.VMConfig
+	VM define.Machine
 )
 
-func (v *VMConfig) Lock() error {
+func (v *VM) Lock() error {
 	fileLock := flock.New(filepath.Join(v.WorkspacePath, ".lock"))
 
 	ifLocked, err := fileLock.TryLock()
@@ -42,7 +41,7 @@ func (v *VMConfig) Lock() error {
 	return nil
 }
 
-func (v *VMConfig) generateRAWDisk(ctx context.Context, rawDiskPath string, givenUUID string) error {
+func (v *VM) generateRAWDisk(ctx context.Context, rawDiskPath string, givenUUID string) error {
 	rawDiskPath, err := filepath.Abs(filepath.Clean(rawDiskPath))
 	if err != nil {
 		return err
@@ -72,11 +71,11 @@ func (v *VMConfig) generateRAWDisk(ctx context.Context, rawDiskPath string, give
 	return nil
 }
 
-func (v *VMConfig) GetContainerStorageDiskPath() string {
+func (v *VM) GetContainerStorageDiskPath() string {
 	return NewPathManager(v.WorkspacePath).GetContainerStorageDiskPath()
 }
 
-func (v *VMConfig) ConfigureContainerRAWDisk(ctx context.Context) error {
+func (v *VM) ConfigureContainerRAWDisk(ctx context.Context) error {
 	rawDiskFilePath := v.GetContainerStorageDiskPath()
 	if _, err := os.Stat(rawDiskFilePath); err != nil {
 		if err = v.generateRAWDisk(ctx, rawDiskFilePath, define.ContainerDiskUUID); err != nil {
@@ -87,7 +86,7 @@ func (v *VMConfig) ConfigureContainerRAWDisk(ctx context.Context) error {
 	return v.addRAWDiskToBlkList(ctx, rawDiskFilePath)
 }
 
-func (v *VMConfig) addRAWDiskToBlkList(ctx context.Context, rawDiskPath string) error {
+func (v *VM) addRAWDiskToBlkList(ctx context.Context, rawDiskPath string) error {
 	rawDiskPath, err := filepath.Abs(filepath.Clean(rawDiskPath))
 	if err != nil {
 		return err
@@ -119,7 +118,7 @@ func (v *VMConfig) addRAWDiskToBlkList(ctx context.Context, rawDiskPath string) 
 	return nil
 }
 
-func (v *VMConfig) WithMountUserHome(ctx context.Context) error {
+func (v *VM) WithMountUserHome(ctx context.Context) error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -127,7 +126,7 @@ func (v *VMConfig) WithMountUserHome(ctx context.Context) error {
 	return v.withUserProvidedMounts([]string{fmt.Sprintf("%s:%s", homeDir, homeDir)})
 }
 
-func (v *VMConfig) withUserProvidedStorageRAWDisk(ctx context.Context, rawDiskS []string) error {
+func (v *VM) withUserProvidedStorageRAWDisk(ctx context.Context, rawDiskS []string) error {
 	for _, f := range rawDiskS {
 		if f == "" {
 			return fmt.Errorf("raw disk path is empty")
@@ -151,7 +150,7 @@ func (v *VMConfig) withUserProvidedStorageRAWDisk(ctx context.Context, rawDiskS 
 	return nil
 }
 
-func (v *VMConfig) SetupCmdLine(workdir, bin string, args, envs []string) error {
+func (v *VM) SetupCmdLine(workdir, bin string, args, envs []string) error {
 	if v.RunMode != define.RootFsMode.String() {
 		return fmt.Errorf("expect run mode %q, but got %q", define.RootFsMode.String(), v.RunMode)
 	}
@@ -190,7 +189,7 @@ func (v *VMConfig) SetupCmdLine(workdir, bin string, args, envs []string) error 
 	return nil
 }
 
-func (v *VMConfig) WithResources(memoryInMB uint64, cpus int8) error {
+func (v *VM) WithResources(memoryInMB uint64, cpus int8) error {
 	if cpus <= 0 {
 		return fmt.Errorf("1 cpu cores is the minimum value")
 	}
@@ -205,7 +204,7 @@ func (v *VMConfig) WithResources(memoryInMB uint64, cpus int8) error {
 	return nil
 }
 
-func (v *VMConfig) withUserProvidedMounts(dirs []string) error {
+func (v *VM) withUserProvidedMounts(dirs []string) error {
 	if len(dirs) == 0 || dirs == nil {
 		return nil
 	}
@@ -223,13 +222,13 @@ func (v *VMConfig) withUserProvidedMounts(dirs []string) error {
 	return nil
 }
 
-func (v *VMConfig) ConfigureGuestAgent() error {
+func (v *VM) ConfigureGuestAgent() error {
 	pathMgr := NewPathManager(v.WorkspacePath)
 	configurator := NewGuestAgentConfigurator(pathMgr)
-	return configurator.Configure(context.Background(), (*define.VMConfig)(v))
+	return configurator.Configure(context.Background(), (*define.Machine)(v))
 }
 
-func (v *VMConfig) SetupLogLevel(level string) error {
+func (v *VM) SetupLogLevel(level string) error {
 	l, err := logrus.ParseLevel(level)
 	if err != nil {
 		return fmt.Errorf("invalid log level: %w", err)
@@ -261,11 +260,11 @@ func (v *VMConfig) SetupLogLevel(level string) error {
 	return nil
 }
 
-func (v *VMConfig) getRootfsDir() string {
+func (v *VM) getRootfsDir() string {
 	return NewPathManager(v.WorkspacePath).GetRootfsDir()
 }
 
-func (v *VMConfig) WithBuiltInAlpineRootfs(ctx context.Context) error {
+func (v *VM) WithBuiltInAlpineRootfs(ctx context.Context) error {
 	if v.WorkspacePath == "" {
 		return fmt.Errorf("workspace path is empty")
 	}
@@ -283,7 +282,7 @@ func (v *VMConfig) WithBuiltInAlpineRootfs(ctx context.Context) error {
 	return v.WithUserProvidedRootfs(ctx, alpineRootfsDir)
 }
 
-func (v *VMConfig) WithUserProvidedRootfs(ctx context.Context, rootfsPath string) error {
+func (v *VM) WithUserProvidedRootfs(ctx context.Context, rootfsPath string) error {
 	if rootfsPath == "" {
 		return fmt.Errorf("rootfs path is empty")
 	}
@@ -303,11 +302,11 @@ func (v *VMConfig) WithUserProvidedRootfs(ctx context.Context, rootfsPath string
 	return nil
 }
 
-func (v *VMConfig) GetSSHPrivateKeyFile() string {
+func (v *VM) GetSSHPrivateKeyFile() string {
 	return NewPathManager(v.WorkspacePath).GetSSHPrivateKeyFile()
 }
 
-func (v *VMConfig) configureVirtualMachineControlAPI() error {
+func (v *VM) configureVirtualMachineControlAPI() error {
 	unixAddr := &url.URL{
 		Scheme: "unix",
 		Host:   "",
@@ -325,7 +324,7 @@ func (v *VMConfig) configureVirtualMachineControlAPI() error {
 	return nil
 }
 
-func (v *VMConfig) ResetOrReuseContainerRAWDisk(ctx context.Context, containerDiskVersionXATTR string) error {
+func (v *VM) ResetOrReuseContainerRAWDisk(ctx context.Context, containerDiskVersionXATTR string) error {
 	resetBool, err := v.WithRAWDiskVersionXATTR(containerDiskVersionXATTR).needsDiskRegeneration(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to check RAW disk needs to regenerate: %w", err)
@@ -344,7 +343,7 @@ func (v *VMConfig) ResetOrReuseContainerRAWDisk(ctx context.Context, containerDi
 	return nil
 }
 
-func (v *VMConfig) ConfigureVirtualNetwork(ctx context.Context, mode define.VNetMode) error {
+func (v *VM) ConfigureVirtualNetwork(ctx context.Context, mode define.VNetMode) error {
 	v.VirtualNetworkMode = mode
 
 	// Use strategy pattern for network configuration
@@ -354,16 +353,16 @@ func (v *VMConfig) ConfigureVirtualNetwork(ctx context.Context, mode define.VNet
 	}
 
 	pathMgr := NewPathManager(v.WorkspacePath)
-	return strategy.Configure(ctx, (*define.VMConfig)(v), pathMgr)
+	return strategy.Configure(ctx, (*define.Machine)(v), pathMgr)
 }
 
-func (v *VMConfig) generateSSHCfg() error {
+func (v *VM) generateSSHCfg() error {
 	pathMgr := NewPathManager(v.WorkspacePath)
 	configurator := NewSSHConfigurator(pathMgr)
-	return configurator.Configure(context.Background(), (*define.VMConfig)(v))
+	return configurator.Configure(context.Background(), (*define.Machine)(v))
 }
 
-func (v *VMConfig) SetupWorkspace(workspacePath string) error {
+func (v *VM) SetupWorkspace(workspacePath string) error {
 	if workspacePath == "" {
 		return fmt.Errorf("workspace path is empty")
 	}
@@ -395,21 +394,22 @@ func (v *VMConfig) SetupWorkspace(workspacePath string) error {
 	return v.generateSSHCfg()
 }
 
-func NewVMConfig(mode define.RunMode) *VMConfig {
-	vmc := &VMConfig{
+func NewVirtualMachine(mode define.RunMode) *VM {
+	vmc := &VM{
 		RunMode:       mode.String(),
 		XATTRSRawDisk: map[string]string{},
 		StopCh:        make(chan struct{}),
+		Readiness:     define.NewReadiness(),
 	}
 
 	return vmc
 }
 
-func (v *VMConfig) GetVMMRunLogsFile() string {
+func (v *VM) GetVMMRunLogsFile() string {
 	return filepath.Join(NewPathManager(v.WorkspacePath).GetLogsDir(), "vm.log")
 }
 
-func (v *VMConfig) needsDiskRegeneration(ctx context.Context) (bool, error) {
+func (v *VM) needsDiskRegeneration(ctx context.Context) (bool, error) {
 	xattrKey := define.XATTRRawDiskVersionKey
 	xattrProcesser := filesystem.NewXATTRManager()
 
@@ -426,30 +426,30 @@ func (v *VMConfig) needsDiskRegeneration(ctx context.Context) (bool, error) {
 	return false, nil
 }
 
-func (v *VMConfig) WithRAWDiskVersionXATTR(value string) *VMConfig {
+func (v *VM) WithRAWDiskVersionXATTR(value string) *VM {
 	v.XATTRSRawDisk = map[string]string{
 		define.XATTRRawDiskVersionKey: value,
 	}
 	return v
 }
 
-func (v *VMConfig) GetPodmanListenAddr() string {
+func (v *VM) GetPodmanListenAddr() string {
 	return NewPathManager(v.WorkspacePath).GetPodmanListenAddr()
 }
 
-func (v *VMConfig) GetVNetListenAddr() string {
+func (v *VM) GetVNetListenAddr() string {
 	return NewPathManager(v.WorkspacePath).GetVNetListenAddr()
 }
 
-func (v *VMConfig) GetGVPCtlAddr() string {
+func (v *VM) GetGVPCtlAddr() string {
 	return NewPathManager(v.WorkspacePath).GetGVPCtlAddr()
 }
 
-func (v *VMConfig) GetVMCtlAddr() string {
+func (v *VM) GetVMCtlAddr() string {
 	return NewPathManager(v.WorkspacePath).GetVMCtlAddr()
 }
 
-func (v *VMConfig) GetIgnAddr() string {
+func (v *VM) GetIgnAddr() string {
 	return NewPathManager(v.WorkspacePath).GetIgnAddr()
 }
 
@@ -501,24 +501,4 @@ func (p *PathManager) GetRootfsDir() string {
 
 func (p *PathManager) GetContainerStorageDiskPath() string {
 	return filepath.Join(p.workspacePath, "raw-disk", "container-storage.ext4")
-}
-
-func LoadVMCFromFile(file string) (*VMConfig, error) {
-	f, err := os.Open(file)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file %s: %w", file, err)
-	}
-	defer func(f *os.File) {
-		err := f.Close()
-		if err != nil {
-			logrus.Errorf("failed to close file: %v", err)
-		}
-	}(f)
-
-	vmc := &VMConfig{}
-
-	if err = json.NewDecoder(f).Decode(vmc); err != nil {
-		return nil, fmt.Errorf("failed to decode file %s: %w", file, err)
-	}
-	return vmc, nil
 }

@@ -1,6 +1,6 @@
 package define
 
-type VMConfig struct {
+type Machine struct {
 	WorkspacePath string `json:"workspacePath,omitempty"`
 
 	MemoryInMB uint64 `json:"memoryInMB,omitempty"`
@@ -29,8 +29,9 @@ type VMConfig struct {
 	XATTRSRawDisk     map[string]string `json:"XATTRSRawDisk,omitempty"`
 	ProxySetting      ProxySetting      `json:"systemProxy,omitempty"`
 
-	TTY    bool          `json:"TTY"`
-	StopCh chan struct{} `json:"-"`
+	TTY       bool          `json:"TTY"`
+	StopCh    chan struct{} `json:"-"`
+	Readiness *Readiness    `json:"-"`
 }
 
 const (

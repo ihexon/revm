@@ -171,7 +171,7 @@ func MountAllPseudoMnt(ctx context.Context) error {
 	return nil
 }
 
-func MountVirtiofs(ctx context.Context, vmc *define.VMConfig) error {
+func MountVirtiofs(ctx context.Context, vmc *define.Machine) error {
 	if len(vmc.Mounts) == 0 {
 		logrus.Debug("no virtiofs mounts configured")
 		return nil
@@ -198,7 +198,7 @@ func MountVirtiofs(ctx context.Context, vmc *define.VMConfig) error {
 	return nil
 }
 
-func MountBlockDevices(ctx context.Context, vmc *define.VMConfig) error {
+func MountBlockDevices(ctx context.Context, vmc *define.Machine) error {
 	if len(vmc.BlkDevs) == 0 {
 		logrus.Debug("no block devices will be mounted, skip")
 		return nil

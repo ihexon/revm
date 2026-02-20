@@ -57,17 +57,17 @@ func setMaxMemory() uint64 {
 	return mb
 }
 
-func GetVMM(vmc *vmbuilder.VMConfig) (*libkrun.LibkrunVM, error) {
+func GetVMM(vmc *vmbuilder.VM) (*libkrun.LibkrunVM, error) {
 	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
 		return libkrun.NewLibkrunVM(vmc), nil
 	}
 	return nil, fmt.Errorf("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 }
 
-func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMode) (*vmbuilder.VMConfig, error) {
+func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMode) (*vmbuilder.VM, error) {
 	event.Emit(event.ConfigureVirtualMachine)
 
-	// Setup logging first (not part of VMConfig)
+	// Setup logging first (not part of Machine)
 	logLevel := command.String(define.FlagLogLevel)
 
 	// Extract command-line parameters
@@ -79,7 +79,7 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 	networkType := command.String(define.FlagVNetworkType)
 	usingSystemProxy := command.Bool(define.FlagUsingSystemProxy)
 
-	// Build VMConfig using builder
+	// Build Machine using builder
 	builder := vmbuilder.NewVMConfigBuilder(runMode).
 		SetWorkspace(workspacePath).
 		SetResources(cpus, memoryInMB).
@@ -109,7 +109,7 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 		return nil, err
 	}
 
-	return (*vmbuilder.VMConfig)(vmc), nil
+	return (*vmbuilder.VM)(vmc), nil
 }
 
 const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"

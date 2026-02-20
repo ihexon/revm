@@ -52,7 +52,7 @@ func openActiveConsole() (*os.File, error) {
 	return os.NewFile(uintptr(fd), devPath), nil
 }
 
-func DoExecCmdLine(ctx context.Context, vmc *define.VMConfig) error {
+func DoExecCmdLine(ctx context.Context, vmc *define.Machine) error {
 	logrus.Infof("exec: %s %v", vmc.Cmdline.Bin, vmc.Cmdline.Args)
 
 	if err := os.Chdir(vmc.Cmdline.WorkDir); err != nil {

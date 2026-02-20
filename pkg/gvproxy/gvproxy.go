@@ -45,7 +45,7 @@ type GvproxyConfigForward struct {
 //go:embed config.yaml
 var configYaml []byte
 
-func InitCfg(vmc *define.VMConfig) (*GvproxyConfig, error) {
+func InitCfg(vmc *define.Machine) (*GvproxyConfig, error) {
 	var config GvproxyConfig
 
 	if err := yaml.Unmarshal(configYaml, &config); err != nil {
@@ -88,7 +88,7 @@ func InitCfg(vmc *define.VMConfig) (*GvproxyConfig, error) {
 	return &config, nil
 }
 
-func Run(ctx context.Context, vmc *define.VMConfig) error {
+func Run(ctx context.Context, vmc *define.Machine) error {
 	config, err := InitCfg(vmc)
 	if err != nil {
 		return err

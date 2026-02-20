@@ -28,7 +28,7 @@ func NewGuestAgentConfigurator(pathMgr *PathManager) *GuestAgentConfigurator {
 }
 
 // Configure sets up the guest agent including ignition server and environment variables.
-func (g *GuestAgentConfigurator) Configure(ctx context.Context, vmc *define.VMConfig) error {
+func (g *GuestAgentConfigurator) Configure(ctx context.Context, vmc *define.Machine) error {
 	if vmc.WorkspacePath == "" {
 		return fmt.Errorf("workspace path is empty")
 	}
@@ -96,7 +96,7 @@ func NewPodmanConfigurator(pathMgr *PathManager) *PodmanConfigurator {
 }
 
 // Configure sets up Podman API configuration including proxy settings.
-func (p *PodmanConfigurator) Configure(ctx context.Context, vmc *define.VMConfig) error {
+func (p *PodmanConfigurator) Configure(ctx context.Context, vmc *define.Machine) error {
 	var envs []string
 
 	if vmc.ProxySetting.Use {
@@ -137,7 +137,7 @@ func NewSSHConfigurator(pathMgr *PathManager) *SSHConfigurator {
 }
 
 // Configure generates SSH keys and sets up SSH configuration.
-func (s *SSHConfigurator) Configure(ctx context.Context, vmc *define.VMConfig) error {
+func (s *SSHConfigurator) Configure(ctx context.Context, vmc *define.Machine) error {
 	keyPath := s.pathMgr.GetSSHPrivateKeyFile()
 	pubKeyPath := keyPath + ".pub"
 	if err := os.MkdirAll(filepath.Dir(keyPath), 0700); err != nil {

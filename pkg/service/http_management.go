@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package httpserver
+package service
 
 import (
 	"bufio"
@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"linuxvm/pkg/define"
+	httpv2 "linuxvm/pkg/http"
+	ssev2 "linuxvm/pkg/sse"
 	"linuxvm/pkg/vmbuilder"
 	"net/http"
 	"net/url"
@@ -17,41 +19,34 @@ import (
 	"github.com/google/uuid"
 )
 
-// ManagementAPIServer provides a REST API for managing the VM from the host.
-// It listens on a Unix socket on the host.
-//
-// Endpoints:
-//   - GET  /healthz  - Health check
-//   - GET  /vmconfig - Returns the complete VM configuration as JSON
-//   - POST /exec     - Execute a command in the guest (SSE streaming output)
 type ManagementAPIServer struct {
-	vmc *vmbuilder.VMConfig
-	srv *httpServer
-	sse *sseServer
+	vmc *vmbuilder.VM
+	srv *httpv2.Server
+	sse *ssev2.Server
 }
 
 // NewManagementAPIServer creates a httpserver for host-side VM management.
-func NewManagementAPIServer(vmc *vmbuilder.VMConfig) *ManagementAPIServer {
+func NewManagementAPIServer(vmc *vmbuilder.VM) *ManagementAPIServer {
 	return &ManagementAPIServer{
 		vmc: vmc,
-		srv: newUnixSockHTTPServer("management-api", vmc.VMCtlAddress),
-		sse: newSSEServer(),
+		srv: httpv2.NewUnixSockHTTPServer("management-api", vmc.VMCtlAddress),
+		sse: ssev2.NewSSEServer(),
 	}
 }
 
 // Start begins serving requests. Blocks until context is cancelled.
 func (s *ManagementAPIServer) Start(ctx context.Context) error {
-	s.srv.mux.HandleFunc("/healthz", s.handleHealth)
-	s.srv.mux.HandleFunc("/vmconfig", s.handleVMConfig)
-	s.srv.mux.HandleFunc("/exec", s.handleExec)
-	s.srv.mux.HandleFunc("/stop", s.handleRequestVMStop)
+	s.srv.Mux.HandleFunc("/healthz", s.handleHealth)
+	s.srv.Mux.HandleFunc("/vmconfig", s.handleVMConfig)
+	s.srv.Mux.HandleFunc("/exec", s.handleExec)
+	s.srv.Mux.HandleFunc("/stop", s.handleRequestVMStop)
 
 	// Legacy API for compat
 	if s.vmc.RunMode == define.OVMode.String() {
-		s.srv.mux.HandleFunc("/info", s.handleInfo)
+		s.srv.Mux.HandleFunc("/info", s.handleInfo)
 	}
 
-	return s.srv.serve(ctx)
+	return s.srv.Serve(ctx)
 }
 
 type Info struct {
@@ -142,7 +137,7 @@ func (s *ManagementAPIServer) handleExec(w http.ResponseWriter, r *http.Request)
 	}
 
 	topic := "sess-" + uuid.NewString()
-	ctx, cancel := context.WithCancel(context.WithValue(r.Context(), sseTopicKey, topic)) //nolint:staticcheck
+	ctx, cancel := context.WithCancel(context.WithValue(r.Context(), ssev2.TopicKey, topic)) //nolint:staticcheck
 	defer cancel()
 
 	go s.executeCommand(ctx, cancel, topic, req)
@@ -155,7 +150,7 @@ func (s *ManagementAPIServer) executeCommand(ctx context.Context, cancel context
 
 	proc, err := GuestExec(ctx, s.vmc, req.Bin, req.Args...)
 	if err != nil {
-		s.sse.publish(topic, sseTypeErr, "guest exec failed: "+err.Error())
+		s.sse.Publish(topic, ssev2.TypeErr, "guest exec failed: "+err.Error())
 		return
 	}
 
@@ -168,7 +163,7 @@ func (s *ManagementAPIServer) executeCommand(ctx context.Context, cancel context
 		sc := bufio.NewScanner(proc.StdoutPipeReader)
 		sc.Buffer(make([]byte, 64*1024), 1<<20)
 		for sc.Scan() {
-			s.sse.publish(topic, sseTypeOut, sc.Text())
+			s.sse.Publish(topic, ssev2.TypeOut, sc.Text())
 		}
 	}()
 
@@ -178,16 +173,16 @@ func (s *ManagementAPIServer) executeCommand(ctx context.Context, cancel context
 		sc := bufio.NewScanner(proc.StderrPipeReader)
 		sc.Buffer(make([]byte, 64*1024), 1<<20)
 		for sc.Scan() {
-			s.sse.publish(topic, sseTypeErr, sc.Text())
+			s.sse.Publish(topic, ssev2.TypeErr, sc.Text())
 		}
 	}()
 
 	wg.Wait()
 
 	if err := <-proc.errChan; err != nil {
-		s.sse.publish(topic, sseTypeErr, "wait: "+err.Error())
+		s.sse.Publish(topic, ssev2.TypeErr, "wait: "+err.Error())
 		return
 	}
 
-	s.sse.publish(topic, "done", "done")
+	s.sse.Publish(topic, "done", "done")
 }
