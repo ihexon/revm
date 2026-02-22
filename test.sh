@@ -1,6 +1,7 @@
 #!/opt/homebrew/bin/bash
 
 set -euo pipefail
+set -x
 
 REVM=./out/bin/revm
 

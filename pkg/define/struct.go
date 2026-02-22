@@ -1,5 +1,7 @@
 package define
 
+import "sync"
+
 type Machine struct {
 	WorkspacePath string `json:"workspacePath,omitempty"`
 
@@ -31,6 +33,7 @@ type Machine struct {
 
 	TTY       bool          `json:"TTY"`
 	StopCh    chan struct{} `json:"-"`
+	StopOnce  sync.Once     `json:"-"`
 	Readiness *Readiness    `json:"-"`
 }
 
