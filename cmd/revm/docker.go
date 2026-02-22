@@ -7,50 +7,51 @@ import (
 	"linuxvm/pkg/event"
 	"linuxvm/pkg/service"
 
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 )
 
 var startDocker = cli.Command{
 	Name:        define.FlagDockerMode,
-	Usage:       "run in Docker-compatible mode",
-	UsageText:   define.FlagDockerMode + " [OPTIONS] [command]",
-	Description: "In Docker-compatible mode, the built-in Podman engine is used and a Unix socket is exposed as the API endpoint for the docker/podman CLI.",
+	Usage:       "run a command in a Linux VM",
+	UsageText:   define.FlagDockerMode + " [flags] [command]",
+	Description: "boot a Linux VM with the given rootfs and execute a command",
 	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:   define.FlagRootfs,
+			Usage:  "path to a custom rootfs directory",
+			Hidden: true,
+		},
 		&cli.Int8Flag{
 			Name:  define.FlagCPUS,
 			Usage: "number of CPU cores",
-			Value: setMaxCPUs(),
 		},
 		&cli.Uint64Flag{
-			Name:    define.FlagMemoryInMB,
-			Aliases: []string{"m"},
-			Usage:   "memory size in MB",
-			Value:   setMaxMemory(),
+			Name:  define.FlagMemoryInMB,
+			Usage: "memory size in MB",
 		},
-		&cli.BoolFlag{
-			Name:  define.FlagUsingSystemProxy,
-			Usage: "forward host HTTP/HTTPS proxy settings to the container engine",
-			Value: false,
+		&cli.StringSliceFlag{
+			Name:  define.FlagEnvs,
+			Usage: "set environment variables, e.g. --envs=FOO=bar --envs=BAZ=qux",
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagRawDisk,
-			Usage: "attach a raw disk image to the guest",
+			Usage: "attach a raw disk image (auto-created if not exists)",
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagMount,
-			Usage: "mount a host directory into the guest",
+			Usage: "mount a host directory into the guest (format: host:guest[:ro])",
+		},
+		&cli.BoolFlag{
+			Name:  define.FlagUsingSystemProxy,
+			Usage: "forward host HTTP/HTTPS proxy settings to the guest",
 		},
 		&cli.StringFlag{
 			Name:   define.FlagWorkDir,
 			Usage:  "working directory for the command inside the guest",
-			Hidden: true,
 			Value:  "/",
-		},
-		&cli.StringFlag{
-			Name:  define.FlagWorkspace,
-			Usage: "workspace path",
-			Value: fmt.Sprintf("/tmp/.revm-%s", FastRandomStr()),
+			Hidden: true,
 		},
 		&cli.StringFlag{
 			Name:   define.FlagVNetworkType,
@@ -58,74 +59,80 @@ var startDocker = cli.Command{
 			Value:  string(define.GVISOR),
 			Hidden: false,
 		},
+		&cli.StringFlag{
+			Name:  define.FlagWorkspace,
+			Usage: "workspace path",
+			Value: fmt.Sprintf("/tmp/.revm-%s", FastRandomStr()),
+		},
 	},
-	Action: dockerModeLifeCycle,
+	Action: dockerLifeCycle,
 }
 
-func dockerModeLifeCycle(ctx context.Context, command *cli.Command) error {
+func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
 	showVersionAndOSInfo()
 
-	event.Setup(command.String(define.FlagReportURL), event.Docker)
+	event.Setup(command.String(define.FlagReportURL), event.Run)
 	defer event.Emit(event.Exit)
 
-	vm, err := ConfigureVM(ctx, command, define.ContainerMode)
+	vmp, err := ConfigureVM(ctx, command, define.ContainerMode)
 	if err != nil {
 		return fmt.Errorf("configure vm fail: %w", err)
 	}
 
-	vmp, err := GetVMM(vm)
-	if err != nil {
-		return fmt.Errorf("get vmm fail: %w", err)
-	}
-
 	g, ctx := errgroup.WithContext(ctx)
 
+	svc := service.NewHostServices(vmp)
 	g.Go(func() error {
-		return service.ListenSignal(ctx)
+		return svc.ExitVirtualMachineWhenSomethingHappened(ctx)
 	})
 
 	g.Go(func() error {
-		return service.WatchParentProcess(ctx)
+		return svc.StartIgnitionService(ctx)
 	})
 
 	g.Go(func() error {
-		return service.WatchMachineExitChannel(ctx, (*define.Machine)(vm))
+		return svc.StartNetworkStack(ctx)
 	})
 
 	g.Go(func() error {
-		return service.StartIgnitionService(ctx, (*define.Machine)(vm))
-	})
-
-	g.Go(func() error {
-		return service.StartNetworkStack(ctx, (*define.Machine)(vm))
-	})
-
-	// start vmctl service
-	g.Go(func() error {
-		return vmp.StartVMCtlServer(ctx)
+		return svc.StartMachineManagementAPI(ctx)
 	})
 
 	g.Go(func() error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-(*define.Machine)(vm).Readiness.VNetHostReady:
-			if err := vmp.Create(ctx); err != nil {
-				return fmt.Errorf("create virtual machine from libkrun builder fail: %v", err)
-			}
-			return vmp.Start(ctx)
+		case <-vmp.GetVMConfigure().Readiness.VNetHostReady:
+			return svc.StartVirtualMachine(ctx)
 		}
 	})
 
-	// start podman proxy service
 	g.Go(func() error {
-		return service.StartPodmanAPIProxy(ctx, (*define.Machine)(vm))
+		go func() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-vmp.GetVMConfigure().Readiness.PodmanReady:
+				logrus.Infof("podman API proxy listening on %s", vmp.GetVMConfigure().PodmanInfo.PodmanProxyAddr)
+			}
+		}()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-vmp.GetVMConfigure().Readiness.VNetHostReady:
+			return svc.StartPodmanProxy(ctx)
+		}
 	})
 
-	if err = g.Wait(); err != nil {
-		event.EmitError(err)
+	errChan := make(chan error, 1)
+	go func() { errChan <- g.Wait() }()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err = <-errChan:
+		if err != nil {
+			event.EmitError(err)
+		}
 		return err
 	}
-
-	return nil
 }

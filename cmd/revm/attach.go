@@ -26,10 +26,9 @@ var AttachConsole = cli.Command{
 	Action:      attachConsole,
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
-			Name:    define.FlagPTY,
-			Aliases: []string{"tty"},
-			Usage:   "enable pseudo-terminal",
-			Value:   false,
+			Name:  define.FlagPTY,
+			Usage: "enable pseudo-terminal",
+			Value: false,
 		},
 	},
 }

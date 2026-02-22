@@ -10,11 +10,7 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh_v2"
-	"linuxvm/pkg/vmbuilder"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
@@ -44,8 +40,8 @@ type ProcessOutput struct {
 
 // GuestExec executes a command in the guest VM via SSH.
 // Returns a ProcessOutput that streams stdout/stderr and signals completion.
-func GuestExec(ctx context.Context, vmc *vmbuilder.VM, bin string, args ...string) (*ProcessOutput, error) {
-	sshClient, err := MakeSSHClient(ctx, (*define.Machine)(vmc))
+func GuestExec(ctx context.Context, vmc *define.Machine, bin string, args ...string) (*ProcessOutput, error) {
+	sshClient, err := MakeSSHClient(ctx, vmc)
 	if err != nil {
 		return nil, err
 	}
@@ -72,90 +68,6 @@ func GuestExec(ctx context.Context, vmc *vmbuilder.VM, bin string, args ...strin
 		StderrPipeReader: stderrReader,
 		errChan:          errChan,
 	}, nil
-}
-
-func ListenSignal(ctx context.Context) error {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
-	defer signal.Stop(sigCh)
-	select {
-	case <-ctx.Done():
-		return nil
-	case sig := <-sigCh:
-		return fmt.Errorf("received signal: %s", sig)
-	}
-}
-
-func WatchParentProcess(ctx context.Context) error {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if os.Getppid() == 1 {
-				return fmt.Errorf("parent process exited, shutting down")
-			}
-		}
-	}
-}
-
-func WatchMachineExitChannel(ctx context.Context, vmc *define.Machine) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-vmc.StopCh:
-		return fmt.Errorf("VM stop requested via API")
-	}
-}
-
-func StartIgnitionService(ctx context.Context, vmc *define.Machine) error {
-	ignSrv := NewIgnServer(vmc)
-	return ignSrv.Start(ctx)
-}
-
-func StartNetworkStack(ctx context.Context, vmc *define.Machine) error {
-	switch vmc.VirtualNetworkMode {
-	case define.GVISOR:
-		mode := &GVisorMode{}
-		return mode.StartNetworkStack(ctx, vmc)
-	case define.TSI:
-		mode := &TSIMode{}
-		return mode.StartNetworkStack(ctx, vmc)
-	}
-	return nil
-}
-
-func StartPodmanAPIProxy(ctx context.Context, vmc *define.Machine) error {
-	if vmc.RunMode != define.ContainerMode.String() {
-		return nil
-	}
-
-	go func() {
-		select {
-		case <-ctx.Done():
-			return
-		case <-vmc.Readiness.PodmanReady:
-			logrus.Infof("Podman API proxy listen in: %q", vmc.PodmanInfo.PodmanProxyAddr)
-		}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-vmc.Readiness.VNetHostReady:
-		switch vmc.VirtualNetworkMode {
-		case define.GVISOR:
-			mode := &GVisorMode{}
-			return mode.StartPodmanProxy(ctx, vmc)
-		case define.TSI:
-			mode := &TSIMode{}
-			return mode.StartPodmanProxy(ctx, vmc)
-		}
-	}
-
-	return nil
 }
 
 func MakeSSHClient(ctx context.Context, vmc *define.Machine) (*ssh_v2.Client, error) {

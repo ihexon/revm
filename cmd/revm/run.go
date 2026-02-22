@@ -24,12 +24,10 @@ var startRootfs = cli.Command{
 		&cli.Int8Flag{
 			Name:  define.FlagCPUS,
 			Usage: "number of CPU cores",
-			Value: setMaxCPUs(),
 		},
 		&cli.Uint64Flag{
 			Name:  define.FlagMemoryInMB,
 			Usage: "memory size in MB",
-			Value: setMaxMemory(),
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagEnvs,
@@ -73,63 +71,48 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	event.Setup(command.String(define.FlagReportURL), event.Run)
 	defer event.Emit(event.Exit)
 
-	if command.Args().Len() < 1 {
-		return fmt.Errorf("no command specified")
-	}
-
-	vm, err := ConfigureVM(ctx, command, define.RootFsMode)
+	vmp, err := ConfigureVM(ctx, command, define.RootFsMode)
 	if err != nil {
 		return fmt.Errorf("configure vm fail: %w", err)
 	}
 
-	vmp, err := GetVMM(vm)
-	if err != nil {
-		return fmt.Errorf("get vmm fail: %w", err)
-	}
-
 	g, ctx := errgroup.WithContext(ctx)
 
+	svc := service.NewHostServices(vmp)
 	g.Go(func() error {
-		return service.ListenSignal(ctx)
+		return svc.ExitVirtualMachineWhenSomethingHappened(ctx)
 	})
 
 	g.Go(func() error {
-		return service.WatchParentProcess(ctx)
+		return svc.StartIgnitionService(ctx)
 	})
 
 	g.Go(func() error {
-		return service.WatchMachineExitChannel(ctx, (*define.Machine)(vm))
+		return svc.StartNetworkStack(ctx)
 	})
 
 	g.Go(func() error {
-		return service.StartIgnitionService(ctx, (*define.Machine)(vm))
-	})
-
-	g.Go(func() error {
-		return service.StartNetworkStack(ctx, (*define.Machine)(vm))
-	})
-
-	// start vmctl service
-	g.Go(func() error {
-		return vmp.StartVMCtlServer(ctx)
+		return svc.StartMachineManagementAPI(ctx)
 	})
 
 	g.Go(func() error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-(*define.Machine)(vm).Readiness.VNetHostReady:
-			if err := vmp.Create(ctx); err != nil {
-				return fmt.Errorf("create virtual machine from libkrun builder fail: %v", err)
-			}
-			return vmp.Start(ctx)
+		case <-vmp.GetVMConfigure().Readiness.VNetHostReady:
+			return svc.StartVirtualMachine(ctx)
 		}
 	})
 
-	if err = g.Wait(); err != nil {
-		event.EmitError(err)
+	errChan := make(chan error, 1)
+	go func() { errChan <- g.Wait() }()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err = <-errChan:
+		if err != nil {
+			event.EmitError(err)
+		}
 		return err
 	}
-
-	return nil
 }

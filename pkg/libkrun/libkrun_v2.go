@@ -26,7 +26,6 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/system"
-	"linuxvm/pkg/vmbuilder"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -134,7 +133,7 @@ type ConsolePortINOUT struct {
 }
 
 type LibkrunVM struct {
-	vmc   *vmbuilder.VM
+	vmc   *define.Machine
 	ctxID uint32
 
 	consolePortsINOUT []ConsolePortINOUT
@@ -154,9 +153,9 @@ var guestMACAddress = [6]byte{0x5a, 0x94, 0xef, 0xe4, 0x0c, 0xee}
 // Compile-time check: LibkrunVM must implement vm.VMProvider
 var _ interfaces.VMMProvider = (*LibkrunVM)(nil)
 
-func NewLibkrunVM(vmc *vmbuilder.VM) *LibkrunVM {
+func NewLibkrunVM(mc *define.Machine) *LibkrunVM {
 	return &LibkrunVM{
-		vmc: vmc,
+		vmc: mc,
 	}
 }
 
@@ -165,11 +164,8 @@ func (vm *LibkrunVM) AddConsolePort(port ConsolePortINOUT) *LibkrunVM {
 	return vm
 }
 
-func (vm *LibkrunVM) GetVMConfigure() (*vmbuilder.VM, error) {
-	if vm.vmc == nil {
-		return nil, fmt.Errorf("vm configuration is nil")
-	}
-	return vm.vmc, nil
+func (vm *LibkrunVM) GetVMConfigure() *define.Machine {
+	return vm.vmc
 }
 
 func (vm *LibkrunVM) createVMCtxID() error {
@@ -423,7 +419,7 @@ func (vm *LibkrunVM) addPrimaryConsole() (C.uint32_t, error) {
 
 // addGuestConsoleLogPort opens the guest log file and registers it as an inout console port.
 func (vm *LibkrunVM) addGuestConsoleLogPort(consoleID C.uint32_t) error {
-	f, err := os.OpenFile(vm.vmc.GetVMMRunLogsFile(), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	f, err := os.OpenFile(vm.vmc.LogFilePath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		return err
 	}
@@ -643,8 +639,6 @@ func (vm *LibkrunVM) addVirtIOFS(tag, hostPath string) error {
 // Start launches the VM and begins executing the configured command line.
 // This blocks until the VM terminates or the context is cancelled.
 func (vm *LibkrunVM) Start(ctx context.Context) error {
-	event.Emit(event.StartVirtualMachine)
-
 	// Set host process resource limits
 	if err := system.RaiseSystemLimit(); err != nil {
 		return fmt.Errorf("failed to set host process resource limits: %w", err)
@@ -713,7 +707,7 @@ func (vm *LibkrunVM) enterVMLifecycle(ctx context.Context) error {
 	// Wait for either VM completion or context cancellation
 	select {
 	case <-ctx.Done():
-		return fmt.Errorf("VM execution cancelled: %w", ctx.Err())
+		return ctx.Err()
 	case err := <-errChan:
 		return err
 	}

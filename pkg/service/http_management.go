@@ -10,7 +10,6 @@ import (
 	"linuxvm/pkg/define"
 	httpv2 "linuxvm/pkg/http"
 	ssev2 "linuxvm/pkg/sse"
-	"linuxvm/pkg/vmbuilder"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -20,13 +19,13 @@ import (
 )
 
 type ManagementAPIServer struct {
-	vmc *vmbuilder.VM
+	vmc *define.Machine
 	srv *httpv2.Server
 	sse *ssev2.Server
 }
 
 // NewManagementAPIServer creates a httpserver for host-side VM management.
-func NewManagementAPIServer(vmc *vmbuilder.VM) *ManagementAPIServer {
+func NewManagementAPIServer(vmc *define.Machine) *ManagementAPIServer {
 	return &ManagementAPIServer{
 		vmc: vmc,
 		srv: httpv2.NewUnixSockHTTPServer("management-api", vmc.VMCtlAddress),

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/event"
+	"linuxvm/pkg/interfaces"
 	"linuxvm/pkg/libkrun"
-	"linuxvm/pkg/system"
 	"linuxvm/pkg/vmbuilder"
 	"math/rand"
 	"os"
@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 )
@@ -37,34 +38,14 @@ func showVersionAndOSInfo() {
 	logrus.Infof("%s version: %s", os.Args[0], version.String())
 }
 
-func setMaxCPUs() int8 {
-	cores := int8(system.GetCPUCores())
-	if cores < 1 {
-		logrus.Warnf("failed get max cpu core: %d", cores)
-		return 1
-	}
-
-	return cores
-}
-
-func setMaxMemory() uint64 {
-	mb, err := system.GetMaxMemoryInMB()
-	if err != nil {
-		logrus.Warnf("failed to get max memory: %v", err)
-		return 512
-	}
-
-	return mb
-}
-
-func GetVMM(vmc *vmbuilder.VM) (*libkrun.LibkrunVM, error) {
+func GetVMM(mc *define.Machine) (*libkrun.LibkrunVM, error) {
 	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
-		return libkrun.NewLibkrunVM(vmc), nil
+		return libkrun.NewLibkrunVM(mc), nil
 	}
 	return nil, fmt.Errorf("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 }
 
-func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMode) (*vmbuilder.VM, error) {
+func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMode) (interfaces.VMMProvider, error) {
 	event.Emit(event.ConfigureVirtualMachine)
 
 	// Setup logging first (not part of Machine)
@@ -78,6 +59,22 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 	mountDirs := command.StringSlice(define.FlagMount)
 	networkType := command.String(define.FlagVNetworkType)
 	usingSystemProxy := command.Bool(define.FlagUsingSystemProxy)
+
+	if command.Args().Len() < 1 && runMode == define.RootFsMode {
+		return nil, fmt.Errorf("no command specified")
+	}
+
+	if memoryInMB < 512 {
+		m, err := mem.VirtualMemory()
+		if err != nil {
+			return nil, err
+		}
+		memoryInMB = m.Total / 1024 / 1024
+	}
+
+	if cpus < 1 {
+		cpus = int8(runtime.NumCPU())
+	}
 
 	// Build Machine using builder
 	builder := vmbuilder.NewVMConfigBuilder(runMode).
@@ -109,7 +106,12 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 		return nil, err
 	}
 
-	return (*vmbuilder.VM)(vmc), nil
+	vmp, err := GetVMM(vmc)
+	if err != nil {
+		return nil, err
+	}
+
+	return vmp, nil
 }
 
 const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"

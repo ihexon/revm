@@ -241,16 +241,17 @@ func (v *VM) SetupLogLevel(level string) error {
 		TimestampFormat: "2006-01-02 15:04:05.000",
 	})
 
-	logFile := v.GetVMMRunLogsFile()
-	if err := os.MkdirAll(filepath.Dir(logFile), 0755); err != nil {
+	v.LogFilePath = filepath.Join(v.WorkspacePath, "logs", "vm.log")
+
+	if err := os.MkdirAll(filepath.Dir(v.LogFilePath), 0755); err != nil {
 		return fmt.Errorf("create log dir: %w", err)
 	}
 
-	if info, err := os.Stat(logFile); err == nil && info.Size() > int64(filesystem.MiB(10).ToBytes()) {
-		_ = os.Truncate(logFile, 0)
+	if info, err := os.Stat(v.LogFilePath); err == nil && info.Size() > int64(filesystem.MiB(10).ToBytes()) {
+		_ = os.Truncate(v.LogFilePath, 0)
 	}
 
-	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := os.OpenFile(v.LogFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return fmt.Errorf("open log file: %w", err)
 	}
@@ -403,10 +404,6 @@ func NewVirtualMachine(mode define.RunMode) *VM {
 	}
 
 	return vmc
-}
-
-func (v *VM) GetVMMRunLogsFile() string {
-	return filepath.Join(NewPathManager(v.WorkspacePath).GetLogsDir(), "vm.log")
 }
 
 func (v *VM) needsDiskRegeneration(ctx context.Context) (bool, error) {
