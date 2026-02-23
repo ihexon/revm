@@ -14,18 +14,18 @@ import (
 func main() {
 	app := cli.Command{
 		Name:                      os.Args[0],
-		Usage:                     "run a linux shell in 1 second",
-		UsageText:                 os.Args[0] + " [command] [flags]",
-		Description:               "run a linux shell in 1 second",
+		Usage:                     "run Linux microVMs on macOS/arm64 using libkrun",
+		UsageText:                 os.Args[0] + " [global flags] <command> [flags]",
+		Description:               "revm boots lightweight Linux microVMs backed by Apple Hypervisor via libkrun; supports rootfs mode (chroot-like) and container mode (podman-compatible API)",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:  define.FlagReportURL,
-				Usage: "report virtual machine events to this endpoints, eg: unix:///var/run/events.sock or tcp://192.168.1.252:8888",
+				Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888); events include: ConfigureVirtualMachine, StartVirtualNetwork, StartIgnitionServer, StartVirtualMachine, GuestNetworkReady, GuestSSHReady, GuestPodmanReady, Exit, Error",
 			},
 			&cli.StringFlag{
 				Name:  define.FlagLogLevel,
-				Usage: "set log level (trace, debug, info, warn, error, fatal, panic)",
+				Usage: "log verbosity level (trace, debug, info, warn, error, fatal, panic)",
 				Value: "info",
 			},
 		},

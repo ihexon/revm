@@ -77,7 +77,7 @@ const (
 
 const (
 	FlagDockerMode = "docker"
-	FlagRootfsMode = "run"
+	FlagChroot     = "chroot"
 	FlagAttachMode = "attach"
 
 	FlagLogLevel         = "log-level"

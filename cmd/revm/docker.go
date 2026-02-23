@@ -14,54 +14,44 @@ import (
 
 var startDocker = cli.Command{
 	Name:        define.FlagDockerMode,
-	Usage:       "run a command in a Linux VM",
-	UsageText:   define.FlagDockerMode + " [flags] [command]",
-	Description: "boot a Linux VM with the given rootfs and execute a command",
+	Aliases:     []string{"dockerd", "podman"},
+	Usage:       "start a Linux VM with the built-in container runtime",
+	UsageText:   define.FlagDockerMode + " [flags]",
+	Description: "boot a Linux microVM using libkrun with the built-in rootfs and podman container runtime; exposes a Podman-compatible API socket on the host",
 	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:   define.FlagRootfs,
-			Usage:  "path to a custom rootfs directory",
-			Hidden: true,
-		},
 		&cli.Int8Flag{
 			Name:  define.FlagCPUS,
-			Usage: "number of CPU cores",
+			Usage: "number of vCPU cores to assign to the VM; defaults to host CPU count if unset or less than 1",
 		},
 		&cli.Uint64Flag{
 			Name:  define.FlagMemoryInMB,
-			Usage: "memory size in MB",
+			Usage: "VM memory size in MB; minimum 512 MB; defaults to host available memory if unset or less than 512",
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagEnvs,
-			Usage: "set environment variables, e.g. --envs=FOO=bar --envs=BAZ=qux",
+			Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times",
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagRawDisk,
-			Usage: "attach a raw disk image (auto-created if not exists)",
+			Usage: "attach an ext4 raw disk image to the VM; auto-created if the raw disk does not exist; mounted at /mnt/<UUID> inside the guest; can be specified multiple times",
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagMount,
-			Usage: "mount a host directory into the guest (format: host:guest[:ro])",
+			Usage: "share a host directory into the guest via VirtIO-FS (format: /host/path:/guest/path[:ro]); can be specified multiple times",
 		},
 		&cli.BoolFlag{
 			Name:  define.FlagUsingSystemProxy,
-			Usage: "forward host HTTP/HTTPS proxy settings to the guest",
-		},
-		&cli.StringFlag{
-			Name:   define.FlagWorkDir,
-			Usage:  "working directory for the command inside the guest",
-			Value:  "/",
-			Hidden: true,
+			Usage: "read the macOS system HTTP/HTTPS proxy and forward it to the guest as http_proxy/https_proxy env vars; in gvisor mode, 127.0.0.1 is automatically rewritten to host.containers.internal",
 		},
 		&cli.StringFlag{
 			Name:   define.FlagVNetworkType,
-			Usage:  "network stack provider (gvisor, tsi)",
+			Usage:  "virtual network stack: gvisor uses gvisor-tap-vsock (full TCP/UDP, DNS, NAT via 192.168.127.0/24); tsi uses libkrun transparent socket interception",
 			Value:  string(define.GVISOR),
 			Hidden: false,
 		},
 		&cli.StringFlag{
 			Name:  define.FlagWorkspace,
-			Usage: "workspace path",
+			Usage: "directory for VM runtime state: Unix sockets (podman API, gvproxy ctl, ignition), SSH keys, guest logs, and auto-created disk images; cannot be the home directory",
 			Value: fmt.Sprintf("/tmp/.revm-%s", FastRandomStr()),
 		},
 	},

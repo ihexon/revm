@@ -20,14 +20,14 @@ import (
 
 var AttachConsole = cli.Command{
 	Name:        define.FlagAttachMode,
-	Usage:       "attach to a running VM and execute a command",
-	UsageText:   "attach [OPTIONS] <workspace> [-- cmdline]",
-	Description: "attach to the console of the running VM, provide the interactive shell",
+	Usage:       "attach to a running VM and execute a command over SSH",
+	UsageText:   "attach [--pty] <workspace> [-- <command> [args...]]",
+	Description: "connect to a running VM via SSH, launches an interactive shell (--pty) or runs the specified command non-interactively; defaults to /bin/sh if no command is given",
 	Action:      attachConsole,
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
 			Name:  define.FlagPTY,
-			Usage: "enable pseudo-terminal",
+			Usage: "allocate a pseudo-terminal and launch an interactive shell, without this flag the command runs non-interactively with plain stdin/stdout/stderr",
 			Value: false,
 		},
 	},
