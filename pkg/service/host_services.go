@@ -7,6 +7,7 @@ import (
 	"linuxvm/pkg/event"
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/interfaces"
+	"linuxvm/pkg/network"
 	"os"
 	"os/signal"
 	"syscall"
@@ -30,15 +31,23 @@ func (s *HostServices) StartPodmanProxy(ctx context.Context) error {
 		return nil
 	}
 
-	if s.vmp.GetVMConfigure().VirtualNetworkMode == define.TSI {
-		return nil
+	switch s.vmp.GetVMConfigure().VirtualNetworkMode {
+	case define.GVISOR:
+		return gvproxy.TunnelHostUnixToGuest(ctx,
+			s.vmp.GetVMConfigure().GVPCtlAddr,
+			s.vmp.GetVMConfigure().PodmanInfo.PodmanProxyAddr,
+			s.vmp.GetVMConfigure().PodmanInfo.GuestPodmanAPIIP,
+			s.vmp.GetVMConfigure().PodmanInfo.GuestPodmanAPIPort)
+	case define.TSI:
+		f := &network.LocalForwarder{
+			UnixSockAddr: s.vmp.GetVMConfigure().PodmanInfo.PodmanProxyAddr,
+			Target:       fmt.Sprintf("%s:%d", "127.0.0.1", s.vmp.GetVMConfigure().PodmanInfo.GuestPodmanAPIPort),
+			Timeout:      1 * time.Second,
+		}
+		return f.Run(ctx)
+	default:
+		return fmt.Errorf("unsupported virtual network mode: %s", s.vmp.GetVMConfigure().VirtualNetworkMode)
 	}
-
-	return gvproxy.TunnelHostUnixToGuest(ctx,
-		s.vmp.GetVMConfigure().GVPCtlAddr,
-		s.vmp.GetVMConfigure().PodmanInfo.PodmanProxyAddr,
-		s.vmp.GetVMConfigure().PodmanInfo.GuestPodmanAPIIP,
-		s.vmp.GetVMConfigure().PodmanInfo.GuestPodmanAPIPort)
 }
 
 func (s *HostServices) StartNetworkStack(ctx context.Context) error {

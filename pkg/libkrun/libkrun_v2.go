@@ -434,6 +434,7 @@ func (vm *LibkrunVM) addGuestConsoleLogPort(consoleID C.uint32_t) error {
 		C.int(-1),
 		C.int(f.Fd()))
 	if ret != 0 {
+		_ = f.Close()
 		return fmt.Errorf("krun_add_console_port_inout(%s) failed with code %v", define.GuestLogConsolePort, ret)
 	}
 

@@ -118,6 +118,8 @@ func bidirectionalCopy(conn1, conn2 net.Conn) {
 	copyFn := func(dst, src net.Conn) {
 		defer wg.Done()
 		_, _ = io.Copy(dst, src)
+		_ = dst.Close()
+		_ = src.Close()
 	}
 
 	go copyFn(conn1, conn2)
