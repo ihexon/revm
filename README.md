@@ -1,249 +1,275 @@
-# revm
+<h1 align="center"><b>revm</b></h1>
+<p align="center">revm helps you quickly launch Linux VMs / Containers</p>
 
 [![build.yml](https://github.com/ihexon/revm/actions/workflows/build.yml/badge.svg)](https://github.com/ihexon/revm/actions/workflows/build.yml)
 
-> [!WARNING] 
+> [!WARNING]
 > This project is currently under heavy development
 
 [README_EN](./README.md) | [README_ZH](./README_zh.md)
 
-A lightweight Linux sandbox and container launcher for macOS, powered
-by [libkrun](https://github.com/containers/libkrun). Boot a full Linux environment or a Podman container engine in under
-1 second.
-
-## Features
-
-- **Sub-second startup** — launch a Linux shell almost instantly via libkrun's lightweight VM
-- **Built-in Podman engine** — run containers with the standard `podman` CLI, no Docker Desktop required
-- **Zero configuration** — ships with a bundled Alpine rootfs and kernel; works out of the box
-- **Multi-terminal** — attach additional shells to a running VM via SSH over vsock
-- **Directory sharing** — mount host directories into the guest via VirtIO-FS
-- **Raw disk mounting** — attach ext4 disk images that are auto-mounted inside the guest
-- **Persistent workspaces** — optionally preserve the rootfs and data across runs
-- **Custom rootfs** — bring your own Linux rootfs (Ubuntu, Debian, etc.)
-- **Network flexibility** — choose between gvisor userspace networking or TSI (Transparent Socket Interception)
-- **System proxy passthrough** — forward host HTTP/HTTPS proxy settings into the guest
+A lightweight Linux microVM for macOS powered by [libkrun](https://github.com/containers/libkrun). Two independent
+modes: **chroot mode** (run commands inside an isolated Linux rootfs) and **docker mode** (run a full Podman container
+engine on Apple Silicon).
 
 ## Requirements
 
-macOS Sonoma or later (Apple Silicon)
+macOS Sonoma or later
 
 ## Installation
 
 ```bash
-# Download the latest release
 wget https://github.com/ihexon/revm/releases/download/<TAG>/revm-Darwin-arm64.tar.zst
 
-# Remove macOS quarantine attribute
 xattr -d com.apple.quarantine revm-Darwin-arm64.tar.zst
 
-# Extract
 tar -xvf revm-Darwin-arm64.tar.zst
 ```
 
-## Quick Start
+---
 
-### Run an ephemeral shell
+## chroot mode — Linux chroot alternative on macOS
 
-Without `--workspace`, everything is ephemeral (similar to `docker run --rm`).
+revm's chroot mode boots a real Linux kernel to execute binaries inside a rootfs. Backed by libkrun + Apple
+Hypervisor, **startup is typically under 1–2 seconds**, with near-native performance and stronger isolation. Jump into
+any Linux rootfs directly from macOS.
+
+### Common Use Cases
+
+**Run any rootfs**
 
 ```bash
-revm run sh             # start an ephemeral shell
-revm run -- uname -a    # run a single command
+# Integration test with your own Ubuntu rootfs
+revm chroot --rootfs ~/ubuntu-jammy -- bash -c 'apt-get install -y libssl-dev && make test'
+
+# Just need a quick Linux shell — use the built-in Alpine rootfs
+revm chroot -- sh -c 'uname -r'
 ```
 
-### Launch a VM instance and attach to the guest shell
+**Mount a host source directory for compilation**
 
-Use a long-running command (e.g. `sleep`) to keep the VM alive, then use `attach` from another terminal to open a shell
-or run commands inside the guest.
+```bash
+revm chroot \
+  --rootfs ~/ubuntu-rootfs \
+  --mount /Users/me/myproject:/workspace \
+  --workdir /workspace \
+  bash -c 'make && ./run_tests.sh'
+```
 
-```shell
-export WORKSPACE=/tmp/my_work
-revm run --workspace $WORKSPACE -- sleep 10000
+**Keep the VM alive and attach interactively when needed**
 
-# Interactive shell
+```bash
+export WORKSPACE=/tmp/dev-env
+
+# Terminal 1: keep the VM alive
+revm chroot --workspace $WORKSPACE --rootfs ~/ubuntu-rootfs sleep 86400
+
+# Terminal 2: open an interactive shell
 revm attach --pty $WORKSPACE
-# Non-interactive command
-revm attach $WORKSPACE -- echo hello
+
+# Terminal 3: run a one-off command
+revm attach $WORKSPACE -- df -h
 ```
 
-### Launch the container engine
+**Attach a persistent data disk**
 
-The Podman API socket is exposed at `$WORKSPACE/socks/podman-api.sock`. Point your `docker`/`podman` CLI at it by
-setting the `CONTAINER_HOST` or `DOCKER_HOST` environment variable.
+```bash
+# First run: auto-creates an ext4 image, mounted at /mnt/<UUID> inside the guest
+revm chroot --raw-disk ~/data.ext4 sh -c 'mount'
 
-```shell
-export WORKSPACE=/tmp/my_workspace
-revm docker --log-level info --workspace $WORKSPACE
+# Subsequent runs: reuse the same disk, data persists
+revm chroot --raw-disk ~/data.ext4 sh -c 'ls /mnt'
+```
 
-# In another terminal
-export WORKSPACE=/tmp/my_workspace
+### Flags
+
+```bash
+revm chroot [flags] <command> [args...]
+```
+
+| Flag             | Description                                                                         | Default               |
+|------------------|-------------------------------------------------------------------------------------|-----------------------|
+| `--rootfs`       | Path to a rootfs directory; must contain `/bin/sh`; falls back to built-in Alpine   | built-in Alpine       |
+| `--cpus`         | Number of vCPU cores; defaults to host CPU count if unset or less than 1            | host CPU count        |
+| `--memory`       | VM memory in MB; minimum 512 MB; defaults to host available memory if unset         | host available memory |
+| `--workdir`      | Working directory inside the guest before running the command                       | `/`                   |
+| `--mount`        | Share a host directory via VirtIO-FS (format: `/host:/guest[:ro]`; repeatable)      | —                     |
+| `--raw-disk`     | Attach an ext4 disk image; auto-created as 10 GB if missing (repeatable)            | —                     |
+| `--envs`         | Pass environment variables (format: `KEY=VALUE`; repeatable)                        | —                     |
+| `--network`      | Network stack: `gvisor` (full virtual NIC) or `tsi` (transparent socket intercept)  | `gvisor`              |
+| `--system-proxy` | Read macOS system proxy and inject as `http_proxy`/`https_proxy` into the VM        | `false`               |
+| `--workspace`    | Runtime state directory (sockets, SSH keys, logs, disks); ephemeral if unset        | `/tmp/.revm-<random>` |
+
+---
+
+## docker mode — full container engine without Docker Desktop
+
+revm embeds a complete container engine and exposes it via a Unix socket to `podman`/`docker` CLI. No Docker Desktop
+or Podman Desktop required — spin up a full, lightweight container stack instantly.
+
+### Quick Start
+
+**Start the container engine**
+
+```bash
+export WORKSPACE=~/revm_workspace
+revm docker --workspace $WORKSPACE
+```
+
+After startup, the Podman API socket is available at `$WORKSPACE/socks/podman-api.sock`.
+
+**Connect with podman or docker CLI**
+
+```bash
 export CONTAINER_HOST=unix:///$WORKSPACE/socks/podman-api.sock
+
+# Check runtime info
 podman info
-podman run --rm -dit alpine:edge sh
+
+# Run containers (fully Docker-compatible)
+podman run --rm ubuntu:latest uname -r
+podman run --rm -it alpine:edge sh
+podman run --rm -p 8080:80 nginx
 ```
 
-## Commands
-
-### `revm run` — Run a command in a Linux VM
-
-Boots a lightweight VM with the built-in (or custom) rootfs and executes the given command.
+**Connect with docker CLI**
 
 ```bash
-revm run [flags] <command> [args...]
+export DOCKER_HOST=unix:///$WORKSPACE/socks/podman-api.sock
+docker run --rm hello-world
 ```
 
-| Flag             | Description                                                    | Default               |
-|------------------|----------------------------------------------------------------|-----------------------|
-| `--cpus`         | Number of CPU cores                                            | `1`                   |
-| `--memory`       | Memory in MB                                                   | `512`                 |
-| `--workspace`    | Workspace directory for persistent state                       | `/tmp/.revm-<random>` |
-| `--rootfs`       | Path to a custom rootfs directory                              | built-in Alpine       |
-| `--workdir`      | Working directory inside the guest                             | `/`                   |
-| `--raw-disk`     | Attach a raw disk image (repeatable)                           | —                     |
-| `--mount`        | Mount a host directory (repeatable, format: `host:guest[:ro]`) | —                     |
-| `--envs`         | Set environment variables (repeatable, format: `KEY=value`)    | —                     |
-| `--network`      | Network stack: `gvisor/tsi`                                    | `gvisor`              |
-| `--system-proxy` | Forward host HTTP/HTTPS proxy to guest                         | `false`               |
+### Port Mapping
 
-**Example:**
+In docker mode, container port mappings (`-p`) are automatically forwarded to macOS via gvproxy:
 
 ```bash
-revm run --workspace /tmp/my_workspace --rootfs ./my-ubuntu-rootfs bash
+podman run --rm -p 8888:80 nginx
+# Access directly on macOS
+curl http://127.0.0.1:8888
 ```
 
-### `revm container` — Launch the Podman container engine
-
-Boots a VM with a built-in Podman service and exposes the API via a Unix socket on the host. Uses all available CPU
-cores and memory by default.
+### Mount Host Directories
 
 ```bash
-revm container [flags]
+podman run --rm -v /Users/me/data:/data ubuntu:latest ls /data
 ```
 
-| Flag             | Description                                | Default               |
-|------------------|--------------------------------------------|-----------------------|
-| `--cpus`         | Number of CPU cores                        | all cores             |
-| `--memory`, `-m` | Memory in MB                               | all available         |
-| `--workspace`    | Workspace directory                        | `/tmp/.revm-<random>` |
-| `--raw-disk`     | Attach a raw disk image (repeatable)       | —                     |
-| `--mount`        | Mount a host directory (repeatable)        | —                     |
-| `--network`      | Network stack: `GVISOR` or `TSI`           | `GVISOR`              |
-| `--system-proxy` | Forward host proxy to the container engine | `false`               |
+### System Proxy Passthrough
 
-**Example:**
-
-```shell
-export WORKSPACE=/tmp/my_workspace
-revm docker --log-level info --workspace $WORKSPACE
-
-# In another terminal
-export WORKSPACE=/tmp/my_workspace
-export CONTAINER_HOST=unix:///$WORKSPACE/socks/podman-api.sock
-podman info
-podman run --rm -dit alpine:edge sh
-```
-
-### `revm attach` — Attach to a running VM
-
-Opens an additional terminal session to a running VM instance via SSH. Useful for multi-terminal workflows.
+In environments that require a proxy, add `--system-proxy` to automatically read the macOS system proxy and inject it
+into containers:
 
 ```bash
-revm attach [flags] <workspace-path> [-- command]
+revm docker --workspace $WORKSPACE --system-proxy
+
+# apt/curl inside containers automatically use the proxy
+podman run --rm ubuntu:latest apt-get update
 ```
 
-| Flag             | Description                                    | Default |
-|------------------|------------------------------------------------|---------|
-| `--pty`, `--tty` | Allocate a pseudo-terminal (interactive shell) | `false` |
-
-**Examples:**
+### Flags
 
 ```bash
-# Open an interactive shell
-revm attach --pty ~/my_space
-
-# Run a command non-interactively
-revm attach ~/my_space -- ls -la /
+revm docker [flags]
 ```
 
-### Global Flags
+| Flag             | Description                                                                                         | Default               |
+|------------------|-----------------------------------------------------------------------------------------------------|-----------------------|
+| `--cpus`         | Number of vCPU cores; defaults to host CPU count if unset or less than 1                            | host CPU count        |
+| `--memory`       | VM memory in MB; minimum 512 MB; defaults to host available memory if unset                         | host available memory |
+| `--mount`        | Share a host directory via VirtIO-FS (format: `/host:/guest[:ro]`; repeatable)                      | —                     |
+| `--raw-disk`     | Attach an ext4 disk image; auto-created if missing (repeatable)                                     | —                     |
+| `--network`      | Network stack: `gvisor` (full virtual NIC, supports port mapping) or `tsi` (transparent intercept)  | `gvisor`              |
+| `--system-proxy` | Read macOS system proxy and inject into containers; rewrites `127.0.0.1` to `host.containers.internal` | `false`            |
+| `--workspace`    | Runtime state directory; Podman API socket at `socks/podman-api.sock` inside this directory         | `/tmp/.revm-<random>` |
 
-| Flag          | Description                                                                | Default |
-|---------------|----------------------------------------------------------------------------|---------|
-| `--log-level` | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic` | `warn`  |
+docker mode and chroot mode share most flags and can be configured as needed.
 
-## Mount host directory to guest
+---
 
-Mount host directories into the guest via VirtIO-FS using the `--mount` flag.
+## revm attach — connect to a running VM
 
-**Format:** `host_path:guest_path[:ro]`
-
-| Part         | Required | Description                                          |
-|--------------|----------|------------------------------------------------------|
-| `host_path`  | yes      | Absolute path on the host                            |
-| `guest_path` | no       | Mount point inside the guest (defaults to host path) |
-| `ro`         | no       | Mount as read-only (default is read-write)           |
+Attach to a running VM instance from another terminal.
 
 ```bash
-# Read-write mount
-revm run --mount /Users/me/projects:/mnt/projects sh
-
-# Read-only mount
-revm run --mount /Users/me/data:/mnt/data:ro sh
-
-# Multiple mounts
-revm run --mount /path/a:/mnt/a --mount /path/b:/mnt/b sh
-
-# Omit guest path — mounts to the same path inside the guest
-revm run --mount /Users/me/projects sh
+revm attach [--pty] <workspace> [-- <command> [args...]]
 ```
 
-## Mount raw disk to guest
-
-Attach ext4 disk images using the `--raw-disk` flag. Each disk is automatically mounted at `/mnt/<UUID>` inside the
-guest with `rw,discard` options.
-
-- If the disk file does **not** exist, a 10 GB ext4 image is created and formatted automatically.
-- Multiple disks can be attached by repeating the `--raw-disk` flag.
+| Flag    | Description                                                                                                      | Default |
+|---------|------------------------------------------------------------------------------------------------------------------|---------|
+| `--pty` | Allocate a pseudo-terminal and launch an interactive shell; without this flag the command runs non-interactively | `false` |
 
 ```bash
-# Attach a single disk (auto-created if missing)
-revm run --raw-disk ~/mydisk.ext4 sh
+# Interactive shell
+revm attach --pty ~/revm_workspace
 
-# Inside the guest
-$ mount
-/dev/vda on /mnt/1f803bc6-db09-48b7-96af-e027fd616afe type ext4 (rw,relatime,discard,data=ordered)
-
-# Attach multiple disks
-revm run --raw-disk ~/disk1.ext4 --raw-disk ~/disk2.ext4 sh
+# Run a single command
+revm attach ~/revm_workspace -- ps aux
 ```
 
-## Workspace
+---
 
-By default the guest filesystem is ephemeral (stored under `/tmp`). To persist data across runs, pass a stable
-`--workspace` directory — all rootfs changes and SSH keys are saved there.
+## Workspace Layout
+
+Files inside the `--workspace` directory:
+
+```
+$WORKSPACE/
+├── socks/
+│   ├── podman-api.sock   # Podman API socket (docker mode)
+│   ├── gvpctl.sock       # gvproxy control socket (gvisor mode)
+│   ├── vnet.sock         # virtual network socket (gvisor mode)
+│   ├── vmctl.sock        # VM management API socket
+│   └── ign.sock          # ignition config service socket
+├── ssh/
+│   └── private.key       # auto-generated SSH private key
+├── logs/
+│   └── vm.log            # VM internal logs
+├── rootfs/               # guest root filesystem (chroot mode)
+└── raw-disk/             # container storage disk (docker mode)
+```
+
+### Reuse & Cleanup
+
+**Reuse**: pass the same `--workspace` path on the next launch and the VM picks up exactly where it left off —
+container images, volume data, rootfs, and SSH keys are all preserved; no reconfiguration or re-pulling required:
 
 ```bash
-$ revm run --workspace ~/my_space -- sh -c 'echo hello > /hello.txt'
-$ revm run --workspace ~/my_space -- sh -c 'cat /hello.txt'
-hello
+# First launch
+revm docker --workspace ~/revm_workspace
+
+# Next launch — images and data are still there
+revm docker --workspace ~/revm_workspace
 ```
 
-The workspace directory contains:
+**Ephemeral environment**: when `--workspace` is omitted, revm uses a random directory under `/tmp`. It is safe to
+delete after the VM exits, making it ideal for one-off tasks or CI pipelines.
 
-- `rootfs/` — the guest root filesystem
-- `ssh/` — auto-generated SSH keypair for host-guest communication
-- `socks/` — Unix sockets (ignition, vmctl, podman API, network)
-- `logs/` — VM log files
-- `raw-disk/` — container storage disk (container mode)
+**Cleanup**: delete the workspace directory to completely reset; the next launch starts fresh:
 
-## Networking
+```bash
+rm -rf ~/revm_workspace
+```
 
-### GVISOR (default)
+## Networking (TSI / GVISOR, mutually exclusive)
 
-revm uses [gvisor-tap-vsock](https://github.com/containers/gvisor-tap-vsock) as a userspace network stack. The guest
-always gets IP `192.168.127.2`. You can reach TCP services on the host from inside the guest via the domain
-`host.containers.internal`.
+Both docker mode and chroot mode support two network backends. They are mutually exclusive.
+
+### gvisor (default)
+
+Uses [gvisor-tap-vsock](https://github.com/containers/gvisor-tap-vsock) as a userspace network stack. The guest always
+gets IP `192.168.127.2` with gateway `192.168.127.1`. Services on the host are reachable inside the guest and
+containers via `host.containers.internal`.
+
+### tsi (Transparent Socket Interception)
+
+TSI (Transparent Socket Impersonation) is a networking mode built into libkrun. **No virtual NIC is created** — the
+guest and host share the network directly, and can access each other's TCP/UDP services without special IPs or
+port-forwarding rules.
+
+Compared to gvisor: **`-p` port mapping is not supported** (no gvproxy), and `host.containers.internal` is not
+available. To expose container ports to macOS when using TSI, run containers with `podman run --network=host` to share
+the host network directly; ports are then accessible on macOS without any additional mapping.
 
 ## Bug Reports
 
@@ -252,3 +278,5 @@ https://github.com/ihexon/revm/issues
 ## License
 
 Apache License 2.0 — see [LICENSE](./LICENSE) for details.
+
+> Some parts of this document were written using AI assistance because I was lazy.

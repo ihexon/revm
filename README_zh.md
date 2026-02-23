@@ -1,238 +1,264 @@
-# revm
+<h1 align="center"><b>revm</b></h1>
+<p align="center">快速启动 Linux 虚拟机 / 容器的轻量工具</p>
 
 [![build.yml](https://github.com/ihexon/revm/actions/workflows/build.yml/badge.svg)](https://github.com/ihexon/revm/actions/workflows/build.yml)
 
 > [!WARNING]
 > 该项目目前处于重度开发阶段
 
-基于 [libkrun](https://github.com/containers/libkrun) 的轻量级 macOS Linux 沙箱与容器启动器。可在 1 秒内启动完整的 Linux 环境或 Podman 容器引擎。
+[README_EN](./README.md) | [README_ZH](./README_zh.md)
 
-## 特性
-
-- **亚秒级启动** — 通过 libkrun 轻量级虚拟机几乎瞬间启动 Linux Shell
-- **内置 Podman 引擎** — 使用标准 `podman` CLI 运行容器，无需 Docker Desktop
-- **零配置** — 自带 Alpine rootfs 和内核，开箱即用
-- **多终端** — 通过 vsock SSH 将额外的 Shell 连接到运行中的虚拟机
-- **目录共享** — 通过 VirtIO-FS 将宿主机目录挂载到客户机
-- **裸磁盘挂载** — 挂载 ext4 磁盘镜像，客户机内自动挂载
-- **持久化工作区** — 可选择跨运行保留 rootfs 和数据
-- **自定义 rootfs** — 可使用自己的 Linux rootfs（Ubuntu、Debian 等）
-- **灵活网络** — 可选 gvisor 用户态网络栈或 TSI（透明套接字拦截）
-- **系统代理透传** — 将宿主机 HTTP/HTTPS 代理设置转发到客户机
+基于 [libkrun](https://github.com/containers/libkrun) 的轻量级 macOS Linux 虚拟机。提供两种独立模式：**chroot 模式**（在隔离
+Linux Rootfs 环境中快速执行命令）和 **docker 模式**（在 Apple Silicon 上运行完整的 Podman 容器引擎）。
 
 ## 系统要求
 
-macOS Sonoma 或更高版本（Apple Silicon）
+macOS Sonoma 或更高版本
 
 ## 安装
 
 ```bash
-# 下载最新版本
 wget https://github.com/ihexon/revm/releases/download/<TAG>/revm-Darwin-arm64.tar.zst
 
-# 移除 macOS 隔离属性
 xattr -d com.apple.quarantine revm-Darwin-arm64.tar.zst
 
-# 解压
 tar -xvf revm-Darwin-arm64.tar.zst
 ```
 
-## 快速开始
+---
 
-### 运行临时 Shell
+## chroot 模式 — macOS 上的 Linux chroot 替代方案
 
-不指定 `--workspace` 时，一切都是临时的（类似 `docker run --rm`）。
+revm 的 chroot 模式通过启动一个真正的 Linux Kernel 来执行 Rootfs 内的二进制程序。由于底层使用 libkrun + Apple Hypervisor，
+**启动时间通常在 1-2 秒以内**，近乎原生效率，隔离性更好，可直接在 macOS 上通过 `chroot` 模式进入任何 Rootfs。
+
+### 典型使用场景
+
+**快速运行任何 Rootfs**
 
 ```bash
-revm run sh             # 启动临时 Shell
-revm run -- uname -a    # 运行单条命令
+# 用自己的 Ubuntu rootfs 做集成测试
+revm chroot --rootfs ~/ubuntu-jammy -- bash -c 'apt-get install -y libssl-dev && make test'
+
+# 只需快速启动一个 Linux Shell，直接使用内置 Alpine Rootfs
+revm chroot -- sh -c 'uname -r'
 ```
 
-### 启动虚拟机实例并连接到客户机 Shell
+**挂载宿主机源码目录进行编译**
 
-使用长时间运行的命令（如 `sleep`）保持虚拟机存活，然后在另一个终端使用 `attach` 打开 Shell 或在客户机内执行命令。
+```bash
+revm chroot \
+  --rootfs ~/ubuntu-rootfs \
+  --mount /Users/me/myproject:/workspace \
+  --workdir /workspace \
+  bash -c 'make && ./run_tests.sh'
+```
 
-```shell
-export WORKSPACE=/tmp/my_work
-revm run --workspace $WORKSPACE -- sleep 10000
+**保持 VM 存活，在需要的时候交互式 attach 到已经运行中的 Rootfs**
 
-# 交互式 Shell
+```bash
+export WORKSPACE=/tmp/dev-env
+
+# 终端 1：保持 VM 存活
+revm chroot --workspace $WORKSPACE --rootfs ~/ubuntu-rootfs sleep 86400
+
+# 终端 2：进入交互式 Shell
 revm attach --pty $WORKSPACE
-# 非交互式命令
-revm attach $WORKSPACE -- echo hello
+
+# 终端 3：执行一条命令
+revm attach $WORKSPACE -- df -h
 ```
 
-### 启动容器引擎
+**挂载持久化数据盘**
 
-Podman API 套接字暴露在 `$WORKSPACE/socks/podman-api.sock`。通过设置 `CONTAINER_HOST` 或 `DOCKER_HOST` 环境变量将 `docker`/`podman` CLI 指向它。
+```bash
+# 第一次运行时自动创建 ext4 磁盘镜像，revm 会自动挂载到 /mnt/<UUID> 下
+revm chroot --raw-disk ~/data.ext4 sh -c 'mount'
 
-```shell
-export WORKSPACE=/tmp/my_workspace
-revm docker --log-level info --workspace $WORKSPACE
+# 下次运行时复用同一块盘，数据持久保留
+revm chroot --raw-disk ~/data.ext4 sh -c 'ls /mnt'
+```
 
-# 在另一个终端
-export WORKSPACE=/tmp/my_workspace
+### 参数列表
+
+```bash
+revm chroot [flags] <command> [args...]
+```
+
+| 参数               | 说明                                                | 默认值                   |
+|------------------|---------------------------------------------------|-----------------------|
+| `--rootfs`       | rootfs 目录路径，须包含 `/bin/sh`；不指定则使用内置 Alpine         | 内置 Alpine             |
+| `--cpus`         | 分配的 vCPU 核心数；不指定或小于 1 时自动取宿主机核心数                  | 宿主机核心数                |
+| `--memory`       | VM 内存大小（MB）；最小 512 MB；不指定时自动取宿主机可用内存              | 宿主机可用内存               |
+| `--workdir`      | 进入 VM 后执行命令前的工作目录                                 | `/`                   |
+| `--mount`        | 通过 VirtIO-FS 挂载宿主机目录（格式：`/host:/guest[:ro]`，可重复）  | —                     |
+| `--raw-disk`     | 挂载 ext4 裸盘镜像，不存在时自动创建 10 GB 镜像（可重复）               | —                     |
+| `--envs`         | 传入环境变量（格式：`KEY=VALUE`，可重复）                        | —                     |
+| `--network`      | 网络栈：`gvisor`（完整虚拟网卡）或 `tsi`（透明 socket 转发）         | `gvisor`              |
+| `--system-proxy` | 读取 macOS 系统代理并以 `http_proxy`/`https_proxy` 注入到 VM | `false`               |
+| `--workspace`    | 运行时状态目录（socket、SSH key、日志、磁盘）；不指定则临时目录            | `/tmp/.revm-<random>` |
+
+---
+
+## docker 模式 — 你不需要安装 Docker Desktop 就可以迅速启动完整的 container 引擎
+
+revm 内建完整的容器引擎，并通过 Unix socket 暴露给 podman-cli/docker-cli 调用，无需安装 Docker Desktop 或 Podman Desktop，即可快速启动完整的轻量容器软件栈。
+
+### 快速开始
+
+**启动容器引擎**
+
+```bash
+export WORKSPACE=~/revm_workspace
+revm docker --workspace $WORKSPACE
+```
+
+启动后 Podman API socket 暴露在 `$WORKSPACE/socks/podman-api.sock`。
+
+**用 podman 或 docker CLI 连接**
+
+```bash
 export CONTAINER_HOST=unix:///$WORKSPACE/socks/podman-api.sock
+
+# 查看运行环境信息
 podman info
-podman run --rm -dit alpine:edge sh
+
+# 运行容器（与 docker 命令完全兼容）
+podman run --rm ubuntu:latest uname -r
+podman run --rm -it alpine:edge sh
+podman run --rm -p 8080:80 nginx
 ```
 
-## 命令
-
-### `revm run` — 在 Linux 虚拟机中运行命令
-
-使用内置（或自定义）rootfs 启动轻量级虚拟机并执行指定命令。
+**用 docker CLI 连接**
 
 ```bash
-revm run [flags] <command> [args...]
+export DOCKER_HOST=unix:///$WORKSPACE/socks/podman-api.sock
+docker run --rm hello-world
 ```
 
-| 参数             | 说明                                | 默认值                   |
-|------------------|-----------------------------------|-----------------------|
-| `--cpus`         | CPU 核心数                           | `1`                   |
-| `--memory`       | 内存大小（MB）                          | `512`                 |
-| `--workspace`    | 持久化状态的工作区目录                       | `/tmp/.revm-<random>` |
-| `--rootfs`       | 自定义 rootfs 目录路径                   | 内置 Alpine             |
-| `--workdir`      | 客户机内的工作目录                         | `/`                   |
-| `--raw-disk`     | 挂载裸磁盘镜像（可重复）                      | —                     |
-| `--mount`        | 挂载宿主机目录（可重复，格式：`host:guest[:ro]`） | —                     |
-| `--envs`         | 设置环境变量（可重复，格式：`KEY=value`）        | —                     |
-| `--network`      | 网络栈：`gvisor/tsi`                  | `gvisor`              |
-| `--system-proxy` | 将宿主机 HTTP/HTTPS 代理转发到客户机          | `false`               |
+### 端口映射
 
-**示例：**
+docker 模式下，容器的端口映射（`-p`）通过 gvproxy 自动转发到 macOS 本机：
 
 ```bash
-revm run --workspace /tmp/my_workspace --rootfs ./my-ubuntu-rootfs bash
+podman run --rm -p 8888:80 nginx
+# macOS 上直接访问
+curl http://127.0.0.1:8888
 ```
 
-### `revm container` — 启动 Podman 容器引擎
-
-启动带有内置 Podman 服务的虚拟机，并通过宿主机上的 Unix 套接字暴露 API。默认使用所有可用的 CPU 核心和内存。
+### 挂载宿主机目录
 
 ```bash
-revm container [flags]
+podman run --rm -v /Users/me/data:/data ubuntu:latest ls /data
 ```
 
-| 参数             | 说明                        | 默认值                |
-|------------------|----------------------------|-----------------------|
-| `--cpus`         | CPU 核心数                  | 所有核心              |
-| `--memory`, `-m` | 内存大小（MB）              | 所有可用内存          |
-| `--workspace`    | 工作区目录                  | `/tmp/.revm-<random>` |
-| `--raw-disk`     | 挂载裸磁盘镜像（可重复）     | —                     |
-| `--mount`        | 挂载宿主机目录（可重复）     | —                     |
-| `--network`      | 网络栈：`GVISOR` 或 `TSI`  | `GVISOR`              |
-| `--system-proxy` | 将宿主机代理转发到容器引擎   | `false`               |
+### 系统代理透传
 
-**示例：**
-
-```shell
-export WORKSPACE=/tmp/my_workspace
-revm docker --log-level info --workspace $WORKSPACE
-
-# 在另一个终端
-export WORKSPACE=/tmp/my_workspace
-export CONTAINER_HOST=unix:///$WORKSPACE/socks/podman-api.sock
-podman info
-podman run --rm -dit alpine:edge sh
-```
-
-### `revm attach` — 连接到运行中的虚拟机
-
-通过 SSH 打开到运行中虚拟机实例的额外终端会话。适用于多终端工作流程。
+在需要代理访问网络的环境下，加上 `--system-proxy` 自动读取 macOS 系统代理并注入到容器内：
 
 ```bash
-revm attach [flags] <workspace-path> [-- command]
+revm docker --workspace $WORKSPACE --system-proxy
+
+# 容器内 apt/curl 自动走代理
+podman run --rm ubuntu:latest apt-get update
 ```
 
-| 参数             | 说明                          | 默认值  |
-|------------------|------------------------------|---------|
-| `--pty`, `--tty` | 分配伪终端（交互式 Shell）     | `false` |
-
-**示例：**
+### 参数列表
 
 ```bash
-# 打开交互式 Shell
-revm attach --pty ~/my_space
-
-# 非交互式运行命令
-revm attach ~/my_space -- ls -la /
+revm docker [flags]
 ```
 
-### 全局参数
+| 参数               | 说明                                                               | 默认值                   |
+|------------------|------------------------------------------------------------------|-----------------------|
+| `--cpus`         | 分配的 vCPU 核心数；不指定或小于 1 时自动取宿主机核心数                                 | 宿主机核心数                |
+| `--memory`       | VM 内存大小（MB）；最小 512 MB；不指定时自动取宿主机可用内存                             | 宿主机可用内存               |
+| `--mount`        | 通过 VirtIO-FS 挂载宿主机目录（格式：`/host:/guest[:ro]`，可重复）                 | —                     |
+| `--raw-disk`     | 挂载 ext4 裸盘镜像，不存在时自动创建镜像（可重复）                                     | —                     |
+| `--network`      | 网络栈：`gvisor`（完整虚拟网卡，支持端口映射）或 `tsi`（透明转发）                         | `gvisor`              |
+| `--system-proxy` | 读取 macOS 系统代理并注入容器内，自动将 127.0.0.1 重写为 `host.containers.internal` | `false`               |
+| `--workspace`    | 运行时状态目录，Podman API socket 在此目录下的 `socks/podman-api.sock`         | `/tmp/.revm-<random>` |
 
-| 参数          | 说明                                                                      | 默认值 |
-|---------------|--------------------------------------------------------------------------|--------|
-| `--log-level` | 日志级别：`trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic`      | `warn` |
+docker 模式与 chroot 模式共用大部分参数，可按需灵活配置。
 
-## 挂载宿主机目录到客户机
+---
 
-使用 `--mount` 参数通过 VirtIO-FS 将宿主机目录挂载到客户机。
+## revm attach — 连接到运行中的 VM
 
-**格式：** `host_path:guest_path[:ro]`
-
-| 部分         | 必填 | 说明                                    |
-|--------------|------|-----------------------------------------|
-| `host_path`  | 是   | 宿主机上的绝对路径                       |
-| `guest_path` | 否   | 客户机内的挂载点（默认与宿主机路径相同）  |
-| `ro`         | 否   | 以只读方式挂载（默认为读写）              |
+在另一个终端连入正在运行的 VM 实例。
 
 ```bash
-# 读写挂载
-revm run --mount /Users/me/projects:/mnt/projects sh
-
-# 只读挂载
-revm run --mount /Users/me/data:/mnt/data:ro sh
-
-# 多个挂载
-revm run --mount /path/a:/mnt/a --mount /path/b:/mnt/b sh
-
-# 省略客户机路径 — 挂载到客户机内相同路径
-revm run --mount /Users/me/projects sh
+revm attach [--pty] <workspace> [-- <command> [args...]]
 ```
 
-## 挂载裸磁盘到客户机
-
-使用 `--raw-disk` 参数挂载 ext4 磁盘镜像。每个磁盘在客户机内自动挂载到 `/mnt/<UUID>`，挂载选项为 `rw,discard`。
-
-- 如果磁盘文件**不存在**，将自动创建并格式化一个 10 GB 的 ext4 镜像。
-- 可通过重复 `--raw-disk` 参数挂载多个磁盘。
+| 参数      | 说明                              | 默认值     |
+|---------|---------------------------------|---------|
+| `--pty` | 分配伪终端，启动交互式 Shell；不加则以非交互方式执行命令 | `false` |
 
 ```bash
-# 挂载单个磁盘（不存在时自动创建）
-revm run --raw-disk ~/mydisk.ext4 sh
+# 交互式 Shell
+revm attach --pty ~/revm_workspace
 
-# 在客户机内
-$ mount
-/dev/vda on /mnt/1f803bc6-db09-48b7-96af-e027fd616afe type ext4 (rw,relatime,discard,data=ordered)
-
-# 挂载多个磁盘
-revm run --raw-disk ~/disk1.ext4 --raw-disk ~/disk2.ext4 sh
+# 执行单条命令
+revm attach ~/revm_workspace -- ps aux
 ```
 
-## 工作区
+---
 
-默认情况下客户机文件系统是临时的（存储在 `/tmp` 下）。要跨运行持久化数据，请传入一个固定的 `--workspace` 目录 — 所有 rootfs 变更和 SSH 密钥都将保存在此处。
+## 工作区结构
+
+`--workspace` 目录下的文件：
+
+```
+$WORKSPACE/
+├── socks/
+│   ├── podman-api.sock   # Podman API socket（docker 模式）
+│   ├── gvpctl.sock       # gvproxy 控制 socket（gvisor 模式）
+│   ├── vnet.sock         # 虚拟网络 socket（gvisor 模式）
+│   ├── vmctl.sock        # VM 管理 API socket
+│   └── ign.sock          # Ignition 配置服务 socket
+├── ssh/
+│   └── private.key       # 自动生成的 SSH 私钥
+├── logs/
+│   └── vm.log            # VM 内部日志
+├── rootfs/               # 客户机根文件系统（chroot 模式）
+└── raw-disk/             # 容器存储磁盘（docker 模式）
+```
+
+### 复用与清理
+
+**复用**：下次启动时指定同一个 `--workspace`，VM 会直接加载上次的状态——容器镜像、卷数据、rootfs、SSH key 全部保留，无需重新配置或重新拉取镜像：
 
 ```bash
-$ revm run --workspace ~/my_space -- sh -c 'echo hello > /hello.txt'
-$ revm run --workspace ~/my_space -- sh -c 'cat /hello.txt'
-hello
+# 第一次启动
+revm docker --workspace ~/revm_workspace
+
+# 下次启动，镜像和数据原样保留
+revm docker --workspace ~/revm_workspace
 ```
 
-工作区目录包含：
+**临时环境**：不指定 `--workspace` 时，revm 自动使用 `/tmp/.revm-<random>` 临时目录，VM 退出后可安全删除，适合一次性任务或 CI 场景。
 
-- `rootfs/` — 客户机根文件系统
-- `ssh/` — 自动生成的 SSH 密钥对，用于宿主机与客户机通信
-- `socks/` — Unix 套接字（ignition、vmctl、podman API、网络）
-- `logs/` — 虚拟机日志文件
-- `raw-disk/` — 容器存储磁盘（容器模式）
+**清理**：删除整个 workspace 目录即可彻底重置，下次启动会创建全新环境：
 
-## 网络
+```bash
+rm -rf ~/revm_workspace
+```
 
-### GVISOR（默认）
+## 网络模式（ TSI/GVISOR 互斥）
 
-revm 使用 [gvisor-tap-vsock](https://github.com/containers/gvisor-tap-vsock) 作为用户态网络栈。客户机始终获得 IP `192.168.127.2`。可以在客户机内通过域名 `host.containers.internal` 访问宿主机上的 TCP 服务。
+docker 模式和 chroot 模式都支持 TSI 和 GVISOR 两种网络模式，这两种模式是互斥的
+
+### gvisor（默认）
+
+使用 [gvisor-tap-vsock](https://github.com/containers/gvisor-tap-vsock) 用户态网络栈。VM 固定 IP 为 `192.168.127.2`，网关为
+`192.168.127.1`。容器内可通过 `host.containers.internal` 访问宿主机服务（如本机代理、本机 API 等）。
+
+### tsi（透明 socket 拦截）
+
+TSI（Transparent Socket Impersonation）是 libkrun 内置的网络模式，**不创建虚拟网卡**，guest 与 host 直接共享网络——两者可互相访问对方的 TCP/UDP 服务，无需特殊 IP 或端口转发规则。
+
+与 gvisor 相比：**不支持 `-p` 端口映射**（无 gvproxy），也不提供 `host.containers.internal` 域名。在 TSI 模式下运行容器时，使用 `podman run --network=host` 可让容器直接复用 host 网络，端口在 macOS 上可直接访问，无需任何额外映射。
 
 ## 问题反馈
 
@@ -241,3 +267,5 @@ https://github.com/ihexon/revm/issues
 ## 许可证
 
 Apache License 2.0 — 详见 [LICENSE](./LICENSE)。
+
+> Some parts of this document were written using AI assistance because I was lazy.
