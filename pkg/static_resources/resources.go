@@ -5,7 +5,6 @@ import (
 	"context"
 	"embed"
 	"fmt"
-	"linuxvm/pkg/archiver"
 	"linuxvm/pkg/define"
 	"os"
 	"path/filepath"
@@ -96,22 +95,28 @@ func GetBuiltinTool(workspace, name string) (string, error) {
 	return targetFilePath, os.WriteFile(targetFilePath, data, 0755)
 }
 
-func ExtractEmbeddedRawDisk(ctx context.Context, filePath string) error {
-	filePath, err := filepath.Abs(filepath.Clean(filePath))
+func ExtractEmbeddedRawDisk(ctx context.Context, targetPath string) error {
+	targetPath, err := filepath.Abs(filepath.Clean(targetPath))
 	if err != nil {
 		return err
 	}
+	baseDir, fileName := filepath.Split(targetPath)
 
-	if err = os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+	if err = os.MkdirAll(baseDir, 0755); err != nil {
 		return err
 	}
 
-	return archiver.NewTarInstance().
-		Stdin(bytes.NewReader(BuiltinRawDiskBytes)).
-		Members("ext4.raw").
-		RemoveOld(true).
-		Transform(fmt.Sprintf("|ext4.raw|%s|", filepath.Base(filePath))).
-		Unarchive(ctx, "-", filepath.Dir(filePath))
+	if err := libarchivego.NewArchiver().
+		SetReader(bytes.NewReader(BuiltinRawDiskBytes)).
+		SetFastRead(true).
+		SetSparse(true).
+		WithPattern("ext4.raw").
+		SetChdir(baseDir).
+		ModeX(ctx); err != nil {
+		return err
+	}
+
+	return os.Rename(filepath.Join(baseDir, "ext4.raw"), filepath.Join(baseDir, fileName))
 }
 
 func ExtractBuiltinRootfs(ctx context.Context, dstDir string) error {

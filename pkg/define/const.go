@@ -78,6 +78,7 @@ const (
 const (
 	FlagDockerMode = "docker"
 	FlagRootfsMode = "run"
+	FlagAttachMode = "attach"
 
 	FlagLogLevel         = "log-level"
 	FlagCPUS             = "cpus"

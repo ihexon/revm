@@ -52,7 +52,10 @@ func (mnt *Mnt) makeMountCmdline(action MountActionType) ([]string, error) {
 		if mnt.Type == "" {
 			return nil, fmt.Errorf("filesystem type is empty")
 		}
-		args = append(args, "-o", "data=ordered")
+		// only ext4 support data=ordered
+		if mnt.Type == "ext4" {
+			args = append(args, "-o", "data=ordered")
+		}
 		args = append(args, "-t", mnt.Type, "UUID="+mnt.UUID, mnt.Target)
 	case VirtioFsAction:
 		// virtiofs mount by tag, but also require filesystem type is virtiofs

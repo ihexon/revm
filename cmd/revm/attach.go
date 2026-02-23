@@ -19,7 +19,7 @@ import (
 )
 
 var AttachConsole = cli.Command{
-	Name:        "attach",
+	Name:        define.FlagAttachMode,
 	Usage:       "attach to a running VM and execute a command",
 	UsageText:   "attach [OPTIONS] <workspace> [-- cmdline]",
 	Description: "attach to the console of the running VM, provide the interactive shell",
