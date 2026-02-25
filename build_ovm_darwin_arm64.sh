@@ -4,7 +4,6 @@ set -euo pipefail
 readonly ASSETS_BASE="https://github.com/ihexon/revm-assets/releases/download/v2.0.4"
 readonly HOMEBREW_PREFIX="${HOMEBREW_PREFIX:-/opt/homebrew}"
 
-readonly E2FS_BINS=(blkid tune2fs mke2fs e2fsck)
 readonly HOMEBREW_DYLIBS=(
     libepoxy/lib/libepoxy.0.dylib
     virglrenderer/lib/libvirglrenderer.1.dylib
@@ -47,9 +46,7 @@ restore_placeholders() {
         "$static/guest-agent/guest-agent"
         "$static/rootfs/rootfs.tar.zst"
     )
-    for bin in "${E2FS_BINS[@]}"; do
-        files+=("$static/e2fsprogs/$bin")
-    done
+
     for f in "${files[@]}"; do
         : >"$f"
     done
@@ -76,11 +73,6 @@ build() {
 
     log_info "Fetching rootfs..."
     wget -qO "$static/rootfs/rootfs.tar.zst" "$ASSETS_BASE/alpine-rootfs-Linux-aarch64.tar.zst"
-
-    # Copy e2fsprogs binaries
-    for bin in "${E2FS_BINS[@]}"; do
-        cp -av "$depsdir/e2fsprogs/sbin/$bin" "$static/e2fsprogs/$bin"
-    done
 
     # 3. Prepare dylibs (must be done before go build for proper linking)
     log_info "Preparing dylibs..."
