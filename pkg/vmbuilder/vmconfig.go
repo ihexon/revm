@@ -378,8 +378,10 @@ func (v *VM) SetupWorkspace(workspacePath string) error {
 		return err
 	}
 
-	if workspacePath == homeDir {
-		return fmt.Errorf("workspace can not be the home dir")
+	underTmp := strings.HasPrefix(workspacePath, "/tmp")
+	underHome := strings.HasPrefix(workspacePath, homeDir)
+	if !underTmp && !underHome {
+		return fmt.Errorf("workspace must be under /tmp or home directory (%s), got %q", homeDir, workspacePath)
 	}
 
 	v.WorkspacePath = workspacePath
