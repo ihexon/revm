@@ -1,7 +1,6 @@
 package disk
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
@@ -10,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 )
 
 type Manager interface {
@@ -23,7 +21,6 @@ type Manager interface {
 
 type RawDiskManager struct {
 	tune2fs string
-	blkid   string
 	e2fsck  string
 	mke2fs  string
 }
@@ -33,10 +30,7 @@ func NewBlkManager() (*RawDiskManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	blkid, err := static_resources.GetBuiltinTool(os.TempDir(), "blkid")
-	if err != nil {
-		return nil, err
-	}
+
 	e2fsck, err := static_resources.GetBuiltinTool(os.TempDir(), "e2fsck")
 	if err != nil {
 		return nil, err
@@ -48,7 +42,6 @@ func NewBlkManager() (*RawDiskManager, error) {
 
 	return &RawDiskManager{
 		tune2fs: tune2fs,
-		blkid:   blkid,
 		e2fsck:  e2fsck,
 		mke2fs:  mke2fs,
 	}, nil
@@ -68,42 +61,22 @@ func (b RawDiskManager) Format(ctx context.Context, blkPath, fsType string) erro
 	}
 }
 
-func (b RawDiskManager) inspect(ctx context.Context, blkPath string, info string) (string, error) {
-	cmd := exec.CommandContext(ctx, b.blkid, "-c", filepath.Join(os.TempDir(), "blkid.cache"), "-s", info, "-o", "value", blkPath)
-	cmd.Stderr = os.Stderr
-
-	var result bytes.Buffer
-	cmd.Stdin = nil
-	cmd.Stdout = &result
-
-	if err := cmd.Run(); err != nil {
-		return "", err
-	}
-
-	return strings.TrimSpace(result.String()), nil
-}
-
 func (b RawDiskManager) Inspect(ctx context.Context, blkPath string) (*define.BlkDev, error) {
 	blkPath, err := filepath.Abs(blkPath)
 	if err != nil {
 		return nil, err
 	}
 
-	fsUUID, err := b.inspect(ctx, blkPath, "UUID")
+	info, err := ProbeRAWDisk(blkPath)
 	if err != nil {
-		return nil, fmt.Errorf("cannot inspect blk device uuid %q: %w", blkPath, err)
-	}
-
-	fsType, err := b.inspect(ctx, blkPath, "TYPE")
-	if err != nil {
-		return nil, fmt.Errorf("cannot inspect blk device type %q: %w", blkPath, err)
+		return nil, err
 	}
 
 	return &define.BlkDev{
-		UUID:    fsUUID,
-		FsType:  fsType,
+		UUID:    info.UUID,
+		FsType:  info.Type,
 		Path:    blkPath,
-		MountTo: fmt.Sprintf("/mnt/%s", fsUUID),
+		MountTo: fmt.Sprintf("/mnt/%s", info.UUID),
 	}, nil
 }
 
