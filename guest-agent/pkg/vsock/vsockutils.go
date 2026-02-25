@@ -46,7 +46,8 @@ func (v *Service) PostReady(ctx context.Context, serviceName string) error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("POST /ready/%s returned %d", serviceName, resp.StatusCode)
 	}

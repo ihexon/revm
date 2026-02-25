@@ -35,6 +35,7 @@ func main() {
 		&AttachConsole,
 		&startRootfs,
 		&startDocker,
+		&cleanResource,
 	}
 
 	if err := app.Run(context.Background(), os.Args); err != nil {

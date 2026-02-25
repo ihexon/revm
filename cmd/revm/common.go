@@ -10,14 +10,32 @@ import (
 	"linuxvm/pkg/vmbuilder"
 	"math/rand"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 )
+
+// RelaunchWithCleanModeBackground Re-execute in cleanup mode, wait for PPID to become 1, and then perform the cleanup operation.
+func RelaunchWithCleanModeBackground(workspacePath string) error {
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	cleaner := exec.Command(executable, define.FlagClean, "--workspace", workspacePath)
+	cleaner.Stdout = nil
+	cleaner.Stderr = nil
+	cleaner.Stdin = nil
+	cleaner.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	return cleaner.Start()
+}
 
 func showVersionAndOSInfo() {
 	var version strings.Builder
@@ -104,6 +122,12 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 	vmc, err := builder.Build(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	if !command.IsSet(define.FlagWorkspace) {
+		if err = RelaunchWithCleanModeBackground(workspacePath); err != nil {
+			return nil, err
+		}
 	}
 
 	vmp, err := GetVMM(vmc)

@@ -5,7 +5,6 @@ import "time"
 const (
 	ContainerMode RunMode = iota
 	RootFsMode
-
 	// OVMode As the underlying virtual machine running mode for Oomol Studio, this mode bundles many default business logic
 	OVMode
 )
@@ -39,7 +38,6 @@ const (
 	VMConfigFilePathInGuest = "/vmconfig.json"
 	HostDomainInGVPNet      = "host.containers.internal"
 
-	RootfsDirName  = "rootfs"
 	LibexecDirName = "libexec"
 
 	SSHPrivateKeyFileName = "private.key"
@@ -79,6 +77,7 @@ const (
 	FlagDockerMode = "docker"
 	FlagChroot     = "chroot"
 	FlagAttachMode = "attach"
+	FlagClean      = "clean"
 
 	FlagLogLevel         = "log-level"
 	FlagCPUS             = "cpus"
@@ -99,15 +98,13 @@ const (
 
 	GuestLogConsolePort = "guest-logs"
 	GuestTTYConsoleName = "default-tty-console"
-	GuestNONTTYConsole  = "default-nontty-console"
 )
 
 const (
 	EnvLogLevel = "LOG_LEVEL"
 
-	DefaultTimeTicker       = 100 * time.Millisecond
-	DefaultProbeTimeout     = 10 * time.Second
-	DefaultHandshakeTimeout = 100 * time.Millisecond
+	DefaultTimeTicker   = 100 * time.Millisecond
+	DefaultProbeTimeout = 10 * time.Second
 )
 
 // OVMode-specific configuration
