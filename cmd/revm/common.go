@@ -21,6 +21,21 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+func SetupBasicLogger(level string) error {
+	l, err := logrus.ParseLevel(level)
+	if err != nil {
+		return fmt.Errorf("invalid log level: %w", err)
+	}
+	logrus.SetLevel(l)
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp:   true,
+		TimestampFormat: "2006-01-02 15:04:05.000",
+	})
+
+	logrus.SetOutput(os.Stderr)
+	return nil
+}
+
 // RelaunchWithCleanModeBackground Re-execute in cleanup mode, wait for PPID to become 1, and then perform the cleanup operation.
 func RelaunchWithCleanModeBackground(workspacePath string) error {
 	executable, err := os.Executable()

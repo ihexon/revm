@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/event"
 	"os"
 	"path/filepath"
 	"time"
@@ -15,16 +17,31 @@ var cleanResource = cli.Command{
 	Name:        define.FlagClean,
 	Usage:       "delete workspace",
 	Description: "run as a standalone process, with for main process exit and start clean all resource",
+	Action:      cleanAction,
 	Flags: []cli.Flag{
 		&cli.StringFlag{
+			Name:  define.FlagReportURL,
+			Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888); events include: ConfigureVirtualMachine, StartVirtualNetwork, StartIgnitionServer, StartVirtualMachine, GuestNetworkReady, GuestSSHReady, GuestPodmanReady, Exit, Error",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagLogLevel,
+			Usage: "log verbosity level (trace, debug, info, warn, error, fatal, panic)",
+			Value: "info",
+		},
+		&cli.StringFlag{
 			Name:  define.FlagWorkspace,
-			Usage: "workspace stores user data,ssh keys, logs, and temporary Unix sockets",
+			Usage: "directory for VM runtime state: Unix sockets (podman API, gvproxy ctl, ignition), SSH keys, guest logs, and auto-created disk images; cannot be the home directory",
 		},
 	},
-	Action: cleanAction,
 }
 
 func cleanAction(ctx context.Context, command *cli.Command) error {
+	if err := SetupBasicLogger(command.String(define.FlagLogLevel)); err != nil {
+		return fmt.Errorf("failed to setup basic logger: %w", err)
+	}
+
+	event.Setup(command.String(define.FlagReportURL), event.Clean)
+
 	workspace := command.String(define.FlagWorkspace)
 	if workspace == "" {
 		return nil

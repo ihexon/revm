@@ -14,7 +14,6 @@ import (
 
 var startDocker = cli.Command{
 	Name:        define.FlagDockerMode,
-	Aliases:     []string{"dockerd", "podman"},
 	Usage:       "start a Linux VM with the built-in container runtime",
 	UsageText:   define.FlagDockerMode + " [flags]",
 	Description: "boot a Linux microVM using libkrun with the built-in rootfs and podman container runtime; exposes a Podman-compatible API socket on the host",
@@ -50,6 +49,15 @@ var startDocker = cli.Command{
 			Hidden: false,
 		},
 		&cli.StringFlag{
+			Name:  define.FlagReportURL,
+			Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888); events include: ConfigureVirtualMachine, StartVirtualNetwork, StartIgnitionServer, StartVirtualMachine, GuestNetworkReady, GuestSSHReady, GuestPodmanReady, Exit, Error",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagLogLevel,
+			Usage: "log verbosity level (trace, debug, info, warn, error, fatal, panic)",
+			Value: "info",
+		},
+		&cli.StringFlag{
 			Name:  define.FlagWorkspace,
 			Usage: "directory for VM runtime state: Unix sockets (podman API, gvproxy ctl, ignition), SSH keys, guest logs, and auto-created disk images; cannot be the home directory",
 			Value: fmt.Sprintf("/tmp/.revm-%s", FastRandomStr()),
@@ -61,8 +69,7 @@ var startDocker = cli.Command{
 func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
 	showVersionAndOSInfo()
 
-	event.Setup(command.String(define.FlagReportURL), event.Run)
-	defer event.Emit(event.Exit)
+	event.Setup(command.String(define.FlagReportURL), event.Docker)
 
 	vmp, err := ConfigureVM(ctx, command, define.ContainerMode)
 	if err != nil {
@@ -118,11 +125,8 @@ func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
 	go func() { errChan <- g.Wait() }()
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return context.Cause(ctx)
 	case err = <-errChan:
-		if err != nil {
-			event.EmitError(err)
-		}
 		return err
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/event"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/service"
 	"linuxvm/pkg/vmbuilder"
@@ -30,10 +31,25 @@ var AttachConsole = cli.Command{
 			Usage: "allocate a pseudo-terminal and launch an interactive shell, without this flag the command runs non-interactively with plain stdin/stdout/stderr",
 			Value: false,
 		},
+		&cli.StringFlag{
+			Name:  define.FlagLogLevel,
+			Usage: "log verbosity level (trace, debug, info, warn, error, fatal, panic)",
+			Value: "info",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagReportURL,
+			Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888); events include: ConfigureVirtualMachine, StartVirtualNetwork, StartIgnitionServer, StartVirtualMachine, GuestNetworkReady, GuestSSHReady, GuestPodmanReady, Exit, Error",
+		},
 	},
 }
 
 func attachConsole(ctx context.Context, command *cli.Command) error {
+	if err := SetupBasicLogger(command.String(define.FlagLogLevel)); err != nil {
+		return fmt.Errorf("failed to setup basic logger: %w", err)
+	}
+
+	event.Setup(command.String(define.FlagReportURL), event.Attach)
+
 	workspace := command.Args().First()
 	enablePTY := command.Bool(define.FlagPTY)
 	cmdline := command.Args().Tail()

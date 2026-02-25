@@ -4,8 +4,10 @@ type StageName string
 type EvtName string
 
 const (
-	Run    StageName = "run"
+	Chroot StageName = "chroot"
 	Docker StageName = "docker"
+	Clean  StageName = "clean"
+	Attach StageName = "attach"
 
 	Success                  EvtName = "Success" // init success, only in ovm
 	AllThingsReady           EvtName = "Ready"

@@ -97,6 +97,8 @@ revm chroot [flags] <command> [args...]
 | `--network`      | 网络栈：`gvisor`（完整虚拟网卡）或 `tsi`（透明 socket 转发）         | `gvisor`              |
 | `--system-proxy` | 读取 macOS 系统代理并以 `http_proxy`/`https_proxy` 注入到 VM | `false`               |
 | `--workspace`    | 运行时状态目录（socket、SSH key、日志、磁盘）；不指定则临时目录            | `/tmp/.revm-<random>` |
+| `--log-level`    | 日志级别：`trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic` | `info`          |
+| `--report-url`   | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock`） | —               |
 
 ---
 
@@ -178,6 +180,8 @@ revm docker [flags]
 | `--network`      | 网络栈：`gvisor`（完整虚拟网卡，支持端口映射）或 `tsi`（透明转发）                         | `gvisor`              |
 | `--system-proxy` | 读取 macOS 系统代理并注入容器内，自动将 127.0.0.1 重写为 `host.containers.internal` | `false`               |
 | `--workspace`    | 运行时状态目录，Podman API socket 在此目录下的 `socks/podman-api.sock`         | `/tmp/.revm-<random>` |
+| `--log-level`    | 日志级别：`trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic`      | `info`                |
+| `--report-url`   | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock`）           | —                     |
 
 docker 模式与 chroot 模式共用大部分参数，可按需灵活配置。
 
@@ -191,9 +195,11 @@ docker 模式与 chroot 模式共用大部分参数，可按需灵活配置。
 revm attach [--pty] <workspace> [-- <command> [args...]]
 ```
 
-| 参数      | 说明                              | 默认值     |
-|---------|---------------------------------|---------|
-| `--pty` | 分配伪终端，启动交互式 Shell；不加则以非交互方式执行命令 | `false` |
+| 参数             | 说明                              | 默认值     |
+|----------------|---------------------------------|---------|
+| `--pty`        | 分配伪终端，启动交互式 Shell；不加则以非交互方式执行命令 | `false` |
+| `--log-level`  | 日志级别：`trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic` | `info` |
+| `--report-url` | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock`） | — |
 
 ```bash
 # 交互式 Shell

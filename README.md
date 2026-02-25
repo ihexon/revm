@@ -99,6 +99,8 @@ revm chroot [flags] <command> [args...]
 | `--network`      | Network stack: `gvisor` (full virtual NIC) or `tsi` (transparent socket intercept)  | `gvisor`              |
 | `--system-proxy` | Read macOS system proxy and inject as `http_proxy`/`https_proxy` into the VM        | `false`               |
 | `--workspace`    | Runtime state directory (sockets, SSH keys, logs, disks); ephemeral if unset        | `/tmp/.revm-<random>` |
+| `--log-level`    | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`          | `info`                |
+| `--report-url`   | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock`)   | —                     |
 
 ---
 
@@ -182,6 +184,8 @@ revm docker [flags]
 | `--network`      | Network stack: `gvisor` (full virtual NIC, supports port mapping) or `tsi` (transparent intercept)  | `gvisor`              |
 | `--system-proxy` | Read macOS system proxy and inject into containers; rewrites `127.0.0.1` to `host.containers.internal` | `false`            |
 | `--workspace`    | Runtime state directory; Podman API socket at `socks/podman-api.sock` inside this directory         | `/tmp/.revm-<random>` |
+| `--log-level`    | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`                          | `info`                |
+| `--report-url`   | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock`)                   | —                     |
 
 docker mode and chroot mode share most flags and can be configured as needed.
 
@@ -195,9 +199,11 @@ Attach to a running VM instance from another terminal.
 revm attach [--pty] <workspace> [-- <command> [args...]]
 ```
 
-| Flag    | Description                                                                                                      | Default |
-|---------|------------------------------------------------------------------------------------------------------------------|---------|
-| `--pty` | Allocate a pseudo-terminal and launch an interactive shell; without this flag the command runs non-interactively | `false` |
+| Flag           | Description                                                                                                      | Default |
+|----------------|------------------------------------------------------------------------------------------------------------------|---------|
+| `--pty`        | Allocate a pseudo-terminal and launch an interactive shell; without this flag the command runs non-interactively | `false` |
+| `--log-level`  | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`                                       | `info`  |
+| `--report-url` | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock`)                                | —       |
 
 ```bash
 # Interactive shell
