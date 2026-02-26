@@ -8,8 +8,10 @@ import (
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/interfaces"
 	"linuxvm/pkg/network"
+	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -33,15 +35,17 @@ func (s *HostServices) StartPodmanProxy(ctx context.Context) error {
 
 	switch s.vmp.GetVMConfigure().VirtualNetworkMode {
 	case define.GVISOR:
+		_, portStr, _ := net.SplitHostPort(s.vmp.GetVMConfigure().PodmanInfo.GuestPodmanAPIListenAddr)
+		port, _ := strconv.ParseUint(portStr, 10, 16)
 		return gvproxy.TunnelHostUnixToGuest(ctx,
 			s.vmp.GetVMConfigure().GVPCtlAddr,
-			s.vmp.GetVMConfigure().PodmanInfo.PodmanProxyAddr,
-			s.vmp.GetVMConfigure().PodmanInfo.GuestPodmanAPIIP,
-			s.vmp.GetVMConfigure().PodmanInfo.GuestPodmanAPIPort)
+			s.vmp.GetVMConfigure().PodmanInfo.HostPodmanProxyAddr,
+			define.GuestIP,
+			uint16(port))
 	case define.TSI:
 		f := &network.LocalForwarder{
-			UnixSockAddr: s.vmp.GetVMConfigure().PodmanInfo.PodmanProxyAddr,
-			Target:       fmt.Sprintf("%s:%d", "127.0.0.1", s.vmp.GetVMConfigure().PodmanInfo.GuestPodmanAPIPort),
+			UnixSockAddr: s.vmp.GetVMConfigure().PodmanInfo.HostPodmanProxyAddr,
+			Target:       s.vmp.GetVMConfigure().PodmanInfo.GuestPodmanAPIListenAddr,
 			Timeout:      1 * time.Second,
 		}
 		return f.Run(ctx)

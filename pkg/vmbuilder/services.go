@@ -6,11 +6,14 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/network"
 	sshv2 "linuxvm/pkg/ssh_v2"
 	"linuxvm/pkg/static_resources"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/sirupsen/logrus"
 )
@@ -110,11 +113,20 @@ func (p *PodmanConfigurator) Configure(ctx context.Context, vmc *define.Machine)
 		Path:   p.pathMgr.GetPodmanListenAddr(),
 	}
 
+	port, err := network.GetAvailablePort(0)
+	if err != nil {
+		return err
+	}
+
+	listenIP := define.UnspecifiedAddress
+	if vmc.VirtualNetworkMode == define.TSI {
+		listenIP = define.LocalHost
+	}
+
 	vmc.PodmanInfo = define.PodmanInfo{
-		PodmanProxyAddr:    podmanProxyAddr.String(),
-		GuestPodmanAPIIP:   define.GuestIP,
-		GuestPodmanAPIPort: define.GuestPodmanAPIPort,
-		Envs:               envs,
+		HostPodmanProxyAddr:      podmanProxyAddr.String(),
+		GuestPodmanAPIListenAddr: net.JoinHostPort(listenIP, strconv.FormatUint(port, 10)),
+		GuestPodmanRunWithEnvs:   envs,
 	}
 
 	if err := os.MkdirAll(filepath.Dir(podmanProxyAddr.Path), 0755); err != nil {
@@ -156,9 +168,12 @@ func (s *SSHConfigurator) Configure(ctx context.Context, vmc *define.Machine) er
 	}
 
 	vmc.SSHInfo = define.SSHInfo{
-		HostSSHPublicKey:      string(publicKey),
-		HostSSHPrivateKey:     string(privateKey),
-		HostSSHPrivateKeyFile: keyPath,
+		HostSSHPublicKey:       string(publicKey),
+		HostSSHPrivateKey:      string(privateKey),
+		HostSSHPrivateKeyFile:  keyPath,
+		GuestSSHPrivateKeyPath: "/run/dropbear/private.key",
+		GuestSSHAuthorizedKeys: "/run/dropbear/authorized_keys",
+		GuestSSHPidFile:        "/run/dropbear/dropbear.pid",
 	}
 
 	return nil

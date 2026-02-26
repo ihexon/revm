@@ -5,11 +5,11 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh_v2"
+	"net"
 	"net/http"
 	"time"
 
@@ -86,11 +86,12 @@ func MakeSSHClient(ctx context.Context, vmc *define.Machine) (*ssh_v2.Client, er
 		if err != nil {
 			return nil, err
 		}
-		guestAddr = fmt.Sprintf("%s:%d", define.GuestIP, define.GuestSSHServerPort)
+		_, portStr, _ := net.SplitHostPort(vmc.SSHInfo.GuestSSHServerListenAddr)
+		guestAddr = net.JoinHostPort(define.GuestIP, portStr)
 		dialOpts = append(dialOpts, ssh_v2.WithTunnel(gvCtlAddr.Path))
 	} else {
 		// TSI mode: direct TCP connection
-		guestAddr = fmt.Sprintf("%s:%d", define.LocalHost, define.GuestSSHServerPort)
+		guestAddr = vmc.SSHInfo.GuestSSHServerListenAddr
 	}
 
 	return ssh_v2.Dial(ctx, guestAddr, dialOpts...)

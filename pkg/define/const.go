@@ -58,9 +58,7 @@ const (
 
 	DefaultVSockPort = 25882
 
-	GuestSSHServerPort = 25883
-	GuestPodmanAPIPort = 25884
-	LocalHost          = "127.0.0.1"
+	LocalHost = "127.0.0.1"
 
 	SSHLocalForwardListenPort = 6123
 

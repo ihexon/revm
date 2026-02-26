@@ -11,23 +11,25 @@ import (
 )
 
 func GetAvailablePort(preferredPort uint16) (uint64, error) {
-	addr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("127.0.0.1:%d", preferredPort))
-	if err != nil {
-		return 0, err
-	}
-	l, err := net.ListenTCP("tcp4", addr)
-	if err == nil {
-		_ = l.Close()
-		return uint64(preferredPort), nil
+	if preferredPort != 0 {
+		addr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("127.0.0.1:%d", preferredPort))
+		if err != nil {
+			return 0, err
+		}
+		l, err := net.ListenTCP("tcp4", addr)
+		if err == nil {
+			_ = l.Close()
+			return uint64(preferredPort), nil
+		}
 	}
 
 	// Fallback to ephemeral port
-	addr, err = net.ResolveTCPAddr("tcp4", "127.0.0.1:0")
+	addr, err := net.ResolveTCPAddr("tcp4", "127.0.0.1:0")
 	if err != nil {
 		return 0, err
 	}
 
-	l, err = net.ListenTCP("tcp4", addr)
+	l, err := net.ListenTCP("tcp4", addr)
 	if err != nil {
 		return 0, err
 	}

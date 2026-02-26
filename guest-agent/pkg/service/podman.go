@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"linuxvm/pkg/define"
 	"os"
 	"os/exec"
@@ -11,14 +10,14 @@ import (
 )
 
 func startGuestPodmanService(ctx context.Context, vmc *define.Machine) error {
-	addr := fmt.Sprintf("tcp://%s:%d", define.UnspecifiedAddress, define.GuestPodmanAPIPort) //nolint:nosprintfhostport
+	addr := "tcp://" + vmc.PodmanInfo.GuestPodmanAPIListenAddr //nolint:nosprintfhostport
 	cmd := exec.CommandContext(ctx, "podman", "--log-level", logrus.GetLevel().String(), "system", "service", "--time=0", addr)
 	cmd.Stdin = nil
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), vmc.PodmanInfo.Envs...)
+	cmd.Env = append(os.Environ(), vmc.PodmanInfo.GuestPodmanRunWithEnvs...)
 
-	logrus.Infof("podman service starting on port %d", define.GuestPodmanAPIPort)
+	logrus.Infof("podman service starting on %s", vmc.PodmanInfo.GuestPodmanAPIListenAddr)
 	return cmd.Run()
 }
 

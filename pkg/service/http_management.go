@@ -62,13 +62,13 @@ func (s *ManagementAPIServer) handleInfo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	podmanProxyaddr, err := url.Parse(s.vmc.PodmanInfo.PodmanProxyAddr)
+	podmanProxyaddr, err := url.Parse(s.vmc.PodmanInfo.HostPodmanProxyAddr)
 	if err != nil {
 		WriteJSON(w, http.StatusInternalServerError, ErrResponse{Error: err.Error()})
 		return
 	}
 
-	sshProxyAddr, err := url.Parse(fmt.Sprintf("tcp://%s", s.vmc.SSHInfo.SSHLocalForwardAddr))
+	sshProxyAddr, err := url.Parse(fmt.Sprintf("tcp://%s", s.vmc.SSHInfo.HostSSHProxyListenAddr))
 	if err != nil {
 		WriteJSON(w, http.StatusInternalServerError, ErrResponse{Error: err.Error()})
 		return

@@ -75,7 +75,8 @@ func InitCfg(vmc *define.Machine) (*GvproxyConfig, error) {
 	logrus.Infof("ssh listen port: %d", port)
 
 	sshLocalForwardAddr := fmt.Sprintf("%s:%d", define.LocalHost, port)
-	sshServerGuestAddr := fmt.Sprintf("%s:%d", define.GuestIP, define.GuestSSHServerPort)
+	_, sshPortStr, _ := net.SplitHostPort(vmc.SSHInfo.GuestSSHServerListenAddr)
+	sshServerGuestAddr := net.JoinHostPort(define.GuestIP, sshPortStr)
 
 	// ssh local forward: sshLocalForwardAddr -> sshServerGuestAddr
 	// 						HOST					GUEST
@@ -83,7 +84,7 @@ func InitCfg(vmc *define.Machine) (*GvproxyConfig, error) {
 		sshLocalForwardAddr: sshServerGuestAddr,
 	}
 
-	vmc.SSHInfo.SSHLocalForwardAddr = sshLocalForwardAddr
+	vmc.SSHInfo.HostSSHProxyListenAddr = sshLocalForwardAddr
 
 	return &config, nil
 }

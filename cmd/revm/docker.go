@@ -110,7 +110,7 @@ func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
 			case <-ctx.Done():
 				return
 			case <-vmp.GetVMConfigure().Readiness.PodmanReady:
-				logrus.Infof("podman API proxy listening on %s", vmp.GetVMConfigure().PodmanInfo.PodmanProxyAddr)
+				logrus.Infof("podman API proxy listening on %s", vmp.GetVMConfigure().PodmanInfo.HostPodmanProxyAddr)
 			}
 		}()
 		select {

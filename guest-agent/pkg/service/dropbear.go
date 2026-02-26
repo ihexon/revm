@@ -13,8 +13,7 @@ import (
 
 // DropbearConfig holds dropbear SSH server configuration.
 type DropbearConfig struct {
-	ListenAddr         string
-	ListenPort         uint16
+	ListenAddr         string // full "IP:PORT"
 	PrivateKeyPath     string
 	AuthorizedKeysFile string
 	PidFile            string
@@ -118,7 +117,7 @@ func (d *Dropbear) Start(ctx context.Context) error {
 	args := []string{
 		"dropbear",
 		"-D", filepath.Dir(d.cfg.AuthorizedKeysFile),
-		"-p", fmt.Sprintf("%s:%d", d.cfg.ListenAddr, d.cfg.ListenPort),
+		"-p", d.cfg.ListenAddr,
 		"-r", d.cfg.PrivateKeyPath,
 		"-F", // foreground
 		"-s", // disable password login
@@ -144,11 +143,10 @@ func (d *Dropbear) Start(ctx context.Context) error {
 // StartGuestSSHServer support TSI/Gvisor network mode
 func StartGuestSSHServer(ctx context.Context, vmc *define.Machine) error {
 	cfg := DropbearConfig{
-		ListenAddr:         define.UnspecifiedAddress,
-		ListenPort:         define.GuestSSHServerPort,
-		PrivateKeyPath:     define.DropBearPrivateKeyPath,
-		AuthorizedKeysFile: filepath.Join(define.DropBearRuntimeDir, "authorized_keys"),
-		PidFile:            define.DropBearPidFile,
+		ListenAddr:         vmc.SSHInfo.GuestSSHServerListenAddr,
+		PrivateKeyPath:     vmc.SSHInfo.GuestSSHPrivateKeyPath,
+		AuthorizedKeysFile: vmc.SSHInfo.GuestSSHAuthorizedKeys,
+		PidFile:            vmc.SSHInfo.GuestSSHPidFile,
 	}
 
 	dropbear := NewDropbear(cfg)
@@ -161,6 +159,6 @@ func StartGuestSSHServer(ctx context.Context, vmc *define.Machine) error {
 		return fmt.Errorf("write authorized_keys: %w", err)
 	}
 
-	logrus.Infof("SSH server starting on port %d", cfg.ListenPort)
+	logrus.Infof("SSH server starting on %s", cfg.ListenAddr)
 	return dropbear.Start(ctx)
 }

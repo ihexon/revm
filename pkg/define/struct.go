@@ -59,17 +59,17 @@ type Mount struct {
 }
 
 type SSHInfo struct {
-	// HostSSHPrivateKeyFile is the path to the host ssh private key
-	HostSSHPrivateKeyFile string `json:"hostSSHKeyFile,omitempty"`
+	// HOST
+	HostSSHPrivateKeyFile  string `json:"hostSSHKeyFile,omitempty"`
+	HostSSHPublicKey       string `json:"sshPublicKey,omitempty"`
+	HostSSHPrivateKey      string `json:"sshPrivateKey,omitempty"`
+	HostSSHProxyListenAddr string `json:"hostSSHProxyListenAddr,omitempty"`
 
-	HostSSHPublicKey  string `json:"sshPublicKey,omitempty"`
-	HostSSHPrivateKey string `json:"sshPrivateKey,omitempty"`
-
-	SSHLocalForwardAddr string `json:"sshLocalForwardAddr,omitempty"`
-}
-
-type GuestSSHServer struct {
-	Addr string `json:"addr,omitempty"`
+	// GUEST
+	GuestSSHServerListenAddr string `json:"guestSSHServerListenAddr,omitempty"`
+	GuestSSHPrivateKeyPath   string `json:"guestSSHPrivateKeyPath,omitempty"`
+	GuestSSHAuthorizedKeys   string `json:"guestSSHAuthorizedKeys,omitempty"`
+	GuestSSHPidFile          string `json:"guestSSHPidFile,omitempty"`
 }
 
 type ProxySetting struct {
@@ -92,10 +92,12 @@ type BlkDev struct {
 }
 
 type PodmanInfo struct {
-	PodmanProxyAddr    string   `json:"podmanProxyAddr,omitempty"`
-	GuestPodmanAPIIP   string   `json:"GuestPodmanAPIIP,omitempty"`
-	GuestPodmanAPIPort uint16   `json:"GuestPodmanAPIPort,omitempty"`
-	Envs               []string `json:"envs,omitempty"`
+	// HOST
+	HostPodmanProxyAddr string `json:"hostPodmanProxyAddr,omitempty"`
+
+	// GUEST
+	GuestPodmanAPIListenAddr string   `json:"guestPodmanAPIListenAddr,omitempty"`
+	GuestPodmanRunWithEnvs   []string `json:"guestPodmanRunWithEnvs,omitempty"`
 }
 
 type GuestAgentCfg struct {

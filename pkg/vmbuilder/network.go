@@ -6,9 +6,12 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/network"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/sirupsen/logrus"
 )
@@ -58,7 +61,16 @@ func (g *GVisorNetworkConfig) Configure(ctx context.Context, vmc *define.Machine
 	_ = os.Remove(pathMgr.GetVNetListenAddr())
 
 	// Ensure parent directory exists
-	return os.MkdirAll(filepath.Dir(unixAddr.Path), 0755)
+	if err := os.MkdirAll(filepath.Dir(unixAddr.Path), 0755); err != nil {
+		return err
+	}
+
+	port, err := network.GetAvailablePort(0)
+	if err != nil {
+		return err
+	}
+	vmc.SSHInfo.GuestSSHServerListenAddr = net.JoinHostPort(define.UnspecifiedAddress, strconv.FormatUint(port, 10))
+	return nil
 }
 
 // TSINetworkConfig implements network configuration for TSI (Transparent Socket Interception) mode.
@@ -66,9 +78,16 @@ func (g *GVisorNetworkConfig) Configure(ctx context.Context, vmc *define.Machine
 type TSINetworkConfig struct{}
 
 // Configure sets up TSI network mode.
-// TSI mode doesn't require gvisor network setup, so this is essentially a no-op.
+// TSI mode doesn't require gvisor network setup, but we record the host-accessible
+// SSH address since guest ports are directly reachable via libkrun.
 func (t *TSINetworkConfig) Configure(ctx context.Context, vmc *define.Machine, pathMgr *PathManager) error {
 	logrus.Infof("Using TSI network mode (libkrun built-in networking)")
-	// TSI mode doesn't need gvisor network setup
+	// TSI: guest port is directly accessible on host via libkrun
+	port, err := network.GetAvailablePort(0)
+	if err != nil {
+		return err
+	}
+	vmc.SSHInfo.GuestSSHServerListenAddr = net.JoinHostPort(define.LocalHost, strconv.FormatUint(port, 10))
+	vmc.SSHInfo.HostSSHProxyListenAddr = vmc.SSHInfo.GuestSSHServerListenAddr
 	return nil
 }

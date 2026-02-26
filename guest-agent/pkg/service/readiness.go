@@ -2,10 +2,9 @@ package service
 
 import (
 	"context"
-	"fmt"
+	"guestAgent/pkg/network"
 	"io"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/network"
 	"linuxvm/pkg/ssh_v2"
 	"net"
 	"net/http"
@@ -44,7 +43,8 @@ func (r *Readiness) IsSSHReady(ctx context.Context) bool {
 			return false
 		case <-ticker.C:
 			logrus.Debugf("[readiness] check ssh ready")
-			client, err := ssh_v2.Dial(ctx, fmt.Sprintf("%s:%d", define.LocalHost, define.GuestSSHServerPort),
+			_, portStr, _ := net.SplitHostPort(r.vmc.SSHInfo.GuestSSHServerListenAddr)
+			client, err := ssh_v2.Dial(ctx, net.JoinHostPort(define.LocalHost, portStr),
 				ssh_v2.WithPrivateKey(tmpKey),
 				ssh_v2.WithUser(define.DefaultGuestUser),
 			)
@@ -82,7 +82,8 @@ func (r *Readiness) IsPodmanReady(ctx context.Context) bool {
 			return false
 		case <-ticker.C:
 			logrus.Debugf("[readiness] check podman ready")
-			client := network.NewTCPClient(fmt.Sprintf("%s:%d", define.LocalHost, define.GuestPodmanAPIPort))
+			_, portStr, _ := net.SplitHostPort(r.vmc.PodmanInfo.GuestPodmanAPIListenAddr)
+			client := network.NewTCPClient(net.JoinHostPort(define.LocalHost, portStr))
 			resp, err := client.NewRequest(http.MethodGet, "_ping").Do(ctx)
 			if err != nil {
 				_ = client.Close()

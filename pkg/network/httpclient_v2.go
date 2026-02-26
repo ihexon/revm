@@ -7,7 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"path/filepath"
+	"path"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -205,10 +205,10 @@ func (r *Request) JSON() *Request {
 func (r *Request) buildURL() string {
 	// For Unix sockets, use path directly
 	if r.client.baseURL == "http://unix" {
-		return r.client.baseURL + filepath.Clean(filepath.Join("/", r.path))
+		return r.client.baseURL + path.Clean("/"+r.path)
 	}
 	// For TCP, append path to base URL
-	return r.client.baseURL + filepath.Clean(filepath.Join("/", r.path))
+	return r.client.baseURL + path.Clean("/"+r.path)
 }
 
 // Do executes the request and returns the response
