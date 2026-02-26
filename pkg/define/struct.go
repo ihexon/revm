@@ -68,6 +68,10 @@ type SSHInfo struct {
 	SSHLocalForwardAddr string `json:"sshLocalForwardAddr,omitempty"`
 }
 
+type GuestSSHServer struct {
+	Addr string `json:"addr,omitempty"`
+}
+
 type ProxySetting struct {
 	HTTPProxy  string `json:"httpProxy,omitempty"`
 	HTTPSProxy string `json:"httpsProxy,omitempty"`
