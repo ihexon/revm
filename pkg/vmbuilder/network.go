@@ -25,6 +25,15 @@ type NetworkConfigStrategy interface {
 	Configure(ctx context.Context, vmc *define.Machine, pathMgr *PathManager) error
 }
 
+func (v *VM) configureNetwork(ctx context.Context, mode define.VNetMode, pathMgr *PathManager) error {
+	strategy := GetNetworkStrategy(mode)
+	if strategy == nil {
+		return fmt.Errorf("invalid network mode: %s", mode)
+	}
+	v.VirtualNetworkMode = mode
+	return strategy.Configure(ctx, &v.Machine, pathMgr)
+}
+
 // GetNetworkStrategy returns the appropriate NetworkConfigStrategy for the given network mode.
 // Returns nil if the mode is invalid/unknown.
 func GetNetworkStrategy(mode define.VNetMode) NetworkConfigStrategy {

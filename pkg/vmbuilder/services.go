@@ -14,31 +14,20 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
+	sysproxy "github.com/ihexon/getSysProxy"
 	"github.com/sirupsen/logrus"
 )
 
-// --- Guest Agent ---
-
-// GuestAgentConfigurator handles guest agent configuration.
-type GuestAgentConfigurator struct {
-	pathMgr *PathManager
-}
-
-// NewGuestAgentConfigurator creates a new guest agent configurator.
-func NewGuestAgentConfigurator(pathMgr *PathManager) *GuestAgentConfigurator {
-	return &GuestAgentConfigurator{pathMgr: pathMgr}
-}
-
-// Configure sets up the guest agent including ignition server and environment variables.
-func (g *GuestAgentConfigurator) Configure(ctx context.Context, vmc *define.Machine) error {
-	if vmc.WorkspacePath == "" {
+func (v *VM) configureGuestAgent(ctx context.Context, pathMgr *PathManager) error {
+	if v.WorkspacePath == "" {
 		return fmt.Errorf("workspace path is empty")
 	}
 
 	unixUSL := &url.URL{
 		Scheme: "unix",
-		Path:   g.pathMgr.GetIgnAddr(),
+		Path:   pathMgr.GetIgnAddr(),
 	}
 
 	if err := os.MkdirAll(filepath.Dir(unixUSL.Path), 0755); err != nil {
@@ -49,26 +38,23 @@ func (g *GuestAgentConfigurator) Configure(ctx context.Context, vmc *define.Mach
 		return err
 	}
 
-	vmc.IgnitionServerCfg = define.IgnitionServerCfg{
+	v.IgnitionServerCfg = define.IgnitionServerCfg{
 		ListenSockAddr: unixUSL.String(),
 	}
 
-	if vmc.RootFS == "" {
+	if v.RootFS == "" {
 		return fmt.Errorf("rootfs path is empty")
 	}
 
-	// inject user-given envs to guest-agent
 	var finalEnv []string
 	finalEnv = append(finalEnv, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
 	finalEnv = append(finalEnv, "LC_ALL=C.UTF-8")
 	finalEnv = append(finalEnv, "LANG=C.UTF-8")
 	finalEnv = append(finalEnv, "TMPDIR=/tmp")
-
-	// In the virtualNetwork, HOST_DOMAIN is the domain name of the host, and the guest can access network resources on the host through HOST_DOMAIN.
 	finalEnv = append(finalEnv, fmt.Sprintf("HOST_DOMAIN=%s", define.HostDomainInGVPNet))
 	finalEnv = append(finalEnv, fmt.Sprintf("%s=%s", define.EnvLogLevel, logrus.GetLevel().String()))
 
-	guestAgentFilePath := filepath.Join(vmc.RootFS, ".bin", "guest-agent")
+	guestAgentFilePath := filepath.Join(v.RootFS, ".bin", "guest-agent")
 
 	if err := os.MkdirAll(filepath.Dir(guestAgentFilePath), 0755); err != nil {
 		return err
@@ -78,7 +64,7 @@ func (g *GuestAgentConfigurator) Configure(ctx context.Context, vmc *define.Mach
 		return fmt.Errorf("failed to write guest-agent file to %q: %w", guestAgentFilePath, err)
 	}
 
-	vmc.GuestAgentCfg = define.GuestAgentCfg{
+	v.GuestAgentCfg = define.GuestAgentCfg{
 		Workdir: "/",
 		Env:     finalEnv,
 	}
@@ -86,31 +72,18 @@ func (g *GuestAgentConfigurator) Configure(ctx context.Context, vmc *define.Mach
 	return nil
 }
 
-// --- Podman ---
-
-// PodmanConfigurator handles Podman service configuration.
-type PodmanConfigurator struct {
-	pathMgr *PathManager
-}
-
-// NewPodmanConfigurator creates a new Podman configurator.
-func NewPodmanConfigurator(pathMgr *PathManager) *PodmanConfigurator {
-	return &PodmanConfigurator{pathMgr: pathMgr}
-}
-
-// Configure sets up Podman API configuration including proxy settings.
-func (p *PodmanConfigurator) Configure(ctx context.Context, vmc *define.Machine) error {
+func (v *VM) configurePodman(ctx context.Context, pathMgr *PathManager) error {
 	var envs []string
 
-	if vmc.ProxySetting.Use {
-		envs = append(envs, "http_proxy="+vmc.ProxySetting.HTTPProxy)
-		envs = append(envs, "https_proxy="+vmc.ProxySetting.HTTPSProxy)
+	if v.ProxySetting.Use {
+		envs = append(envs, "http_proxy="+v.ProxySetting.HTTPProxy)
+		envs = append(envs, "https_proxy="+v.ProxySetting.HTTPSProxy)
 	}
 
 	podmanProxyAddr := &url.URL{
 		Scheme: "unix",
 		Host:   "",
-		Path:   p.pathMgr.GetPodmanListenAddr(),
+		Path:   pathMgr.GetPodmanListenAddr(),
 	}
 
 	port, err := network.GetAvailablePort(0)
@@ -119,11 +92,11 @@ func (p *PodmanConfigurator) Configure(ctx context.Context, vmc *define.Machine)
 	}
 
 	listenIP := define.UnspecifiedAddress
-	if vmc.VirtualNetworkMode == define.TSI {
+	if v.VirtualNetworkMode == define.TSI {
 		listenIP = define.LocalHost
 	}
 
-	vmc.PodmanInfo = define.PodmanInfo{
+	v.PodmanInfo = define.PodmanInfo{
 		HostPodmanProxyAddr:      podmanProxyAddr.String(),
 		GuestPodmanAPIListenAddr: net.JoinHostPort(listenIP, strconv.FormatUint(port, 10)),
 		GuestPodmanRunWithEnvs:   envs,
@@ -136,21 +109,8 @@ func (p *PodmanConfigurator) Configure(ctx context.Context, vmc *define.Machine)
 	return nil
 }
 
-// --- SSH ---
-
-// SSHConfigurator handles SSH key generation and configuration.
-type SSHConfigurator struct {
-	pathMgr *PathManager
-}
-
-// NewSSHConfigurator creates a new SSH configurator.
-func NewSSHConfigurator(pathMgr *PathManager) *SSHConfigurator {
-	return &SSHConfigurator{pathMgr: pathMgr}
-}
-
-// Configure generates SSH keys and sets up SSH configuration.
-func (s *SSHConfigurator) Configure(ctx context.Context, vmc *define.Machine) error {
-	keyPath := s.pathMgr.GetSSHPrivateKeyFile()
+func (v *VM) configureSSH(pathMgr *PathManager) error {
+	keyPath := pathMgr.GetSSHPrivateKeyFile()
 	pubKeyPath := keyPath + ".pub"
 	if err := os.MkdirAll(filepath.Dir(keyPath), 0700); err != nil {
 		return err
@@ -167,7 +127,7 @@ func (s *SSHConfigurator) Configure(ctx context.Context, vmc *define.Machine) er
 		return err
 	}
 
-	vmc.SSHInfo = define.SSHInfo{
+	v.SSHInfo = define.SSHInfo{
 		HostSSHPublicKey:       string(publicKey),
 		HostSSHPrivateKey:      string(privateKey),
 		HostSSHPrivateKeyFile:  keyPath,
@@ -176,5 +136,49 @@ func (s *SSHConfigurator) Configure(ctx context.Context, vmc *define.Machine) er
 		GuestSSHPidFile:        "/run/dropbear/dropbear.pid",
 	}
 
+	return nil
+}
+
+func (v *VM) configureVMCtlAPI(pathMgr *PathManager) error {
+	unixAddr := &url.URL{
+		Scheme: "unix",
+		Host:   "",
+		Path:   pathMgr.GetVMCtlAddr(),
+	}
+
+	v.VMCtlAddress = unixAddr.String()
+
+	if err := os.MkdirAll(filepath.Dir(unixAddr.Path), 0755); err != nil {
+		return err
+	}
+	if err := os.Remove(unixAddr.Path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func (v *VM) applySystemProxy() error {
+	httpProxy, err := sysproxy.GetHTTP()
+	if err != nil {
+		return fmt.Errorf("get system proxy fail: %w", err)
+	}
+
+	if httpProxy == nil {
+		logrus.Warnf("system proxy is not enabled, do nothing")
+		return nil
+	}
+
+	if v.VirtualNetworkMode == define.GVISOR && (strings.Contains(httpProxy.String(), "127.0.0.1") ||
+		strings.Contains(httpProxy.String(), "localhost")) {
+		logrus.Debugf("in gvisor network mode, reset proxy to %s", define.HostDomainInGVPNet)
+		httpProxy.Host = define.HostDomainInGVPNet
+	}
+
+	logrus.Infof("set http/https proxy to %s", httpProxy.String())
+	v.ProxySetting = define.ProxySetting{
+		Use:        true,
+		HTTPProxy:  httpProxy.String(),
+		HTTPSProxy: httpProxy.String(),
+	}
 	return nil
 }

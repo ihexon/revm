@@ -6,10 +6,6 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"strings"
-
-	sysproxy "github.com/ihexon/getSysProxy"
-	"github.com/sirupsen/logrus"
 )
 
 // VMConfigBuilder provides a fluent API for building VM instances.
@@ -44,10 +40,7 @@ type VMConfigBuilder struct {
 
 // NewVMConfigBuilder creates a new builder for the specified run mode.
 func NewVMConfigBuilder(runMode define.RunMode) *VMConfigBuilder {
-	vmb := &VMConfigBuilder{
-		vmc:     NewVirtualMachine(runMode),
-		runMode: runMode,
-	}
+	vmb := &VMConfigBuilder{runMode: runMode}
 
 	if runMode == define.ContainerMode || runMode == define.OVMode {
 		vmb.builtInRootfs = true
@@ -133,105 +126,78 @@ func (b *VMConfigBuilder) SetContainerDiskVersion(version string) *VMConfigBuild
 
 // Build constructs the VM with all configurations applied in correct order.
 func (b *VMConfigBuilder) Build(ctx context.Context) (*define.Machine, error) {
-	// 1. Workspace
-	if err := b.vmc.SetupWorkspace(b.workspace); err != nil {
-		return nil, fmt.Errorf("setup workspace: %w", err)
-	}
+	b.vmc = NewVirtualMachine(b.runMode)
 
-	// 2. Log level (needs workspace for log file path)
-	if err := b.vmc.SetupLogLevel(b.logLevel); err != nil {
-		return nil, fmt.Errorf("setup log level: %w", err)
+	// 1. Workspace
+	if err := b.vmc.setupWorkspace(b.workspace); err != nil {
+		return nil, fmt.Errorf("setup workspace: %w", err)
 	}
 
 	b.pathMgr = NewPathManager(b.vmc.WorkspacePath)
 
+	if err := b.vmc.configureSSH(b.pathMgr); err != nil {
+		return nil, fmt.Errorf("generate ssh config: %w", err)
+	}
+
+	// 2. Log level (needs workspace for log file path)
+	if err := b.vmc.setupLogLevel(b.logLevel); err != nil {
+		return nil, fmt.Errorf("setup log level: %w", err)
+	}
+
 	// 3. Resources
-	if err := b.vmc.WithResources(b.memoryInMB, b.cpus); err != nil {
+	if err := b.vmc.withResources(b.memoryInMB, b.cpus); err != nil {
 		return nil, fmt.Errorf("set resources: %w", err)
 	}
 
 	// 4. Network
-	networkStrategy := GetNetworkStrategy(b.networkMode)
-	if networkStrategy == nil {
-		return nil, fmt.Errorf("invalid network mode: %s", b.networkMode)
-	}
-
-	b.vmc.VirtualNetworkMode = b.networkMode
-	if err := networkStrategy.Configure(ctx, (*define.Machine)(b.vmc), b.pathMgr); err != nil {
+	if err := b.vmc.configureNetwork(ctx, b.networkMode, b.pathMgr); err != nil {
 		return nil, fmt.Errorf("configure network: %w", err)
 	}
 
 	if b.usingSystemProxy {
-		// To simplify the code path, we only pick the http proxy from system proxy setting
-		// the proxy must support CONNECT Method which can tunnel any NON HTTP Data
-		httpProxy, err := sysproxy.GetHTTP()
-		if err != nil {
-			return nil, fmt.Errorf("get system proxy fail: %w", err)
-		}
-
-		ps := define.ProxySetting{
-			Use: false,
-		}
-
-		if httpProxy == nil {
-			logrus.Warnf("system proxy is not enabled, do nothing")
-		} else {
-			// In GVISOR mode, localhost/127.0.0.1 refers host.containers.internal
-			// which is the host address on virtualNetwork( which provided by gvisor-vsock-tap)
-			if b.vmc.VirtualNetworkMode == define.GVISOR && (strings.Contains(httpProxy.String(), "127.0.0.1") ||
-				strings.Contains(httpProxy.String(), "localhost")) {
-				logrus.Debugf("in gvisor network mode, reset proxy to %s", define.HostDomainInGVPNet)
-				httpProxy.Host = define.HostDomainInGVPNet
-			}
-
-			ps.Use = true
-
-			logrus.Infof("set http/https proxy to %s", httpProxy.String())
-			ps.HTTPSProxy = httpProxy.String()
-			ps.HTTPProxy = httpProxy.String()
-			b.vmc.ProxySetting = ps
+		if err := b.vmc.applySystemProxy(); err != nil {
+			return nil, fmt.Errorf("apply system proxy: %w", err)
 		}
 	}
 
 	// 6. Rootfs
 	if b.runMode == define.RootFsMode {
 		if b.rootfsPath != "" {
-			if err := b.vmc.WithUserProvidedRootfs(ctx, b.rootfsPath); err != nil {
+			if err := b.vmc.withUserProvidedRootfs(ctx, b.rootfsPath); err != nil {
 				return nil, fmt.Errorf("setup custom rootfs: %w", err)
 			}
 		}
 	}
 
 	if b.builtInRootfs {
-		if err := b.vmc.WithBuiltInAlpineRootfs(ctx); err != nil {
+		if err := b.vmc.withBuiltInAlpineRootfs(ctx, b.pathMgr); err != nil {
 			return nil, fmt.Errorf("setup built-in rootfs: %w", err)
 		}
 	}
 
 	// 7. Mount user home
 	if b.runMode == define.ContainerMode || b.runMode == define.OVMode {
-		if err := b.vmc.WithMountUserHome(ctx); err != nil {
+		if err := b.vmc.withMountUserHome(ctx); err != nil {
 			return nil, fmt.Errorf("mount user home: %w", err)
 		}
 	}
 
 	// 8. Podman
 	if b.runMode == define.ContainerMode || b.runMode == define.OVMode {
-		podmanConfig := NewPodmanConfigurator(b.pathMgr)
-		if err := podmanConfig.Configure(ctx, (*define.Machine)(b.vmc)); err != nil {
+		if err := b.vmc.configurePodman(ctx, b.pathMgr); err != nil {
 			return nil, fmt.Errorf("configure podman: %w", err)
 		}
 	}
 
 	// 9. Container disk
 	if b.runMode == define.OVMode {
-		if err := b.vmc.ResetOrReuseContainerRAWDisk(ctx, b.containerDiskVersion); err != nil {
+		if err := b.vmc.resetOrReuseContainerRAWDisk(ctx, b.pathMgr, b.containerDiskVersion); err != nil {
 			return nil, fmt.Errorf("setup container disk: %w", err)
 		}
 	}
 
 	if b.runMode == define.ContainerMode {
-		if err := b.vmc.ConfigureContainerRAWDisk(ctx); err != nil {
+		if err := b.vmc.configureContainerRAWDisk(ctx, b.pathMgr); err != nil {
 			return nil, fmt.Errorf("setup container disk: %w", err)
 		}
 	}
@@ -252,21 +218,20 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.Machine, error) {
 
 	// 12. Cmdline
 	if b.runMode == define.RootFsMode {
-		if err := b.vmc.SetupCmdLine(b.workdir, b.bin, b.args, b.envs); err != nil {
+		if err := b.vmc.setupCmdLine(b.workdir, b.bin, b.args, b.envs); err != nil {
 			return nil, fmt.Errorf("setup cmdline: %w", err)
 		}
 	}
 
 	// 13. Guest Agent (always required)
-	guestAgentConfig := NewGuestAgentConfigurator(b.pathMgr)
-	if err := guestAgentConfig.Configure(ctx, (*define.Machine)(b.vmc)); err != nil {
+	if err := b.vmc.configureGuestAgent(ctx, b.pathMgr); err != nil {
 		return nil, fmt.Errorf("configure guest agent: %w", err)
 	}
 
 	// 14. VM Control API (always required)
-	if err := b.vmc.configureVirtualMachineControlAPI(); err != nil {
+	if err := b.vmc.configureVMCtlAPI(b.pathMgr); err != nil {
 		return nil, fmt.Errorf("configure vmctl API: %w", err)
 	}
 
-	return (*define.Machine)(b.vmc), nil
+	return &b.vmc.Machine, nil
 }
