@@ -38,7 +38,7 @@ jobs:
         run: brew tap slp/krun && brew install bash golangci-lint libarchive virglrenderer libepoxy molten-vk bash
 
       - name: Build
-        run: /opt/homebrew/bin/bash ./build_ovm_darwin_arm64.sh
+        run: /opt/homebrew/bin/bash ./build.sh
       - name: Upload artifact
         uses: 'actions/upload-artifact@v4'
         with:
