@@ -10,3 +10,5 @@ revm-*.tar.*
 req.md
 design.md
 task.md
+revm-single-Darwin-arm64
+revm-single-*.tar.zst

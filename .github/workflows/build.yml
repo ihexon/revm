@@ -40,11 +40,16 @@ jobs:
       - name: Build
         run: /opt/homebrew/bin/bash ./build.sh
 
+      - name: Build revm-single
+        run: /opt/homebrew/bin/bash ./single-binary/build.sh --revm-install-dir ./out
+
       - name: Upload artifact
         uses: 'actions/upload-artifact@v4'
         with:
           name: revm-darwin
-          path: revm-*.tar.zst
+          path: |
+            revm-*.tar.zst
+            revm-single-*.tar.zst
           if-no-files-found: error
           overwrite: true
 
@@ -94,6 +99,7 @@ jobs:
           generate_release_notes: true
           files: |
             revm-*.tar.zst
+            revm-single-*.tar.zst
           append_body: true
           draft: false
           prerelease: false
