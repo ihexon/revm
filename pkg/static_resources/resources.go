@@ -30,17 +30,14 @@ func ExtractEmbeddedRawDisk(ctx context.Context, targetPath string) error {
 		return err
 	}
 
-	if err := libarchivego.NewArchiver().
+	return libarchivego.NewArchiver().
 		SetReader(bytes.NewReader(BuiltinRawDiskBytes)).
 		SetFastRead(true).
 		SetSparse(true).
 		WithPattern("ext4.raw").
 		SetChdir(baseDir).
-		ModeX(ctx); err != nil {
-		return err
-	}
-
-	return os.Rename(filepath.Join(baseDir, "ext4.raw"), filepath.Join(baseDir, fileName))
+		WithTransform("ext4.raw", fileName).
+		ModeX(ctx)
 }
 
 func ExtractBuiltinRootfs(ctx context.Context, dstDir string) error {

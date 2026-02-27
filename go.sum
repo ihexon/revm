@@ -40,6 +40,8 @@ github.com/ihexon/libarchive-go v0.0.0-20260204040343-1577f1563344 h1:4q6QQ2YA7i
 github.com/ihexon/libarchive-go v0.0.0-20260204040343-1577f1563344/go.mod h1:7Gtc9bNQEJ3yR5hrEihMiRr2V12f8QsrghC8BPyNhgI=
 github.com/ihexon/libarchive-go v0.0.0-20260226153240-ebe3a1f7abbf h1:rFfVRsVpZXPCLcAtnjMkFVJ0X8OnqrcqIEShJl/Ca3M=
 github.com/ihexon/libarchive-go v0.0.0-20260226153240-ebe3a1f7abbf/go.mod h1:7Gtc9bNQEJ3yR5hrEihMiRr2V12f8QsrghC8BPyNhgI=
+github.com/ihexon/libarchive-go v0.0.0-20260227095735-dde1de3ab860 h1:Gg8Q5EXuwUZxXyOqgwW+x2AMVaIc0nz9yd25EOY03NM=
+github.com/ihexon/libarchive-go v0.0.0-20260227095735-dde1de3ab860/go.mod h1:7Gtc9bNQEJ3yR5hrEihMiRr2V12f8QsrghC8BPyNhgI=
 github.com/insomniacslk/dhcp v0.0.0-20251020182700-175e84fbb167 h1:MEufgJohwIjFi2n3eJv4c/8UdRLQVUwPwSWQPoER+eU=
 github.com/insomniacslk/dhcp v0.0.0-20251020182700-175e84fbb167/go.mod h1:qfvBmyDNp+/liLEYWRvqny/PEz9hGe2Dz833eXILSmo=
 github.com/josharian/native v1.1.0 h1:uuaP0hAbW7Y4l0ZRQ6C9zfb7Mg1mbFKry/xzDAfmtLA=

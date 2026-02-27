@@ -9,7 +9,7 @@ require (
 	github.com/gofrs/flock v0.13.0
 	github.com/google/uuid v1.6.0
 	github.com/ihexon/getSysProxy v0.0.0-20260212161208-c7b7a282814a
-	github.com/ihexon/libarchive-go v0.0.0-20260226153240-ebe3a1f7abbf
+	github.com/ihexon/libarchive-go v0.0.0-20260227095735-dde1de3ab860
 	github.com/mattn/go-isatty v0.0.20
 	github.com/pkg/errors v0.9.1
 	github.com/shirou/gopsutil/v4 v4.25.12
