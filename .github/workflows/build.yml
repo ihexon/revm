@@ -35,7 +35,7 @@ jobs:
           go-version: '1.25.5'
 
       - name: Install dependencies
-        run: brew tap slp/krun && brew install bash golangci-lint libarchive virglrenderer libepoxy molten-vk bash
+        run: brew tap slp/krun && brew install bash golangci-lint libarchive e2fsprogs virglrenderer libepoxy molten-vk bash
 
       - name: Build
         run: /opt/homebrew/bin/bash ./build.sh
@@ -64,7 +64,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget patchelf libarchive-tools libarchive-dev uuid-dev zstd
+          sudo apt-get install -y wget patchelf libarchive-tools libarchive-dev libext2fs-dev libblkid-dev uuid-dev zstd
 
       - name: Build
         run: bash ./build.sh

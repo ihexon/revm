@@ -8,7 +8,6 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
 	sshv2 "linuxvm/pkg/ssh_v2"
-	"linuxvm/pkg/static_resources"
 	"net"
 	"net/url"
 	"os"
@@ -60,7 +59,17 @@ func (v *VM) configureGuestAgent(ctx context.Context, pathMgr *PathManager) erro
 		return err
 	}
 
-	if err := os.WriteFile(guestAgentFilePath, static_resources.GuestAgentBytes, 0755); err != nil {
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+	helperGuestAgent := filepath.Join(filepath.Dir(execPath), "..", "helper", "guest-agent")
+	guestAgentBytes, err := os.ReadFile(helperGuestAgent)
+	if err != nil {
+		return fmt.Errorf("failed to read guest-agent from %q: %w", helperGuestAgent, err)
+	}
+
+	if err := os.WriteFile(guestAgentFilePath, guestAgentBytes, 0755); err != nil {
 		return fmt.Errorf("failed to write guest-agent file to %q: %w", guestAgentFilePath, err)
 	}
 

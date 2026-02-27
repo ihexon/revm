@@ -13,9 +13,6 @@ import (
 //go:embed raw_disks/ext4.raw.tar
 var BuiltinRawDiskBytes []byte
 
-//go:embed guest-agent/guest-agent
-var GuestAgentBytes []byte
-
 //go:embed rootfs/rootfs.tar.zst
 var RootfsBytes []byte
 

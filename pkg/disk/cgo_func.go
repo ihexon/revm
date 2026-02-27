@@ -1,9 +1,6 @@
 package disk
 
 /*
-#cgo CFLAGS: -I ../../out/.deps/e2fsprogs/include
-#cgo LDFLAGS: -L ../../out/.deps/e2fsprogs/lib -lext2fs -lcom_err -le2p -luuid -lblkid -lpthread
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
