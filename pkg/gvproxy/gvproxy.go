@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
@@ -53,19 +54,31 @@ func InitCfg(vmc *define.Machine) (*GvproxyConfig, error) {
 	}
 
 	config.Listen = append(config.Listen, vmc.GVPCtlAddr)
-	config.Interfaces.Vfkit = vmc.GVPVNetAddr
 
-	uri, err := url.Parse(config.Interfaces.Vfkit)
-	if err != nil || uri == nil {
-		return nil, fmt.Errorf("invalid value for vfkit listen address: %w", err)
+	// On Linux, use QemuProtocol (unix stream); on macOS, use VfkitProtocol (unixgram).
+	if runtime.GOOS == "linux" {
+		config.Interfaces.Qemu = vmc.GVPVNetAddr
+		uri, err := url.Parse(config.Interfaces.Qemu)
+		if err != nil || uri == nil {
+			return nil, fmt.Errorf("invalid value for qemu listen address: %w", err)
+		}
+		if uri.Scheme != "unix" {
+			return nil, fmt.Errorf("qemu listen address must be unix:// address, got %q", uri.Scheme)
+		}
+		_ = os.Remove(uri.Path)
+		config.Stack.Protocol = types.QemuProtocol
+	} else {
+		config.Interfaces.Vfkit = vmc.GVPVNetAddr
+		uri, err := url.Parse(config.Interfaces.Vfkit)
+		if err != nil || uri == nil {
+			return nil, fmt.Errorf("invalid value for vfkit listen address: %w", err)
+		}
+		if uri.Scheme != "unixgram" {
+			return nil, fmt.Errorf("vfkit listen address must be unixgram:// address")
+		}
+		_ = os.Remove(uri.Path)
+		config.Stack.Protocol = types.VfkitProtocol
 	}
-	if uri.Scheme != "unixgram" {
-		return nil, fmt.Errorf("vfkit listen address must be unixgram:// address")
-	}
-
-	_ = os.Remove(uri.Path)
-
-	config.Stack.Protocol = types.VfkitProtocol
 
 	// BUG: Port TOCTOU, but we don't care about it for now
 	port, err := network.GetAvailablePort(define.SSHLocalForwardListenPort)
@@ -128,6 +141,31 @@ func Run(ctx context.Context, vmc *define.Machine) error {
 	mux.Handle("/services/forwarder/expose", vn.Mux())
 	mux.Handle("/services/forwarder/unexpose", vn.Mux())
 	httpServe(ctx, g, ln, mux)
+
+	if config.Interfaces.Qemu != "" {
+		qemuListener, err := transport.Listen(config.Interfaces.Qemu)
+		if err != nil {
+			return fmt.Errorf("qemu listen error: %w", err)
+		}
+
+		g.Go(func() error {
+			<-ctx.Done()
+			if err := qemuListener.Close(); err != nil {
+				logrus.Warnf("error closing %s: %q", config.Interfaces.Qemu, err)
+			}
+			qemuSocketURI, _ := url.Parse(config.Interfaces.Qemu)
+			_ = os.Remove(qemuSocketURI.Path)
+			return nil
+		})
+
+		g.Go(func() error {
+			conn, err := qemuListener.Accept()
+			if err != nil {
+				return fmt.Errorf("qemu accept error: %w", err)
+			}
+			return vn.AcceptQemu(ctx, conn)
+		})
+	}
 
 	if config.Interfaces.Vfkit != "" {
 		conn, err := transport.ListenUnixgram(config.Interfaces.Vfkit)

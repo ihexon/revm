@@ -1,4 +1,4 @@
-#!/opt/homebrew/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 readonly ASSETS_BASE="https://github.com/ihexon/revm-assets/releases/download/v2.0.4"

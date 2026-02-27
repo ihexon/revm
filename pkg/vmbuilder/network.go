@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 
 	"github.com/sirupsen/logrus"
@@ -63,7 +64,14 @@ func (g *GVisorNetworkConfig) Configure(ctx context.Context, vmc *define.Machine
 	}
 
 	vmc.GVPCtlAddr = unixAddr.String()
-	vmc.GVPVNetAddr = fmt.Sprintf("unixgram://%s", pathMgr.GetVNetListenAddr())
+
+	// On Linux, use unix:// (stream socket for QemuProtocol).
+	// On macOS, use unixgram:// (datagram socket for VfkitProtocol).
+	if runtime.GOOS == "linux" {
+		vmc.GVPVNetAddr = fmt.Sprintf("unix://%s", pathMgr.GetVNetListenAddr())
+	} else {
+		vmc.GVPVNetAddr = fmt.Sprintf("unixgram://%s", pathMgr.GetVNetListenAddr())
+	}
 
 	// Clean up any existing sockets
 	_ = os.Remove(pathMgr.GetGVPCtlAddr())

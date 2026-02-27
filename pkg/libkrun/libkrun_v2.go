@@ -305,6 +305,11 @@ func (vm *LibkrunVM) configureVSockDevices() error {
 
 // configureGPU enables GPU passthrough options.
 func (vm *LibkrunVM) configureGPU() error {
+	// GPU passthrough is only available on macOS (requires MoltenVK/VirGL)
+	if runtime.GOOS != "darwin" {
+		return nil
+	}
+
 	ret := C.krun_set_gpu_options(C.uint32_t(vm.ctxID), C.uint32_t(defaultGPUFlags))
 	if ret != 0 {
 		return fmt.Errorf("krun_set_gpu_options failed with code %v", ret)
@@ -479,26 +484,50 @@ func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
 	switch vm.vmc.VirtualNetworkMode {
 	case define.GVISOR:
 		logrus.Infof("Using gvisor-tap-vsock network backend")
-		// Parse network backend address
 		backend := vm.vmc.GVPVNetAddr
-		addr, err := network.ParseUnixAddr(backend)
-		if err != nil {
-			return fmt.Errorf("failed to parse network backend address %q: %w", backend, err)
-		}
 
-		socketPath := newCString(addr.Path)
-		defer socketPath.Free()
+		if runtime.GOOS == "linux" {
+			// On Linux, use unix stream (QemuProtocol framing) with gvisor-tap-vsock.
+			addr, err := network.ParseUnixAddr(backend)
+			if err != nil {
+				return fmt.Errorf("failed to parse network backend address %q: %w", backend, err)
+			}
 
-		var mac [6]C.uint8_t
-		for i, b := range guestMACAddress {
-			mac[i] = C.uint8_t(b)
-		}
+			socketPath := newCString(addr.Path)
+			defer socketPath.Free()
 
-		if ret := C.krun_add_net_unixgram(C.uint32_t(vm.ctxID), socketPath.Ptr(), C.int(-1), &mac[0],
-			C.COMPAT_NET_FEATURES,
-			C.NET_FLAG_VFKIT,
-		); ret != 0 {
-			return fmt.Errorf("krun_add_net_unixgram failed with code %v", ret)
+			var mac [6]C.uint8_t
+			for i, b := range guestMACAddress {
+				mac[i] = C.uint8_t(b)
+			}
+
+			if ret := C.krun_add_net_unixstream(C.uint32_t(vm.ctxID), socketPath.Ptr(), C.int(-1), &mac[0],
+				C.COMPAT_NET_FEATURES,
+				0, // unixstream does not support flags
+			); ret != 0 {
+				return fmt.Errorf("krun_add_net_unixstream failed with code %v", ret)
+			}
+		} else {
+			// On macOS, use unixgram (VfkitProtocol) with gvisor-tap-vsock.
+			addr, err := network.ParseUnixAddr(backend)
+			if err != nil {
+				return fmt.Errorf("failed to parse network backend address %q: %w", backend, err)
+			}
+
+			socketPath := newCString(addr.Path)
+			defer socketPath.Free()
+
+			var mac [6]C.uint8_t
+			for i, b := range guestMACAddress {
+				mac[i] = C.uint8_t(b)
+			}
+
+			if ret := C.krun_add_net_unixgram(C.uint32_t(vm.ctxID), socketPath.Ptr(), C.int(-1), &mac[0],
+				C.COMPAT_NET_FEATURES,
+				C.NET_FLAG_VFKIT,
+			); ret != 0 {
+				return fmt.Errorf("krun_add_net_unixgram failed with code %v", ret)
+			}
 		}
 		return nil
 	case define.TSI:
@@ -521,7 +550,10 @@ func (vm *LibkrunVM) configureAdvancedFeatures() error {
 			return fmt.Errorf("krun_set_nested_virt failed with code %d", ret)
 		}
 	default:
-		return fmt.Errorf("krun_check_nested_virt failed with code %d", ret)
+		// On some platforms (e.g. Linux), nested virt check may return
+		// ENOTSUP (-95) or other negative codes. Treat as "not available".
+		logrus.Debugf("krun_check_nested_virt returned %d, skipping nested virt", ret)
+		return nil
 	}
 
 	return nil

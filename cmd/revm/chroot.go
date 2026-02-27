@@ -13,6 +13,7 @@ import (
 
 var startRootfs = cli.Command{
 	Name:        define.FlagChroot,
+	Aliases:     []string{"run"},
 	Usage:       "boot a Linux VM with a custom rootfs",
 	UsageText:   define.FlagChroot + " [flags] <command> [args...]",
 	Description: "boot a Linux microVM using libkrun and execute commands inside it, similar to chroot but with full kernel isolation",

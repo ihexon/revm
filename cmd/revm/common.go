@@ -75,6 +75,9 @@ func GetVMM(mc *define.Machine) (*libkrun.LibkrunVM, error) {
 	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
 		return libkrun.NewLibkrunVM(mc), nil
 	}
+	if runtime.GOOS == "linux" && runtime.GOARCH == "arm64" {
+		return libkrun.NewLibkrunVM(mc), nil
+	}
 	return nil, fmt.Errorf("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 }
 
