@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	libarchivego "github.com/ihexon/libarchive-go"
+	libarchive_go "linuxvm/pkg/libarchive"
 )
 
 //go:embed raw_disks/ext4.raw.tar
@@ -30,7 +30,7 @@ func ExtractEmbeddedRawDisk(ctx context.Context, targetPath string) error {
 		return err
 	}
 
-	return libarchivego.NewArchiver().
+	return libarchive_go.NewArchiver().
 		SetReader(bytes.NewReader(BuiltinRawDiskBytes)).
 		SetFastRead(true).
 		SetSparse(true).
@@ -53,5 +53,5 @@ func ExtractBuiltinRootfs(ctx context.Context, dstDir string) error {
 		RootfsBytes = nil
 	}()
 
-	return libarchivego.NewArchiver().SetReader(bytes.NewReader(RootfsBytes)).SetChdir(dstDir).SetSparse(true).ModeX(ctx)
+	return libarchive_go.NewArchiver().SetReader(bytes.NewReader(RootfsBytes)).SetChdir(dstDir).SetSparse(true).ModeX(ctx)
 }
