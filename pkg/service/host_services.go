@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -77,10 +78,26 @@ func (s *HostServices) StartMachineManagementAPI(ctx context.Context) error {
 
 func (s *HostServices) StartVirtualMachine(ctx context.Context) error {
 	event.Emit(event.StartVirtualMachine)
-	if err := s.vmp.Create(ctx); err != nil {
-		return fmt.Errorf("create virtual machine from libkrun builder fail: %v", err)
+
+	errChan := make(chan error, 1)
+	go func() {
+		// Pin all libkrun CGo calls to a single OS thread: krun_create_ctx,
+		// krun_add_virtiofs2, krun_start_enter, etc. must not migrate
+		// threads — on Linux/KVM this causes GC heap corruption.
+		runtime.LockOSThread()
+		if err := s.vmp.Create(ctx); err != nil {
+			errChan <- fmt.Errorf("create virtual machine from libkrun builder fail: %v", err)
+			return
+		}
+		errChan <- s.vmp.Start(ctx)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-errChan:
+		return err
 	}
-	return s.vmp.Start(ctx)
 }
 
 func (s *HostServices) ExitVirtualMachineWhenSomethingHappened(ctx context.Context) error {

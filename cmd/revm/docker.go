@@ -13,10 +13,11 @@ import (
 )
 
 var startDocker = cli.Command{
-	Name:        define.FlagDockerMode,
-	Usage:       "start a Linux VM with the built-in container runtime",
-	UsageText:   define.FlagDockerMode + " [flags]",
-	Description: "boot a Linux microVM using libkrun with the built-in rootfs and podman container runtime; exposes a Podman-compatible API socket on the host",
+	Name:                      define.FlagDockerMode,
+	Usage:                     "start a Linux VM with the built-in container runtime",
+	UsageText:                 define.FlagDockerMode + " [flags]",
+	Description:               "boot a Linux microVM using libkrun with the built-in rootfs and podman container runtime; exposes a Podman-compatible API socket on the host",
+	DisableSliceFlagSeparator: true,
 	Flags: []cli.Flag{
 		&cli.Int8Flag{
 			Name:  define.FlagCPUS,

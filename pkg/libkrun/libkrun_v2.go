@@ -720,34 +720,15 @@ func (vm *LibkrunVM) applyGuestAgentCfg() error {
 	return nil
 }
 
-// enterVMLifecycle starts the VM and waits for it to terminate.
-// This is the main VM execution loop that blocks until completion.
+// enterVMLifecycle starts the VM and blocks until it terminates.
+// The caller must ensure this runs on a locked OS thread.
 func (vm *LibkrunVM) enterVMLifecycle(ctx context.Context) error {
-	errChan := make(chan error, 1)
-
-	// Start VM in a goroutine so we can handle context cancellation
-	go func() {
-		// Pin to OS thread: krun_start_enter blocks for the entire VM
-		// lifetime and libkrun internally spawns threads and installs
-		// signal handlers that must stay on a stable OS thread.
-		runtime.LockOSThread()
-		ret := C.krun_start_enter(C.uint32_t(vm.ctxID))
-		if ret != 0 {
-			// Convert negative error code to errno for better error messages
-			errno := syscall.Errno(-ret)
-			errChan <- fmt.Errorf("VM execution failed: %w (libkrun code: %d)", errno, ret)
-		} else {
-			errChan <- nil
-		}
-	}()
-
-	// Wait for either VM completion or context cancellation
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-errChan:
-		return err
+	ret := C.krun_start_enter(C.uint32_t(vm.ctxID))
+	if ret != 0 {
+		errno := syscall.Errno(-ret)
+		return fmt.Errorf("VM execution failed: %w (libkrun code: %d)", errno, ret)
 	}
+	return nil
 }
 
 // Stop requests the VM to stop.
