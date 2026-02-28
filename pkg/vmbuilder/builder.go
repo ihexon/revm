@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"os"
+	"path/filepath"
 )
 
 // VMConfigBuilder provides a fluent API for building VM instances.
@@ -128,110 +130,101 @@ func (b *VMConfigBuilder) SetContainerDiskVersion(version string) *VMConfigBuild
 func (b *VMConfigBuilder) Build(ctx context.Context) (*define.Machine, error) {
 	b.vmc = NewVirtualMachine(b.runMode)
 
-	// 1. Workspace
+	// ── Common setup (all modes) ─────────────────────────────────────────
+
 	if err := b.vmc.setupWorkspace(b.workspace); err != nil {
 		return nil, fmt.Errorf("setup workspace: %w", err)
 	}
-
 	b.pathMgr = NewPathManager(b.vmc.WorkspacePath)
 
 	if err := b.vmc.configureSSH(b.pathMgr); err != nil {
 		return nil, fmt.Errorf("generate ssh config: %w", err)
 	}
-
-	// 2. Log level (needs workspace for log file path)
 	if err := b.vmc.setupLogLevel(b.logLevel); err != nil {
 		return nil, fmt.Errorf("setup log level: %w", err)
 	}
-
-	// 3. Resources
 	if err := b.vmc.withResources(b.memoryInMB, b.cpus); err != nil {
 		return nil, fmt.Errorf("set resources: %w", err)
 	}
-
-	// 4. Network
 	if err := b.vmc.configureNetwork(ctx, b.networkMode, b.pathMgr); err != nil {
 		return nil, fmt.Errorf("configure network: %w", err)
 	}
-
 	if b.usingSystemProxy {
 		if err := b.vmc.applySystemProxy(); err != nil {
 			return nil, fmt.Errorf("apply system proxy: %w", err)
 		}
 	}
 
-	// 6. Rootfs
-	if b.runMode == define.RootFsMode {
-		if b.rootfsPath != "" {
-			if err := b.vmc.withUserProvidedRootfs(ctx, b.rootfsPath); err != nil {
-				return nil, fmt.Errorf("setup custom rootfs: %w", err)
-			}
-		}
+	// ── Rootfs (all modes) ──────────────────────────────────────────────
+
+	rootfsDir := b.pathMgr.GetRootfsDir()
+	var rootfsErr error
+	switch {
+	case b.rootfsPath != "":
+		rootfsErr = b.vmc.withUserProvidedRootfs(ctx, b.rootfsPath)
+	case fileExists(filepath.Join(rootfsDir, "bin", "sh")): // 缓存命中
+		rootfsErr = b.vmc.withUserProvidedRootfs(ctx, rootfsDir)
+	default:
+		rootfsErr = b.vmc.withBuiltInAlpineRootfs(ctx, b.pathMgr)
+	}
+	if rootfsErr != nil {
+		return nil, fmt.Errorf("setup rootfs: %w", rootfsErr)
 	}
 
-	if b.builtInRootfs {
-		if err := b.vmc.withBuiltInAlpineRootfs(ctx, b.pathMgr); err != nil {
-			return nil, fmt.Errorf("setup built-in rootfs: %w", err)
-		}
-	}
+	// ── Mode-specific setup ──────────────────────────────────────────────
 
-	// 7. Mount user home
-	if b.runMode == define.ContainerMode || b.runMode == define.OVMode {
+	switch b.runMode {
+	case define.RootFsMode:
+		if err := b.vmc.setupCmdLine(b.workdir, b.bin, b.args, b.envs); err != nil {
+			return nil, fmt.Errorf("setup cmdline: %w", err)
+		}
+
+	case define.ContainerMode:
 		if err := b.vmc.withMountUserHome(ctx); err != nil {
 			return nil, fmt.Errorf("mount user home: %w", err)
 		}
-	}
-
-	// 8. Podman
-	if b.runMode == define.ContainerMode || b.runMode == define.OVMode {
 		if err := b.vmc.configurePodman(ctx, b.pathMgr); err != nil {
 			return nil, fmt.Errorf("configure podman: %w", err)
 		}
-	}
+		if err := b.vmc.configureContainerRAWDisk(ctx, b.pathMgr); err != nil {
+			return nil, fmt.Errorf("setup container disk: %w", err)
+		}
 
-	// 9. Container disk
-	if b.runMode == define.OVMode {
+	case define.OVMode:
+		if err := b.vmc.withMountUserHome(ctx); err != nil {
+			return nil, fmt.Errorf("mount user home: %w", err)
+		}
+		if err := b.vmc.configurePodman(ctx, b.pathMgr); err != nil {
+			return nil, fmt.Errorf("configure podman: %w", err)
+		}
 		if err := b.vmc.resetOrReuseContainerRAWDisk(ctx, b.pathMgr, b.containerDiskVersion); err != nil {
 			return nil, fmt.Errorf("setup container disk: %w", err)
 		}
 	}
 
-	if b.runMode == define.ContainerMode {
-		if err := b.vmc.configureContainerRAWDisk(ctx, b.pathMgr); err != nil {
-			return nil, fmt.Errorf("setup container disk: %w", err)
-		}
-	}
+	// ── Common finalization (all modes) ──────────────────────────────────
 
-	// 10. Raw disks
 	if len(b.rawDisks) > 0 {
 		if err := b.vmc.withUserProvidedStorageRAWDisk(ctx, b.rawDisks); err != nil {
 			return nil, fmt.Errorf("attach raw disks: %w", err)
 		}
 	}
-
-	// 11. User mounts
 	if len(b.mounts) > 0 {
 		if err := b.vmc.withUserProvidedMounts(b.mounts); err != nil {
 			return nil, fmt.Errorf("setup mounts: %w", err)
 		}
 	}
-
-	// 12. Cmdline
-	if b.runMode == define.RootFsMode {
-		if err := b.vmc.setupCmdLine(b.workdir, b.bin, b.args, b.envs); err != nil {
-			return nil, fmt.Errorf("setup cmdline: %w", err)
-		}
-	}
-
-	// 13. Guest Agent (always required)
 	if err := b.vmc.configureGuestAgent(ctx, b.pathMgr); err != nil {
 		return nil, fmt.Errorf("configure guest agent: %w", err)
 	}
-
-	// 14. VM Control API (always required)
 	if err := b.vmc.configureVMCtlAPI(b.pathMgr); err != nil {
 		return nil, fmt.Errorf("configure vmctl API: %w", err)
 	}
 
 	return &b.vmc.Machine, nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

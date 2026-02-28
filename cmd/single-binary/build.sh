@@ -7,7 +7,7 @@ die()      { echo "[ERROR] $*" >&2; exit 1; }
 log()      { echo "[INFO]  $*"; }
 require()  { command -v "$1" &>/dev/null || die "required tool not found: $1"; }
 
-workspace() { cd "$(dirname "$0")/.." && pwd; }
+workspace() { cd "$(dirname "$0")/../.." && pwd; }
 
 OS="$(uname -s)"   # Darwin or Linux
 
@@ -31,7 +31,7 @@ content_hash() {
 
 populate_payload() {
     log "Populating payload from $revm_dir ..."
-    local payload_tar="$ws/single-binary/payload.tar"
+    local payload_tar="$ws/cmd/single-binary/payload.tar"
 
     build_id="$(content_hash "$revm_dir/bin/revm")"
     log "build_id: $build_id"
@@ -44,7 +44,7 @@ populate_payload() {
 build_binary() {
     log "Building $single_bin ..."
     cd "$ws"
-    CGO_ENABLED=0 go build -ldflags="-s -w -X main.buildID=$build_id" -o "$single_bin" ./single-binary
+    CGO_ENABLED=0 go build -ldflags="-s -w -X main.buildID=$build_id" -o "$single_bin" ./cmd/single-binary
 }
 
 sign_binary() {
@@ -65,7 +65,7 @@ package_binary() {
 }
 
 cleanup_payload() {
-    : > "$ws/single-binary/payload.tar"
+    : > "$ws/cmd/single-binary/payload.tar"
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────

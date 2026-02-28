@@ -24,7 +24,6 @@ func main() {
 		&AttachConsole,
 		&startRootfs,
 		&startDocker,
-		&cleanResource,
 	}
 
 	defer event.Emit(event.Exit)

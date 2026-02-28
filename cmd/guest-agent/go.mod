@@ -31,4 +31,4 @@ require (
 	golang.org/x/term v0.40.0 // indirect
 )
 
-replace linuxvm => ../
+replace linuxvm => ../../

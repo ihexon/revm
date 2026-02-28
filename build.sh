@@ -69,10 +69,17 @@ init_env() {
 
 build_guest_agent() {
     log_info "Building guest-agent..."
-    (cd "$WORKSPACE/guest-agent" &&
+    (cd "$WORKSPACE/cmd/guest-agent" &&
         CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
             -ldflags="-s -w" \
             -o "$HELPERDIR/guest-agent" main.go)
+}
+
+build_clean() {
+    log_info "Building clean helper..."
+    CGO_ENABLED=0 go build \
+        -ldflags="-s -w" \
+        -o "$HELPERDIR/clean" "$WORKSPACE/cmd/clean"
 }
 
 fetch_deps() {
@@ -204,6 +211,7 @@ main() {
     init_env
 
     build_guest_agent
+    build_clean
     fetch_deps
     build_revm
     relocate_libs

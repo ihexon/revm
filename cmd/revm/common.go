@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -36,14 +37,16 @@ func SetupBasicLogger(level string) error {
 	return nil
 }
 
-// RelaunchWithCleanModeBackground Re-execute in cleanup mode, wait for PPID to become 1, and then perform the cleanup operation.
+// RelaunchWithCleanModeBackground launches the standalone helper/clean binary,
+// which polls PPID and removes the workspace directory after the parent exits.
 func RelaunchWithCleanModeBackground(workspacePath string) error {
-	executable, err := os.Executable()
+	execPath, err := os.Executable()
 	if err != nil {
 		return err
 	}
+	cleanBin := filepath.Join(filepath.Dir(execPath), "..", "helper", "clean")
 
-	cleaner := exec.Command(executable, define.FlagClean, "--workspace", workspacePath)
+	cleaner := exec.Command(cleanBin, "--workspace", workspacePath)
 	cleaner.Stdout = nil
 	cleaner.Stderr = nil
 	cleaner.Stdin = nil
@@ -122,7 +125,8 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 		SetMounts(mountDirs).
 		SetLogLevel(logLevel)
 
-	if runMode == define.RootFsMode {
+	switch runMode {
+	case define.RootFsMode:
 		rootfsPath := command.String(define.FlagRootfs)
 		if rootfsPath != "" {
 			builder.SetRootfs(rootfsPath)
@@ -135,6 +139,15 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 			command.Args().Tail(),
 			command.StringSlice(define.FlagEnvs),
 		)
+	case define.ContainerMode:
+		rootfsPath := command.String(define.FlagRootfs)
+		if rootfsPath != "" {
+			builder.SetRootfs(rootfsPath)
+		} else {
+			builder.WithBuiltInRootfs()
+		}
+	default:
+		return nil, fmt.Errorf("invalid run mode: %s", runMode)
 	}
 
 	vmc, err := builder.Build(ctx)
