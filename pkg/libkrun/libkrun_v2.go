@@ -17,6 +17,7 @@ import (
 	"linuxvm/pkg/event"
 	"linuxvm/pkg/interfaces"
 	"linuxvm/pkg/service"
+	"linuxvm/pkg/system"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,7 +26,6 @@ import (
 
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
-	"linuxvm/pkg/system"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -222,8 +222,14 @@ func (vm *LibkrunVM) Create(ctx context.Context) error {
 	if err := vm.configureNetwork(ctx); err != nil {
 		return fmt.Errorf("failed to configure VM: %w", err)
 	}
+
 	if err := vm.configureAdvancedFeatures(); err != nil {
 		return fmt.Errorf("failed to configure VM: %w", err)
+	}
+
+	// Configure the command line to execute inside the VM
+	if err := vm.applyGuestAgentCfg(); err != nil {
+		return fmt.Errorf("failed to set VM command line: %w", err)
 	}
 
 	return nil
@@ -249,6 +255,11 @@ func (vm *LibkrunVM) configureResources() error {
 	ret = C.krun_set_rlimits(C.uint32_t(vm.ctxID), limits.Ptr())
 	if ret != 0 {
 		return fmt.Errorf("krun_set_rlimits failed with code %d", ret)
+	}
+
+	// Set host process resource limits
+	if err := system.RaiseSystemLimit(); err != nil {
+		return fmt.Errorf("failed to set host process resource limits: %w", err)
 	}
 
 	return nil
@@ -669,19 +680,8 @@ func (vm *LibkrunVM) addVirtIOFS(tag, hostPath string) error {
 	return nil
 }
 
-// Start launches the VM and begins executing the configured command line.
-// This blocks until the VM terminates or the context is cancelled.
+// Start launches the VM and blocks until it terminates or the context is cancelled.
 func (vm *LibkrunVM) Start(ctx context.Context) error {
-	// Set host process resource limits
-	if err := system.RaiseSystemLimit(); err != nil {
-		return fmt.Errorf("failed to set host process resource limits: %w", err)
-	}
-
-	// Configure the command line to execute inside the VM
-	if err := vm.applyGuestAgentCfg(); err != nil {
-		return fmt.Errorf("failed to set VM command line: %w", err)
-	}
-
 	return vm.enterVMLifecycle(ctx)
 }
 
