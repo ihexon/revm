@@ -63,15 +63,14 @@ func (v *VM) withUserProvidedMounts(dirs []string) error {
 		return nil
 	}
 
-	var hostDirs []string
-	for _, dir := range dirs {
-		p, err := filepath.Abs(dir)
+	mounts := filesystem.CmdLineMountToMounts(dirs)
+	for i := range mounts {
+		p, err := filepath.Abs(filepath.Clean(mounts[i].Source))
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to resolve mount source %q: %w", mounts[i].Source, err)
 		}
-		hostDirs = append(hostDirs, p)
+		mounts[i].Source = p
 	}
-
-	v.Mounts = append(v.Mounts, filesystem.CmdLineMountToMounts(hostDirs)...)
+	v.Mounts = append(v.Mounts, mounts...)
 	return nil
 }
