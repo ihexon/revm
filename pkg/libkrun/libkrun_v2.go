@@ -727,6 +727,10 @@ func (vm *LibkrunVM) enterVMLifecycle(ctx context.Context) error {
 
 	// Start VM in a goroutine so we can handle context cancellation
 	go func() {
+		// Pin to OS thread: krun_start_enter blocks for the entire VM
+		// lifetime and libkrun internally spawns threads and installs
+		// signal handlers that must stay on a stable OS thread.
+		runtime.LockOSThread()
 		ret := C.krun_start_enter(C.uint32_t(vm.ctxID))
 		if ret != 0 {
 			// Convert negative error code to errno for better error messages

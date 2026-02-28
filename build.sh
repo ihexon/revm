@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
-readonly ASSETS_BASE="https://github.com/ihexon/revm-assets/releases/download/v2.0.4"
+readonly ASSETS_BASE="https://github.com/ihexon/revm-assets/releases/download/v2.0.5"
 readonly HOMEBREW_PREFIX="${HOMEBREW_PREFIX:-/opt/homebrew}"
 
 readonly RED="\033[31m" GREEN="\033[32m" RESET="\033[0m"
