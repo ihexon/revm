@@ -43,6 +43,10 @@ func (mnt *Mnt) makeMountCmdline(action MountActionType) ([]string, error) {
 		args = append(args, "-o", mnt.Opts)
 	}
 
+	if mnt.ReadOnly {
+		args = append(args, "-o", "ro")
+	}
+
 	switch action {
 	case UUIDAction:
 		// UUIDAction require filesystem has UUID
@@ -185,6 +189,7 @@ func MountVirtiofs(ctx context.Context, vmc *define.Machine) error {
 			Tag:    virtiofsMnt.Tag,
 			Target: virtiofsMnt.Target,
 			Type:   virtiofsMnt.Type,
+			ReadOnly: virtiofsMnt.ReadOnly,
 		}
 
 		if IsMounted(mnt.Target) {

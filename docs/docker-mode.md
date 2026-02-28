@@ -73,7 +73,7 @@ revm docker [flags]
 |------------------|-----------------------------------------------------------------------------------------------------|-----------------------|
 | `--cpus`         | Number of vCPU cores; defaults to host CPU count if unset or less than 1                            | host CPU count        |
 | `--memory`       | VM memory in MB; minimum 512 MB; defaults to host available memory if unset                         | host available memory |
-| `--mount`        | Share a host directory via VirtIO-FS (format: `/host:/guest[:ro]`; repeatable)                      | —                     |
+| `--mount`        | Share a host directory via VirtIO-FS (format: `/host:/guest[,ro]`; repeatable)                      | —                     |
 | `--raw-disk`     | Attach an ext4 disk image; auto-created if missing (repeatable)                                     | —                     |
 | `--network`      | Network stack: `gvisor` (full virtual NIC, supports port mapping) or `tsi` (transparent intercept)  | `gvisor`              |
 | `--system-proxy` | Read macOS system proxy and inject into containers; rewrites `127.0.0.1` to `host.containers.internal` | `false`            |

@@ -36,7 +36,7 @@ var startDocker = cli.Command{
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagMount,
-			Usage: "share a host directory into the guest via VirtIO-FS (format: /host/path:/guest/path[:ro]); can be specified multiple times",
+			Usage: "share a host directory into the guest via VirtIO-FS (format: /host/path:/guest/path[,ro]); can be specified multiple times",
 		},
 		&cli.BoolFlag{
 			Name:  define.FlagUsingSystemProxy,

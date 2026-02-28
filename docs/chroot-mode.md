@@ -63,7 +63,7 @@ revm chroot [flags] <command> [args...]
 | `--cpus`         | Number of vCPU cores; defaults to host CPU count if unset or less than 1            | host CPU count        |
 | `--memory`       | VM memory in MB; minimum 512 MB; defaults to host available memory if unset         | host available memory |
 | `--workdir`      | Working directory inside the guest before running the command                       | `/`                   |
-| `--mount`        | Share a host directory via VirtIO-FS (format: `/host:/guest[:ro]`; repeatable)      | —                     |
+| `--mount`        | Share a host directory via VirtIO-FS (format: `/host:/guest[,ro]`; repeatable)      | —                     |
 | `--raw-disk`     | Attach an ext4 disk image; auto-created as 10 GB if missing (repeatable)            | —                     |
 | `--envs`         | Pass environment variables (format: `KEY=VALUE`; repeatable)                        | —                     |
 | `--network`      | Network stack: `gvisor` (full virtual NIC) or `tsi` (transparent socket intercept)  | `gvisor`              |

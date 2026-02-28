@@ -33,21 +33,29 @@ func SplitVolume(idx int, volume string) (string, string, string, bool) {
 }
 
 func extractSourcePath(paths []string) string {
-	return paths[0]
+	if len(paths) > 1 {
+		return paths[0]
+	}
+	// Single path: strip options after comma
+	src, _, _ := strings.Cut(paths[0], ",")
+	return src
 }
 
 func extractMountOptions(paths []string) bool {
+	// Options are after the comma in the last part
+	last := paths[len(paths)-1]
+	_, opts, found := strings.Cut(last, ",")
+	if !found {
+		return false
+	}
 	readonly := false
-	if len(paths) > 2 { //nolint:mnd
-		options := paths[2]
-		volopts := strings.Split(options, ",")
-		for _, o := range volopts {
-			switch o {
-			case "rw":
-				readonly = false
-			case "ro":
-				readonly = true
-			}
+	volopts := strings.Split(opts, ",")
+	for _, o := range volopts {
+		switch o {
+		case "rw":
+			readonly = false
+		case "ro":
+			readonly = true
 		}
 	}
 	return readonly
@@ -94,12 +102,15 @@ func (v VirtIoFs) generateTag() string {
 }
 
 func pathsFromVolume(volume string) []string {
-	return strings.SplitN(volume, ":", 3) //nolint:mnd
+	return strings.SplitN(volume, ":", 2) //nolint:mnd
 }
 
 func extractTargetPath(paths []string) string {
 	if len(paths) > 1 {
-		return paths[1]
+		target, _, _ := strings.Cut(paths[1], ",")
+		return target
 	}
-	return paths[0]
+	// Single path: target = source, strip options after comma
+	target, _, _ := strings.Cut(paths[0], ",")
+	return target
 }
