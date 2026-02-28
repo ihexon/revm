@@ -144,6 +144,17 @@ relocate_libs_linux() {
     cp -av "$DEPSDIR/libkrun/lib64/"*.so*   "$LIBDIR/"
     cp -av "$DEPSDIR/libkrunfw/lib64/"*.so* "$LIBDIR/"
 
+    # Collect all .so deps (skip ld-linux, it goes to HELPERDIR)
+    ldd "$BINDIR/revm" | grep -o "/.* " | while read -r lib; do
+        [[ "$(basename "$lib")" == ld-linux* ]] && continue
+        local dst="$LIBDIR/$(basename "$lib")"
+        [[ -e "$dst" ]] && continue
+        cp -Lv "$lib" "$LIBDIR/"
+    done
+
+    # Copy the dynamic linker for single-binary use
+    cp -Lv /lib/ld-linux-aarch64.so.1 "$HELPERDIR/"
+
     patchelf --set-rpath '$ORIGIN/../lib' "$BINDIR/revm"
     for sofile in "$LIBDIR"/libkrun*.so.*.*; do
         patchelf --set-rpath '$ORIGIN' "$sofile"

@@ -9,6 +9,8 @@ require()  { command -v "$1" &>/dev/null || die "required tool not found: $1"; }
 
 workspace() { cd "$(dirname "$0")/.." && pwd; }
 
+OS="$(uname -s)"   # Darwin or Linux
+
 # ── Steps ─────────────────────────────────────────────────────────────────────
 
 parse_args() {
@@ -19,20 +21,37 @@ parse_args() {
     [[ -f "$revm_dir/bin/revm" ]] || die "bin/revm not found in $revm_dir"
 }
 
+content_hash() {
+    if [[ "$OS" == "Darwin" ]]; then
+        shasum -a 256 "$1" | cut -c1-16
+    else
+        sha256sum "$1" | cut -c1-16
+    fi
+}
+
 populate_payload() {
     log "Populating payload from $revm_dir ..."
-    rm -rf "$payload_dir"
-    cp -r "$revm_dir/." "$payload_dir/"
-    shasum -a 256 "$payload_dir/bin/revm" | cut -c1-16 > "$payload_dir/build_id"
-    log "build_id: $(cat "$payload_dir/build_id")"
+    local payload_tar="$ws/single-binary/payload.tar"
+
+    build_id="$(content_hash "$revm_dir/bin/revm")"
+    log "build_id: $build_id"
+
+    # Archive preserving symlinks and permissions
+    tar cf "$payload_tar" -C "$revm_dir" .
+    log "payload.tar: $(du -h "$payload_tar" | cut -f1)"
 }
 
 build_binary() {
     log "Building $single_bin ..."
-    CGO_ENABLED=0 go build -ldflags="-s -w" -o "$single_bin" "$ws/single-binary"
+    cd "$ws"
+    CGO_ENABLED=0 go build -ldflags="-s -w -X main.buildID=$build_id" -o "$single_bin" ./single-binary
 }
 
 sign_binary() {
+    if [[ "$OS" != "Darwin" ]]; then
+        log "Skipping code signing (not macOS)"
+        return
+    fi
     log "Signing $single_bin ..."
     codesign --entitlements "$ws/revm.entitlements" --force -s - "$single_bin"
 }
@@ -45,9 +64,8 @@ package_binary() {
     log "Package: $tarball"
 }
 
-restore_placeholder() {
-    rm -rf "$payload_dir"
-    mkdir -p "$payload_dir" && touch "$payload_dir/empty"
+cleanup_payload() {
+    : > "$ws/single-binary/payload.tar"
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -55,19 +73,22 @@ restore_placeholder() {
 main() {
     parse_args "$@"
 
-    require shasum
-    require codesign
     require bsdtar
+    if [[ "$OS" == "Darwin" ]]; then
+        require shasum
+        require codesign
+    else
+        require sha256sum
+    fi
 
     ws="$(workspace)"
-    payload_dir="$ws/single-binary/payload"
     single_bin="$ws/revm-single-$(uname -s)-$(uname -m)"
 
     populate_payload
     build_binary
     sign_binary
     package_binary
-    restore_placeholder
+    cleanup_payload
 
     log "Done: $single_bin"
 }

@@ -3,6 +3,8 @@
 set -euo pipefail
 set -x
 
+cd "$(dirname "$0")"
+
 REVM=./out/bin/revm
 
 run_tests() {
