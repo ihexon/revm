@@ -103,12 +103,13 @@ func (s *HostServices) StartVirtualMachine(ctx context.Context) error {
 func (s *HostServices) ExitVirtualMachineWhenSomethingHappened(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
+	// Listen for requests to shut down the virtual machine via `vmctl.sock /stop`
 	g.Go(func() error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-s.vmp.GetVMConfigure().StopCh:
-			return fmt.Errorf("stopCh closed, shutdown machine down")
+			return define.ErrStopChTrigger
 		}
 	})
 
@@ -121,9 +122,7 @@ func (s *HostServices) ExitVirtualMachineWhenSomethingHappened(ctx context.Conte
 				return ctx.Err()
 			case <-ticker.C:
 				if os.Getppid() == 1 {
-					s.vmp.GetVMConfigure().StopOnce.Do(func() { close(s.vmp.GetVMConfigure().StopCh) })
-					logrus.Warn("parent process exited, shutting down...")
-					return fmt.Errorf("parent process exited, shutting down")
+					return define.ErrParentProcessExit
 				}
 			}
 		}
@@ -137,11 +136,7 @@ func (s *HostServices) ExitVirtualMachineWhenSomethingHappened(ctx context.Conte
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-sigCh:
-			s.vmp.GetVMConfigure().StopOnce.Do(func() {
-				close(s.vmp.GetVMConfigure().StopCh)
-			})
-			logrus.Warn("received SIGTERM/SIGINT, shutting down...")
-			return fmt.Errorf("received SIGTERM/SIGINT, shutting down")
+			return define.ErrSigTerm
 		}
 	})
 

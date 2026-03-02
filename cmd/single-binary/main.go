@@ -11,57 +11,63 @@ import (
 	"runtime"
 	"syscall"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 //go:embed payload.tar
 var payloadTar []byte
 
-var buildID = "dev" // set via -ldflags at build time
+var Name = "revm-single"
 
 func main() {
-	cacheDir := filepath.Join(os.TempDir(), ".revm-"+buildID)
-	if err := ensureExtracted(cacheDir); err != nil {
-		fmt.Fprintln(os.Stderr, "revm-single:", err)
-		os.Exit(1)
+	if err := run(); err != nil {
+		logrus.Fatal(err)
 	}
-	bin := filepath.Join(cacheDir, "bin", "revm")
-	args := append([]string{bin}, os.Args[1:]...)
-	env := os.Environ()
-
-	switch runtime.GOOS {
-	case "linux":
-		ldLinux := filepath.Join(cacheDir, "helper", "ld-linux-aarch64.so.1")
-		libDir := filepath.Join(cacheDir, "lib")
-		_ = syscall.Exec(ldLinux, append([]string{"ld-linux-aarch64.so.1", "--library-path", libDir}, args...), env)
-	default:
-		_ = syscall.Exec(bin, args, env)
-	}
-	fmt.Fprintln(os.Stderr, "revm-single: exec failed")
-	os.Exit(1)
 }
 
-func ensureExtracted(dir string) error {
-	if _, err := os.Stat(filepath.Join(dir, "bin", "revm")); err == nil {
-		return nil
-	}
-	tmp := fmt.Sprintf("%s.tmp.%d", dir, os.Getpid())
-	os.RemoveAll(tmp)
-	start := time.Now()
-	if err := extractTo(tmp); err != nil {
-		os.RemoveAll(tmp)
-		return err
-	}
-	fmt.Fprintf(os.Stderr, "revm-single: extracted payload in %s\n", time.Since(start))
-	if err := os.Rename(tmp, dir); err != nil {
-		os.RemoveAll(tmp)
-		if _, statErr := os.Stat(filepath.Join(dir, "bin", "revm")); statErr == nil {
-			return nil
+func run() error {
+	dir := os.Getenv("PAYLOAD_DIR")
+
+	if dir == "" {
+		var err error
+		dir, err = os.MkdirTemp("", ".revm-*")
+		if err != nil {
+			return fmt.Errorf("mkdirtemp: %w", err)
 		}
-		return err
 	}
-	return nil
+
+	if _, err := os.Stat(filepath.Join(dir, "bin", "revm")); err != nil {
+		start := time.Now()
+		if err := extractTo(dir); err != nil {
+			return err
+		}
+		logrus.Infof("[%s] extracted payload in %s", Name, time.Since(start))
+	}
+
+	bin := filepath.Join(dir, "bin", "revm")
+	args := append([]string{bin}, os.Args[1:]...)
+
+	env := os.Environ()
+	if os.Getenv("PAYLOAD_DIR") == "" {
+		env = append(env, "PAYLOAD_DIR="+dir)
+	}
+
+	platform := runtime.GOOS + "/" + runtime.GOARCH
+	switch platform {
+	case "linux/arm64":
+		ldLinux := filepath.Join(dir, "helper", "ld-linux-aarch64.so.1")
+		libDir := filepath.Join(dir, "lib")
+		_ = syscall.Exec(ldLinux, append([]string{"ld-linux-aarch64.so.1", "--library-path", libDir}, args...), env)
+	case "darwin/arm64":
+		_ = syscall.Exec(bin, args, env)
+	default:
+		return fmt.Errorf("unsupported platform: %s", platform)
+	}
+	return fmt.Errorf("exec failed")
 }
 
+// TODO: using libarchive to speed up extraction, payload can be compressed mybe
 func extractTo(dir string) error {
 	tr := tar.NewReader(bytes.NewReader(payloadTar))
 	for {
@@ -73,8 +79,7 @@ func extractTo(dir string) error {
 			return err
 		}
 
-		name := filepath.Clean(hdr.Name)
-		dst := filepath.Join(dir, name)
+		dst := filepath.Join(dir, filepath.Clean(hdr.Name))
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:

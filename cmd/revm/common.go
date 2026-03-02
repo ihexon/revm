@@ -46,11 +46,12 @@ func RelaunchWithCleanModeBackground(workspacePath string) error {
 	}
 	cleanBin := filepath.Join(filepath.Dir(execPath), "..", "helper", "clean")
 
-	cleaner := exec.Command(cleanBin, "--workspace", workspacePath)
+	cleaner := exec.Command(cleanBin)
 	cleaner.Stdout = nil
 	cleaner.Stderr = nil
 	cleaner.Stdin = nil
 	cleaner.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cleaner.Env = append(os.Environ(), "WORKSPACE="+workspacePath)
 
 	return cleaner.Start()
 }

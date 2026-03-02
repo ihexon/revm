@@ -21,20 +21,9 @@ parse_args() {
     [[ -f "$revm_dir/bin/revm" ]] || die "bin/revm not found in $revm_dir"
 }
 
-content_hash() {
-    if [[ "$OS" == "Darwin" ]]; then
-        shasum -a 256 "$1" | cut -c1-16
-    else
-        sha256sum "$1" | cut -c1-16
-    fi
-}
-
 populate_payload() {
     log "Populating payload from $revm_dir ..."
     local payload_tar="$ws/cmd/single-binary/payload.tar"
-
-    build_id="$(content_hash "$revm_dir/bin/revm")"
-    log "build_id: $build_id"
 
     # Archive preserving symlinks and permissions
     tar cf "$payload_tar" -C "$revm_dir" .
@@ -44,7 +33,7 @@ populate_payload() {
 build_binary() {
     log "Building $single_bin ..."
     cd "$ws"
-    CGO_ENABLED=0 go build -ldflags="-s -w -X main.buildID=$build_id" -o "$single_bin" ./cmd/single-binary
+    CGO_ENABLED=0 go build -ldflags="-s -w" -o "$single_bin" ./cmd/single-binary
 }
 
 sign_binary() {
@@ -75,10 +64,7 @@ main() {
 
     require bsdtar
     if [[ "$OS" == "Darwin" ]]; then
-        require shasum
         require codesign
-    else
-        require sha256sum
     fi
 
     ws="$(workspace)"

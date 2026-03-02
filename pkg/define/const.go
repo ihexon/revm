@@ -1,6 +1,9 @@
 package define
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 const (
 	ContainerMode RunMode = iota
@@ -102,7 +105,7 @@ const (
 	EnvLogLevel = "LOG_LEVEL"
 
 	DefaultTimeTicker   = 100 * time.Millisecond
-	DefaultProbeTimeout = 10 * time.Second
+	DefaultProbeTimeout = 60 * time.Second
 )
 
 // OVMode-specific configuration
@@ -141,4 +144,10 @@ const (
 
 	OVMContainerStorageDiskUUID = ContainerDiskUUID
 	OVMUserDataStorageDiskUUID  = UserDataDiskUUID
+)
+
+var (
+	ErrStopChTrigger      = fmt.Errorf("request machine /stop is triggered")
+	ErrParentProcessExit = fmt.Errorf("parent process exit")
+	ErrSigTerm           = fmt.Errorf("received SIGTERM/SIGINT, shutting down")
 )

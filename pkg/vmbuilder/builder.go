@@ -6,8 +6,6 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"os"
-	"path/filepath"
 )
 
 // VMConfigBuilder provides a fluent API for building VM instances.
@@ -157,18 +155,15 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.Machine, error) {
 
 	// ── Rootfs (all modes) ──────────────────────────────────────────────
 
-	rootfsDir := b.pathMgr.GetRootfsDir()
 	var rootfsErr error
-	switch {
-	case b.rootfsPath != "":
+	if b.rootfsPath != "" {
 		rootfsErr = b.vmc.withUserProvidedRootfs(ctx, b.rootfsPath)
-	case fileExists(filepath.Join(rootfsDir, "bin", "sh")): // 缓存命中
-		rootfsErr = b.vmc.withUserProvidedRootfs(ctx, rootfsDir)
-	default:
+	} else {
 		rootfsErr = b.vmc.withBuiltInAlpineRootfs(ctx, b.pathMgr)
 	}
+
 	if rootfsErr != nil {
-		return nil, fmt.Errorf("setup rootfs: %w", rootfsErr)
+		return nil, rootfsErr
 	}
 
 	// ── Mode-specific setup ──────────────────────────────────────────────
@@ -222,9 +217,4 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.Machine, error) {
 	}
 
 	return &b.vmc.Machine, nil
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

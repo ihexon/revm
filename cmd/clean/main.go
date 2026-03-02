@@ -4,36 +4,35 @@
 package main
 
 import (
-	"flag"
 	"log"
 	"os"
-	"path/filepath"
 	"time"
 )
 
 func main() {
-	workspace := flag.String("workspace", "", "workspace directory to remove after parent exits")
-	flag.Parse()
+	workspace := os.Getenv("WORKSPACE")
+	payloadDir := os.Getenv("PAYLOAD_DIR")
 
-	if *workspace == "" {
+	if workspace == "" && payloadDir == "" {
 		return
-	}
-
-	absWs, err := filepath.Abs(filepath.Clean(*workspace))
-	if err != nil {
-		log.Fatal(err)
 	}
 
 	for {
 		if os.Getppid() == 1 {
-			log.Printf("PPID=1, removing workspace %q", absWs)
-			if _, err := os.Stat(absWs); err == nil {
-				if err := os.RemoveAll(absWs); err != nil {
-					log.Fatal(err)
-				}
-			}
+			removeDir(workspace)
+			removeDir(payloadDir)
 			return
 		}
 		time.Sleep(1 * time.Second)
+	}
+}
+
+func removeDir(dir string) {
+	if dir == "" {
+		return
+	}
+	log.Printf("PPID=1, removing %q", dir)
+	if err := os.RemoveAll(dir); err != nil {
+		log.Printf("failed to remove %q: %v", dir, err)
 	}
 }

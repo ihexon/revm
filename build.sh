@@ -152,7 +152,7 @@ relocate_libs_linux() {
     cp -av "$DEPSDIR/libkrunfw/lib64/"*.so* "$LIBDIR/"
 
     # Collect all .so deps (skip ld-linux, it goes to HELPERDIR)
-    ldd "$BINDIR/revm" | grep -o "/.* " | while read -r lib; do
+    LD_LIBRARY_PATH="$LIBDIR" ldd "$BINDIR/revm" | grep -o "/.* " | while read -r lib; do
         [[ "$(basename "$lib")" == ld-linux* ]] && continue
         local dst="$LIBDIR/$(basename "$lib")"
         [[ -e "$dst" ]] && continue
