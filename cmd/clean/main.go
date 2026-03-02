@@ -36,13 +36,6 @@ func main() {
 	}
 }
 
-// safeRemoveDir removes a directory. If a <dir>.lock file exists, it acquires
-// an exclusive flock (non-blocking) before deleting — this prevents removing
-// a workspace that belongs to a new session with the same name.
-//
-// The lock file is intentionally NOT removed — all sessions must flock
-// the same inode; deleting and recreating produces a new inode that
-// provides no mutual exclusion with the old one.
 func safeRemoveDir(dir string) {
 	if dir == "" {
 		return

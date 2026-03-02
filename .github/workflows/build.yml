@@ -40,9 +40,6 @@ jobs:
       - name: Build
         run: /opt/homebrew/bin/bash ./build.sh
 
-      - name: Build revm-single
-        run: /opt/homebrew/bin/bash ./cmd/single-binary/build.sh --revm-install-dir ./out
-
       - name: Upload artifact
         uses: 'actions/upload-artifact@v4'
         with:
@@ -72,9 +69,6 @@ jobs:
 
       - name: Build
         run: bash ./build.sh
-
-      - name: Build revm-single
-        run: bash ./cmd/single-binary/build.sh --revm-install-dir ./out
 
       - name: Upload artifact
         uses: 'actions/upload-artifact@v4'

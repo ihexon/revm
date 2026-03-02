@@ -159,13 +159,19 @@ relocate_libs_linux() {
         cp -Lv "$lib" "$LIBDIR/"
     done
 
-    # Copy the dynamic linker for single-binary use
+    # Copy the dynamic linker for ld-linux wrapper use
     cp -Lv /lib/ld-linux-aarch64.so.1 "$HELPERDIR/"
 
     patchelf --set-rpath '$ORIGIN/../lib' "$BINDIR/revm"
     for sofile in "$LIBDIR"/libkrun*.so.*.*; do
         patchelf --set-rpath '$ORIGIN' "$sofile"
     done
+
+    # Rename CGo binary to hidden file; the Go wrapper becomes the user-facing "revm"
+    mv "$BINDIR/revm" "$BINDIR/.revm"
+
+    # Build Go wrapper as the user-facing "revm" (exec's .revm via ld-linux)
+    CGO_ENABLED=0 go build -ldflags="-s -w" -o "$BINDIR/revm" "$WORKSPACE/cmd/revm-helper"
 }
 
 relocate_libs() {
