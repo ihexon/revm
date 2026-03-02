@@ -52,7 +52,7 @@ func safeRemoveDir(dir string) {
 
 	locked, err := fileLock.TryLock()
 	if err != nil {
-		removeDir(dir)
+		logrus.Errorf("try lock %q failed: %v, skipping cleanup", lockPath, err)
 		return
 	}
 
