@@ -1,5 +1,7 @@
-// Standalone clean binary — polls PPID and removes the workspace directory
+// Standalone clean binary — polls PPID and removes the specified directories
 // once the parent process exits. Built with CGO_ENABLED=0 for static linking.
+//
+// Usage: clean [workspace] [payload-dir] ...
 package main
 
 import (
@@ -11,10 +13,8 @@ import (
 )
 
 func main() {
-	workspace := os.Getenv("WORKSPACE")
-	payloadDir := os.Getenv("PAYLOAD_DIR")
-
-	if workspace == "" && payloadDir == "" {
+	dirs := os.Args[1:]
+	if len(dirs) == 0 {
 		return
 	}
 
@@ -27,40 +27,47 @@ func main() {
 
 	for {
 		if os.Getppid() == 1 {
-			safeRemoveWorkspace(workspace)
-			removeDir(payloadDir)
+			for _, dir := range dirs {
+				safeRemoveDir(dir)
+			}
 			return
 		}
 		time.Sleep(1 * time.Second)
 	}
 }
 
-// safeRemoveWorkspace acquires an exclusive flock on <workspace>.lock
-// (non-blocking) before deleting. If a new session with the same name
-// is already running it holds that lock, so we skip deletion.
+// safeRemoveDir removes a directory. If a <dir>.lock file exists, it acquires
+// an exclusive flock (non-blocking) before deleting — this prevents removing
+// a workspace that belongs to a new session with the same name.
 //
 // The lock file is intentionally NOT removed — all sessions must flock
 // the same inode; deleting and recreating produces a new inode that
 // provides no mutual exclusion with the old one.
-func safeRemoveWorkspace(workspace string) {
-	if workspace == "" {
+func safeRemoveDir(dir string) {
+	if dir == "" {
 		return
 	}
 
-	lockPath := workspace + ".lock"
+	lockPath := dir + ".lock"
+	if _, err := os.Stat(lockPath); err != nil {
+		// No lock file — not a workspace, just remove directly.
+		removeDir(dir)
+		return
+	}
+
 	fileLock := flock.New(lockPath)
 
-	// Non-blocking exclusive lock.
 	locked, err := fileLock.TryLock()
 	if err != nil {
-		removeDir(workspace)
+		removeDir(dir)
 		return
 	}
 
 	if !locked {
+		logrus.Infof("lock held, skipping cleanup of %q", dir)
 		return
 	}
-	removeDir(workspace)
+	removeDir(dir)
 }
 
 func removeDir(dir string) {

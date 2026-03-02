@@ -12,6 +12,7 @@ import (
 	"linuxvm/pkg/service"
 	"linuxvm/pkg/vmbuilder"
 	"net/http"
+	"os"
 	"path/filepath"
 
 	"al.essio.dev/pkg/shellescape"
@@ -50,7 +51,7 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 
 	event.Setup(command.String(define.FlagReportURL), event.Attach)
 
-	if err := LaunchCleaner(""); err != nil {
+	if err := LaunchCleaner(os.Getenv("PAYLOAD_DIR")); err != nil {
 		logrus.Warnf("failed to start clean helper: %v", err)
 	}
 

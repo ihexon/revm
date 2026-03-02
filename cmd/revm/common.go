@@ -38,20 +38,30 @@ func SetupBasicLogger(level string) error {
 }
 
 // LaunchCleaner launches the standalone helper/clean binary,
-// which polls PPID and removes the workspace directory after the parent exits.
-func LaunchCleaner(workspacePath string) error {
+// which polls PPID and removes the given directories after the parent exits.
+func LaunchCleaner(dirs ...string) error {
+	// Filter out empty strings.
+	var args []string
+	for _, d := range dirs {
+		if d != "" {
+			args = append(args, d)
+		}
+	}
+	if len(args) == 0 {
+		return nil
+	}
+
 	execPath, err := os.Executable()
 	if err != nil {
 		return err
 	}
 	cleanBin := filepath.Join(filepath.Dir(execPath), "..", "helper", "clean")
 
-	cleaner := exec.Command(cleanBin)
+	cleaner := exec.Command(cleanBin, args...)
 	cleaner.Stdout = nil
 	cleaner.Stderr = nil
 	cleaner.Stdin = nil
 	cleaner.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cleaner.Env = append(os.Environ(), "WORKSPACE="+workspacePath)
 
 	return cleaner.Start()
 }
@@ -98,7 +108,7 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 	}
 	workspacePath := fmt.Sprintf("/tmp/.revm-%s", name)
 
-	if err := LaunchCleaner(workspacePath); err != nil {
+	if err := LaunchCleaner(workspacePath, os.Getenv("PAYLOAD_DIR")); err != nil {
 		return nil, err
 	}
 
