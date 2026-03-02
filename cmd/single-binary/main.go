@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
 )
 
 //go:embed payload.tar
@@ -20,13 +21,92 @@ var payloadTar []byte
 
 var Name = "revm-single"
 
+type Usage struct {
+	Path        string
+	TotalBytes  uint64
+	UsedBytes   uint64
+	FreeBytes   uint64
+	AvailBytes  uint64
+	UsedPercent float64
+}
+
+// GetDiskUsage returns filesystem usage of the mount containing path.
+// Works on Linux and macOS.
+func GetDiskUsage(path string) (*Usage, error) {
+	var stat unix.Statfs_t
+
+	if err := unix.Statfs(path, &stat); err != nil {
+		return nil, fmt.Errorf("statfs failed for %s: %w", path, err)
+	}
+
+	blockSize := uint64(stat.Bsize)
+
+	total := stat.Blocks * blockSize
+	free := stat.Bfree * blockSize
+	avail := stat.Bavail * blockSize
+	used := total - free
+
+	var usedPercent float64
+	if total > 0 {
+		usedPercent = (float64(used) / float64(total)) * 100
+	}
+
+	return &Usage{
+		Path:        path,
+		TotalBytes:  total,
+		UsedBytes:   used,
+		FreeBytes:   free,
+		AvailBytes:  avail,
+		UsedPercent: usedPercent,
+	}, nil
+}
+
 func main() {
 	if err := run(); err != nil {
 		logrus.Fatal(err)
 	}
 }
 
+func BytesToMB(b uint64) float64 {
+	return float64(b) / 1_000_000
+}
+
+func BytesToGB(b uint64) float64 {
+	return float64(b) / 1_000_000_000
+}
+
+func checkDiskSpace() error {
+	usage, err := GetDiskUsage("/tmp")
+	if err != nil {
+		return fmt.Errorf("get disk usage failed: %w", err)
+	}
+
+	if BytesToMB(usage.AvailBytes) < 512 {
+		return fmt.Errorf("/tmp insufficient disk space: %d bytes available", usage.AvailBytes)
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("get home dir failed: %w", err)
+	}
+
+	usage, err = GetDiskUsage(homeDir)
+	if err != nil {
+		return fmt.Errorf("get disk usage failed: %w", err)
+	}
+
+	if BytesToGB(usage.AvailBytes) < 1 {
+		return fmt.Errorf("%q insufficient disk space: %d bytes available", homeDir, usage.AvailBytes)
+	}
+
+	return nil
+}
+
 func run() error {
+	if err := checkDiskSpace(); err != nil {
+		return err
+	}
+
 	dir := os.Getenv("PAYLOAD_DIR")
 
 	if dir == "" {
@@ -67,7 +147,6 @@ func run() error {
 	return fmt.Errorf("exec failed")
 }
 
-// TODO: using libarchive to speed up extraction, payload can be compressed mybe
 func extractTo(dir string) error {
 	tr := tar.NewReader(bytes.NewReader(payloadTar))
 	for {

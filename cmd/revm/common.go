@@ -37,9 +37,9 @@ func SetupBasicLogger(level string) error {
 	return nil
 }
 
-// RelaunchWithCleanModeBackground launches the standalone helper/clean binary,
+// LaunchCleaner launches the standalone helper/clean binary,
 // which polls PPID and removes the workspace directory after the parent exits.
-func RelaunchWithCleanModeBackground(workspacePath string) error {
+func LaunchCleaner(workspacePath string) error {
 	execPath, err := os.Executable()
 	if err != nil {
 		return err
@@ -97,6 +97,10 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 		name = FastRandomStr()
 	}
 	workspacePath := fmt.Sprintf("/tmp/.revm-%s", name)
+
+	if err := LaunchCleaner(workspacePath); err != nil {
+		return nil, err
+	}
 
 	cpus := command.Int8(define.FlagCPUS)
 	memoryInMB := command.Uint64(define.FlagMemoryInMB)
@@ -157,10 +161,6 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 
 	vmc, err := builder.Build(ctx)
 	if err != nil {
-		return nil, err
-	}
-
-	if err = RelaunchWithCleanModeBackground(workspacePath); err != nil {
 		return nil, err
 	}
 

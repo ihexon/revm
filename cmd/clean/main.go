@@ -3,11 +3,11 @@
 package main
 
 import (
-	"log"
 	"os"
 	"time"
 
 	"github.com/gofrs/flock"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -18,10 +18,15 @@ func main() {
 		return
 	}
 
-	initialPPID := os.Getppid()
+	f, err := os.OpenFile("/tmp/clean.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+
+	logrus.SetOutput(f)
 
 	for {
-		if os.Getppid() != initialPPID {
+		if os.Getppid() == 1 {
 			safeRemoveWorkspace(workspace)
 			removeDir(payloadDir)
 			return
@@ -48,26 +53,23 @@ func safeRemoveWorkspace(workspace string) {
 	// Non-blocking exclusive lock.
 	locked, err := fileLock.TryLock()
 	if err != nil {
-		// Lock file gone or inaccessible — no active session, safe to remove leftovers.
 		removeDir(workspace)
 		return
 	}
 
 	if !locked {
-		// A new session holds the lock, don't delete.
-		log.Printf("session lock held, skipping cleanup of %q", workspace)
 		return
 	}
 	removeDir(workspace)
-	// Do NOT os.Remove(lockPath) — keep the inode stable for future flock coordination.
 }
 
 func removeDir(dir string) {
 	if dir == "" {
 		return
 	}
-	log.Printf("parent exited, removing %q", dir)
+
+	logrus.Infof("clean directory: %q", dir)
 	if err := os.RemoveAll(dir); err != nil {
-		log.Printf("failed to remove %q: %v", dir, err)
+		logrus.Errorf("failed to remove directory: %v", err)
 	}
 }

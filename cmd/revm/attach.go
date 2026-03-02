@@ -50,7 +50,7 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 
 	event.Setup(command.String(define.FlagReportURL), event.Attach)
 
-	if err := RelaunchWithCleanModeBackground(""); err != nil {
+	if err := LaunchCleaner(""); err != nil {
 		logrus.Warnf("failed to start clean helper: %v", err)
 	}
 
