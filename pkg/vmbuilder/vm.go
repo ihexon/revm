@@ -62,15 +62,18 @@ func (v *VM) setupWorkspace(workspacePath string) error {
 }
 
 func (v *VM) lock() error {
-	fileLock := flock.New(filepath.Join(v.WorkspacePath, ".lock"))
+	// Lock file lives OUTSIDE the workspace so that the clean helper can
+	// acquire it after the workspace is deleted, preventing it from
+	// removing a workspace that belongs to a new session with the same name.
+	fileLock := flock.New(v.WorkspacePath + ".lock")
 
-	ifLocked, err := fileLock.TryLock()
+	locked, err := fileLock.TryLock()
 	if err != nil {
 		return fmt.Errorf("get lock failed: %w", err)
 	}
 
-	if !ifLocked {
-		return fmt.Errorf("workspace %q is locked by another instance", fileLock.Path())
+	if !locked {
+		return fmt.Errorf("session %q is locked by another instance", v.WorkspacePath)
 	}
 
 	v.fileLock = fileLock
