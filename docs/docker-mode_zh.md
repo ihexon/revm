@@ -7,16 +7,15 @@ revm 内建完整的容器引擎，并通过 Unix socket 暴露给 podman-cli/do
 **启动容器引擎**
 
 ```bash
-export WORKSPACE=~/revm_workspace
-revm docker --workspace $WORKSPACE
+revm docker --name my-engine
 ```
 
-启动后 Podman API socket 暴露在 `$WORKSPACE/socks/podman-api.sock`。
+启动后 Podman API socket 暴露在 `/tmp/.revm-my-engine/socks/podman-api.sock`。
 
 **用 podman 或 docker CLI 连接**
 
 ```bash
-export CONTAINER_HOST=unix:///$WORKSPACE/socks/podman-api.sock
+export CONTAINER_HOST=unix:///tmp/.revm-my-engine/socks/podman-api.sock
 
 # 查看运行环境信息
 podman info
@@ -30,7 +29,7 @@ podman run --rm -p 8080:80 nginx
 **用 docker CLI 连接**
 
 ```bash
-export DOCKER_HOST=unix:///$WORKSPACE/socks/podman-api.sock
+export DOCKER_HOST=unix:///tmp/.revm-my-engine/socks/podman-api.sock
 docker run --rm hello-world
 ```
 
@@ -55,7 +54,7 @@ podman run --rm -v /Users/me/data:/data ubuntu:latest ls /data
 在需要代理访问网络的环境下，加上 `--system-proxy` 自动读取 macOS 系统代理并注入到容器内：
 
 ```bash
-revm docker --workspace $WORKSPACE --system-proxy
+revm docker --name my-engine --system-proxy
 
 # 容器内 apt/curl 自动走代理
 podman run --rm ubuntu:latest apt-get update
@@ -75,7 +74,8 @@ revm docker [flags]
 | `--raw-disk`     | 挂载 ext4 裸盘镜像，不存在时自动创建镜像（可重复）                                     | —                     |
 | `--network`      | 网络栈：`gvisor`（完整虚拟网卡，支持端口映射）或 `tsi`（透明转发）                         | `gvisor`              |
 | `--system-proxy` | 读取 macOS 系统代理并注入容器内，自动将 127.0.0.1 重写为 `host.containers.internal` | `false`               |
-| `--workspace`    | 运行时状态目录，Podman API socket 在此目录下的 `socks/podman-api.sock`         | `/tmp/.revm-<random>` |
+| `--name`         | 会话名称，工作区目录由此派生为 `/tmp/.revm-<name>`；Podman API socket 在工作区的 `socks/podman-api.sock` | 随机值 |
+| `--container-disk` | 持久化容器存储磁盘路径（ext4 裸盘镜像）；不存在时自动创建；不指定则使用工作区内的默认磁盘 | 工作区内默认磁盘 |
 | `--log-level`    | 日志级别：`trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic`      | `info`                |
 | `--report-url`   | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock`）           | —                     |
 
@@ -83,4 +83,4 @@ docker 模式与 chroot 模式共用大部分参数，可按需灵活配置。
 
 ## 另请参阅
 
-- [工作区与网络](insider_zh.md) — 工作区目录结构、复用/清理，以及网络模式（gvisor / tsi）
+- [会话工作区与网络](insider_zh.md) — 工作区目录结构、复用/清理，以及网络模式（gvisor / tsi）

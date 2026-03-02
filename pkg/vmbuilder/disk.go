@@ -45,15 +45,14 @@ func (v *VM) generateRAWDisk(ctx context.Context, rawDiskPath string, givenUUID 
 	return nil
 }
 
-func (v *VM) configureContainerRAWDisk(ctx context.Context, pathMgr *PathManager) error {
-	rawDiskFilePath := pathMgr.GetContainerStorageDiskPath()
-	if _, err := os.Stat(rawDiskFilePath); err != nil {
-		if err = v.generateRAWDisk(ctx, rawDiskFilePath, define.ContainerDiskUUID); err != nil {
-			return err
+func (v *VM) configureContainerRAWDisk(ctx context.Context, diskPath string) error {
+	if _, err := os.Stat(diskPath); err != nil {
+		if err = v.generateRAWDisk(ctx, diskPath, define.ContainerDiskUUID); err != nil {
+			return fmt.Errorf("failed to generate container storage raw disk: %w", err)
 		}
 	}
 
-	return v.addRAWDiskToBlkList(ctx, rawDiskFilePath)
+	return v.addRAWDiskToBlkList(ctx, diskPath)
 }
 
 func (v *VM) addRAWDiskToBlkList(ctx context.Context, rawDiskPath string) error {
@@ -112,18 +111,18 @@ func (v *VM) withUserProvidedStorageRAWDisk(ctx context.Context, rawDiskS []stri
 	return nil
 }
 
-func (v *VM) resetOrReuseContainerRAWDisk(ctx context.Context, pathMgr *PathManager, containerDiskVersionXATTR string) error {
-	resetBool, err := v.withRAWDiskVersionXATTR(containerDiskVersionXATTR).needsDiskRegeneration(ctx, pathMgr)
+func (v *VM) resetOrReuseContainerRAWDisk(ctx context.Context, diskPath string, containerDiskVersionXATTR string) error {
+	resetBool, err := v.withRAWDiskVersionXATTR(containerDiskVersionXATTR).needsDiskRegeneration(ctx, diskPath)
 	if err != nil {
 		return fmt.Errorf("failed to check RAW disk needs to regenerate: %w", err)
 	}
 
 	if resetBool {
-		if err := os.Remove(pathMgr.GetContainerStorageDiskPath()); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(diskPath); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 
-		if err := v.configureContainerRAWDisk(ctx, pathMgr); err != nil {
+		if err := v.configureContainerRAWDisk(ctx, diskPath); err != nil {
 			return fmt.Errorf("failed to attach container storage raw disk: %w", err)
 		}
 	}
@@ -131,11 +130,11 @@ func (v *VM) resetOrReuseContainerRAWDisk(ctx context.Context, pathMgr *PathMana
 	return nil
 }
 
-func (v *VM) needsDiskRegeneration(ctx context.Context, pathMgr *PathManager) (bool, error) {
+func (v *VM) needsDiskRegeneration(ctx context.Context, diskPath string) (bool, error) {
 	xattrKey := define.XATTRRawDiskVersionKey
 	xattrProcesser := filesystem.NewXATTRManager()
 
-	value1, _ := xattrProcesser.GetXATTR(ctx, pathMgr.GetContainerStorageDiskPath(), xattrKey)
+	value1, _ := xattrProcesser.GetXATTR(ctx, diskPath, xattrKey)
 	value2 := v.XATTRSRawDisk[xattrKey]
 	if value2 == "" {
 		return false, fmt.Errorf("vmc XATTRSRawDisk not set")

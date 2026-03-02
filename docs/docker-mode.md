@@ -8,16 +8,15 @@ or Podman Desktop required — spin up a full, lightweight container stack insta
 **Start the container engine**
 
 ```bash
-export WORKSPACE=~/revm_workspace
-revm docker --workspace $WORKSPACE
+revm docker --name my-engine
 ```
 
-After startup, the Podman API socket is available at `$WORKSPACE/socks/podman-api.sock`.
+After startup, the Podman API socket is available at `/tmp/.revm-my-engine/socks/podman-api.sock`.
 
 **Connect with podman or docker CLI**
 
 ```bash
-export CONTAINER_HOST=unix:///$WORKSPACE/socks/podman-api.sock
+export CONTAINER_HOST=unix:///tmp/.revm-my-engine/socks/podman-api.sock
 
 # Check runtime info
 podman info
@@ -31,7 +30,7 @@ podman run --rm -p 8080:80 nginx
 **Connect with docker CLI**
 
 ```bash
-export DOCKER_HOST=unix:///$WORKSPACE/socks/podman-api.sock
+export DOCKER_HOST=unix:///tmp/.revm-my-engine/socks/podman-api.sock
 docker run --rm hello-world
 ```
 
@@ -57,7 +56,7 @@ In environments that require a proxy, add `--system-proxy` to automatically read
 into containers:
 
 ```bash
-revm docker --workspace $WORKSPACE --system-proxy
+revm docker --name my-engine --system-proxy
 
 # apt/curl inside containers automatically use the proxy
 podman run --rm ubuntu:latest apt-get update
@@ -77,7 +76,8 @@ revm docker [flags]
 | `--raw-disk`     | Attach an ext4 disk image; auto-created if missing (repeatable)                                     | —                     |
 | `--network`      | Network stack: `gvisor` (full virtual NIC, supports port mapping) or `tsi` (transparent intercept)  | `gvisor`              |
 | `--system-proxy` | Read macOS system proxy and inject into containers; rewrites `127.0.0.1` to `host.containers.internal` | `false`            |
-| `--workspace`    | Runtime state directory; Podman API socket at `socks/podman-api.sock` inside this directory         | `/tmp/.revm-<random>` |
+| `--name`         | Session name; workspace is derived as `/tmp/.revm-<name>`; Podman API socket at `socks/podman-api.sock` inside the workspace | random |
+| `--container-disk` | Path to a persistent ext4 raw disk image for container storage; auto-created if missing; defaults to a workspace-local disk | workspace-local |
 | `--log-level`    | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`                          | `info`                |
 | `--report-url`   | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock`)                   | —                     |
 
@@ -85,4 +85,4 @@ docker mode and chroot mode share most flags and can be configured as needed.
 
 ## See Also
 
-- [Workspace layout & networking](insider.md) — workspace directory structure, reuse/cleanup, and network backends (gvisor / tsi)
+- [Session workspace & networking](insider.md) — workspace directory structure, reuse/cleanup, and network backends (gvisor / tsi)

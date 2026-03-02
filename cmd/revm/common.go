@@ -92,7 +92,12 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 	logLevel := command.String(define.FlagLogLevel)
 
 	// Extract command-line parameters
-	workspacePath := command.String(define.FlagWorkspace)
+	name := strings.TrimSpace(command.String(define.FlagSessionName))
+	if name == "" {
+		name = FastRandomStr()
+	}
+	workspacePath := fmt.Sprintf("/tmp/.revm-%s", name)
+
 	cpus := command.Int8(define.FlagCPUS)
 	memoryInMB := command.Uint64(define.FlagMemoryInMB)
 	rawDisks := command.StringSlice(define.FlagRawDisk)
@@ -141,11 +146,10 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 			command.StringSlice(define.FlagEnvs),
 		)
 	case define.ContainerMode:
-		rootfsPath := command.String(define.FlagRootfs)
-		if rootfsPath != "" {
-			builder.SetRootfs(rootfsPath)
-		} else {
-			builder.WithBuiltInRootfs()
+		builder.WithBuiltInRootfs()
+		containerDiskPath := command.String(define.FlagContainerDisk)
+		if containerDiskPath != "" {
+			builder.SetContainerDiskPath(containerDiskPath)
 		}
 	default:
 		return nil, fmt.Errorf("invalid run mode: %s", runMode)
@@ -156,10 +160,8 @@ func ConfigureVM(ctx context.Context, command *cli.Command, runMode define.RunMo
 		return nil, err
 	}
 
-	if !command.IsSet(define.FlagWorkspace) {
-		if err = RelaunchWithCleanModeBackground(workspacePath); err != nil {
-			return nil, err
-		}
+	if err = RelaunchWithCleanModeBackground(workspacePath); err != nil {
+		return nil, err
 	}
 
 	vmp, err := GetVMM(vmc)

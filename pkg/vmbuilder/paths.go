@@ -50,6 +50,6 @@ func (p *PathManager) GetRootfsDir() string {
 	return filepath.Join(p.workspacePath, "rootfs")
 }
 
-func (p *PathManager) GetContainerStorageDiskPath() string {
+func (p *PathManager) GetBuiltInContainerStorageDiskPathInWorkspace() string {
 	return filepath.Join(p.workspacePath, "raw-disk", "container-storage.ext4")
 }

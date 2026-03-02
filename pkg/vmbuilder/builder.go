@@ -36,6 +36,7 @@ type VMConfigBuilder struct {
 	// Feature flags (With*)
 	builtInRootfs        bool
 	containerDiskVersion string
+	containerDiskPath    string
 }
 
 // NewVMConfigBuilder creates a new builder for the specified run mode.
@@ -124,6 +125,11 @@ func (b *VMConfigBuilder) SetContainerDiskVersion(version string) *VMConfigBuild
 	return b
 }
 
+func (b *VMConfigBuilder) SetContainerDiskPath(path string) *VMConfigBuilder {
+	b.containerDiskPath = path
+	return b
+}
+
 // Build constructs the VM with all configurations applied in correct order.
 func (b *VMConfigBuilder) Build(ctx context.Context) (*define.Machine, error) {
 	b.vmc = NewVirtualMachine(b.runMode)
@@ -181,10 +187,16 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.Machine, error) {
 		if err := b.vmc.configurePodman(ctx, b.pathMgr); err != nil {
 			return nil, fmt.Errorf("configure podman: %w", err)
 		}
-		if err := b.vmc.configureContainerRAWDisk(ctx, b.pathMgr); err != nil {
-			return nil, fmt.Errorf("setup container disk: %w", err)
+
+		diskPath := b.pathMgr.GetBuiltInContainerStorageDiskPathInWorkspace()
+		// if user given --container-disk, set diskPath to user given path
+		if b.containerDiskPath != "" {
+			diskPath = b.containerDiskPath
 		}
 
+		if err := b.vmc.configureContainerRAWDisk(ctx, diskPath); err != nil {
+			return nil, fmt.Errorf("setup container disk: %w", err)
+		}
 	case define.OVMode:
 		if err := b.vmc.withMountUserHome(ctx); err != nil {
 			return nil, fmt.Errorf("mount user home: %w", err)
@@ -192,7 +204,8 @@ func (b *VMConfigBuilder) Build(ctx context.Context) (*define.Machine, error) {
 		if err := b.vmc.configurePodman(ctx, b.pathMgr); err != nil {
 			return nil, fmt.Errorf("configure podman: %w", err)
 		}
-		if err := b.vmc.resetOrReuseContainerRAWDisk(ctx, b.pathMgr, b.containerDiskVersion); err != nil {
+		diskPath := b.pathMgr.GetBuiltInContainerStorageDiskPathInWorkspace()
+		if err := b.vmc.resetOrReuseContainerRAWDisk(ctx, diskPath, b.containerDiskVersion); err != nil {
 			return nil, fmt.Errorf("setup container disk: %w", err)
 		}
 	}

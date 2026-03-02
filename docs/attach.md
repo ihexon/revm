@@ -3,7 +3,7 @@
 Attach to a running VM instance from another terminal.
 
 ```bash
-revm attach [--pty] <workspace> [-- <command> [args...]]
+revm attach [--pty] <session-name> [-- <command> [args...]]
 ```
 
 | Flag           | Description                                                                                                      | Default |
@@ -12,10 +12,12 @@ revm attach [--pty] <workspace> [-- <command> [args...]]
 | `--log-level`  | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`                                       | `info`  |
 | `--report-url` | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock`)                                | —       |
 
+The `<session-name>` maps to the workspace directory `/tmp/.revm-<session-name>`.
+
 ```bash
 # Interactive shell
-revm attach --pty ~/revm_workspace
+revm attach --pty my-session
 
 # Run a single command
-revm attach ~/revm_workspace -- ps aux
+revm attach my-session -- ps aux
 ```

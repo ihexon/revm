@@ -28,16 +28,14 @@ revm chroot \
 **保持 VM 存活，在需要的时候交互式 attach 到已经运行中的 Rootfs**
 
 ```bash
-export WORKSPACE=/tmp/dev-env
-
 # 终端 1：保持 VM 存活
-revm chroot --workspace $WORKSPACE --rootfs ~/ubuntu-rootfs sleep 86400
+revm chroot --name dev-env --rootfs ~/ubuntu-rootfs sleep 86400
 
 # 终端 2：进入交互式 Shell
-revm attach --pty $WORKSPACE
+revm attach --pty dev-env
 
 # 终端 3：执行一条命令
-revm attach $WORKSPACE -- df -h
+revm attach dev-env -- df -h
 ```
 
 **挂载持久化数据盘**
@@ -67,10 +65,10 @@ revm chroot [flags] <command> [args...]
 | `--envs`         | 传入环境变量（格式：`KEY=VALUE`，可重复）                        | —                     |
 | `--network`      | 网络栈：`gvisor`（完整虚拟网卡）或 `tsi`（透明 socket 转发）         | `gvisor`              |
 | `--system-proxy` | 读取 macOS 系统代理并以 `http_proxy`/`https_proxy` 注入到 VM | `false`               |
-| `--workspace`    | 运行时状态目录（socket、SSH key、日志、磁盘）；不指定则临时目录            | `/tmp/.revm-<random>` |
+| `--name`         | 会话名称，工作区目录由此派生为 `/tmp/.revm-<name>`；默认随机字符串       | 随机值                   |
 | `--log-level`    | 日志级别：`trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic` | `info`          |
 | `--report-url`   | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock`） | —               |
 
 ## 另请参阅
 
-- [工作区与网络](insider_zh.md) — 工作区目录结构、复用/清理，以及网络模式（gvisor / tsi）
+- [会话工作区与网络](insider_zh.md) — 工作区目录结构、复用/清理，以及网络模式（gvisor / tsi）

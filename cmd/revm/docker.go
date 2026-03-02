@@ -59,9 +59,12 @@ var startDocker = cli.Command{
 			Value: "info",
 		},
 		&cli.StringFlag{
-			Name:  define.FlagWorkspace,
-			Usage: "directory for VM runtime state: Unix sockets (podman API, gvproxy ctl, ignition), SSH keys, guest logs, and auto-created disk images; cannot be the home directory",
-			Value: fmt.Sprintf("/tmp/.revm-%s", FastRandomStr()),
+			Name:  define.FlagSessionName,
+			Usage: "session name; used to derive the workspace directory (/tmp/.revm-<name>); defaults to a random string; sessions with the same name are mutually exclusive via flock",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagContainerDisk,
+			Usage: "path to a persistent ext4 raw disk image for container storage; auto-created if the file does not exist; defaults to a workspace-local disk if unset",
 		},
 	},
 	Action: dockerLifeCycle,

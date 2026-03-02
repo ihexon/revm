@@ -22,8 +22,8 @@ import (
 var AttachConsole = cli.Command{
 	Name:        define.FlagAttachMode,
 	Usage:       "attach to a running VM and execute a command over SSH",
-	UsageText:   "attach [--pty] <workspace> [-- <command> [args...]]",
-	Description: "connect to a running VM via SSH, launches an interactive shell (--pty) or runs the specified command non-interactively; defaults to /bin/sh if no command is given",
+	UsageText:   "attach [--pty] <session-name> [-- <command> [args...]]",
+	Description: "connect to a running VM session by name via SSH; the session-name maps to /tmp/.revm-<name>; launches an interactive shell (--pty) or runs the specified command non-interactively; defaults to /bin/sh if no command is given",
 	Action:      attachConsole,
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
@@ -50,13 +50,15 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 
 	event.Setup(command.String(define.FlagReportURL), event.Attach)
 
-	workspace := command.Args().First()
+	name := command.Args().First()
 	enablePTY := command.Bool(define.FlagPTY)
 	cmdline := command.Args().Tail()
 
-	if workspace == "" {
-		return fmt.Errorf("no workspace specified, please provide the workspace path")
+	if name == "" {
+		return fmt.Errorf("no session name specified, please provide the session name")
 	}
+
+	workspace := fmt.Sprintf("/tmp/.revm-%s", name)
 
 	// Extract command line arguments
 	if len(cmdline) == 0 {

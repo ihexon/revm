@@ -1,11 +1,11 @@
-# Workspace & Networking
+# Session Workspace & Networking
 
 ## Workspace Layout
 
-Files inside the `--workspace` directory:
+Each session has a workspace directory at `/tmp/.revm-<name>`, derived from the `--name` flag (or a random string if omitted):
 
 ```
-$WORKSPACE/
+/tmp/.revm-<name>/
 ├── socks/
 │   ├── podman-api.sock   # Podman API socket (docker mode)
 │   ├── gvpctl.sock       # gvproxy control socket (gvisor mode)
@@ -20,26 +20,28 @@ $WORKSPACE/
 └── raw-disk/             # container storage disk (docker mode)
 ```
 
-### Reuse & Cleanup
+### Session Lifecycle
 
-**Reuse**: pass the same `--workspace` path on the next launch and the VM picks up exactly where it left off —
-container images, volume data, rootfs, and SSH keys are all preserved; no reconfiguration or re-pulling required:
+The workspace is **ephemeral** — after the VM exits, the `clean` helper automatically removes the entire
+`/tmp/.revm-<name>/` directory. Each launch starts with a fresh workspace.
+
+**Mutual exclusion**: sessions with the same `--name` are mutually exclusive via flock — only one VM can use a given
+name at a time. This makes `--name` useful for `revm attach` to connect to a running session.
+
+**Persistent data**: to keep data across sessions, use explicit flags that point outside the workspace:
 
 ```bash
-# First launch
-revm docker --workspace ~/revm_workspace
+# Container images survive across sessions
+revm docker --name my-engine --container-disk ~/container-storage.ext4
 
-# Next launch — images and data are still there
-revm docker --workspace ~/revm_workspace
+# Arbitrary data persists too
+revm chroot --raw-disk ~/data.ext4 -- sh
 ```
 
-**Ephemeral environment**: when `--workspace` is omitted, revm uses a random directory under `/tmp`. It is safe to
-delete after the VM exits, making it ideal for one-off tasks or CI pipelines.
-
-**Cleanup**: delete the workspace directory to completely reset; the next launch starts fresh:
+**Cleanup**: if the cleaner did not run (e.g. `kill -9`), manually remove the stale workspace:
 
 ```bash
-rm -rf ~/revm_workspace
+rm -rf /tmp/.revm-my-engine
 ```
 
 ## Networking (TSI / GVISOR, mutually exclusive)

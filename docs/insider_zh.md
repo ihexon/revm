@@ -1,11 +1,11 @@
-# 工作区与网络
+# 会话工作区与网络
 
 ## 工作区结构
 
-`--workspace` 目录下的文件：
+每个会话的工作区目录位于 `/tmp/.revm-<name>`，由 `--name` 参数派生（不指定时使用随机字符串）：
 
 ```
-$WORKSPACE/
+/tmp/.revm-<name>/
 ├── socks/
 │   ├── podman-api.sock   # Podman API socket（docker 模式）
 │   ├── gvpctl.sock       # gvproxy 控制 socket（gvisor 模式）
@@ -20,24 +20,26 @@ $WORKSPACE/
 └── raw-disk/             # 容器存储磁盘（docker 模式）
 ```
 
-### 复用与清理
+### 会话生命周期
 
-**复用**：下次启动时指定同一个 `--workspace`，VM 会直接加载上次的状态——容器镜像、卷数据、rootfs、SSH key 全部保留，无需重新配置或重新拉取镜像：
+工作区是**临时的** — VM 退出后，`clean` 辅助进程会自动删除整个 `/tmp/.revm-<name>/` 目录。每次启动都从全新工作区开始。
+
+**互斥**：同名会话通过 flock 互斥——同一时间只有一个 VM 可以使用给定的名称。因此 `--name` 适用于 `revm attach` 连接到正在运行的会话。
+
+**持久化数据**：如需跨会话保留数据，请使用指向工作区外部路径的显式参数：
 
 ```bash
-# 第一次启动
-revm docker --workspace ~/revm_workspace
+# 容器镜像跨会话保留
+revm docker --name my-engine --container-disk ~/container-storage.ext4
 
-# 下次启动，镜像和数据原样保留
-revm docker --workspace ~/revm_workspace
+# 任意数据也可持久化
+revm chroot --raw-disk ~/data.ext4 -- sh
 ```
 
-**临时环境**：不指定 `--workspace` 时，revm 自动使用 `/tmp/.revm-<random>` 临时目录，VM 退出后可安全删除，适合一次性任务或 CI 场景。
-
-**清理**：删除整个 workspace 目录即可彻底重置，下次启动会创建全新环境：
+**清理**：如果 cleaner 未能运行（例如 `kill -9`），手动移除残留工作区：
 
 ```bash
-rm -rf ~/revm_workspace
+rm -rf /tmp/.revm-my-engine
 ```
 
 ## 网络模式（ TSI/GVISOR 互斥）

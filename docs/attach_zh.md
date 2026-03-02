@@ -3,7 +3,7 @@
 在另一个终端连入正在运行的 VM 实例。
 
 ```bash
-revm attach [--pty] <workspace> [-- <command> [args...]]
+revm attach [--pty] <session-name> [-- <command> [args...]]
 ```
 
 | 参数             | 说明                              | 默认值     |
@@ -12,10 +12,12 @@ revm attach [--pty] <workspace> [-- <command> [args...]]
 | `--log-level`  | 日志级别：`trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic` | `info` |
 | `--report-url` | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock`） | — |
 
+`<session-name>` 映射到工作区目录 `/tmp/.revm-<session-name>`。
+
 ```bash
 # 交互式 Shell
-revm attach --pty ~/revm_workspace
+revm attach --pty my-session
 
 # 执行单条命令
-revm attach ~/revm_workspace -- ps aux
+revm attach my-session -- ps aux
 ```

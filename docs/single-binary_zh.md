@@ -31,7 +31,7 @@ tar -xvf revm-single-*.tar.zst
 
 # 运行——所有 revm 子命令正常使用
 ./revm-single chroot -- uname -r
-./revm-single docker --workspace ~/revm_workspace
+./revm-single docker --name my-engine
 ```
 
 ## 从源码构建

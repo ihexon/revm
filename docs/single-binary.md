@@ -35,7 +35,7 @@ tar -xvf revm-single-*.tar.zst
 
 # Run — all revm subcommands work as normal
 ./revm-single chroot -- uname -r
-./revm-single docker --workspace ~/revm_workspace
+./revm-single docker --name my-engine
 ```
 
 ## Building from Source

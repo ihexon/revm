@@ -29,16 +29,14 @@ revm chroot \
 **Keep the VM alive and attach interactively when needed**
 
 ```bash
-export WORKSPACE=/tmp/dev-env
-
 # Terminal 1: keep the VM alive
-revm chroot --workspace $WORKSPACE --rootfs ~/ubuntu-rootfs sleep 86400
+revm chroot --name dev-env --rootfs ~/ubuntu-rootfs sleep 86400
 
 # Terminal 2: open an interactive shell
-revm attach --pty $WORKSPACE
+revm attach --pty dev-env
 
 # Terminal 3: run a one-off command
-revm attach $WORKSPACE -- df -h
+revm attach dev-env -- df -h
 ```
 
 **Attach a persistent data disk**
@@ -68,10 +66,10 @@ revm chroot [flags] <command> [args...]
 | `--envs`         | Pass environment variables (format: `KEY=VALUE`; repeatable)                        | —                     |
 | `--network`      | Network stack: `gvisor` (full virtual NIC) or `tsi` (transparent socket intercept)  | `gvisor`              |
 | `--system-proxy` | Read macOS system proxy and inject as `http_proxy`/`https_proxy` into the VM        | `false`               |
-| `--workspace`    | Runtime state directory (sockets, SSH keys, logs, disks); ephemeral if unset        | `/tmp/.revm-<random>` |
+| `--name`         | Session name; workspace is derived as `/tmp/.revm-<name>`; defaults to a random string | random              |
 | `--log-level`    | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`          | `info`                |
 | `--report-url`   | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock`)   | —                     |
 
 ## See Also
 
-- [Workspace layout & networking](insider.md) — workspace directory structure, reuse/cleanup, and network backends (gvisor / tsi)
+- [Session workspace & networking](insider.md) — workspace directory structure, reuse/cleanup, and network backends (gvisor / tsi)
