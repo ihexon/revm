@@ -79,7 +79,6 @@ revm docker [flags]
 | `--name`         | Session name; workspace is derived as `/tmp/.revm-<name>`; Podman API socket at `socks/podman-api.sock` inside the workspace | random |
 | `--container-disk` | Path to a persistent ext4 raw disk image for container storage; auto-created if missing; defaults to a workspace-local disk | workspace-local |
 | `--log-level`    | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`                          | `info`                |
-| `--report-url`   | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock`)                   | —                     |
 
 docker mode and chroot mode share most flags and can be configured as needed.
 

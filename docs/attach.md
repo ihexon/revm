@@ -10,7 +10,6 @@ revm attach [--pty] <session-name> [-- <command> [args...]]
 |----------------|------------------------------------------------------------------------------------------------------------------|---------|
 | `--pty`        | Allocate a pseudo-terminal and launch an interactive shell; without this flag the command runs non-interactively | `false` |
 | `--log-level`  | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`                                       | `info`  |
-| `--report-url` | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock`)                                | —       |
 
 The `<session-name>` maps to the workspace directory `/tmp/.revm-<session-name>`.
 

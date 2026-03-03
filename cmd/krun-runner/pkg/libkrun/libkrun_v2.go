@@ -14,9 +14,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"linuxvm/pkg/event"
-	"linuxvm/pkg/interfaces"
-	"linuxvm/pkg/service"
 	"linuxvm/pkg/system"
 	"os"
 	"path/filepath"
@@ -123,20 +120,9 @@ const (
 	defaultVirtIOFSMemoryWindow = 512 << 20
 )
 
-// ConsolePortINOUT defines an I/O port on the virtio-console multiport device.
-// The guest sees it as /dev/vportNpM and can identify it by name
-// via /sys/class/virtio-ports/vportNpM/name.
-type ConsolePortINOUT struct {
-	Name     string
-	InputFd  int // host → guest (host writes, guest reads)
-	OutputFd int // guest → host (guest writes, host reads)
-}
-
 type LibkrunVM struct {
 	vmc   *define.Machine
 	ctxID uint32
-
-	consolePortsINOUT []ConsolePortINOUT
 
 	// Files whose fds are passed to C via libkrun.
 	// Stored here to prevent GC from finalizing and closing them.
@@ -150,22 +136,10 @@ type LibkrunVM struct {
 // to ensure the guest gets the expected IP (192.168.127.2).
 var guestMACAddress = [6]byte{0x5a, 0x94, 0xef, 0xe4, 0x0c, 0xee}
 
-// Compile-time check: LibkrunVM must implement vm.VMProvider
-var _ interfaces.VMMProvider = (*LibkrunVM)(nil)
-
 func NewLibkrunVM(mc *define.Machine) *LibkrunVM {
 	return &LibkrunVM{
 		vmc: mc,
 	}
-}
-
-func (vm *LibkrunVM) AddConsolePort(port ConsolePortINOUT) *LibkrunVM {
-	vm.consolePortsINOUT = append(vm.consolePortsINOUT, port)
-	return vm
-}
-
-func (vm *LibkrunVM) GetVMConfigure() *define.Machine {
-	return vm.vmc
 }
 
 func (vm *LibkrunVM) createVMCtxID() error {
@@ -344,10 +318,6 @@ func (vm *LibkrunVM) configureMultiportConsole() error {
 		return err
 	}
 
-	if err := vm.addOtherConsoleInOut(consoleID); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -455,25 +425,6 @@ func (vm *LibkrunVM) addGuestConsoleLogPort(consoleID C.uint32_t) error {
 	}
 
 	vm.guestLogFile = f
-	return nil
-}
-
-// addOtherConsoleInOut registers all queued inout console ports on the multiport device.
-func (vm *LibkrunVM) addOtherConsoleInOut(consoleID C.uint32_t) error {
-	for _, inoutConsole := range vm.consolePortsINOUT {
-		name := newCString(inoutConsole.Name)
-		ret := C.krun_add_console_port_inout(
-			C.uint32_t(vm.ctxID),
-			consoleID,
-			name.Ptr(),
-			C.int(inoutConsole.InputFd),
-			C.int(inoutConsole.OutputFd))
-		name.Free()
-		if ret != 0 {
-			return fmt.Errorf("krun_add_console_port_inout failed with code %v", ret)
-		}
-	}
-
 	return nil
 }
 
@@ -729,17 +680,4 @@ func (vm *LibkrunVM) enterVMLifecycle(ctx context.Context) error {
 		return fmt.Errorf("VM execution failed: %w (libkrun code: %d)", errno, ret)
 	}
 	return nil
-}
-
-// Stop requests the VM to stop.
-//
-// Note: libkrun doesn't provide a graceful stop mechanism. so we have to implement a forceful shutdown
-func (vm *LibkrunVM) Stop(_ context.Context) error {
-	// TODO: implement STOP
-	return nil
-}
-
-func (vm *LibkrunVM) StartVMCtlServer(ctx context.Context) error {
-	event.Emit(event.StartManagementAPIServer)
-	return service.NewManagementAPIServer(vm.vmc).Start(ctx)
 }

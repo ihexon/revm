@@ -4,18 +4,11 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/event"
-	"linuxvm/pkg/network"
-	"linuxvm/pkg/service"
-	"linuxvm/pkg/vmbuilder"
-	"net/http"
-	"os"
-	"path/filepath"
+	"linuxvm/pkg/librevm"
+	"linuxvm/pkg/log"
 
-	"al.essio.dev/pkg/shellescape"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 )
@@ -37,22 +30,14 @@ var AttachConsole = cli.Command{
 			Usage: "log verbosity level (trace, debug, info, warn, error, fatal, panic)",
 			Value: "info",
 		},
-		&cli.StringFlag{
-			Name:  define.FlagReportURL,
-			Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888); events include: ConfigureVirtualMachine, StartVirtualNetwork, StartIgnitionServer, StartVirtualMachine, GuestNetworkReady, GuestSSHReady, GuestPodmanReady, Exit, Error",
-		},
 	},
 }
 
+
+
 func attachConsole(ctx context.Context, command *cli.Command) error {
-	if err := SetupBasicLogger(command.String(define.FlagLogLevel)); err != nil {
+	if err := log.SetupBasicLogger(command.String(define.FlagLogLevel)); err != nil {
 		return fmt.Errorf("failed to setup basic logger: %w", err)
-	}
-
-	event.Setup(command.String(define.FlagReportURL), event.Attach)
-
-	if err := LaunchCleaner(os.Getenv("PAYLOAD_DIR")); err != nil {
-		logrus.Warnf("failed to start clean helper: %v", err)
 	}
 
 	name := command.Args().First()
@@ -63,44 +48,16 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("no session name specified, please provide the session name")
 	}
 
-	workspace := fmt.Sprintf("/tmp/.revm-%s", name)
-
-	// Extract command line arguments
-	if len(cmdline) == 0 {
-		cmdline = []string{filepath.Join("/", "bin", "sh")}
-	}
-	logrus.Infof("run cmdline: %v", cmdline)
-
-	// Fetch Machine from ignition server
-	ignAddr := vmbuilder.NewPathManager(workspace).GetIgnAddr()
-
-	client := network.NewUnixClient(ignAddr)
-	defer client.Close()
-
-	resp, err := client.Get(define.RestAPIVMConfigURL).Do(ctx) //nolint:bodyclose
-	if err != nil {
-		return fmt.Errorf("failed to fetch vmconfig from ignition server: %w", err)
-	}
-	defer network.CloseResponse(resp)
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("ignition server returned status %d", resp.StatusCode)
-	}
-
-	var vmc define.Machine
-	if err := json.NewDecoder(resp.Body).Decode(&vmc); err != nil {
-		return fmt.Errorf("failed to decode vmconfig: %w", err)
-	}
-
-	sshClient, err := service.MakeSSHClient(ctx, &vmc)
+	attached, err := librevm.Attach(ctx, name)
 	if err != nil {
 		return err
 	}
-	defer sshClient.Close()
+
+	logrus.Infof("run cmdline: %v", cmdline)
 
 	if enablePTY {
-		return sshClient.Shell(ctx)
+		return attached.Shell(ctx)
 	}
 
-	return sshClient.Run(ctx, shellescape.QuoteCommand(cmdline))
+	return attached.Run(ctx, cmdline...)
 }

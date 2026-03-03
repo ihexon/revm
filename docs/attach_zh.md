@@ -10,7 +10,6 @@ revm attach [--pty] <session-name> [-- <command> [args...]]
 |----------------|---------------------------------|---------|
 | `--pty`        | 分配伪终端，启动交互式 Shell；不加则以非交互方式执行命令 | `false` |
 | `--log-level`  | 日志级别：`trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic` | `info` |
-| `--report-url` | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock`） | — |
 
 `<session-name>` 映射到工作区目录 `/tmp/.revm-<session-name>`。
 

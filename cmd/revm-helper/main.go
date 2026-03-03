@@ -18,7 +18,7 @@ func main() {
 	}
 
 	selfDir := filepath.Dir(exe)
-	ldLinux := filepath.Join(selfDir, "..", "helper", "ld-linux-aarch64.so.1")
+	ldLinux := filepath.Join(selfDir, "..", "lib", "ld-linux-aarch64.so.1")
 	libDir := filepath.Join(selfDir, "..", "lib")
 	revm := filepath.Join(selfDir, ".revm")
 
