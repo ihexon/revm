@@ -67,6 +67,7 @@ revm chroot [flags] <command> [args...]
 | `--system-proxy` | 读取 macOS 系统代理并以 `http_proxy`/`https_proxy` 注入到 VM | `false`               |
 | `--name`         | 会话名称，工作区目录由此派生为 `/tmp/.revm-<name>`；默认随机字符串       | 随机值                   |
 | `--log-level`    | 日志级别：`trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic` | `info`          |
+| `--report-url`   | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock` 或 `tcp://host:port`） | —               |
 
 ## 另请参阅
 

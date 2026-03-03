@@ -2,7 +2,7 @@
 
 The management API is served over a Unix domain socket (`vmCTLAddress` in the VM config). It provides host-side control of a running VM.
 
-**Base URL:** `unix://<workspace>/vm-ctl.sock`
+**Base URL:** `unix://<workspace>/socks/vmctl.sock`
 
 All responses use `Content-Type: application/json` unless noted otherwise.
 
@@ -18,20 +18,20 @@ Returns 200 if the server is running.
 
 **Example:**
 ```sh
-curl --unix-socket /tmp/.revm-xxx/vm-ctl.sock http://localhost/healthz
+curl --unix-socket /tmp/.revm-xxx/socks/vmctl.sock http://localhost/healthz
 ```
 
 ---
 
 ### `GET /stop`
 
-Requests a graceful VM shutdown. Returns immediately; the VM stops asynchronously.
+Requests a graceful VM shutdown. The VM process is terminated first, then all host services are stopped. Returns immediately; cleanup completes asynchronously.
 
 **Response:** `200 OK`, empty body.
 
 **Example:**
 ```sh
-curl --unix-socket /tmp/.revm-xxx/vm-ctl.sock http://localhost/stop
+curl --unix-socket /tmp/.revm-xxx/socks/vmctl.sock http://localhost/stop
 ```
 
 ---
@@ -62,7 +62,7 @@ If the command fails to start, a single `error` event is sent and the stream clo
 
 **Example — run `uname -a` in the guest:**
 ```sh
-curl --unix-socket /tmp/.revm-xxx/vm-ctl.sock \
+curl --unix-socket /tmp/.revm-xxx/socks/vmctl.sock \
   -X POST http://localhost/exec \
   -H 'Content-Type: application/json' \
   -d '{"bin":"/bin/uname","args":["-a"]}' \

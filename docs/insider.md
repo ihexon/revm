@@ -22,8 +22,8 @@ Each session has a workspace directory at `/tmp/.revm-<name>`, derived from the 
 
 ### Session Lifecycle
 
-The workspace is **ephemeral** — after the VM exits, the `clean` helper automatically removes the entire
-`/tmp/.revm-<name>/` directory. Each launch starts with a fresh workspace.
+The workspace is **ephemeral** — after the VM exits, the workspace directory `/tmp/.revm-<name>/` is automatically
+removed during cleanup. Each launch starts with a fresh workspace.
 
 **Mutual exclusion**: sessions with the same `--name` are mutually exclusive via flock — only one VM can use a given
 name at a time. This makes `--name` useful for `revm attach` to connect to a running session.
@@ -38,7 +38,7 @@ revm docker --name my-engine --container-disk ~/container-storage.ext4
 revm chroot --raw-disk ~/data.ext4 -- sh
 ```
 
-**Cleanup**: if the cleaner did not run (e.g. `kill -9`), manually remove the stale workspace:
+**Cleanup**: if the process was forcefully killed (e.g. `kill -9`), manually remove the stale workspace:
 
 ```bash
 rm -rf /tmp/.revm-my-engine

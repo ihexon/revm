@@ -22,7 +22,7 @@
 
 ### 会话生命周期
 
-工作区是**临时的** — VM 退出后，`clean` 辅助进程会自动删除整个 `/tmp/.revm-<name>/` 目录。每次启动都从全新工作区开始。
+工作区是**临时的** — VM 退出后，工作区目录 `/tmp/.revm-<name>/` 会在清理阶段自动删除。每次启动都从全新工作区开始。
 
 **互斥**：同名会话通过 flock 互斥——同一时间只有一个 VM 可以使用给定的名称。因此 `--name` 适用于 `revm attach` 连接到正在运行的会话。
 
@@ -36,7 +36,7 @@ revm docker --name my-engine --container-disk ~/container-storage.ext4
 revm chroot --raw-disk ~/data.ext4 -- sh
 ```
 
-**清理**：如果 cleaner 未能运行（例如 `kill -9`），手动移除残留工作区：
+**清理**：如果进程被强制杀死（例如 `kill -9`），手动移除残留工作区：
 
 ```bash
 rm -rf /tmp/.revm-my-engine
