@@ -1,17 +1,16 @@
-package service
+package lifecycle
 
 import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/event"
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/interfaces"
 	"linuxvm/pkg/network"
+	"linuxvm/pkg/service/ignition"
 	"net"
 	"os"
 	"os/signal"
-	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -29,7 +28,6 @@ func NewHostServices(vmp interfaces.VMMProvider) *HostServices {
 }
 
 func (s *HostServices) StartPodmanProxy(ctx context.Context) error {
-	event.Emit(event.StartPodmanProxyServer)
 	if s.vmp.GetVMConfigure().RunMode == define.RootFsMode.String() {
 		return nil
 	}
@@ -56,7 +54,6 @@ func (s *HostServices) StartPodmanProxy(ctx context.Context) error {
 }
 
 func (s *HostServices) StartNetworkStack(ctx context.Context) error {
-	event.Emit(event.StartVirtualNetwork)
 	if s.vmp.GetVMConfigure().VirtualNetworkMode == define.TSI {
 		return nil
 	}
@@ -66,44 +63,24 @@ func (s *HostServices) StartNetworkStack(ctx context.Context) error {
 }
 
 func (s *HostServices) StartIgnitionService(ctx context.Context) error {
-	event.Emit(event.StartIgnitionServer)
-	server := NewIgnServer(s.vmp.GetVMConfigure())
+	server := ignition.NewServer(s.vmp.GetVMConfigure())
 	return server.Start(ctx)
 }
 
-func (s *HostServices) StartMachineManagementAPI(ctx context.Context) error {
-	event.Emit(event.StartManagementAPIServer)
-	return s.vmp.StartVMCtlServer(ctx)
+func (s *HostServices) StartMachineManagementAPI(ctx context.Context, stopFn func()) error {
+	return s.vmp.StartVMCtlServer(ctx, stopFn)
 }
 
 func (s *HostServices) StartVirtualMachine(ctx context.Context) error {
-	event.Emit(event.StartVirtualMachine)
-
-	errChan := make(chan error, 1)
-	go func() {
-		// Pin all libkrun CGo calls to a single OS thread: krun_create_ctx,
-		// krun_add_virtiofs2, krun_start_enter, etc. must not migrate
-		// threads — on Linux/KVM this causes GC heap corruption.
-		runtime.LockOSThread()
-		if err := s.vmp.Create(ctx); err != nil {
-			errChan <- fmt.Errorf("create virtual machine from libkrun builder fail: %v", err)
-			return
-		}
-		errChan <- s.vmp.Start(ctx)
-	}()
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-errChan:
-		return err
+	if err := s.vmp.Create(ctx); err != nil {
+		return fmt.Errorf("create virtual machine from libkrun builder fail: %v", err)
 	}
+	return s.vmp.Start(ctx)
 }
 
 func (s *HostServices) ExitVirtualMachineWhenSomethingHappened(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
-	// Listen for requests to shut down the virtual machine via `vmctl.sock /stop`
 	g.Go(func() error {
 		select {
 		case <-ctx.Done():

@@ -1,12 +1,16 @@
 package define
 
-import "sync"
+import (
+	"encoding/json"
+	"sync"
+)
 
-type Machine struct {
+// MachineSpec contains serializable VM specification data.
+type MachineSpec struct {
 	WorkspacePath string `json:"workspacePath,omitempty"`
 
 	MemoryInMB uint64 `json:"memoryInMB,omitempty"`
-	Cpus       int8   `json:"cpus,omitempty"`
+	Cpus       uint8  `json:"cpus,omitempty"`
 	RootFS     string `json:"rootFS,omitempty"`
 
 	// data disk will map into /dev/vdX and automount by guest-agent process
@@ -31,10 +35,53 @@ type Machine struct {
 	XATTRSRawDisk     map[string]string `json:"XATTRSRawDisk,omitempty"`
 	ProxySetting      ProxySetting      `json:"systemProxy,omitempty"`
 
-	TTY       bool          `json:"TTY"`
+	TTY bool `json:"TTY"`
+}
+
+// MachineRuntime contains non-serializable runtime state.
+type MachineRuntime struct {
 	StopCh    chan struct{} `json:"-"`
 	StopOnce  sync.Once     `json:"-"`
 	Readiness *Readiness    `json:"-"`
+}
+
+func NewMachineRuntime() *MachineRuntime {
+	return &MachineRuntime{
+		StopCh:    make(chan struct{}),
+		Readiness: NewReadiness(),
+	}
+}
+
+// Machine combines serializable spec and runtime state.
+type Machine struct {
+	MachineSpec
+	*MachineRuntime `json:"-"`
+}
+
+func (m *Machine) EnsureRuntime() {
+	if m == nil {
+		return
+	}
+	if m.MachineRuntime == nil {
+		m.MachineRuntime = NewMachineRuntime()
+	}
+}
+
+func (m *Machine) UnmarshalJSON(data []byte) error {
+	type machineAlias MachineSpec
+	var spec machineAlias
+	if err := json.Unmarshal(data, &spec); err != nil {
+		return err
+	}
+
+	m.MachineSpec = MachineSpec(spec)
+	m.EnsureRuntime()
+	return nil
+}
+
+func (m Machine) MarshalJSON() ([]byte, error) {
+	type machineAlias MachineSpec
+	return json.Marshal(machineAlias(m.MachineSpec))
 }
 
 const (

@@ -2,14 +2,10 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/event"
-	"linuxvm/pkg/service"
+	"linuxvm/pkg/librevm"
 
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
-	"golang.org/x/sync/errgroup"
 )
 
 var startDocker = cli.Command{
@@ -51,7 +47,7 @@ var startDocker = cli.Command{
 		},
 		&cli.StringFlag{
 			Name:  define.FlagReportURL,
-			Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888); events include: ConfigureVirtualMachine, StartVirtualNetwork, StartIgnitionServer, StartVirtualMachine, GuestNetworkReady, GuestSSHReady, GuestPodmanReady, Exit, Error",
+			Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888)",
 		},
 		&cli.StringFlag{
 			Name:  define.FlagLogLevel,
@@ -73,64 +69,31 @@ var startDocker = cli.Command{
 func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
 	showVersionAndOSInfo()
 
-	event.Setup(command.String(define.FlagReportURL), event.Docker)
+	cfg := librevm.DefaultConfig().
+		WithMode(librevm.ModeContainer).
+		WithName(command.String(define.FlagSessionName)).
+		WithCPUs(int(command.Int8(define.FlagCPUS))).
+		WithMemory(command.Uint64(define.FlagMemoryInMB)).
+		WithNetwork(command.String(define.FlagVNetworkType)).
+		WithProxy(command.Bool(define.FlagUsingSystemProxy)).
+		WithLogLevel(command.String(define.FlagLogLevel)).
+		WithDisk(command.StringSlice(define.FlagRawDisk)...).
+		WithMount(command.StringSlice(define.FlagMount)...)
 
-	vmp, err := ConfigureVM(ctx, command, define.ContainerMode)
-	if err != nil {
-		return fmt.Errorf("configure vm fail: %w", err)
+	if cd := command.String(define.FlagContainerDisk); cd != "" {
+		cfg.WithContainerDisk(cd)
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
+	var opts []librevm.OptionFn
+	if u := command.String(define.FlagReportURL); u != "" {
+		opts = append(opts, librevm.WithEventSink(librevm.NewHTTPEventSink(u, "docker")))
+	}
 
-	svc := service.NewHostServices(vmp)
-	g.Go(func() error {
-		return svc.ExitVirtualMachineWhenSomethingHappened(ctx)
-	})
-
-	g.Go(func() error {
-		return svc.StartIgnitionService(ctx)
-	})
-
-	g.Go(func() error {
-		return svc.StartNetworkStack(ctx)
-	})
-
-	g.Go(func() error {
-		return svc.StartMachineManagementAPI(ctx)
-	})
-
-	g.Go(func() error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-vmp.GetVMConfigure().Readiness.VNetHostReady:
-			return svc.StartVirtualMachine(ctx)
-		}
-	})
-
-	g.Go(func() error {
-		go func() {
-			select {
-			case <-ctx.Done():
-				return
-			case <-vmp.GetVMConfigure().Readiness.PodmanReady:
-				logrus.Infof("podman API proxy listening on %s", vmp.GetVMConfigure().PodmanInfo.HostPodmanProxyAddr)
-			}
-		}()
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-vmp.GetVMConfigure().Readiness.VNetHostReady:
-			return svc.StartPodmanProxy(ctx)
-		}
-	})
-
-	errChan := make(chan error, 1)
-	go func() { errChan <- g.Wait() }()
-	select {
-	case <-ctx.Done():
-		return context.Cause(ctx)
-	case err = <-errChan:
+	vm, err := librevm.New(ctx, cfg, opts...)
+	if err != nil {
 		return err
 	}
+	defer vm.Close()
+
+	return vm.Run(ctx)
 }

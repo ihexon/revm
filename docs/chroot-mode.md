@@ -68,7 +68,6 @@ revm chroot [flags] <command> [args...]
 | `--system-proxy` | Read macOS system proxy and inject as `http_proxy`/`https_proxy` into the VM        | `false`               |
 | `--name`         | Session name; workspace is derived as `/tmp/.revm-<name>`; defaults to a random string | random              |
 | `--log-level`    | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`          | `info`                |
-| `--report-url`   | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock`)   | —                     |
 
 ## See Also
 

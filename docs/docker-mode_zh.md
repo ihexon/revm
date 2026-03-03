@@ -77,7 +77,6 @@ revm docker [flags]
 | `--name`         | 会话名称，工作区目录由此派生为 `/tmp/.revm-<name>`；Podman API socket 在工作区的 `socks/podman-api.sock` | 随机值 |
 | `--container-disk` | 持久化容器存储磁盘路径（ext4 裸盘镜像）；不存在时自动创建；不指定则使用工作区内的默认磁盘 | 工作区内默认磁盘 |
 | `--log-level`    | 日志级别：`trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic`      | `info`                |
-| `--report-url`   | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock`）           | —                     |
 
 docker 模式与 chroot 模式共用大部分参数，可按需灵活配置。
 

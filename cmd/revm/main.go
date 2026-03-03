@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"linuxvm/pkg/event"
 	"os"
 
 	"github.com/sirupsen/logrus"
@@ -26,10 +25,7 @@ func main() {
 		&startDocker,
 	}
 
-	defer event.Emit(event.Exit)
-
 	if err := app.Run(context.Background(), os.Args); err != nil {
-		event.EmitError(err)
 		logrus.Fatal(err)
 	}
 }

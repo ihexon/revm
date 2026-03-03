@@ -8,6 +8,7 @@ import (
 	"guestAgent/pkg/service"
 	"io"
 	"linuxvm/pkg/define"
+	commonlog "linuxvm/pkg/log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -20,21 +21,11 @@ import (
 )
 
 func setupLogger() error {
-	level, err := logrus.ParseLevel(os.Getenv(define.EnvLogLevel))
-	if err != nil {
-		return err
+	level := strings.ToLower(os.Getenv(define.EnvLogLevel))
+	if level == "" {
+		level = "info"
 	}
-	logrus.SetLevel(level)
-
-	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp:   true,
-		ForceColors:     true,
-		TimestampFormat: "2006-01-02 15:04:05.000",
-	})
-
-	logrus.SetOutput(os.Stderr)
-	logrus.AddHook(stageHook{})
-	return nil
+	return commonlog.SetupBasicLoggerWithStage(level, "guest-agent")
 }
 
 // attachGuestLogPort finds the "guest-logs" virtio-console port and adds it
@@ -70,17 +61,6 @@ func openVirtioPortByName(name string) (*os.File, error) {
 		}
 	}
 	return nil, fmt.Errorf("virtio port %q not found", name)
-}
-
-func (h stageHook) Levels() []logrus.Level { return logrus.AllLevels }
-
-type stageHook struct{}
-
-func (h stageHook) Fire(e *logrus.Entry) error {
-	if _, ok := e.Data["stage"]; !ok {
-		e.Data["stage"] = "guest-agent"
-	}
-	return nil
 }
 
 func main() {

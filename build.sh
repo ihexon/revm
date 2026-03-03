@@ -75,11 +75,15 @@ build_guest_agent() {
             -o "$HELPERDIR/guest-agent" main.go)
 }
 
-build_clean() {
-    log_info "Building clean helper..."
-    CGO_ENABLED=0 go build \
-        -ldflags="-s -w" \
-        -o "$HELPERDIR/clean" "$WORKSPACE/cmd/clean"
+build_krun_runner() {
+    log_info "Building krun-runner..."
+    if [[ "$OS" == "Darwin" ]]; then
+        PKG_CONFIG_PATH="$PKGCFGDIR" \
+            go build -ldflags="-s -w" -o "$HELPERDIR/krun-runner" "$WORKSPACE/cmd/krun-runner"
+    else
+        CGO_ENABLED=1 \
+            go build -ldflags="-s -w" -o "$HELPERDIR/krun-runner" "$WORKSPACE/cmd/krun-runner"
+    fi
 }
 
 fetch_deps() {
@@ -140,9 +144,12 @@ relocate_libs_darwin() {
     codesign --force -s - "$LIBDIR/libMoltenVK.dylib"
 
     # Fix revm binary's dylib references (revm is in bin/, dylibs are in lib/)
-    install_name_tool -change "libkrun.1.dylib"  "@loader_path/../lib/libkrun.1.dylib"  "$BINDIR/revm"
-    install_name_tool -change "libkrunfw.5.dylib" "@loader_path/../lib/libkrunfw.5.dylib" "$BINDIR/revm"
     codesign --entitlements "$WORKSPACE/revm.entitlements" --force -s - "$BINDIR/revm"
+
+    # Fix krun-runner's dylib references (krun-runner is in helper/, dylibs are in lib/)
+    install_name_tool -change "libkrun.1.dylib"   "@loader_path/../lib/libkrun.1.dylib"   "$HELPERDIR/krun-runner"
+    install_name_tool -change "libkrunfw.5.dylib" "@loader_path/../lib/libkrunfw.5.dylib" "$HELPERDIR/krun-runner"
+    codesign --entitlements "$WORKSPACE/revm.entitlements" --force -s - "$HELPERDIR/krun-runner"
 
     PKG_CONFIG_PATH="$PKGCFGDIR" golangci-lint run
 }
@@ -151,7 +158,7 @@ relocate_libs_linux() {
     cp -av "$DEPSDIR/libkrun/lib64/"*.so*   "$LIBDIR/"
     cp -av "$DEPSDIR/libkrunfw/lib64/"*.so* "$LIBDIR/"
 
-    # Collect all .so deps (skip ld-linux, it goes to HELPERDIR)
+    # Collect all .so deps (skip ld-linux, copied separately below)
     LD_LIBRARY_PATH="$LIBDIR" ldd "$BINDIR/revm" | grep -o "/.* " | while read -r lib; do
         [[ "$(basename "$lib")" == ld-linux* ]] && continue
         local dst="$LIBDIR/$(basename "$lib")"
@@ -159,12 +166,26 @@ relocate_libs_linux() {
         cp -Lv "$lib" "$LIBDIR/"
     done
 
-    # Copy the dynamic linker for ld-linux wrapper use
-    cp -Lv /lib/ld-linux-aarch64.so.1 "$HELPERDIR/"
+    # Copy the dynamic linker into lib/ (same location as other shared libs)
+    if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+        cp -Lv /lib/ld-linux-aarch64.so.1 "$LIBDIR/"
+    else
+        cp -Lv /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 "$LIBDIR/"
+    fi
 
     patchelf --set-rpath '$ORIGIN/../lib' "$BINDIR/revm"
     for sofile in "$LIBDIR"/libkrun*.so.*.*; do
         patchelf --set-rpath '$ORIGIN' "$sofile"
+    done
+
+    patchelf --set-rpath '$ORIGIN/../lib' "$HELPERDIR/krun-runner"
+
+    # Collect krun-runner's .so deps not already in LIBDIR
+    LD_LIBRARY_PATH="$LIBDIR" ldd "$HELPERDIR/krun-runner" | grep -o "/.* " | while read -r lib; do
+        [[ "$(basename "$lib")" == ld-linux* ]] && continue
+        local dst="$LIBDIR/$(basename "$lib")"
+        [[ -e "$dst" ]] && continue
+        cp -Lv "$lib" "$LIBDIR/"
     done
 
     # Rename CGo binary to hidden file; the Go wrapper becomes the user-facing "revm"
@@ -217,8 +238,8 @@ main() {
     init_env
 
     build_guest_agent
-    build_clean
     fetch_deps
+    build_krun_runner
     build_revm
     relocate_libs
     package

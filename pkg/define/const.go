@@ -149,7 +149,7 @@ const (
 )
 
 var (
-	ErrStopChTrigger      = fmt.Errorf("request machine /stop is triggered")
+	ErrStopChTrigger     = fmt.Errorf("machine stop triggered")
 	ErrParentProcessExit = fmt.Errorf("parent process exit")
 	ErrSigTerm           = fmt.Errorf("received SIGTERM/SIGINT, shutting down")
 )

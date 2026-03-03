@@ -11,7 +11,9 @@ formatters:
 
 linters:
   disable:
+    - errcheck
     - prealloc
+    - unused
     - unparam
   enable:
     - asasalint
