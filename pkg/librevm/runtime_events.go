@@ -7,27 +7,29 @@ import (
 	"time"
 )
 
-// EventSink receives VM lifecycle events.
-type EventSink interface {
-	Publish(evt Event)
-	Close() error
-}
-
-// EventSinkFunc adapts a function to an EventSink.
-type EventSinkFunc func(Event)
-
-func (f EventSinkFunc) Publish(evt Event) {
-	if f != nil {
-		f(evt)
-	}
-}
-
-func (f EventSinkFunc) Close() error { return nil }
-
 type eventDispatcher struct {
-	mu     sync.RWMutex
-	sinks  []EventSink
-	closed bool
+	mu       sync.RWMutex
+	handlers []func(Event)
+	closers  []func()
+	closed   bool
+}
+
+func (d *eventDispatcher) addHandler(fn func(Event), closer func()) {
+	if d == nil || fn == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed {
+		if closer != nil {
+			closer()
+		}
+		return
+	}
+	d.handlers = append(d.handlers, fn)
+	if closer != nil {
+		d.closers = append(d.closers, closer)
+	}
 }
 
 func (d *eventDispatcher) publish(kind EventKind, msg, vmName string, seq uint64) {
@@ -47,24 +49,9 @@ func (d *eventDispatcher) publish(kind EventKind, msg, vmName string, seq uint64
 		Seq:     seq,
 		Time:    time.Now(),
 	}
-	for _, sink := range d.sinks {
-		if sink != nil {
-			sink.Publish(evt)
-		}
+	for _, fn := range d.handlers {
+		fn(evt)
 	}
-}
-
-func (d *eventDispatcher) addSink(sink EventSink) {
-	if d == nil || sink == nil {
-		return
-	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.closed {
-		_ = sink.Close()
-		return
-	}
-	d.sinks = append(d.sinks, sink)
 }
 
 func (d *eventDispatcher) close() {
@@ -78,11 +65,13 @@ func (d *eventDispatcher) close() {
 		return
 	}
 	d.closed = true
-	sinks := append([]EventSink(nil), d.sinks...)
-	d.sinks = nil
+	closers := make([]func(), len(d.closers))
+	copy(closers, d.closers)
+	d.handlers = nil
+	d.closers = nil
 	d.mu.Unlock()
 
-	for _, sink := range sinks {
-		_ = sink.Close()
+	for _, fn := range closers {
+		fn()
 	}
 }

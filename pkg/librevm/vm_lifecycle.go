@@ -4,7 +4,6 @@ package librevm
 
 import (
 	"context"
-	"os"
 )
 
 // vmState 表示 VM 的生命周期状态（单调递增）。
@@ -19,24 +18,29 @@ const (
 )
 
 // Stop 发出停止信号，触发 VM 优雅关机。幂等，多次调用安全。
-func (vm *VM) Stop(_ context.Context) error {
+func (vm *VM) Stop(ctx context.Context) error {
 	vm.mu.Lock()
-	defer vm.mu.Unlock()
 	if vm.state >= vmStateStopping {
+		vm.mu.Unlock()
 		return nil
 	}
 	vm.state = vmStateStopping
+	vm.mu.Unlock()
+
 	vm.emit(EventStopping, "stopping vm")
-	vm.requestStop()
+	if vm.provider != nil {
+		_ = vm.provider.Stop(ctx) // 先杀 krun-runner
+	}
+	vm.requestStopOtherServices() // 再通知其他服务关闭
 	return nil
 }
 
-// requestStop 委托 stopController 关闭 StopCh 通道（once-safe）。
-func (vm *VM) requestStop() {
+// requestStopOtherServices 委托 stopController 关闭 StopCh 通道（once-safe）。
+func (vm *VM) requestStopOtherServices() {
 	vm.stopper.Request()
 }
 
-// Close 释放所有资源（文件锁、workspace 目录、event dispatcher）。
+// Close 释放所有资源（文件锁、workspace 目录、event eventDispatcher）。
 // 必须始终调用，即使 Run() 从未被调用。幂等。
 func (vm *VM) Close() error {
 	vm.mu.Lock()
@@ -47,14 +51,9 @@ func (vm *VM) Close() error {
 	vm.state = vmStateClosed
 	vm.mu.Unlock()
 
-	lockPath := vm.workspacePath + ".lock"
-	if vm.fileLock != nil {
-		_ = vm.fileLock.Unlock()
-		_ = os.Remove(lockPath)
+	if vm.cleanup != nil {
+		vm.cleanup()
 	}
-	_ = os.RemoveAll(vm.workspacePath)
-	if vm.opts != nil {
-		vm.opts.dispatcher.close()
-	}
+	vm.eventDispatcher.close()
 	return nil
 }

@@ -25,22 +25,10 @@ type hostServices interface {
 // Machine, and prepares the VM provider.
 //
 // Close must be called even if Start is never called.
-func New(ctx context.Context, cfg *Config, opts ...OptionFn) (*VM, error) {
+func New(ctx context.Context, cfg *Config) (*VM, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
 	}
-
-	var o vmOptions
-	for _, fn := range opts {
-		fn(&o)
-	}
-	success := false
-	defer func() {
-		if success {
-			return
-		}
-		o.dispatcher.close()
-	}()
 
 	normalized, err := NormalizeConfig(*cfg)
 	if err != nil {
@@ -51,29 +39,33 @@ func New(ctx context.Context, cfg *Config, opts ...OptionFn) (*VM, error) {
 	}
 
 	workspacePath := workspacePathForSession(normalized.Name)
-	mc, fl, err := buildMachine(ctx, normalized, workspacePath)
+	mc, cleanup, err := buildMachine(ctx, normalized, workspacePath)
 	if err != nil {
 		return nil, fmt.Errorf("build machine: %w", err)
 	}
 
 	vmp, err := newProvider(mc)
 	if err != nil {
+		cleanup()
 		return nil, fmt.Errorf("create vm provider: %w", err)
 	}
 
 	vm := &VM{
 		cfg:           &normalized,
-		opts:          &o,
 		machine:       mc,
 		provider:      vmp,
 		svc:           lifecycle.NewHostServices(vmp),
 		workspacePath: workspacePath,
-		fileLock:      fl,
+		cleanup:       cleanup,
 		state:         vmStateNew,
 		stopper:       newStopController(mc),
 	}
+
+	if normalized.ReportURL != "" {
+		registerHTTPEventSink(&vm.eventDispatcher, normalized.ReportURL, string(normalized.Mode))
+	}
+
 	vm.emit(EventConfiguring, "resolving defaults and validating config")
-	success = true
 	return vm, nil
 }
 
@@ -153,25 +145,28 @@ func (vm *VM) Run(ctx context.Context) error {
 
 	select {
 	case <-gctx.Done():
-		g.Wait() //nolint:errcheck
 		return context.Cause(gctx)
 	case <-vm.machine.Readiness.VNetHostReady:
 		vm.emit(EventNetworkReady, "host network ready")
 	}
 
+	// all thins ready , now we can start libkrun runner
 	vmErr := vm.svc.StartVirtualMachine(ctx)
-	vm.requestStop()
-	g.Wait() //nolint:errcheck
+	go func() {
+		logrus.Infof("host service error after krun runner started: %v", g.Wait())
+	}()
+
 	if vmErr != nil {
 		vm.emit(EventError, vmErr.Error())
 	}
+	vm.requestStopOtherServices()
 	vm.emit(EventStopped, "vm stopped")
 	return vmErr
 }
 
 func (vm *VM) emit(kind EventKind, msg string) {
-	if vm == nil || vm.opts == nil {
+	if vm == nil {
 		return
 	}
-	vm.opts.dispatcher.publish(kind, msg, vm.cfg.Name, vm.seq.Add(1))
+	vm.eventDispatcher.publish(kind, msg, vm.cfg.Name, vm.seq.Add(1))
 }

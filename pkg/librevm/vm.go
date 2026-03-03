@@ -7,21 +7,19 @@ import (
 	"linuxvm/pkg/interfaces"
 	"sync"
 	"sync/atomic"
-
-	"github.com/gofrs/flock"
 )
 
 // VM represents a running (or ready-to-run) virtual machine.
 // Close must always be called to release resources.
 type VM struct {
-	cfg  *Config
-	opts *vmOptions
+	cfg *Config
 
 	machine       *define.Machine
 	provider      interfaces.VMMProvider
 	svc           hostServices
 	workspacePath string
-	fileLock      *flock.Flock
+	cleanup         func()
+	eventDispatcher eventDispatcher
 
 	mu      sync.Mutex
 	state   vmState

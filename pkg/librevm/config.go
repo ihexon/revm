@@ -45,6 +45,7 @@ type Config struct {
 	ContainerDisk string   `toml:"container_disk,omitempty"  json:"containerDisk,omitempty"`
 	Proxy         bool     `toml:"proxy,omitempty"           json:"proxy,omitempty"`
 	LogLevel      string   `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
+	ReportURL     string   `toml:"report_url,omitempty"      json:"reportURL,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.

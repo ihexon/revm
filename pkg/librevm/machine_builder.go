@@ -92,10 +92,10 @@ func (v *machineBuilder) lock() error {
 	return nil
 }
 
-func (v *machineBuilder) setupLogLevel(level string) error {
+func (v *machineBuilder) setupLogLevel(level string) (*os.File, error) {
 	l, err := logrus.ParseLevel(level)
 	if err != nil {
-		return fmt.Errorf("invalid log level: %w", err)
+		return nil, fmt.Errorf("invalid log level: %w", err)
 	}
 
 	logrus.SetLevel(l)
@@ -108,7 +108,7 @@ func (v *machineBuilder) setupLogLevel(level string) error {
 	v.LogFilePath = filepath.Join(v.WorkspacePath, "logs", "vm.log")
 
 	if err := os.MkdirAll(filepath.Dir(v.LogFilePath), 0755); err != nil {
-		return fmt.Errorf("create log dir: %w", err)
+		return nil, fmt.Errorf("create log dir: %w", err)
 	}
 
 	if info, err := os.Stat(v.LogFilePath); err == nil && info.Size() > int64(filesystem.MiB(10).ToBytes()) {
@@ -117,12 +117,12 @@ func (v *machineBuilder) setupLogLevel(level string) error {
 
 	f, err := os.OpenFile(v.LogFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		return fmt.Errorf("open log file: %w", err)
+		return nil, fmt.Errorf("open log file: %w", err)
 	}
 
 	logrus.SetOutput(io.MultiWriter(os.Stderr, f))
 
-	return nil
+	return f, nil
 }
 
 func (v *machineBuilder) withResources(memoryInMB uint64, cpus uint8) error {

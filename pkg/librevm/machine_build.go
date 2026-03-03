@@ -6,12 +6,15 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"os"
 
-	"github.com/gofrs/flock"
+	"github.com/sirupsen/logrus"
 )
 
 // buildMachine converts Config directly into define.Machine.
-func buildMachine(ctx context.Context, cfg Config, workspacePath string) (*define.Machine, *flock.Flock, error) {
+// The returned cleanup func releases all resources (file lock, log file,
+// workspace directory). Caller must always invoke it.
+func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *define.Machine, cleanup func(), retErr error) {
 	runMode := define.ContainerMode
 	if cfg.Mode == ModeRootfs {
 		runMode = define.RootFsMode
@@ -19,17 +22,37 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (*defin
 
 	vmc := newMachineBuilder(runMode)
 
+	// cleanups 按 LIFO 顺序执行
+	var cleanups []func()
+	cleanup = func() {
+		for i := len(cleanups) - 1; i >= 0; i-- {
+			cleanups[i]()
+		}
+	}
+	defer func() {
+		if retErr != nil {
+			cleanup()
+			cleanup = nil
+		}
+	}()
+
 	if err := vmc.setupWorkspace(workspacePath); err != nil {
 		return nil, nil, fmt.Errorf("setup workspace: %w", err)
 	}
+	cleanups = append(cleanups,
+		func() { _ = vmc.fileLock.Unlock(); _ = os.Remove(workspacePath + ".lock") },
+		func() { _ = os.RemoveAll(workspacePath) },
+	)
 	pathMgr := newMachinePathManager(vmc.WorkspacePath)
 
 	if err := vmc.configureSSH(pathMgr); err != nil {
 		return nil, nil, fmt.Errorf("generate ssh config: %w", err)
 	}
-	if err := vmc.setupLogLevel(cfg.LogLevel); err != nil {
+	logFile, err := vmc.setupLogLevel(cfg.LogLevel)
+	if err != nil {
 		return nil, nil, fmt.Errorf("setup log level: %w", err)
 	}
+	cleanups = append(cleanups, func() { logrus.SetOutput(os.Stderr); _ = logFile.Close() })
 	if err := vmc.withResources(cfg.MemoryMB, uint8(cfg.CPUs)); err != nil {
 		return nil, nil, fmt.Errorf("set resources: %w", err)
 	}
@@ -100,5 +123,5 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (*defin
 		return nil, nil, fmt.Errorf("configure vmctl API: %w", err)
 	}
 
-	return &vmc.Machine, vmc.fileLock, nil
+	return &vmc.Machine, cleanup, nil
 }

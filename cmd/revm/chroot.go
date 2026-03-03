@@ -96,12 +96,11 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 			WithEnv(command.StringSlice(define.FlagEnvs)...)
 	}
 
-	var opts []librevm.OptionFn
 	if u := command.String(define.FlagReportURL); u != "" {
-		opts = append(opts, librevm.WithEventSink(librevm.NewHTTPEventSink(u, "chroot")))
+		cfg.ReportURL = u
 	}
 
-	vm, err := librevm.New(ctx, cfg, opts...)
+	vm, err := librevm.New(ctx, cfg)
 	if err != nil {
 		return err
 	}

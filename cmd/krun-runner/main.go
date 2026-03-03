@@ -9,8 +9,10 @@ import (
 	"linuxvm/pkg/define"
 	commonpkg "linuxvm/pkg/log"
 	"os"
+	"os/signal"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"linuxvm/cmd/krun-runner/pkg/libkrun"
@@ -44,6 +46,8 @@ func runMain() error {
 
 	orphanCh, stopMonitor := startOrphanMonitor(200 * time.Millisecond)
 	defer stopMonitor()
+	sigCh, stopSignalMonitor := startSignalMonitor()
+	defer stopSignalMonitor()
 
 	runCh := make(chan error, 1)
 	go func() {
@@ -54,6 +58,8 @@ func runMain() error {
 	case err := <-runCh:
 		return err
 	case err := <-orphanCh:
+		return err
+	case err := <-sigCh:
 		return err
 	}
 }
@@ -83,6 +89,30 @@ func startOrphanMonitor(interval time.Duration) (<-chan error, func()) {
 	}()
 
 	return errCh, func() { close(done) }
+}
+
+func startSignalMonitor() (<-chan error, func()) {
+	errCh := make(chan error, 1)
+	sigCh := make(chan os.Signal, 1)
+	done := make(chan struct{})
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
+
+	go func() {
+		select {
+		case <-done:
+			return
+		case <-sigCh:
+			select {
+			case errCh <- define.ErrSigTerm:
+			default:
+			}
+		}
+	}()
+
+	return errCh, func() {
+		close(done)
+		signal.Stop(sigCh)
+	}
 }
 
 func currentLogLevelFromEnv() string {

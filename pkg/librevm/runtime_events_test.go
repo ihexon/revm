@@ -8,37 +8,24 @@ import (
 	"testing"
 )
 
-type countingSink struct {
-	published atomic.Int64
-	closed    atomic.Int64
-}
-
-func (s *countingSink) Publish(Event) {
-	s.published.Add(1)
-}
-
-func (s *countingSink) Close() error {
-	s.closed.Add(1)
-	return nil
-}
-
 func TestEventDispatcherCloseIdempotent(t *testing.T) {
 	var d eventDispatcher
-	sink := &countingSink{}
-	d.addSink(sink)
+	var closed atomic.Int64
+	d.addHandler(func(Event) {}, func() { closed.Add(1) })
 
 	d.close()
 	d.close()
 
-	if got := sink.closed.Load(); got != 1 {
+	if got := closed.Load(); got != 1 {
 		t.Fatalf("close count = %d, want 1", got)
 	}
 }
 
 func TestEventDispatcherConcurrentPublishAndClose(t *testing.T) {
 	var d eventDispatcher
-	sink := &countingSink{}
-	d.addSink(sink)
+	var published atomic.Int64
+	var closed atomic.Int64
+	d.addHandler(func(Event) { published.Add(1) }, func() { closed.Add(1) })
 
 	var wg sync.WaitGroup
 	for i := 0; i < 128; i++ {
@@ -52,7 +39,7 @@ func TestEventDispatcherConcurrentPublishAndClose(t *testing.T) {
 	d.close()
 	wg.Wait()
 
-	if got := sink.closed.Load(); got != 1 {
+	if got := closed.Load(); got != 1 {
 		t.Fatalf("close count = %d, want 1", got)
 	}
 }

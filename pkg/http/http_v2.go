@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"linuxvm/pkg/network"
 
@@ -62,7 +63,9 @@ func (s *Server) Serve(ctx context.Context) error {
 	}()
 
 	defer func() {
-		_ = s.server.Close()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = s.server.Shutdown(shutdownCtx)
 		_ = ln.Close()
 		logrus.Infof("%s httpserver stopped", s.name)
 	}()
