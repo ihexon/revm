@@ -652,7 +652,6 @@ func (v *machineBuilder) withUserProvidedStorageRAWDisk(ctx context.Context, raw
 	return nil
 }
 
-//nolint:unused
 func (v *machineBuilder) resetOrReuseContainerRAWDisk(ctx context.Context, diskPath string, containerDiskVersionXATTR string) error {
 	resetBool, err := v.withRAWDiskVersionXATTR(containerDiskVersionXATTR).needsDiskRegeneration(ctx, diskPath)
 	if err != nil {
@@ -672,7 +671,6 @@ func (v *machineBuilder) resetOrReuseContainerRAWDisk(ctx context.Context, diskP
 	return nil
 }
 
-//nolint:unused
 func (v *machineBuilder) needsDiskRegeneration(ctx context.Context, diskPath string) (bool, error) {
 	xattrKey := define.XATTRRawDiskVersionKey
 	xattrProcesser := filesystem.NewXATTRManager()
@@ -690,7 +688,6 @@ func (v *machineBuilder) needsDiskRegeneration(ctx context.Context, diskPath str
 	return false, nil
 }
 
-//nolint:unused
 func (v *machineBuilder) withRAWDiskVersionXATTR(value string) *machineBuilder {
 	v.XATTRSRawDisk = map[string]string{
 		define.XATTRRawDiskVersionKey: value,
@@ -777,6 +774,11 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 		diskPath := pathMgr.GetBuiltInContainerStorageDiskPathInWorkspace()
 		if cfg.ContainerDisk != "" {
 			diskPath = cfg.ContainerDisk
+		}
+		if cfg.ContainerDiskVersion != "" {
+			if err := vmc.resetOrReuseContainerRAWDisk(ctx, diskPath, cfg.ContainerDiskVersion); err != nil {
+				return nil, nil, fmt.Errorf("check container disk version: %w", err)
+			}
 		}
 		if err := vmc.configureContainerRAWDisk(ctx, diskPath); err != nil {
 			return nil, nil, fmt.Errorf("setup container disk: %w", err)
