@@ -152,7 +152,18 @@ func userRootfsMode(ctx context.Context, vmc *define.Machine) error {
 		return machine.WaitGuestServiceReady(ctx, vmc)
 	})
 
-	return g.Wait()
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- g.Wait()
+		close(errChan)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case err := <-errChan:
+		return err
+	}
 }
 
 func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
@@ -185,5 +196,16 @@ func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
 		return machine.WaitGuestServiceReady(ctx, vmc)
 	})
 
-	return g.Wait()
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- g.Wait()
+		close(errChan)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case err := <-errChan:
+		return err
+	}
 }
