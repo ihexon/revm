@@ -5,11 +5,120 @@ package librevm
 import (
 	"context"
 	"fmt"
+	"linuxvm/pkg/define"
+	"linuxvm/pkg/interfaces"
+	"linuxvm/pkg/krunrunner"
 	"linuxvm/pkg/service/lifecycle"
+	"runtime"
+	"sync"
+	"sync/atomic"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
+
+// VM represents a running (or ready-to-run) virtual machine.
+// Close must always be called to release resources.
+type VM struct {
+	cfg *Config
+
+	machine         *define.Machine
+	provider        interfaces.VMMProvider
+	svc             hostServices
+	workspacePath   string
+	cleanup         func()
+	eventDispatcher eventDispatcher
+
+	mu      sync.Mutex
+	state   vmState
+	seq     atomic.Uint64
+	stopper *stopController
+}
+
+// Workspace returns the workspace directory path.
+func (vm *VM) Workspace() string {
+	return vm.workspacePath
+}
+
+type stopController struct {
+	machine *define.Machine
+}
+
+func newStopController(machine *define.Machine) *stopController {
+	return &stopController{machine: machine}
+}
+
+func (s *stopController) Request() {
+	if s == nil || s.machine == nil {
+		return
+	}
+	s.machine.StopOnce.Do(func() { close(s.machine.StopCh) })
+}
+
+// newProvider creates a RunnerProvider for the current platform, delegating
+// all libkrun CGo calls to a child process to prevent libkrun's exit() from
+// terminating the main process before cleanup can run.
+func newProvider(mc *define.Machine) (*krunrunner.RunnerProvider, error) {
+	switch {
+	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
+	case runtime.GOOS == "linux" && (runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64"):
+	default:
+		return nil, fmt.Errorf("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
+	}
+	return krunrunner.NewRunnerProvider(mc), nil
+}
+
+// vmState 表示 VM 的生命周期状态（单调递增）。
+type vmState uint8
+
+const (
+	vmStateNew      vmState = iota // New() 成功后的初始状态
+	vmStateRunning                 // Run() 正在执行中
+	vmStateStopping                // Stop() 已被调用
+	vmStateStopped                 // Run() 已返回
+	vmStateClosed                  // Close() 已被调用
+)
+
+// Stop 发出停止信号，触发 VM 优雅关机。幂等，多次调用安全。
+func (vm *VM) Stop(ctx context.Context) error {
+	vm.mu.Lock()
+	if vm.state >= vmStateStopping {
+		vm.mu.Unlock()
+		return nil
+	}
+	vm.state = vmStateStopping
+	vm.mu.Unlock()
+
+	vm.emit(EventStopping, "stopping vm")
+	if vm.provider != nil {
+		_ = vm.provider.Stop(ctx) // 先杀 krun-runner
+	}
+	vm.requestStopOtherServices() // 再通知其他服务关闭
+	return nil
+}
+
+// requestStopOtherServices 委托 stopController 关闭 StopCh 通道（once-safe）。
+func (vm *VM) requestStopOtherServices() {
+	vm.stopper.Request()
+}
+
+// Close 释放所有资源（文件锁、workspace 目录、event eventDispatcher）。
+// 必须始终调用，即使 Run() 从未被调用。幂等。
+func (vm *VM) Close() error {
+	vm.mu.Lock()
+	if vm.state == vmStateClosed {
+		vm.mu.Unlock()
+		return nil
+	}
+	vm.state = vmStateClosed
+	vm.mu.Unlock()
+
+	if vm.cleanup != nil {
+		vm.cleanup()
+	}
+	vm.eventDispatcher.close()
+	return nil
+}
 
 type hostServices interface {
 	StartPodmanProxy(ctx context.Context) error
@@ -38,7 +147,7 @@ func New(ctx context.Context, cfg *Config) (*VM, error) {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}
 
-	workspacePath := workspacePathForSession(normalized.Name)
+	workspacePath := workspacePathForSession(normalized.SessionID)
 	mc, cleanup, err := buildMachine(ctx, normalized, workspacePath)
 	if err != nil {
 		return nil, fmt.Errorf("build machine: %w", err)
@@ -62,10 +171,9 @@ func New(ctx context.Context, cfg *Config) (*VM, error) {
 	}
 
 	if normalized.ReportURL != "" {
-		registerHTTPEventSink(&vm.eventDispatcher, normalized.ReportURL, string(normalized.Mode))
+		registerHTTPEventSink(&vm.eventDispatcher, normalized.ReportURL, normalized.RunMode, normalized.SessionID)
 	}
 
-	vm.emit(EventConfiguring, "resolving defaults and validating config")
 	return vm, nil
 }
 
@@ -92,6 +200,15 @@ func (vm *VM) Run(ctx context.Context) error {
 		vm.mu.Unlock()
 	}()
 
+	switch vm.cfg.RunMode {
+	case ModeRootfs, ModeContainer:
+		return vm.run(ctx)
+	default:
+		return fmt.Errorf("unsupported run mode %q", vm.cfg.RunMode)
+	}
+}
+
+func (vm *VM) run(ctx context.Context) error {
 	vm.emit(EventVMStarting, "starting vm")
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -110,7 +227,7 @@ func (vm *VM) Run(ctx context.Context) error {
 		return vm.svc.StartMachineManagementAPI(gctx, func() { _ = vm.Stop(context.Background()) })
 	})
 
-	switch vm.cfg.Mode {
+	switch vm.cfg.RunMode {
 	case ModeContainer:
 		g.Go(func() error {
 			go func() {
@@ -164,9 +281,13 @@ func (vm *VM) Run(ctx context.Context) error {
 	return vmErr
 }
 
-func (vm *VM) emit(kind EventKind, msg string) {
-	if vm == nil {
+func (vm *VM) emit(kind RoutedEvent, msg string) {
+	if vm == nil || vm.cfg == nil || kind == nil {
 		return
 	}
-	vm.eventDispatcher.publish(kind, msg, vm.cfg.Name, vm.seq.Add(1))
+	resolvedKind, ok := kind.resolveForMode(vm.cfg.RunMode)
+	if !ok {
+		return
+	}
+	vm.eventDispatcher.publish(vm.cfg.SessionID, vm.cfg.RunMode, resolvedKind, msg, vm.seq.Add(1))
 }

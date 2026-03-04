@@ -12,8 +12,8 @@ import (
 
 // NormalizeConfig returns a copy of cfg with defaults resolved.
 func NormalizeConfig(cfg Config) (Config, error) {
-	if cfg.Name == "" {
-		cfg.Name = randomName()
+	if cfg.SessionID == "" {
+		cfg.SessionID = randomName()
 	}
 
 	if cfg.CPUs <= 0 {
@@ -44,15 +44,25 @@ func NormalizeConfig(cfg Config) (Config, error) {
 }
 
 func validateConfig(cfg Config) error {
-	switch cfg.Mode {
-	case ModeRootfs:
+	if !cfg.RunMode.IsValid() {
+		return fmt.Errorf(
+			"mode must be %q, %q, %q or %q, got %q",
+			ModeRootfs,
+			ModeContainer,
+			ModeOVMRun,
+			ModeOVMInit,
+			cfg.RunMode,
+		)
+	}
+
+	if cfg.RunMode.IsOVM() {
+		return fmt.Errorf("ovm mode %q is not yet implemented", cfg.RunMode)
+	}
+
+	if cfg.RunMode == ModeRootfs {
 		if len(cfg.Command) == 0 || cfg.Command[0] == "" {
 			return fmt.Errorf("rootfs mode requires a non-empty command")
 		}
-	case ModeContainer:
-		// ok
-	default:
-		return fmt.Errorf("mode must be %q or %q, got %q", ModeRootfs, ModeContainer, cfg.Mode)
 	}
 
 	if cfg.MemoryMB < 512 {

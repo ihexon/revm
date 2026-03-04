@@ -8,6 +8,7 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/system"
 	"os"
+	"path/filepath"
 
 	"github.com/sirupsen/logrus"
 )
@@ -16,9 +17,9 @@ import (
 // The returned cleanup func releases all resources (file lock, log file,
 // workspace directory). Caller must always invoke it.
 func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *define.Machine, cleanup func(), retErr error) {
-	runMode := define.ContainerMode
-	if cfg.Mode == ModeRootfs {
-		runMode = define.RootFsMode
+	runMode := define.RootFsMode
+	if cfg.RunMode.IsContainerLike() {
+		runMode = define.ContainerMode
 	}
 
 	vmc := newMachineBuilder(runMode)
@@ -113,4 +114,12 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 	}
 
 	return &vmc.Machine, cleanup, nil
+}
+
+func workspacePathForSession(name string) string {
+	return fmt.Sprintf("/tmp/.revm-%s", name)
+}
+
+func ignitionSockPath(workspace string) string {
+	return filepath.Clean(filepath.Join(workspace, "socks", "ign.sock"))
 }

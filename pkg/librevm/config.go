@@ -13,26 +13,47 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Mode selects the VM run mode.
-type Mode string
+// RunMode selects the VM run mode.
+type RunMode string
 
 const (
 	// ModeRootfs boots the VM with a rootfs and executes a command.
-	ModeRootfs Mode = "rootfs"
+	ModeRootfs RunMode = "rootfs"
 	// ModeContainer boots the VM with the built-in container runtime (Podman).
-	ModeContainer Mode = "container"
+	ModeContainer RunMode = "docker"
+
+	// ovm 模式特有的 RunMode
+	ModeOVMRun  RunMode = "run"
+	ModeOVMInit RunMode = "init"
 )
+
+func (m RunMode) IsOVMRun() bool { return m == ModeOVMRun }
+
+func (m RunMode) IsOVMInit() bool { return m == ModeOVMInit }
+
+func (m RunMode) IsOVM() bool { return m.IsOVMRun() || m.IsOVMInit() }
+
+func (m RunMode) IsContainerLike() bool { return m == ModeContainer || m.IsOVM() }
+
+func (m RunMode) IsValid() bool {
+	switch m {
+	case ModeRootfs, ModeContainer, ModeOVMRun, ModeOVMInit:
+		return true
+	default:
+		return false
+	}
+}
 
 // Config declares the complete VM specification. Zero-value fields use
 // sensible defaults (filled in during [New]).
 // Config is serializable as TOML and JSON, and can also be built using the
 // fluent With* chain methods.
 type Config struct {
-	Mode     Mode   `toml:"mode"               json:"mode"` // required: "rootfs" | "container"
-	Name     string `toml:"name,omitempty"      json:"name,omitempty"`
-	CPUs     int    `toml:"cpus,omitempty"      json:"cpus,omitempty"`     // 0 → host CPU count
-	MemoryMB uint64 `toml:"memory_mb,omitempty" json:"memoryMB,omitempty"` // 0 → host total RAM
-	Rootfs   string `toml:"rootfs,omitempty"    json:"rootfs,omitempty"`   // empty → built-in Alpine
+	RunMode   RunMode `toml:"runMode" json:"runMode"`                         // required: "rootfs" | "docker" | "run" | "init"
+	SessionID string  `toml:"sessionID,omitempty" json:"sessionID,omitempty"` // session name
+	CPUs      int     `toml:"cpus,omitempty"      json:"cpus,omitempty"`      // 0 → host CPU count
+	MemoryMB  uint64  `toml:"memory_mb,omitempty" json:"memoryMB,omitempty"`  // 0 → host total RAM
+	Rootfs    string  `toml:"rootfs,omitempty"    json:"rootfs,omitempty"`    // empty → built-in Alpine
 
 	// Command specifies the program to run inside the VM (rootfs mode only).
 	Command []string `toml:"command,omitempty"  json:"command,omitempty"`
@@ -60,8 +81,8 @@ func DefaultConfig() *Config {
 
 // --- Chain (fluent) methods ------------------------------------------------
 
-func (c *Config) WithMode(m Mode) *Config               { c.Mode = m; return c }
-func (c *Config) WithName(name string) *Config          { c.Name = name; return c }
+func (c *Config) WithMode(m RunMode) *Config            { c.RunMode = m; return c }
+func (c *Config) WithName(name string) *Config          { c.SessionID = name; return c }
 func (c *Config) WithCPUs(n int) *Config                { c.CPUs = n; return c }
 func (c *Config) WithMemory(mb uint64) *Config          { c.MemoryMB = mb; return c }
 func (c *Config) WithRootfs(path string) *Config        { c.Rootfs = path; return c }
