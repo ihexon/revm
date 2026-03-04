@@ -250,7 +250,7 @@ func (vm *LibkrunVM) configureVSockDevices() error {
 	// TSI mode needs socket hijacking features
 	if vm.vmc.VirtualNetworkMode == define.TSI {
 		if runtime.GOOS == "linux" {
-			vsockFeat = C.KRUN_TSI_HIJACK_INET | C.KRUN_TSI_HIJACK_UNIX
+			vsockFeat = C.KRUN_TSI_HIJACK_INET
 		}
 		// macOS do not support KRUN_TSI_HIJACK_UNIX
 		//   see issue: https://github.com/containers/libkrun/issues/526
