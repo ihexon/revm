@@ -36,8 +36,8 @@ func (d *Dropbear) GenerateHostKey(ctx context.Context) error {
 	}
 
 	cmd := exec.CommandContext(ctx, DropbearmultiPath(), "dropbearkey", "-t", "ed25519", "-f", d.cfg.PrivateKeyPath)
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stderr
+	cmd.Stderr = StderrWriter()
+	cmd.Stdout = StderrWriter()
 
 	logrus.Debugf("dropbearkey: %v", cmd.Args)
 	return cmd.Run()
@@ -73,8 +73,8 @@ func (d *Dropbear) Start(ctx context.Context) error {
 
 	cmd := exec.CommandContext(ctx, DropbearmultiPath(), args...)
 	cmd.Env = append(os.Environ(), "PASS_FILEPEM_CHECK=1")
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stderr
+	cmd.Stderr = StderrWriter()
+	cmd.Stdout = StderrWriter()
 
 	logrus.Debugf("dropbear: %v", cmd.Args)
 	return cmd.Run()

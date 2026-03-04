@@ -37,7 +37,9 @@ func attachGuestLogPort() {
 		logrus.Debugf("guest-log port not available: %v", err)
 		return
 	}
-	logrus.SetOutput(io.MultiWriter(os.Stderr, f))
+	stderrWriter := io.MultiWriter(os.Stderr, f)
+	logrus.SetOutput(stderrWriter)
+	service.SetStderrWriter(stderrWriter)
 	logrus.Infof("guest logs attached to virtio port %s", f.Name())
 }
 
@@ -174,6 +176,7 @@ func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
 		return service.StartGuestSSHServer(ctx, vmc)
 	})
 
+	// time sync error does not matter
 	g.Go(func() error {
 		return service.SyncRTCTime(ctx)
 	})
