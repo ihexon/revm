@@ -66,7 +66,8 @@ type Config struct {
 	Network       string   `toml:"network,omitempty"         json:"network,omitempty"` // "gvisor" | "tsi"
 	Mounts        []string `toml:"mounts,omitempty"          json:"mounts,omitempty"`  // "/host:/guest[,ro]"
 	Disks         []string `toml:"disks,omitempty"           json:"disks,omitempty"`   // ext4 paths
-	ContainerDisk string   `toml:"container_disk,omitempty"  json:"containerDisk,omitempty"`
+	ContainerDisk        string `toml:"container_disk,omitempty"         json:"containerDisk,omitempty"`
+	ContainerDiskVersion string `toml:"container_disk_version,omitempty" json:"containerDiskVersion,omitempty"`
 	Proxy         bool     `toml:"proxy,omitempty"           json:"proxy,omitempty"`
 	LogLevel      string   `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
 	ReportURL     string   `toml:"report_url,omitempty"      json:"reportURL,omitempty"`
@@ -92,6 +93,10 @@ func (c *Config) WithRootfs(path string) *Config        { c.Rootfs = path; retur
 func (c *Config) WithWorkDir(dir string) *Config        { c.WorkDir = dir; return c }
 func (c *Config) WithNetwork(mode string) *Config       { c.Network = mode; return c }
 func (c *Config) WithContainerDisk(path string) *Config { c.ContainerDisk = path; return c }
+func (c *Config) WithContainerDiskVersion(v string) *Config {
+	c.ContainerDiskVersion = v
+	return c
+}
 func (c *Config) WithProxy(enable bool) *Config         { c.Proxy = enable; return c }
 func (c *Config) WithLogLevel(level string) *Config     { c.LogLevel = level; return c }
 
