@@ -5,27 +5,28 @@ package service
 import (
 	"context"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
-const NTPServer = "time.cloudflare.com"
+var servers = []string{
+	"asia.pool.ntp.org",
+	"tw.pool.ntp.org",
+	"north-america.pool.ntp.org",
+	"jp.pool.ntp.org",
+}
 
 func SyncRTCTime(ctx context.Context) error {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
+	return syncTimeFromNtpServerForever(ctx, 10)
+}
+
+func syncTimeFromNtpServerForever(ctx context.Context, sleepTimeInSecond uint64) error {
 	for {
-		select {
-		case <-ctx.Done():
-			return context.Cause(ctx)
-		case <-ticker.C:
-			if err := syncTimeFromNtpServer(ctx); err != nil {
-				logrus.Warnf("sync time error: %v", err)
+		for i := range servers {
+			select {
+			case <-ctx.Done():
+				return context.Cause(ctx)
+			case <-time.After(time.Duration(sleepTimeInSecond) * time.Second):
+				_ = ExecOutput(ctx, nil, StderrWriter(), "ntpd", "-q", "-n", "-p", servers[i])
 			}
 		}
 	}
-}
-
-func syncTimeFromNtpServer(ctx context.Context) error {
-	return ExecOutput(ctx, nil, StderrWriter(), "ntpd", "-q", "-n", "-p", NTPServer)
 }
