@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"linuxvm/pkg/define"
 	httpv2 "linuxvm/pkg/http"
 	sshsvc "linuxvm/pkg/service/ssh"
@@ -47,6 +48,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.srv.Mux.HandleFunc("/healthz", s.handleHealth)
 	s.srv.Mux.HandleFunc("/vmconfig", s.handleVMConfig)
 	s.srv.Mux.HandleFunc("/exec", s.handleExec)
+	s.srv.Mux.HandleFunc("/legacy/exec", s.handleLegacyExec)
 	s.srv.Mux.HandleFunc("/stop", s.handleRequestVMStop)
 	if s.vmc.RunMode == define.OVMode.String() {
 		s.srv.Mux.HandleFunc("/info", s.handleInfo)
@@ -160,6 +162,73 @@ func (s *Server) executeCommand(ctx context.Context, cancel context.CancelFunc, 
 	wg.Wait()
 	if err := <-proc.ErrChan; err != nil {
 		s.sse.Publish(topic, ssev2.TypeErr, "wait: "+err.Error())
+		return
+	}
+	s.sse.Publish(topic, "done", "done")
+}
+
+// handleLegacyExec implements the ovm-mac compatible /exec interface.
+// Request: POST {"command": "..."}, Response: SSE stream (event: out/error/done).
+func (s *Server) handleLegacyExec(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Command string `json:"command"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	topic := "sess-legacy-" + uuid.NewString()
+	ctx, cancel := context.WithCancel(context.WithValue(r.Context(), ssev2.TopicKey, topic)) //nolint:staticcheck
+	defer cancel()
+	go s.executeLegacyCommand(ctx, cancel, topic, req.Command)
+	s.sse.ServeHTTP(w, r.WithContext(ctx))
+}
+
+func (s *Server) executeLegacyCommand(ctx context.Context, cancel context.CancelFunc, topic string, command string) {
+	defer cancel()
+	sshClient, err := sshsvc.MakeSSHClient(ctx, s.vmc)
+	if err != nil {
+		s.sse.Publish(topic, ssev2.TypeErr, "dial ssh: "+err.Error())
+		return
+	}
+
+	stdoutR, stdoutW := io.Pipe()
+	stderrR, stderrW := io.Pipe()
+
+	cmdErr := make(chan error, 1)
+	go func() {
+		defer sshClient.Close()
+		defer stdoutW.Close()
+		defer stderrW.Close()
+		cmdErr <- sshClient.RunWith(ctx, command, nil, stdoutW, stderrW)
+	}()
+
+	// Merge stdout and stderr into "out" events (ovm-mac compat).
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		sc := bufio.NewScanner(stdoutR)
+		sc.Buffer(make([]byte, 64*1024), 1<<20)
+		for sc.Scan() {
+			s.sse.Publish(topic, ssev2.TypeOut, sc.Text())
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		sc := bufio.NewScanner(stderrR)
+		sc.Buffer(make([]byte, 64*1024), 1<<20)
+		for sc.Scan() {
+			s.sse.Publish(topic, ssev2.TypeOut, sc.Text())
+		}
+	}()
+	wg.Wait()
+	if err := <-cmdErr; err != nil {
+		s.sse.Publish(topic, ssev2.TypeErr, err.Error())
 		return
 	}
 	s.sse.Publish(topic, "done", "done")
