@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/system"
 	"os"
 
 	"github.com/sirupsen/logrus"
@@ -22,27 +23,15 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 
 	vmc := newMachineBuilder(runMode)
 
-	// cleanups 按 LIFO 顺序执行
-	var cleanups []func()
-	cleanup = func() {
-		for i := len(cleanups) - 1; i >= 0; i-- {
-			cleanups[i]()
-		}
-	}
-	defer func() {
-		if retErr != nil {
-			cleanup()
-			cleanup = nil
-		}
-	}()
+	cleanupCallbacks := system.NewCleanUp()
+	cleanup = cleanupCallbacks.DoClean
+	defer cleanupCallbacks.CleanIfErr(&retErr)
 
 	if err := vmc.setupWorkspace(workspacePath); err != nil {
 		return nil, nil, fmt.Errorf("setup workspace: %w", err)
 	}
-	cleanups = append(cleanups,
-		func() { _ = vmc.fileLock.Unlock(); _ = os.Remove(workspacePath + ".lock") },
-		func() { _ = os.RemoveAll(workspacePath) },
-	)
+	cleanupCallbacks.AddFunc(func() { _ = vmc.fileLock.Unlock(); _ = os.Remove(workspacePath + ".lock") })
+	cleanupCallbacks.AddFunc(func() { _ = os.RemoveAll(workspacePath) })
 	pathMgr := newMachinePathManager(vmc.WorkspacePath)
 
 	if err := vmc.configureSSH(pathMgr); err != nil {
@@ -52,7 +41,7 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 	if err != nil {
 		return nil, nil, fmt.Errorf("setup log level: %w", err)
 	}
-	cleanups = append(cleanups, func() { logrus.SetOutput(os.Stderr); _ = logFile.Close() })
+	cleanupCallbacks.AddFunc(func() { logrus.SetOutput(os.Stderr); _ = logFile.Close() })
 	if err := vmc.withResources(cfg.MemoryMB, uint8(cfg.CPUs)); err != nil {
 		return nil, nil, fmt.Errorf("set resources: %w", err)
 	}
