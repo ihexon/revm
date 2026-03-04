@@ -5,13 +5,13 @@ package service
 import (
 	"context"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 const NTPServer = "time.cloudflare.com"
 
 func SyncRTCTime(ctx context.Context) error {
-	syncTimeFromNtpServer(ctx)
-
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -19,11 +19,13 @@ func SyncRTCTime(ctx context.Context) error {
 		case <-ctx.Done():
 			return context.Cause(ctx)
 		case <-ticker.C:
-			syncTimeFromNtpServer(ctx)
+			if err := syncTimeFromNtpServer(ctx); err != nil {
+				logrus.Warnf("sync time error: %v", err)
+			}
 		}
 	}
 }
 
-func syncTimeFromNtpServer(ctx context.Context) {
-	_ = ExecOutput(ctx, nil, nil, "ntpd", "-q", "-n", "-p", NTPServer)
+func syncTimeFromNtpServer(ctx context.Context) error {
+	return ExecOutput(ctx, nil, StderrWriter(), "ntpd", "-q", "-n", "-p", NTPServer)
 }

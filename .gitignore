@@ -10,3 +10,5 @@ revm-*.tar.*
 req.md
 design.md
 task.md
+refactor.md
+AGENTS.md

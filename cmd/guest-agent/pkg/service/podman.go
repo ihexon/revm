@@ -13,8 +13,8 @@ func startGuestPodmanService(ctx context.Context, vmc *define.Machine) error {
 	addr := "tcp://" + vmc.PodmanInfo.GuestPodmanAPIListenAddr //nolint:nosprintfhostport
 	cmd := exec.CommandContext(ctx, "podman", "--log-level", logrus.GetLevel().String(), "system", "service", "--time=0", addr)
 	cmd.Stdin = nil
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = StderrWriter()
+	cmd.Stderr = StderrWriter()
 	cmd.Env = append(os.Environ(), vmc.PodmanInfo.GuestPodmanRunWithEnvs...)
 
 	logrus.Infof("podman service starting on %s", vmc.PodmanInfo.GuestPodmanAPIListenAddr)
