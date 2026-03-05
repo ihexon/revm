@@ -24,33 +24,19 @@ const (
 	ModeRootfs RunMode = "rootfs"
 	// ModeContainer boots the VM with the built-in container runtime (Podman).
 	ModeContainer RunMode = "docker"
-
-	// ovm 模式特有的 RunMode
-	ModeOVMRun  RunMode = "run"
-	ModeOVMInit RunMode = "init"
 )
-
-func (m RunMode) IsOVMRun() bool { return m == ModeOVMRun }
-
-func (m RunMode) IsOVMInit() bool { return m == ModeOVMInit }
-
-func (m RunMode) IsOVM() bool { return m.IsOVMRun() || m.IsOVMInit() }
 
 func (m RunMode) IsValid() bool {
 	switch m {
-	case ModeRootfs, ModeContainer, ModeOVMRun, ModeOVMInit:
+	case ModeRootfs, ModeContainer:
 		return true
 	default:
 		return false
 	}
 }
 
-// Config declares the complete VM specification. Zero-value fields use
-// sensible defaults (filled in during [New]).
-// Config is serializable as TOML and JSON, and can also be built using the
-// fluent With* chain methods.
 type Config struct {
-	RunMode   RunMode `toml:"runMode" json:"runMode"`                         // required: "rootfs" | "docker" | "run" | "init"
+	RunMode   RunMode `toml:"runMode,omitempty" json:"runMode,omitempty"`
 	SessionID string  `toml:"sessionID,omitempty" json:"sessionID,omitempty"` // session name
 	CPUs      int     `toml:"cpus,omitempty"      json:"cpus,omitempty"`      // 0 → host CPU count
 	MemoryMB  uint64  `toml:"memory_mb,omitempty" json:"memoryMB,omitempty"`  // 0 → host total RAM
@@ -61,15 +47,17 @@ type Config struct {
 	WorkDir string   `toml:"workdir,omitempty"  json:"workdir,omitempty"`
 	Env     []string `toml:"env,omitempty"      json:"env,omitempty"`
 
-	Network       string   `toml:"network,omitempty"         json:"network,omitempty"` // "gvisor" | "tsi"
-	Mounts        []string `toml:"mounts,omitempty"          json:"mounts,omitempty"`  // "/host:/guest[,ro]"
-	Disks         []string `toml:"disks,omitempty"           json:"disks,omitempty"`   // ext4 paths
-	ContainerDisk        string `toml:"container_disk,omitempty"         json:"containerDisk,omitempty"`
-	ContainerDiskVersion string `toml:"container_disk_version,omitempty" json:"containerDiskVersion,omitempty"`
-	PodmanProxyAPI       string `toml:"podman_proxy_api,omitempty"       json:"podmanProxyAPI,omitempty"`
-	Proxy         bool     `toml:"proxy,omitempty"           json:"proxy,omitempty"`
-	LogLevel      string   `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
-	ReportURL     string   `toml:"report_url,omitempty"      json:"reportURL,omitempty"`
+	Network              string   `toml:"network,omitempty"         json:"network,omitempty"` // "gvisor" | "tsi"
+	Mounts               []string `toml:"mounts,omitempty"          json:"mounts,omitempty"`  // "/host:/guest[,ro]"
+	Disks                []string `toml:"disks,omitempty"           json:"disks,omitempty"`   // ext4 paths
+	ContainerDisk        string   `toml:"container_disk,omitempty"         json:"containerDisk,omitempty"`
+	ContainerDiskVersion string   `toml:"container_disk_version,omitempty" json:"containerDiskVersion,omitempty"`
+	PodmanProxyAPI       string   `toml:"podman_proxy_api,omitempty"       json:"podmanProxyAPI,omitempty"`
+	ManageAPI            string   `toml:"manage_api,omitempty"             json:"manageAPI,omitempty"`
+	Proxy                bool     `toml:"proxy,omitempty"           json:"proxy,omitempty"`
+	LogLevel             string   `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
+	LogTo                string   `toml:"log_to,omitempty"          json:"logTo,omitempty"`
+	ReportURL            string   `toml:"report_url,omitempty"      json:"reportURL,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.
@@ -97,8 +85,11 @@ func (c *Config) WithContainerDiskVersion(v string) *Config {
 	return c
 }
 func (c *Config) WithPodmanProxyAPI(path string) *Config { c.PodmanProxyAPI = path; return c }
-func (c *Config) WithProxy(enable bool) *Config         { c.Proxy = enable; return c }
-func (c *Config) WithLogLevel(level string) *Config     { c.LogLevel = level; return c }
+func (c *Config) WithManageAPI(path string) *Config      { c.ManageAPI = path; return c }
+func (c *Config) WithReportURL(url string) *Config       { c.ReportURL = url; return c }
+func (c *Config) WithProxy(enable bool) *Config          { c.Proxy = enable; return c }
+func (c *Config) WithLogLevel(level string) *Config      { c.LogLevel = level; return c }
+func (c *Config) WithLogTo(path string) *Config          { c.LogTo = path; return c }
 
 func (c *Config) WithCommand(bin string, args ...string) *Config {
 	c.Command = append([]string{bin}, args...)
@@ -191,6 +182,10 @@ func NormalizeConfig(cfg Config) (Config, error) {
 		cfg.WorkDir = "/"
 	}
 
+	if err := validateConfig(cfg); err != nil {
+		return Config{}, err
+	}
+
 	return cfg, nil
 }
 
@@ -200,14 +195,8 @@ func validateConfig(cfg Config) error {
 			"mode must be %q, %q, %q or %q, got %q",
 			ModeRootfs,
 			ModeContainer,
-			ModeOVMRun,
-			ModeOVMInit,
 			cfg.RunMode,
 		)
-	}
-
-	if cfg.RunMode.IsOVM() {
-		return fmt.Errorf("ovm mode %q is not yet implemented", cfg.RunMode)
 	}
 
 	if cfg.RunMode == ModeRootfs {

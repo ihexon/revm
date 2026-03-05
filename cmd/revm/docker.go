@@ -55,8 +55,12 @@ var startDocker = cli.Command{
 			Value: "info",
 		},
 		&cli.StringFlag{
+			Name:  define.FlagLogTo,
+			Usage: "custom log file path on host; defaults to <workspace>/logs/vm.log when unset",
+		},
+		&cli.StringFlag{
 			Name:  define.FlagSessionName,
-			Usage: "session name; used to derive the workspace directory (/tmp/.revm-<name>); defaults to a random string; sessions with the same name are mutually exclusive via flock",
+			Usage: "session name; used to derive the workspace directory (/tmp/<name>); defaults to a random string; sessions with the same name are mutually exclusive via flock",
 		},
 		&cli.StringFlag{
 			Name:  define.FlagContainerDisk,
@@ -65,6 +69,10 @@ var startDocker = cli.Command{
 		&cli.StringFlag{
 			Name:  define.FlagPodmanProxyAPI,
 			Usage: "custom Unix socket path for the host-side Podman API proxy; defaults to <workspace>/socks/podman-api.sock",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagManageAPI,
+			Usage: "custom Unix socket path for the host-side VM management API; defaults to <workspace>/socks/vmctl.sock",
 		},
 	},
 	Action: dockerLifeCycle,
@@ -91,9 +99,15 @@ func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
 	if p := command.String(define.FlagPodmanProxyAPI); p != "" {
 		cfg.WithPodmanProxyAPI(p)
 	}
+	if m := command.String(define.FlagManageAPI); m != "" {
+		cfg.WithManageAPI(m)
+	}
 
 	if u := command.String(define.FlagReportURL); u != "" {
-		cfg.ReportURL = u
+		cfg.WithReportURL(u)
+	}
+	if l := command.String(define.FlagLogTo); l != "" {
+		cfg.WithLogTo(l)
 	}
 
 	vm, err := librevm.New(ctx, cfg)

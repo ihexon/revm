@@ -13,11 +13,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// RoutedEvent resolves into a concrete wire event kind for the current mode.
-type RoutedEvent interface {
-	resolveForMode(runMode RunMode) (kind string, ok bool)
-}
-
 // REVMEventKind identifies a common VM lifecycle event.
 type REVMEventKind string
 
@@ -49,42 +44,6 @@ type Event struct {
 	SessionID string    `json:"sessionID,omitempty"`
 	Seq       uint64    `json:"seq,omitempty"`
 	Time      time.Time `json:"time"`
-}
-
-// OVMEventKind identifies an OVM-mode event.
-type OVMEventKind string
-
-const (
-	EventOVMInitSuccess OVMEventKind = "Success"
-	EventOVMPodmanReady OVMEventKind = "Ready"
-	EventOVMError       OVMEventKind = "Error"
-	EventOVMExit        OVMEventKind = "Exit"
-)
-
-func (k REVMEventKind) resolveForMode(runMode RunMode) (string, bool) {
-	if runMode.IsOVM() {
-		return "", false
-	}
-	return string(k), true
-}
-
-func (k OVMEventKind) resolveForMode(runMode RunMode) (string, bool) {
-	if !runMode.IsOVM() {
-		return "", false
-	}
-	switch runMode {
-	case ModeOVMRun:
-		switch k {
-		case EventOVMPodmanReady, EventOVMError, EventOVMExit:
-			return string(k), true
-		}
-	case ModeOVMInit:
-		switch k {
-		case EventOVMInitSuccess, EventOVMError, EventOVMExit:
-			return string(k), true
-		}
-	}
-	return "", false
 }
 
 type eventDispatcher struct {
@@ -157,52 +116,33 @@ func (d *eventDispatcher) close() {
 	}
 }
 
-type eventProtocol int
-
-const (
-	eventProtocolREVM eventProtocol = iota
-	eventProtocolOVM
-)
-
-func eventProtocolForRunMode(runMode RunMode) eventProtocol {
-	if runMode.IsOVM() {
-		return eventProtocolOVM
-	}
-	return eventProtocolREVM
-}
-
 func buildNotifyRequest(
 	client *network.Client,
-	protocol eventProtocol,
 	runMode RunMode,
 	sessionID string,
 	evt Event,
-) (*network.Request, bool) {
-	switch protocol {
-	case eventProtocolOVM:
-		value := ""
-		if evt.Kind == string(EventOVMError) {
-			value = evt.Message
-		}
-		return client.Get("/notify").
-			Query("stage", string(runMode)).
-			Query("name", evt.Kind).
-			Query("value", value), true
-	default:
-		return client.Get("/notify").
-			Query("session_id", sessionID).
-			Query("mode", string(runMode)).
-			Query("kind", string(evt.Kind)).
-			Query("seq", fmt.Sprintf("%d", evt.Seq)).
-			Query("msg", evt.Message).
-			Query("time", evt.Time.Format(time.RFC3339Nano)), true
-	}
+) *network.Request {
+	return client.Get("/notify").
+		Query("session_id", sessionID).
+		Query("mode", string(runMode)).
+		Query("kind", evt.Kind).
+		Query("seq", fmt.Sprintf("%d", evt.Seq)).
+		Query("msg", evt.Message).
+		Query("time", evt.Time.Format(time.RFC3339Nano))
 }
 
 // registerHTTPEventSink sets up an HTTP event reporter on the eventDispatcher.
-func registerHTTPEventSink(d *eventDispatcher, endpoint string, runMode RunMode, sessionID string) {
-	if endpoint == "" || string(runMode) == "" {
-		logrus.Warnf("http event sink: endpoint or runMode is empty, skipping")
+func (vm *VM) registerHTTPEventSink() {
+	endpoint := vm.cfg.ReportURL
+	runMode := vm.cfg.RunMode
+	sessionID := vm.cfg.SessionID
+
+	if endpoint == "" {
+		return
+	}
+
+	if runMode == "" {
+		logrus.Warnf("http event sink: run mode is empty, can not send event to %q", endpoint)
 		return
 	}
 
@@ -210,14 +150,9 @@ func registerHTTPEventSink(d *eventDispatcher, endpoint string, runMode RunMode,
 	if client == nil {
 		return
 	}
-	protocol := eventProtocolForRunMode(runMode)
 
 	handler := func(evt Event) {
-		req, ok := buildNotifyRequest(client, protocol, runMode, sessionID, evt)
-		if !ok {
-			return
-		}
-
+		req := buildNotifyRequest(client, runMode, sessionID, evt)
 		resp, err := req.Do(context.Background()) //nolint:bodyclose
 		if err != nil {
 			logrus.Warnf("http event sink: publish %s failed: %v", evt.Kind, err)
@@ -231,7 +166,7 @@ func registerHTTPEventSink(d *eventDispatcher, endpoint string, runMode RunMode,
 			logrus.Warnf("http event sink: close failed: %v", err)
 		}
 	}
-	d.addHandler(handler, closer)
+	vm.eventDispatcher.addHandler(handler, closer)
 }
 
 func newEventSinkClient(endpoint string) *network.Client {

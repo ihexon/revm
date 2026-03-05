@@ -26,7 +26,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/term"
 )
 
 // cstring provides safe management of C string memory with automatic cleanup.
@@ -324,11 +323,7 @@ func (vm *LibkrunVM) configureMultiportConsole() error {
 // addPrimaryConsole configures the main console (TTY or default stdio)
 // and returns the multiport console ID for attaching additional ports.
 func (vm *LibkrunVM) addPrimaryConsole() (C.uint32_t, error) {
-	isTTy := term.IsTerminal(int(os.Stdin.Fd())) &&
-		term.IsTerminal(int(os.Stdout.Fd())) &&
-		term.IsTerminal(int(os.Stderr.Fd()))
-
-	vm.vmc.TTY = isTTy
+	isTTy := vm.vmc.TTY
 
 	if !isTTy {
 		logrus.Infof("running in non-tty mode")

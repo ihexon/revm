@@ -17,7 +17,7 @@ var AttachConsole = cli.Command{
 	Name:        define.FlagAttachMode,
 	Usage:       "attach to a running VM and execute a command over SSH",
 	UsageText:   "attach [--pty] <session-name> [-- <command> [args...]]",
-	Description: "connect to a running VM session by name via SSH; the session-name maps to /tmp/.revm-<name>; launches an interactive shell (--pty) or runs the specified command non-interactively; defaults to /bin/sh if no command is given",
+	Description: "connect to a running VM session by name via SSH; the session-name maps to /tmp/<name>; launches an interactive shell (--pty) or runs the specified command non-interactively; defaults to /bin/sh if no command is given",
 	Action:      attachConsole,
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
@@ -33,10 +33,8 @@ var AttachConsole = cli.Command{
 	},
 }
 
-
-
 func attachConsole(ctx context.Context, command *cli.Command) error {
-	if err := log.SetupBasicLogger(command.String(define.FlagLogLevel)); err != nil {
+	if _, err := log.SetupLogger(command.String(define.FlagLogLevel), "", ""); err != nil {
 		return fmt.Errorf("failed to setup basic logger: %w", err)
 	}
 

@@ -40,6 +40,8 @@ func (vm *VM) Workspace() string {
 	return vm.workspacePath
 }
 
+// WriteJSONFile marshals the config as JSON and writes it to path.
+
 type stopController struct {
 	machine *define.Machine
 }
@@ -139,16 +141,13 @@ func New(ctx context.Context, cfg *Config) (*VM, error) {
 		return nil, fmt.Errorf("config must not be nil")
 	}
 
-	normalized, err := NormalizeConfig(*cfg)
+	normalizedCfg, err := NormalizeConfig(*cfg)
 	if err != nil {
 		return nil, fmt.Errorf("resolve defaults: %w", err)
 	}
-	if err := validateConfig(normalized); err != nil {
-		return nil, fmt.Errorf("validate config: %w", err)
-	}
+	workspacePath := getWorkspacePath(normalizedCfg.SessionID)
 
-	workspacePath := workspacePathForSession(normalized.SessionID)
-	mc, cleanup, err := buildMachine(ctx, normalized, workspacePath)
+	mc, cleanup, err := buildMachine(ctx, normalizedCfg, workspacePath)
 	if err != nil {
 		return nil, fmt.Errorf("build machine: %w", err)
 	}
@@ -160,18 +159,18 @@ func New(ctx context.Context, cfg *Config) (*VM, error) {
 	}
 
 	vm := &VM{
-		cfg:           &normalized,
+		cfg:           &normalizedCfg,
 		machine:       mc,
 		provider:      vmp,
-		svc:           lifecycle.NewHostServices(vmp),
+		svc:           lifecycle.NewHostServices(mc, vmp),
 		workspacePath: workspacePath,
 		cleanup:       cleanup,
 		state:         vmStateNew,
 		stopper:       newStopController(mc),
 	}
 
-	if normalized.ReportURL != "" {
-		registerHTTPEventSink(&vm.eventDispatcher, normalized.ReportURL, normalized.RunMode, normalized.SessionID)
+	if normalizedCfg.ReportURL != "" {
+		vm.registerHTTPEventSink()
 	}
 
 	return vm, nil
@@ -270,7 +269,9 @@ func (vm *VM) run(ctx context.Context) error {
 	// all thins ready , now we can start libkrun runner
 	vmErr := vm.svc.StartVirtualMachine(ctx)
 	go func() {
-		logrus.Infof("host service error after krun runner started: %v", g.Wait())
+		if vmErr != nil {
+			logrus.Infof("host service error after krun runner started: %v", g.Wait())
+		}
 	}()
 
 	if vmErr != nil {
@@ -281,13 +282,9 @@ func (vm *VM) run(ctx context.Context) error {
 	return vmErr
 }
 
-func (vm *VM) emit(kind RoutedEvent, msg string) {
-	if vm == nil || vm.cfg == nil || kind == nil {
+func (vm *VM) emit(kind REVMEventKind, msg string) {
+	if vm == nil || vm.cfg == nil {
 		return
 	}
-	resolvedKind, ok := kind.resolveForMode(vm.cfg.RunMode)
-	if !ok {
-		return
-	}
-	vm.eventDispatcher.publish(vm.cfg.SessionID, vm.cfg.RunMode, resolvedKind, msg, vm.seq.Add(1))
+	vm.eventDispatcher.publish(vm.cfg.SessionID, vm.cfg.RunMode, string(kind), msg, vm.seq.Add(1))
 }

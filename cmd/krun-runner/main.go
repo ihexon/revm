@@ -36,7 +36,7 @@ func runMain() error {
 		return err
 	}
 
-	if err := commonpkg.SetupBasicLoggerWithStageAndFile(
+	if _, err := commonpkg.SetupLogger(
 		currentLogLevelFromEnv(),
 		"krun-runner",
 		mc.LogFilePath,
