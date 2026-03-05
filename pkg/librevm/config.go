@@ -68,6 +68,7 @@ type Config struct {
 	Disks         []string `toml:"disks,omitempty"           json:"disks,omitempty"`   // ext4 paths
 	ContainerDisk        string `toml:"container_disk,omitempty"         json:"containerDisk,omitempty"`
 	ContainerDiskVersion string `toml:"container_disk_version,omitempty" json:"containerDiskVersion,omitempty"`
+	PodmanProxyAPI       string `toml:"podman_proxy_api,omitempty"       json:"podmanProxyAPI,omitempty"`
 	Proxy         bool     `toml:"proxy,omitempty"           json:"proxy,omitempty"`
 	LogLevel      string   `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
 	ReportURL     string   `toml:"report_url,omitempty"      json:"reportURL,omitempty"`
@@ -97,6 +98,7 @@ func (c *Config) WithContainerDiskVersion(v string) *Config {
 	c.ContainerDiskVersion = v
 	return c
 }
+func (c *Config) WithPodmanProxyAPI(path string) *Config { c.PodmanProxyAPI = path; return c }
 func (c *Config) WithProxy(enable bool) *Config         { c.Proxy = enable; return c }
 func (c *Config) WithLogLevel(level string) *Config     { c.LogLevel = level; return c }
 

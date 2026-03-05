@@ -62,6 +62,10 @@ var startDocker = cli.Command{
 			Name:  define.FlagContainerDisk,
 			Usage: "path to a persistent ext4 raw disk image for container storage; auto-created if the file does not exist; defaults to a workspace-local disk if unset",
 		},
+		&cli.StringFlag{
+			Name:  define.FlagPodmanProxyAPI,
+			Usage: "custom Unix socket path for the host-side Podman API proxy; defaults to <workspace>/socks/podman-api.sock",
+		},
 	},
 	Action: dockerLifeCycle,
 }
@@ -82,6 +86,10 @@ func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	if cd := command.String(define.FlagContainerDisk); cd != "" {
 		cfg.WithContainerDisk(cd)
+	}
+
+	if p := command.String(define.FlagPodmanProxyAPI); p != "" {
+		cfg.WithPodmanProxyAPI(p)
 	}
 
 	if u := command.String(define.FlagReportURL); u != "" {

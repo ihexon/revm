@@ -770,6 +770,13 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 		if err := vmc.configurePodman(ctx, pathMgr); err != nil {
 			return nil, nil, fmt.Errorf("configure podman: %w", err)
 		}
+		if cfg.PodmanProxyAPI != "" {
+			podmanProxyAddr := &url.URL{Scheme: "unix", Path: cfg.PodmanProxyAPI}
+			vmc.PodmanInfo.HostPodmanProxyAddr = podmanProxyAddr.String()
+			if err := os.MkdirAll(filepath.Dir(cfg.PodmanProxyAPI), 0755); err != nil {
+				return nil, nil, fmt.Errorf("create podman proxy dir: %w", err)
+			}
+		}
 
 		diskPath := pathMgr.GetBuiltInContainerStorageDiskPathInWorkspace()
 		if cfg.ContainerDisk != "" {
