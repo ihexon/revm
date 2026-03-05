@@ -30,6 +30,7 @@ import (
 type machineBuilder struct {
 	define.Machine
 	fileLock *flock.Flock
+	pathMgr  *machinePathManager
 }
 
 func newMachineBuilder(mode define.RunMode) *machineBuilder {
@@ -70,6 +71,8 @@ func (v *machineBuilder) setupWorkspace(workspacePath string) error {
 	if err = os.MkdirAll(v.WorkspacePath, 0755); err != nil {
 		return err
 	}
+
+	v.pathMgr = newMachinePathManager(v.WorkspacePath)
 
 	return v.lock()
 }
@@ -229,12 +232,12 @@ func (p *machinePathManager) GetBuiltInContainerStorageDiskPathInWorkspace() str
 	return filepath.Join(p.workspacePath, "raw-disk", "container-storage.ext4")
 }
 
-func (v *machineBuilder) withBuiltInAlpineRootfs(ctx context.Context, pathMgr *machinePathManager) error {
+func (v *machineBuilder) withBuiltInAlpineRootfs(ctx context.Context) error {
 	if v.WorkspacePath == "" {
 		return fmt.Errorf("workspace path is empty")
 	}
 
-	alpineRootfsDir := pathMgr.GetRootfsDir()
+	alpineRootfsDir := v.pathMgr.GetRootfsDir()
 	if err := os.MkdirAll(alpineRootfsDir, 0755); err != nil {
 		return err
 	}
@@ -296,17 +299,16 @@ func (v *machineBuilder) withUserProvidedMounts(dirs []string) error {
 // the VM's network stack in their specific way.
 type networkConfigStrategy interface {
 	// Configure sets up network configuration on the given VM.
-	// pathMgr is used to get workspace-relative paths for socket files.
 	Configure(ctx context.Context, vmc *define.Machine, pathMgr *machinePathManager) error
 }
 
-func (v *machineBuilder) configureNetwork(ctx context.Context, mode define.VNetMode, pathMgr *machinePathManager) error {
+func (v *machineBuilder) configureNetwork(ctx context.Context, mode define.VNetMode) error {
 	strategy := getNetworkStrategy(mode)
 	if strategy == nil {
 		return fmt.Errorf("invalid network mode: %s", mode)
 	}
 	v.VirtualNetworkMode = mode
-	return strategy.Configure(ctx, &v.Machine, pathMgr)
+	return strategy.Configure(ctx, &v.Machine, v.pathMgr)
 }
 
 // getNetworkStrategy returns the appropriate network strategy for the given network mode.
@@ -383,14 +385,14 @@ func (t *tsiNetworkConfig) Configure(ctx context.Context, vmc *define.Machine, p
 	return nil
 }
 
-func (v *machineBuilder) configureGuestAgent(ctx context.Context, pathMgr *machinePathManager) error {
+func (v *machineBuilder) configureGuestAgent(ctx context.Context) error {
 	if v.WorkspacePath == "" {
 		return fmt.Errorf("workspace path is empty")
 	}
 
 	unixUSL := &url.URL{
 		Scheme: "unix",
-		Path:   pathMgr.GetIgnAddr(),
+		Path:   v.pathMgr.GetIgnAddr(),
 	}
 
 	if err := os.MkdirAll(filepath.Dir(unixUSL.Path), 0755); err != nil {
@@ -445,7 +447,7 @@ func (v *machineBuilder) configureGuestAgent(ctx context.Context, pathMgr *machi
 	return nil
 }
 
-func (v *machineBuilder) configurePodman(ctx context.Context, pathMgr *machinePathManager) error {
+func (v *machineBuilder) configurePodman(ctx context.Context) error {
 	var envs []string
 
 	if v.ProxySetting.Use {
@@ -456,7 +458,7 @@ func (v *machineBuilder) configurePodman(ctx context.Context, pathMgr *machinePa
 	podmanProxyAddr := &url.URL{
 		Scheme: "unix",
 		Host:   "",
-		Path:   pathMgr.GetPodmanListenAddr(),
+		Path:   v.pathMgr.GetPodmanListenAddr(),
 	}
 
 	port, err := network.GetAvailablePort(0)
@@ -482,8 +484,8 @@ func (v *machineBuilder) configurePodman(ctx context.Context, pathMgr *machinePa
 	return nil
 }
 
-func (v *machineBuilder) configureSSH(pathMgr *machinePathManager) error {
-	keyPath := pathMgr.GetSSHPrivateKeyFile()
+func (v *machineBuilder) configureSSH() error {
+	keyPath := v.pathMgr.GetSSHPrivateKeyFile()
 	pubKeyPath := keyPath + ".pub"
 	if err := os.MkdirAll(filepath.Dir(keyPath), 0700); err != nil {
 		return err
@@ -512,11 +514,11 @@ func (v *machineBuilder) configureSSH(pathMgr *machinePathManager) error {
 	return nil
 }
 
-func (v *machineBuilder) configureVMCtlAPI(pathMgr *machinePathManager) error {
+func (v *machineBuilder) configureVMCtlAPI() error {
 	unixAddr := &url.URL{
 		Scheme: "unix",
 		Host:   "",
-		Path:   pathMgr.GetVMCtlAddr(),
+		Path:   v.pathMgr.GetVMCtlAddr(),
 	}
 
 	v.VMCtlAddress = unixAddr.String()
@@ -717,9 +719,8 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 	}
 	cleanupCallbacks.AddFunc(func() { _ = vmc.fileLock.Unlock(); _ = os.Remove(workspacePath + ".lock") })
 	cleanupCallbacks.AddFunc(func() { _ = os.RemoveAll(workspacePath) })
-	pathMgr := newMachinePathManager(vmc.WorkspacePath)
 
-	if err := vmc.configureSSH(pathMgr); err != nil {
+	if err := vmc.configureSSH(); err != nil {
 		return nil, nil, fmt.Errorf("generate ssh config: %w", err)
 	}
 	logFile, err := vmc.setupLogLevel(cfg.LogLevel)
@@ -730,7 +731,7 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 	if err := vmc.withResources(cfg.MemoryMB, uint8(cfg.CPUs)); err != nil {
 		return nil, nil, fmt.Errorf("set resources: %w", err)
 	}
-	if err := vmc.configureNetwork(ctx, define.VNetMode(cfg.Network), pathMgr); err != nil {
+	if err := vmc.configureNetwork(ctx, define.VNetMode(cfg.Network)); err != nil {
 		return nil, nil, fmt.Errorf("configure network: %w", err)
 	}
 	if cfg.Proxy {
@@ -744,7 +745,7 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 			return nil, nil, err
 		}
 	} else {
-		if err := vmc.withBuiltInAlpineRootfs(ctx, pathMgr); err != nil {
+		if err := vmc.withBuiltInAlpineRootfs(ctx); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -767,7 +768,7 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 		if err := vmc.withMountUserHome(ctx); err != nil {
 			return nil, nil, fmt.Errorf("mount user home: %w", err)
 		}
-		if err := vmc.configurePodman(ctx, pathMgr); err != nil {
+		if err := vmc.configurePodman(ctx); err != nil {
 			return nil, nil, fmt.Errorf("configure podman: %w", err)
 		}
 		if cfg.PodmanProxyAPI != "" {
@@ -778,7 +779,7 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 			}
 		}
 
-		diskPath := pathMgr.GetBuiltInContainerStorageDiskPathInWorkspace()
+		diskPath := vmc.pathMgr.GetBuiltInContainerStorageDiskPathInWorkspace()
 		if cfg.ContainerDisk != "" {
 			diskPath = cfg.ContainerDisk
 		}
@@ -802,10 +803,10 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 			return nil, nil, fmt.Errorf("setup mounts: %w", err)
 		}
 	}
-	if err := vmc.configureGuestAgent(ctx, pathMgr); err != nil {
+	if err := vmc.configureGuestAgent(ctx); err != nil {
 		return nil, nil, fmt.Errorf("configure guest agent: %w", err)
 	}
-	if err := vmc.configureVMCtlAPI(pathMgr); err != nil {
+	if err := vmc.configureVMCtlAPI(); err != nil {
 		return nil, nil, fmt.Errorf("configure vmctl API: %w", err)
 	}
 
