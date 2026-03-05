@@ -447,7 +447,7 @@ func (v *machineBuilder) configureGuestAgent(ctx context.Context) error {
 	return nil
 }
 
-func (v *machineBuilder) configurePodman(ctx context.Context) error {
+func (v *machineBuilder) configurePodman(ctx context.Context, customAPIPath string) error {
 	var envs []string
 
 	if v.ProxySetting.Use {
@@ -455,10 +455,15 @@ func (v *machineBuilder) configurePodman(ctx context.Context) error {
 		envs = append(envs, "https_proxy="+v.ProxySetting.HTTPSProxy)
 	}
 
+	apiPath := v.pathMgr.GetPodmanListenAddr()
+	if customAPIPath != "" {
+		apiPath = customAPIPath
+	}
+
 	podmanProxyAddr := &url.URL{
 		Scheme: "unix",
 		Host:   "",
-		Path:   v.pathMgr.GetPodmanListenAddr(),
+		Path:   apiPath,
 	}
 
 	port, err := network.GetAvailablePort(0)
@@ -703,9 +708,14 @@ func (v *machineBuilder) withRAWDiskVersionXATTR(value string) *machineBuilder {
 // The returned cleanup func releases all resources (file lock, log file,
 // workspace directory). Caller must always invoke it.
 func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *define.Machine, cleanup func(), retErr error) {
-	runMode := define.RootFsMode
-	if cfg.RunMode.IsContainerLike() {
+	var runMode define.RunMode
+	switch cfg.RunMode {
+	case ModeRootfs:
+		runMode = define.RootFsMode
+	case ModeContainer, ModeOVMRun, ModeOVMInit:
 		runMode = define.ContainerMode
+	default:
+		return nil, nil, fmt.Errorf("unsupported run mode %q", cfg.RunMode)
 	}
 
 	vmc := newMachineBuilder(runMode)
@@ -768,15 +778,8 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 		if err := vmc.withMountUserHome(ctx); err != nil {
 			return nil, nil, fmt.Errorf("mount user home: %w", err)
 		}
-		if err := vmc.configurePodman(ctx); err != nil {
+		if err := vmc.configurePodman(ctx, cfg.PodmanProxyAPI); err != nil {
 			return nil, nil, fmt.Errorf("configure podman: %w", err)
-		}
-		if cfg.PodmanProxyAPI != "" {
-			podmanProxyAddr := &url.URL{Scheme: "unix", Path: cfg.PodmanProxyAPI}
-			vmc.PodmanInfo.HostPodmanProxyAddr = podmanProxyAddr.String()
-			if err := os.MkdirAll(filepath.Dir(cfg.PodmanProxyAPI), 0755); err != nil {
-				return nil, nil, fmt.Errorf("create podman proxy dir: %w", err)
-			}
 		}
 
 		diskPath := vmc.pathMgr.GetBuiltInContainerStorageDiskPathInWorkspace()
