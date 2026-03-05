@@ -38,7 +38,7 @@ func newMachineBuilder(mode define.RunMode) *machineBuilder {
 		Machine: define.Machine{
 			MachineSpec: define.MachineSpec{
 				RunMode:       mode.String(),
-				XATTRSRawDisk: map[string]string{},
+				DiskXattrs:    map[string]string{},
 			},
 			MachineRuntime: define.NewMachineRuntime(),
 		},
@@ -582,11 +582,11 @@ func (v *machineBuilder) generateRAWDisk(ctx context.Context, rawDiskPath string
 		return fmt.Errorf("failed to write UUID for raw disk %q: %w", rawDiskPath, err)
 	}
 
-	xattrWriter := filesystem.NewXATTRManager()
+	xattr := filesystem.NewXattrManager()
 
-	for xattrKind, xattrValue := range v.XATTRSRawDisk {
-		if err = xattrWriter.WriteXATTR(ctx, rawDiskPath, xattrKind, xattrValue, true); err != nil {
-			return fmt.Errorf("failed to write xattr %s to %s: %w", xattrKind, rawDiskPath, err)
+	for key, val := range v.DiskXattrs {
+		if err = xattr.SetXattr(ctx, rawDiskPath, key, val, true); err != nil {
+			return fmt.Errorf("setxattr %q=%q on %q: %w", key, val, rawDiskPath, err)
 		}
 	}
 
@@ -679,16 +679,16 @@ func (v *machineBuilder) resetOrReuseContainerRAWDisk(ctx context.Context, diskP
 }
 
 func (v *machineBuilder) needsDiskRegeneration(ctx context.Context, diskPath string) (bool, error) {
-	xattrKey := define.XATTRRawDiskVersionKey
-	xattrProcesser := filesystem.NewXATTRManager()
+	xattrKey := define.XattrDiskVersionKey
+	xattr := filesystem.NewXattrManager()
 
-	value1, _ := xattrProcesser.GetXATTR(ctx, diskPath, xattrKey)
-	value2 := v.XATTRSRawDisk[xattrKey]
-	if value2 == "" {
-		return false, fmt.Errorf("vmc XATTRSRawDisk not set")
+	stored, _ := xattr.GetXattr(ctx, diskPath, xattrKey)
+	expected := v.DiskXattrs[xattrKey]
+	if expected == "" {
+		return false, fmt.Errorf("disk xattr %q not configured on machineBuilder", xattrKey)
 	}
 
-	if value1 != value2 {
+	if stored != expected {
 		return true, nil
 	}
 
@@ -696,8 +696,8 @@ func (v *machineBuilder) needsDiskRegeneration(ctx context.Context, diskPath str
 }
 
 func (v *machineBuilder) withRAWDiskVersionXATTR(value string) *machineBuilder {
-	v.XATTRSRawDisk = map[string]string{
-		define.XATTRRawDiskVersionKey: value,
+	v.DiskXattrs = map[string]string{
+		define.XattrDiskVersionKey: value,
 	}
 	return v
 }

@@ -32,7 +32,7 @@ type MachineSpec struct {
 	IgnitionServerCfg IgnitionServerCfg `json:"ignitionServerCfg,omitempty"`
 	GuestAgentCfg     GuestAgentCfg     `json:"guestAgentCfg,omitempty"`
 	Cmdline           Cmdline           `json:"cmdline,omitempty"` // 仅仅在 rootfs mode 有意义
-	XATTRSRawDisk     map[string]string `json:"XATTRSRawDisk,omitempty"`
+	DiskXattrs        map[string]string `json:"diskXattrs,omitempty"`
 	ProxySetting      ProxySetting      `json:"systemProxy,omitempty"`
 
 	TTY bool `json:"TTY"`
@@ -85,7 +85,7 @@ func (m Machine) MarshalJSON() ([]byte, error) {
 }
 
 const (
-	XATTRRawDiskVersionKey = "user.vm.rawdisk.version"
+	XattrDiskVersionKey = "user.vm.rawdisk.version"
 )
 
 type Cmdline struct {
