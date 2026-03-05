@@ -36,8 +36,6 @@ func (m RunMode) IsOVMInit() bool { return m == ModeOVMInit }
 
 func (m RunMode) IsOVM() bool { return m.IsOVMRun() || m.IsOVMInit() }
 
-func (m RunMode) IsContainerLike() bool { return m == ModeContainer || m.IsOVM() }
-
 func (m RunMode) IsValid() bool {
 	switch m {
 	case ModeRootfs, ModeContainer, ModeOVMRun, ModeOVMInit:
