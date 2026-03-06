@@ -167,10 +167,31 @@ func New(ctx context.Context, cfg *Config) (*VM, error) {
 		cleanup:       cleanup,
 		state:         vmStateNew,
 		stopper:       newStopController(mc),
+		eventDispatcher: eventDispatcher{
+			proxy: func(sink SinkKind, evt Event) Event {
+				if sink != SinkLegacy {
+					return evt
+				}
+				switch evt.Kind {
+				case EventStopped:
+					evt.Kind = "Exit"
+				case EventPodmanReady:
+					evt.Kind = "Ready"
+				case EventError:
+					evt.Kind = "Error"
+				case EventSuccess:
+					evt.Kind = "Success"
+				}
+				return evt
+			},
+		},
 	}
 
-	if normalizedCfg.ReportURL != "" {
-		vm.registerHTTPEventSink()
+	if normalizedCfg.V1EventReportURL != "" {
+		vm.registerV1EventSink()
+	}
+	if normalizedCfg.LegacyEventReportURL != "" {
+		vm.registerLegacyEventSink()
 	}
 
 	return vm, nil
@@ -280,11 +301,4 @@ func (vm *VM) run(ctx context.Context) error {
 	vm.requestStopOtherServices()
 	vm.emit(EventStopped, "vm stopped")
 	return vmErr
-}
-
-func (vm *VM) emit(kind REVMEventKind, msg string) {
-	if vm == nil || vm.cfg == nil {
-		return
-	}
-	vm.eventDispatcher.publish(vm.cfg.SessionID, vm.cfg.RunMode, string(kind), msg, vm.seq.Add(1))
 }

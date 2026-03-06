@@ -19,7 +19,7 @@ const (
 	FlagEnvs             = "envs"
 	FlagReportURL        = "report-url"
 	FlagVNetworkType     = "network"
-	FlagSessionName      = "name"
+	FlagSessionID        = "id"
 	FlagContainerDisk    = "container-disk"
 	FlagPodmanProxyAPI   = "podman-proxy-api"
 	FlagManageAPI        = "manage-api"

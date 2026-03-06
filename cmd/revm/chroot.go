@@ -69,7 +69,7 @@ var startRootfs = cli.Command{
 			Usage: "custom log file path on host; defaults to <workspace>/logs/vm.log when unset",
 		},
 		&cli.StringFlag{
-			Name:  define.FlagSessionName,
+			Name:  define.FlagSessionID,
 			Usage: "session name; used to derive the workspace directory (/tmp/<name>); defaults to a random string; sessions with the same name are mutually exclusive via flock",
 		},
 		&cli.StringFlag{
@@ -85,7 +85,7 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	cfg := librevm.DefaultConfig().
 		WithMode(librevm.ModeRootfs).
-		WithName(command.String(define.FlagSessionName)).
+		WithName(command.String(define.FlagSessionID)).
 		WithCPUs(int(command.Int8(define.FlagCPUS))).
 		WithMemory(command.Uint64(define.FlagMemoryInMB)).
 		WithNetwork(command.String(define.FlagVNetworkType)).
@@ -105,7 +105,7 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	}
 
 	if u := command.String(define.FlagReportURL); u != "" {
-		cfg.WithReportURL(u)
+		cfg.WithLegacyEventReport(u)
 	}
 	if l := command.String(define.FlagLogTo); l != "" {
 		cfg.WithLogTo(l)

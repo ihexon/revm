@@ -19,6 +19,16 @@ var startDocker = cli.Command{
 			Name:  define.FlagCPUS,
 			Usage: "number of vCPU cores to assign to the VM; defaults to host CPU count if unset or less than 1",
 		},
+		&cli.Int8Flag{
+			Name:        "workspace",
+			Usage:       "not use any more, retained for compatibility",
+			HideDefault: true,
+		},
+		&cli.Int8Flag{
+			Name:        "ppid",
+			Usage:       "not use any more, retained for compatibility",
+			HideDefault: true,
+		},
 		&cli.Uint64Flag{
 			Name:  define.FlagMemoryInMB,
 			Usage: "VM memory size in MB; minimum 512 MB; defaults to host available memory if unset or less than 512",
@@ -40,10 +50,9 @@ var startDocker = cli.Command{
 			Usage: "read the macOS system HTTP/HTTPS proxy and forward it to the guest as http_proxy/https_proxy env vars; in gvisor mode, 127.0.0.1 is automatically rewritten to host.containers.internal",
 		},
 		&cli.StringFlag{
-			Name:   define.FlagVNetworkType,
-			Usage:  "virtual network stack: gvisor uses gvisor-tap-vsock (full TCP/UDP, DNS, NAT via 192.168.127.0/24); tsi uses libkrun transparent socket interception",
-			Value:  string(define.GVISOR),
-			Hidden: false,
+			Name:  define.FlagVNetworkType,
+			Usage: "virtual network stack: gvisor uses gvisor-tap-vsock (full TCP/UDP, DNS, NAT via 192.168.127.0/24); tsi uses libkrun transparent socket interception",
+			Value: string(define.GVISOR),
 		},
 		&cli.StringFlag{
 			Name:  define.FlagReportURL,
@@ -56,11 +65,11 @@ var startDocker = cli.Command{
 		},
 		&cli.StringFlag{
 			Name:  define.FlagLogTo,
-			Usage: "custom log file path on host; defaults to <workspace>/logs/vm.log when unset",
+			Usage: "custom log file path on host; defaults to /tmp/<session_id>/logs/vm.log when unset",
 		},
 		&cli.StringFlag{
-			Name:  define.FlagSessionName,
-			Usage: "session name; used to derive the workspace directory (/tmp/<name>); defaults to a random string; sessions with the same name are mutually exclusive via flock",
+			Name:  define.FlagSessionID,
+			Usage: "session name; used to derive the workspace directory (/tmp/<session_id>); defaults to a random string; sessions with the same name are mutually exclusive via flock",
 		},
 		&cli.StringFlag{
 			Name:  define.FlagContainerDisk,
@@ -68,11 +77,11 @@ var startDocker = cli.Command{
 		},
 		&cli.StringFlag{
 			Name:  define.FlagPodmanProxyAPI,
-			Usage: "custom Unix socket path for the host-side Podman API proxy; defaults to <workspace>/socks/podman-api.sock",
+			Usage: "custom Unix socket path for the host-side Podman API proxy; defaults to /tmp/<session_id>/socks/podman-api.sock",
 		},
 		&cli.StringFlag{
 			Name:  define.FlagManageAPI,
-			Usage: "custom Unix socket path for the host-side VM management API; defaults to <workspace>/socks/vmctl.sock",
+			Usage: "custom Unix socket path for the host-side VM management API; defaults to /tmp/<session_id>/socks/vmctl.sock",
 		},
 	},
 	Action: dockerLifeCycle,
@@ -83,7 +92,7 @@ func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	cfg := librevm.DefaultConfig().
 		WithMode(librevm.ModeContainer).
-		WithName(command.String(define.FlagSessionName)).
+		WithName(command.String(define.FlagSessionID)).
 		WithCPUs(int(command.Int8(define.FlagCPUS))).
 		WithMemory(command.Uint64(define.FlagMemoryInMB)).
 		WithNetwork(command.String(define.FlagVNetworkType)).
@@ -104,10 +113,15 @@ func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
 	}
 
 	if u := command.String(define.FlagReportURL); u != "" {
-		cfg.WithReportURL(u)
+		cfg.WithLegacyEventReport(u)
 	}
 	if l := command.String(define.FlagLogTo); l != "" {
 		cfg.WithLogTo(l)
+	}
+
+	// Apply init preferences if present.
+	if initCfg, err := librevm.LoadFile(librevm.InitCfgFilePath); err == nil {
+		cfg.MergeFrom(initCfg)
 	}
 
 	vm, err := librevm.New(ctx, cfg)

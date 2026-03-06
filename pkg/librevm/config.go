@@ -57,7 +57,8 @@ type Config struct {
 	Proxy                bool     `toml:"proxy,omitempty"           json:"proxy,omitempty"`
 	LogLevel             string   `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
 	LogTo                string   `toml:"log_to,omitempty"          json:"logTo,omitempty"`
-	ReportURL            string   `toml:"report_url,omitempty"      json:"reportURL,omitempty"`
+	V1EventReportURL     string   `toml:"v1_event_report_url,omitempty"     json:"v1EventReportURL,omitempty"`
+	LegacyEventReportURL string   `toml:"legacy_event_report_url,omitempty" json:"legacyEventReportURL,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.
@@ -86,7 +87,8 @@ func (c *Config) WithContainerDiskVersion(v string) *Config {
 }
 func (c *Config) WithPodmanProxyAPI(path string) *Config { c.PodmanProxyAPI = path; return c }
 func (c *Config) WithManageAPI(path string) *Config      { c.ManageAPI = path; return c }
-func (c *Config) WithReportURL(url string) *Config       { c.ReportURL = url; return c }
+func (c *Config) WithV1EventReport(url string) *Config     { c.V1EventReportURL = url; return c }
+func (c *Config) WithLegacyEventReport(url string) *Config { c.LegacyEventReportURL = url; return c }
 func (c *Config) WithProxy(enable bool) *Config          { c.Proxy = enable; return c }
 func (c *Config) WithLogLevel(level string) *Config      { c.LogLevel = level; return c }
 func (c *Config) WithLogTo(path string) *Config          { c.LogTo = path; return c }
@@ -112,6 +114,65 @@ func (c *Config) WithDisk(paths ...string) *Config {
 }
 
 // --- Loading ---------------------------------------------------------------
+
+// InitCfgFilePath is the well-known path where "init" writes its preferences.
+const InitCfgFilePath = "/tmp/vmc-4a04eac75fe00f1bc65365f869aab3c0.json"
+
+// WriteCfg marshals cfg as JSON and writes it to path.
+func (c *Config) WriteCfg(path string) error {
+	data, err := json.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return fmt.Errorf("write config file: %w", err)
+	}
+	return nil
+}
+
+// MergeFrom applies non-zero preference fields from other onto c.
+// Only fields that "init" is expected to set are merged; runtime-only
+// fields (RunMode, SessionID, event report URLs, etc.) are intentionally skipped.
+func (c *Config) MergeFrom(other *Config) {
+	if other == nil {
+		return
+	}
+
+	if other.SessionID != "" {
+		c.SessionID = other.SessionID
+	}
+
+	if other.CPUs > 0 {
+		c.CPUs = other.CPUs
+	}
+	if other.MemoryMB > 0 {
+		c.MemoryMB = other.MemoryMB
+	}
+	if other.Network != "" {
+		c.Network = other.Network
+	}
+	if len(other.Mounts) > 0 {
+		c.Mounts = append(c.Mounts, other.Mounts...)
+	}
+	if other.ContainerDisk != "" {
+		c.ContainerDisk = other.ContainerDisk
+	}
+	if other.ContainerDiskVersion != "" {
+		c.ContainerDiskVersion = other.ContainerDiskVersion
+	}
+	if other.PodmanProxyAPI != "" {
+		c.PodmanProxyAPI = other.PodmanProxyAPI
+	}
+	if other.ManageAPI != "" {
+		c.ManageAPI = other.ManageAPI
+	}
+	if other.LogTo != "" {
+		c.LogTo = other.LogTo
+	}
+}
 
 // LoadFile reads a Config from path. The format is detected by extension:
 // .toml for TOML, .json for JSON. Any other extension returns an error.
