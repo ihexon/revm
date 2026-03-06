@@ -3,7 +3,7 @@
 Attach to a running VM instance from another terminal.
 
 ```bash
-revm attach [--pty] <session-name> [-- <command> [args...]]
+revm attach [--pty] <session-id> [-- <command> [args...]]
 ```
 
 | Flag           | Description                                                                                                      | Default |
@@ -11,7 +11,7 @@ revm attach [--pty] <session-name> [-- <command> [args...]]
 | `--pty`        | Allocate a pseudo-terminal and launch an interactive shell; without this flag the command runs non-interactively | `false` |
 | `--log-level`  | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`                                       | `info`  |
 
-The `<session-name>` maps to the workspace directory `/tmp/.revm-<session-name>`.
+The `<session-id>` maps to the session directory `/tmp/<session-id>`.
 
 ```bash
 # Interactive shell

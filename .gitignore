@@ -6,10 +6,11 @@ CLAUDE.md
 .claude/
 .deps/
 
-revm-*.tar.*
+*.tar.zst
 req.md
 design.md
 task.md
 refactor.md
 AGENTS.md
 TODO.md
+revm

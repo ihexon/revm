@@ -4,12 +4,15 @@ import (
 	"context"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/librevm"
+	"os"
 
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 )
 
 var startDocker = cli.Command{
 	Name:                      define.FlagDockerMode,
+	Aliases:                   []string{"start", "run"}, // for compatibility
 	Usage:                     "start a Linux VM with the built-in container runtime",
 	UsageText:                 define.FlagDockerMode + " [flags]",
 	Description:               "boot a Linux microVM using libkrun with the built-in rootfs and podman container runtime; exposes a Podman-compatible API socket on the host",
@@ -18,6 +21,21 @@ var startDocker = cli.Command{
 		&cli.Int8Flag{
 			Name:  define.FlagCPUS,
 			Usage: "number of vCPU cores to assign to the VM; defaults to host CPU count if unset or less than 1",
+		},
+		&cli.StringFlag{
+			Name:        define.FlagOVMWorkspace,
+			Usage:       "not use any more, retained for compatibility",
+			HideDefault: true,
+		},
+		&cli.Int8Flag{
+			Name:        define.FlagOVMPPID,
+			Usage:       "not use any more, retained for compatibility",
+			HideDefault: true,
+		},
+		&cli.StringFlag{
+			Name:        define.FlagOVMName,
+			Usage:       "not use any more, retained for compatibility",
+			HideDefault: true,
 		},
 		&cli.Uint64Flag{
 			Name:  define.FlagMemoryInMB,
@@ -29,7 +47,7 @@ var startDocker = cli.Command{
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagRawDisk,
-			Usage: "attach an ext4 raw disk image to the VM; auto-created if the raw disk does not exist; mounted at /mnt/<UUID> inside the guest; can be specified multiple times",
+			Usage: "attach an ext4 raw disk image to the VM (format: <path>[,uuid]); auto-created if the file does not exist; UUID is auto-generated when omitted; mounted at /mnt/<UUID> inside the guest; can be specified multiple times",
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagMount,
@@ -40,10 +58,9 @@ var startDocker = cli.Command{
 			Usage: "read the macOS system HTTP/HTTPS proxy and forward it to the guest as http_proxy/https_proxy env vars; in gvisor mode, 127.0.0.1 is automatically rewritten to host.containers.internal",
 		},
 		&cli.StringFlag{
-			Name:   define.FlagVNetworkType,
-			Usage:  "virtual network stack: gvisor uses gvisor-tap-vsock (full TCP/UDP, DNS, NAT via 192.168.127.0/24); tsi uses libkrun transparent socket interception",
-			Value:  string(define.GVISOR),
-			Hidden: false,
+			Name:  define.FlagVNetworkType,
+			Usage: "virtual network stack: gvisor uses gvisor-tap-vsock (full TCP/UDP, DNS, NAT via 192.168.127.0/24); tsi uses libkrun transparent socket interception",
+			Value: string(define.GVISOR),
 		},
 		&cli.StringFlag{
 			Name:  define.FlagReportURL,
@@ -55,16 +72,28 @@ var startDocker = cli.Command{
 			Value: "info",
 		},
 		&cli.StringFlag{
-			Name:  define.FlagSessionName,
-			Usage: "session name; used to derive the workspace directory (/tmp/.revm-<name>); defaults to a random string; sessions with the same name are mutually exclusive via flock",
+			Name:  define.FlagLogTo,
+			Usage: "custom log file path on host; defaults to /tmp/<session_id>/logs/vm.log when unset",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagSessionID,
+			Usage: "session name; used to derive the workspace directory (/tmp/<session_id>); defaults to a random string; sessions with the same name are mutually exclusive via flock",
 		},
 		&cli.StringFlag{
 			Name:  define.FlagContainerDisk,
 			Usage: "path to a persistent ext4 raw disk image for container storage; auto-created if the file does not exist; defaults to a workspace-local disk if unset",
 		},
 		&cli.StringFlag{
-			Name:  define.FlagPodmanProxyAPI,
-			Usage: "custom Unix socket path for the host-side Podman API proxy; defaults to <workspace>/socks/podman-api.sock",
+			Name:  define.FlagPodmanProxyAPIFile,
+			Usage: "custom Unix socket path for the host-side Podman API proxy; defaults to /tmp/<session_id>/socks/podman-api.sock",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagManageAPIFile,
+			Usage: "custom Unix socket path for the host-side VM management API; defaults to /tmp/<session_id>/socks/vmctl.sock",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagSSHKeyDir,
+			Usage: "directory to symlink the generated SSH key pair (key and key.pub) into; keys are always created inside the session directory",
 		},
 	},
 	Action: dockerLifeCycle,
@@ -75,7 +104,7 @@ func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	cfg := librevm.DefaultConfig().
 		WithMode(librevm.ModeContainer).
-		WithName(command.String(define.FlagSessionName)).
+		WithName(command.String(define.FlagSessionID)).
 		WithCPUs(int(command.Int8(define.FlagCPUS))).
 		WithMemory(command.Uint64(define.FlagMemoryInMB)).
 		WithNetwork(command.String(define.FlagVNetworkType)).
@@ -88,15 +117,31 @@ func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
 		cfg.WithContainerDisk(cd)
 	}
 
-	if p := command.String(define.FlagPodmanProxyAPI); p != "" {
-		cfg.WithPodmanProxyAPI(p)
+	if p := command.String(define.FlagPodmanProxyAPIFile); p != "" {
+		cfg.WithPodmanProxyAPIFile(p)
+	}
+	if m := command.String(define.FlagManageAPIFile); m != "" {
+		cfg.WithManageAPIFile(m)
+	}
+	if sk := command.String(define.FlagSSHKeyDir); sk != "" {
+		cfg.WithSSHKeyDir(sk)
 	}
 
 	if u := command.String(define.FlagReportURL); u != "" {
-		cfg.ReportURL = u
+		cfg.WithLegacyEventReport(u)
+	}
+	if l := command.String(define.FlagLogTo); l != "" {
+		cfg.WithLogTo(l)
 	}
 
-	vm, err := librevm.New(ctx, cfg)
+	// Apply init vmconfig preferences if present.
+	if initCfg, err := librevm.LoadFile(vmConfigFilePath); err == nil {
+		logrus.Infof("apply vmconfig prefer from: %q", vmConfigFilePath)
+		cfg.MergeFrom(initCfg)
+		_ = os.Remove(vmConfigFilePath)
+	}
+
+	vm, err := librevm.New(cfg)
 	if err != nil {
 		return err
 	}

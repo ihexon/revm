@@ -1,4 +1,4 @@
-package main
+package system
 
 import (
 	"linuxvm/pkg/define"
@@ -8,7 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func showVersionAndOSInfo() {
+func ShowVersionAndOSInfo() {
 	var version strings.Builder
 	if define.Version != "" {
 		version.WriteString(define.Version)
