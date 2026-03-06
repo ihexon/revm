@@ -4,7 +4,9 @@ import (
 	"context"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/librevm"
+	"os"
 
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 )
 
@@ -119,9 +121,11 @@ func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
 		cfg.WithLogTo(l)
 	}
 
-	// Apply init preferences if present.
-	if initCfg, err := librevm.LoadFile(librevm.InitCfgFilePath); err == nil {
+	// Apply init vmconfig preferences if present.
+	if initCfg, err := librevm.LoadFile(vmConfigFilePath); err == nil {
+		logrus.Infof("apply vmconfig prefer from: %q", vmConfigFilePath)
 		cfg.MergeFrom(initCfg)
+		_ = os.Remove(vmConfigFilePath)
 	}
 
 	vm, err := librevm.New(ctx, cfg)

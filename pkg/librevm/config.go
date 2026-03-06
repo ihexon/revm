@@ -85,13 +85,13 @@ func (c *Config) WithContainerDiskVersion(v string) *Config {
 	c.ContainerDiskVersion = v
 	return c
 }
-func (c *Config) WithPodmanProxyAPI(path string) *Config { c.PodmanProxyAPI = path; return c }
-func (c *Config) WithManageAPI(path string) *Config      { c.ManageAPI = path; return c }
+func (c *Config) WithPodmanProxyAPI(path string) *Config   { c.PodmanProxyAPI = path; return c }
+func (c *Config) WithManageAPI(path string) *Config        { c.ManageAPI = path; return c }
 func (c *Config) WithV1EventReport(url string) *Config     { c.V1EventReportURL = url; return c }
 func (c *Config) WithLegacyEventReport(url string) *Config { c.LegacyEventReportURL = url; return c }
-func (c *Config) WithProxy(enable bool) *Config          { c.Proxy = enable; return c }
-func (c *Config) WithLogLevel(level string) *Config      { c.LogLevel = level; return c }
-func (c *Config) WithLogTo(path string) *Config          { c.LogTo = path; return c }
+func (c *Config) WithProxy(enable bool) *Config            { c.Proxy = enable; return c }
+func (c *Config) WithLogLevel(level string) *Config        { c.LogLevel = level; return c }
+func (c *Config) WithLogTo(path string) *Config            { c.LogTo = path; return c }
 
 func (c *Config) WithCommand(bin string, args ...string) *Config {
 	c.Command = append([]string{bin}, args...)
@@ -114,9 +114,6 @@ func (c *Config) WithDisk(paths ...string) *Config {
 }
 
 // --- Loading ---------------------------------------------------------------
-
-// InitCfgFilePath is the well-known path where "init" writes its preferences.
-const InitCfgFilePath = "/tmp/vmc-4a04eac75fe00f1bc65365f869aab3c0.json"
 
 // WriteCfg marshals cfg as JSON and writes it to path.
 func (c *Config) WriteCfg(path string) error {

@@ -131,11 +131,25 @@ type hostServices interface {
 	ExitVirtualMachineWhenSomethingHappened(ctx context.Context) error
 }
 
-// New creates a VM from the given Config. It resolves defaults, validates the
-// configuration, sets up the workspace and file lock, builds the internal
-// Machine, and prepares the VM provider.
-//
-// Close must be called even if Start is never called.
+func evtProxy(sink SinkKind, evt Event) Event {
+	if sink == SinkLegacy {
+		switch evt.Kind {
+		case EventStopped:
+			evt.Kind = "Exit"
+		case EventPodmanReady:
+			evt.Kind = "Ready"
+		case EventError:
+			evt.Kind = "Error"
+		case EventSuccess:
+			evt.Kind = "Success"
+		case EventExit:
+			evt.Kind = "Exit"
+		}
+		return evt
+	}
+	return evt
+}
+
 func New(ctx context.Context, cfg *Config) (*VM, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
@@ -145,9 +159,9 @@ func New(ctx context.Context, cfg *Config) (*VM, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve defaults: %w", err)
 	}
-	workspacePath := getWorkspacePath(normalizedCfg.SessionID)
+	sessionPath := getSessionPath(normalizedCfg.SessionID)
 
-	mc, cleanup, err := buildMachine(ctx, normalizedCfg, workspacePath)
+	mc, cleanup, err := buildMachine(ctx, normalizedCfg, sessionPath)
 	if err != nil {
 		return nil, fmt.Errorf("build machine: %w", err)
 	}
@@ -163,27 +177,12 @@ func New(ctx context.Context, cfg *Config) (*VM, error) {
 		machine:       mc,
 		provider:      vmp,
 		svc:           lifecycle.NewHostServices(mc, vmp),
-		workspacePath: workspacePath,
+		workspacePath: sessionPath,
 		cleanup:       cleanup,
 		state:         vmStateNew,
 		stopper:       newStopController(mc),
 		eventDispatcher: eventDispatcher{
-			proxy: func(sink SinkKind, evt Event) Event {
-				if sink != SinkLegacy {
-					return evt
-				}
-				switch evt.Kind {
-				case EventStopped:
-					evt.Kind = "Exit"
-				case EventPodmanReady:
-					evt.Kind = "Ready"
-				case EventError:
-					evt.Kind = "Error"
-				case EventSuccess:
-					evt.Kind = "Success"
-				}
-				return evt
-			},
+			proxy: evtProxy,
 		},
 	}
 
@@ -195,6 +194,11 @@ func New(ctx context.Context, cfg *Config) (*VM, error) {
 	}
 
 	return vm, nil
+}
+
+func (vm *VM) SetCfg(cfg *Config) *VM {
+	vm.cfg = cfg
+	return vm
 }
 
 // Run launches all host services, runs the VM to completion, drains the
@@ -301,4 +305,31 @@ func (vm *VM) run(ctx context.Context) error {
 	vm.requestStopOtherServices()
 	vm.emit(EventStopped, "vm stopped")
 	return vmErr
+}
+
+func GenerateVMConfig(ctx context.Context, cfg *Config, path string) error {
+	vm := &VM{
+		cfg: cfg,
+		eventDispatcher: eventDispatcher{
+			proxy: evtProxy,
+		},
+	}
+
+	if cfg.LegacyEventReportURL != "" {
+		vm.registerLegacyEventSink()
+	}
+
+	if cfg.V1EventReportURL != "" {
+		vm.registerV1EventSink()
+	}
+	defer vm.emit(EventExit, "")
+
+	if err := cfg.WriteCfg(path); err != nil {
+		vm.emit(EventError, err.Error())
+		return err
+	}
+
+	vm.emit(EventSuccess, "")
+
+	return nil
 }

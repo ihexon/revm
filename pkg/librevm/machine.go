@@ -817,7 +817,7 @@ func (v *machineBuilder) detectTTY() {
 		term.IsTerminal(int(os.Stderr.Fd()))
 }
 
-func getWorkspacePath(name string) string {
+func getSessionPath(name string) string {
 	return fmt.Sprintf("/tmp/%s", name)
 }
 

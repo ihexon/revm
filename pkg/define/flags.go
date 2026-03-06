@@ -31,8 +31,7 @@ const (
 )
 
 const (
-	FlagOVMInit  = "init"
-	FlagOVMStart = "start"
+	FlagOVMInit = "init"
 
 	FlagOVMBoot        = "boot"
 	FlagOVMBootVersion = "boot-version"
@@ -43,7 +42,7 @@ const (
 
 	FlagOVMVolume = "volume"
 
-	FlagOVMName = "name"
+	FlagOVMSessionName = "name"
 
 	FlagOVMLogLevel   = "log-level"
 	FlagOVMWorkspace  = "workspace"

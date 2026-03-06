@@ -10,6 +10,7 @@ const (
 	EventStopped  EventKind = "stopped"
 	EventError    EventKind = "error"
 	EventSuccess  EventKind = "success"
+	EventExit     EventKind = "exit"
 
 	// Service startup phases.
 	EventNetworkStarting     EventKind = "network_starting"
