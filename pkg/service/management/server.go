@@ -41,7 +41,7 @@ func NewServer(vmc *define.Machine, stopFn func()) (*Server, error) {
 	if stopFn == nil {
 		return nil, fmt.Errorf("stop callback must not be nil")
 	}
-	return &Server{vmc: vmc, srv: httpv2.NewUnixSockHTTPServer("management-api", vmc.VMCtlAddress), sse: ssev2.NewSSEServer(), stopFn: stopFn}, nil
+	return &Server{vmc: vmc, srv: httpv2.NewUnixSockHTTPServer("management-api", vmc.VMCtlAddr), sse: ssev2.NewSSEServer(), stopFn: stopFn}, nil
 }
 
 func (s *Server) Start(ctx context.Context) error {

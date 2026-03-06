@@ -28,8 +28,8 @@ func Attach(ctx context.Context, sessionName string) (*AttachedVM, error) {
 		return nil, fmt.Errorf("session name must not be empty")
 	}
 
-	workspace := getSessionPath(sessionName)
-	ignAddr := ignitionSockPath(workspace)
+	workspace := getSessionDir(sessionName)
+	ignAddr := ignitionSockFile(workspace)
 
 	client := network.NewUnixClient(ignAddr)
 	defer client.Close()

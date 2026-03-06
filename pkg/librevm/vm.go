@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/interfaces"
+	"path/filepath"
 	"linuxvm/pkg/krunrunner"
 	"linuxvm/pkg/service/lifecycle"
 	"runtime"
@@ -25,7 +26,7 @@ type VM struct {
 	machine         *define.Machine
 	provider        interfaces.VMMProvider
 	svc             hostServices
-	workspacePath   string
+	sessionDir      string
 	cleanup         func()
 	eventDispatcher eventDispatcher
 
@@ -34,13 +35,6 @@ type VM struct {
 	seq     atomic.Uint64
 	stopper *stopController
 }
-
-// Workspace returns the workspace directory path.
-func (vm *VM) Workspace() string {
-	return vm.workspacePath
-}
-
-// WriteJSONFile marshals the config as JSON and writes it to path.
 
 type stopController struct {
 	machine *define.Machine
@@ -150,7 +144,7 @@ func evtProxy(sink SinkKind, evt Event) Event {
 	return evt
 }
 
-func New(ctx context.Context, cfg *Config) (*VM, error) {
+func New(cfg *Config) (*VM, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
 	}
@@ -159,28 +153,11 @@ func New(ctx context.Context, cfg *Config) (*VM, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve defaults: %w", err)
 	}
-	sessionPath := getSessionPath(normalizedCfg.SessionID)
-
-	mc, cleanup, err := buildMachine(ctx, normalizedCfg, sessionPath)
-	if err != nil {
-		return nil, fmt.Errorf("build machine: %w", err)
-	}
-
-	vmp, err := newProvider(mc)
-	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("create vm provider: %w", err)
-	}
 
 	vm := &VM{
-		cfg:           &normalizedCfg,
-		machine:       mc,
-		provider:      vmp,
-		svc:           lifecycle.NewHostServices(mc, vmp),
-		workspacePath: sessionPath,
-		cleanup:       cleanup,
-		state:         vmStateNew,
-		stopper:       newStopController(mc),
+		cfg:        &normalizedCfg,
+		sessionDir: getSessionDir(normalizedCfg.SessionID),
+		state:      vmStateNew,
 		eventDispatcher: eventDispatcher{
 			proxy: evtProxy,
 		},
@@ -194,6 +171,66 @@ func New(ctx context.Context, cfg *Config) (*VM, error) {
 	}
 
 	return vm, nil
+}
+
+// init acquires all heavyweight resources: workspace dirs, flock, SSH keys,
+// disk images, krun-runner provider, and host services. Called once at the
+// start of Run(). On failure it cleans up after itself.
+func (vm *VM) init(ctx context.Context) error {
+	mc, cleanup, err := buildMachine(ctx, *vm.cfg, vm.sessionDir)
+	if err != nil {
+		return fmt.Errorf("build machine: %w", err)
+	}
+
+	if err := vm.createUserSymlinks(); err != nil {
+		cleanup()
+		return fmt.Errorf("create symlinks: %w", err)
+	}
+
+	vmp, err := newProvider(mc)
+	if err != nil {
+		cleanup()
+		return fmt.Errorf("create vm provider: %w", err)
+	}
+
+	vm.machine = mc
+	vm.provider = vmp
+	vm.svc = lifecycle.NewHostServices(mc, vmp)
+	vm.cleanup = cleanup
+	vm.stopper = newStopController(mc)
+	return nil
+}
+
+// createUserSymlinks links session-internal resources to user-specified paths.
+// All actual files remain inside sessionDir; the symlinks are just a convenience
+// bridge so external tools can find them at well-known locations.
+func (vm *VM) createUserSymlinks() error {
+	cfg := vm.cfg
+	dir := vm.sessionDir
+
+	if cfg.PodmanProxyAPIFile != "" {
+		target := filepath.Join(dir, "socks", "podman-api.sock")
+		if err := createSymlink(target, cfg.PodmanProxyAPIFile); err != nil {
+			return fmt.Errorf("podman proxy socket: %w", err)
+		}
+	}
+	if cfg.ManageAPIFile != "" {
+		target := filepath.Join(dir, "socks", "vmctl.sock")
+		if err := createSymlink(target, cfg.ManageAPIFile); err != nil {
+			return fmt.Errorf("vmctl socket: %w", err)
+		}
+	}
+	if cfg.SSHKeyDir != "" {
+		keyFile := filepath.Join(dir, "ssh", "key")
+		pubKeyFile := keyFile + ".pub"
+		if err := createSymlink(keyFile, filepath.Join(cfg.SSHKeyDir, "key")); err != nil {
+			return fmt.Errorf("ssh private key: %w", err)
+		}
+		if err := createSymlink(pubKeyFile, filepath.Join(cfg.SSHKeyDir, "key.pub")); err != nil {
+			return fmt.Errorf("ssh public key: %w", err)
+		}
+	}
+	return nil
 }
 
 func (vm *VM) SetCfg(cfg *Config) *VM {
@@ -223,6 +260,10 @@ func (vm *VM) Run(ctx context.Context) error {
 		}
 		vm.mu.Unlock()
 	}()
+
+	if err := vm.init(ctx); err != nil {
+		return err
+	}
 
 	switch vm.cfg.RunMode {
 	case ModeRootfs, ModeContainer:

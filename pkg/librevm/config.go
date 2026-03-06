@@ -52,8 +52,9 @@ type Config struct {
 	Disks                []string `toml:"disks,omitempty"           json:"disks,omitempty"`   // ext4 paths
 	ContainerDisk        string   `toml:"container_disk,omitempty"         json:"containerDisk,omitempty"`
 	ContainerDiskVersion string   `toml:"container_disk_version,omitempty" json:"containerDiskVersion,omitempty"`
-	PodmanProxyAPI       string   `toml:"podman_proxy_api,omitempty"       json:"podmanProxyAPI,omitempty"`
-	ManageAPI            string   `toml:"manage_api,omitempty"             json:"manageAPI,omitempty"`
+	PodmanProxyAPIFile   string   `toml:"podman_proxy_api_file,omitempty"   json:"podmanProxyAPIFile,omitempty"`
+	ManageAPIFile        string   `toml:"manage_api_file,omitempty"         json:"manageAPIFile,omitempty"`
+	SSHKeyDir            string   `toml:"ssh_key_dir,omitempty"             json:"sshKeyDir,omitempty"`
 	Proxy                bool     `toml:"proxy,omitempty"           json:"proxy,omitempty"`
 	LogLevel             string   `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
 	LogTo                string   `toml:"log_to,omitempty"          json:"logTo,omitempty"`
@@ -85,8 +86,9 @@ func (c *Config) WithContainerDiskVersion(v string) *Config {
 	c.ContainerDiskVersion = v
 	return c
 }
-func (c *Config) WithPodmanProxyAPI(path string) *Config   { c.PodmanProxyAPI = path; return c }
-func (c *Config) WithManageAPI(path string) *Config        { c.ManageAPI = path; return c }
+func (c *Config) WithPodmanProxyAPIFile(path string) *Config { c.PodmanProxyAPIFile = path; return c }
+func (c *Config) WithManageAPIFile(path string) *Config      { c.ManageAPIFile = path; return c }
+func (c *Config) WithSSHKeyDir(dir string) *Config           { c.SSHKeyDir = dir; return c }
 func (c *Config) WithV1EventReport(url string) *Config     { c.V1EventReportURL = url; return c }
 func (c *Config) WithLegacyEventReport(url string) *Config { c.LegacyEventReportURL = url; return c }
 func (c *Config) WithProxy(enable bool) *Config            { c.Proxy = enable; return c }
@@ -160,11 +162,14 @@ func (c *Config) MergeFrom(other *Config) {
 	if other.ContainerDiskVersion != "" {
 		c.ContainerDiskVersion = other.ContainerDiskVersion
 	}
-	if other.PodmanProxyAPI != "" {
-		c.PodmanProxyAPI = other.PodmanProxyAPI
+	if other.PodmanProxyAPIFile != "" {
+		c.PodmanProxyAPIFile = other.PodmanProxyAPIFile
 	}
-	if other.ManageAPI != "" {
-		c.ManageAPI = other.ManageAPI
+	if other.ManageAPIFile != "" {
+		c.ManageAPIFile = other.ManageAPIFile
+	}
+	if other.SSHKeyDir != "" {
+		c.SSHKeyDir = other.SSHKeyDir
 	}
 	if other.LogTo != "" {
 		c.LogTo = other.LogTo
@@ -213,7 +218,7 @@ func loadJSON(r io.Reader) (*Config, error) {
 // NormalizeConfig returns a copy of cfg with defaults resolved.
 func NormalizeConfig(cfg Config) (Config, error) {
 	if cfg.SessionID == "" {
-		cfg.SessionID = randomName()
+		cfg.SessionID = RandomString()
 	}
 
 	if cfg.CPUs <= 0 {
@@ -286,7 +291,7 @@ func validateConfig(cfg Config) error {
 
 const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
-func randomName() string {
+func RandomString() string {
 	b := make([]byte, 8)
 	randBytes := make([]byte, len(b))
 	if _, err := rand.Read(randBytes); err != nil {

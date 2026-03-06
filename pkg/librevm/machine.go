@@ -67,13 +67,13 @@ func (v *machineBuilder) setupWorkspace(workspacePath string) error {
 		return fmt.Errorf("workspace must be under /tmp or home directory (%s), got %q", homeDir, workspacePath)
 	}
 
-	v.WorkspacePath = workspacePath
+	v.WorkspaceDir = workspacePath
 
-	if err = os.MkdirAll(v.WorkspacePath, 0755); err != nil {
+	if err = os.MkdirAll(v.WorkspaceDir, 0755); err != nil {
 		return err
 	}
 
-	v.pathMgr = newMachinePathManager(v.WorkspacePath)
+	v.pathMgr = newMachinePathManager(v.WorkspaceDir)
 
 	return v.lock()
 }
@@ -82,7 +82,7 @@ func (v *machineBuilder) lock() error {
 	// Lock file lives OUTSIDE the workspace so that the clean helper can
 	// acquire it after the workspace is deleted, preventing it from
 	// removing a workspace that belongs to a new session with the same name.
-	fileLock := flock.New(v.WorkspacePath + ".lock")
+	fileLock := flock.New(v.WorkspaceDir + ".lock")
 
 	locked, err := fileLock.TryLock()
 	if err != nil {
@@ -90,7 +90,7 @@ func (v *machineBuilder) lock() error {
 	}
 
 	if !locked {
-		return fmt.Errorf("session %q is locked by another instance", v.WorkspacePath)
+		return fmt.Errorf("session %q is locked by another instance", v.WorkspaceDir)
 	}
 
 	v.fileLock = fileLock
@@ -98,7 +98,7 @@ func (v *machineBuilder) lock() error {
 }
 
 func (v *machineBuilder) setupLogLevel(level, customLogPath string) (*os.File, error) {
-	logPath := filepath.Join(v.WorkspacePath, "logs", "vm.log")
+	logPath := filepath.Join(v.WorkspaceDir, "logs", "vm.log")
 	if customLogPath != "" {
 		absLogPath, err := filepath.Abs(filepath.Clean(customLogPath))
 		if err != nil {
@@ -106,9 +106,9 @@ func (v *machineBuilder) setupLogLevel(level, customLogPath string) (*os.File, e
 		}
 		logPath = absLogPath
 	}
-	v.LogFilePath = logPath
+	v.LogFile = logPath
 
-	f, err := commonlog.SetupLogger(level, "", v.LogFilePath)
+	f, err := commonlog.SetupLogger(level, "", v.LogFile)
 	if err != nil {
 		return nil, err
 	}
@@ -171,55 +171,55 @@ func (v *machineBuilder) setupCmdLine(workdir, bin string, args, envs []string) 
 
 // machinePathManager handles all workspace-relative path calculations.
 type machinePathManager struct {
-	workspacePath string
+	workspaceDir string
 }
 
-func newMachinePathManager(workspacePath string) *machinePathManager {
-	return &machinePathManager{workspacePath: workspacePath}
+func newMachinePathManager(workspaceDir string) *machinePathManager {
+	return &machinePathManager{workspaceDir: workspaceDir}
 }
 
-func (p *machinePathManager) GetSocksPath(name string) string {
-	return filepath.Clean(filepath.Join(p.workspacePath, "socks", name))
+func (p *machinePathManager) GetSocketFile(name string) string {
+	return filepath.Clean(filepath.Join(p.workspaceDir, "socks", name))
 }
 
-func (p *machinePathManager) GetPodmanListenAddr() string {
-	return p.GetSocksPath("podman-api.sock")
+func (p *machinePathManager) GetPodmanSocketFile() string {
+	return p.GetSocketFile("podman-api.sock")
 }
 
-func (p *machinePathManager) GetVNetListenAddr() string {
-	return p.GetSocksPath("vnet.sock")
+func (p *machinePathManager) GetVNetSocketFile() string {
+	return p.GetSocketFile("vnet.sock")
 }
 
-func (p *machinePathManager) GetGVPCtlAddr() string {
-	return p.GetSocksPath("gvpctl.sock")
+func (p *machinePathManager) GetGVPCtlSocketFile() string {
+	return p.GetSocketFile("gvpctl.sock")
 }
 
-func (p *machinePathManager) GetVMCtlAddr() string {
-	return p.GetSocksPath("vmctl.sock")
+func (p *machinePathManager) GetVMCtlSocketFile() string {
+	return p.GetSocketFile("vmctl.sock")
 }
 
-func (p *machinePathManager) GetIgnAddr() string {
-	return p.GetSocksPath("ign.sock")
+func (p *machinePathManager) GetIgnSocketFile() string {
+	return p.GetSocketFile("ign.sock")
 }
 
 func (p *machinePathManager) GetSSHPrivateKeyFile() string {
-	return filepath.Clean(filepath.Join(p.workspacePath, "ssh", "key"))
+	return filepath.Clean(filepath.Join(p.workspaceDir, "ssh", "key"))
 }
 
 func (p *machinePathManager) GetLogsDir() string {
-	return filepath.Join(p.workspacePath, "logs")
+	return filepath.Join(p.workspaceDir, "logs")
 }
 
 func (p *machinePathManager) GetRootfsDir() string {
-	return filepath.Join(p.workspacePath, "rootfs")
+	return filepath.Join(p.workspaceDir, "rootfs")
 }
 
-func (p *machinePathManager) GetBuiltInContainerStorageDiskPathInWorkspace() string {
-	return filepath.Join(p.workspacePath, "raw-disk", "container-storage.ext4")
+func (p *machinePathManager) GetBuiltInContainerStorageDiskFile() string {
+	return filepath.Join(p.workspaceDir, "raw-disk", "container-storage.ext4")
 }
 
 func (v *machineBuilder) withBuiltInAlpineRootfs(ctx context.Context) error {
-	if v.WorkspacePath == "" {
+	if v.WorkspaceDir == "" {
 		return fmt.Errorf("workspace path is empty")
 	}
 
@@ -322,7 +322,7 @@ func (g *gVisorNetworkConfig) Configure(ctx context.Context, vmc *define.Machine
 	unixAddr := &url.URL{
 		Scheme: "unix",
 		Host:   "",
-		Path:   pathMgr.GetGVPCtlAddr(),
+		Path:   pathMgr.GetGVPCtlSocketFile(),
 	}
 
 	vmc.GVPCtlAddr = unixAddr.String()
@@ -330,14 +330,14 @@ func (g *gVisorNetworkConfig) Configure(ctx context.Context, vmc *define.Machine
 	// On Linux, use unix:// (stream socket for QemuProtocol).
 	// On macOS, use unixgram:// (datagram socket for VfkitProtocol).
 	if runtime.GOOS == "linux" {
-		vmc.GVPVNetAddr = fmt.Sprintf("unix://%s", pathMgr.GetVNetListenAddr())
+		vmc.GVPVNetAddr = fmt.Sprintf("unix://%s", pathMgr.GetVNetSocketFile())
 	} else {
-		vmc.GVPVNetAddr = fmt.Sprintf("unixgram://%s", pathMgr.GetVNetListenAddr())
+		vmc.GVPVNetAddr = fmt.Sprintf("unixgram://%s", pathMgr.GetVNetSocketFile())
 	}
 
 	// Clean up any existing sockets
-	_ = os.Remove(pathMgr.GetGVPCtlAddr())
-	_ = os.Remove(pathMgr.GetVNetListenAddr())
+	_ = os.Remove(pathMgr.GetGVPCtlSocketFile())
+	_ = os.Remove(pathMgr.GetVNetSocketFile())
 
 	// Ensure parent directory exists
 	if err := os.MkdirAll(filepath.Dir(unixAddr.Path), 0755); err != nil {
@@ -372,13 +372,13 @@ func (t *tsiNetworkConfig) Configure(ctx context.Context, vmc *define.Machine, p
 }
 
 func (v *machineBuilder) configureGuestAgent(ctx context.Context) error {
-	if v.WorkspacePath == "" {
+	if v.WorkspaceDir == "" {
 		return fmt.Errorf("workspace path is empty")
 	}
 
 	unixUSL := &url.URL{
 		Scheme: "unix",
-		Path:   v.pathMgr.GetIgnAddr(),
+		Path:   v.pathMgr.GetIgnSocketFile(),
 	}
 
 	if err := os.MkdirAll(filepath.Dir(unixUSL.Path), 0755); err != nil {
@@ -433,7 +433,7 @@ func (v *machineBuilder) configureGuestAgent(ctx context.Context) error {
 	return nil
 }
 
-func (v *machineBuilder) configurePodman(ctx context.Context, customAPIPath string) error {
+func (v *machineBuilder) configurePodman(ctx context.Context) error {
 	var envs []string
 
 	if v.ProxySetting.Use {
@@ -441,10 +441,7 @@ func (v *machineBuilder) configurePodman(ctx context.Context, customAPIPath stri
 		envs = append(envs, "https_proxy="+v.ProxySetting.HTTPSProxy)
 	}
 
-	apiPath := v.pathMgr.GetPodmanListenAddr()
-	if customAPIPath != "" {
-		apiPath = customAPIPath
-	}
+	apiPath := v.pathMgr.GetPodmanSocketFile()
 
 	podmanProxyAddr := &url.URL{
 		Scheme: "unix",
@@ -497,7 +494,7 @@ func (v *machineBuilder) configureSSH() error {
 		HostSSHPublicKey:       string(publicKey),
 		HostSSHPrivateKey:      string(privateKey),
 		HostSSHPrivateKeyFile:  keyPath,
-		GuestSSHPrivateKeyPath: "/run/dropbear/private.key",
+		GuestSSHPrivateKeyFile: "/run/dropbear/private.key",
 		GuestSSHAuthorizedKeys: "/run/dropbear/authorized_keys",
 		GuestSSHPidFile:        "/run/dropbear/dropbear.pid",
 	}
@@ -505,11 +502,8 @@ func (v *machineBuilder) configureSSH() error {
 	return nil
 }
 
-func (v *machineBuilder) configureVMCtlAPI(customAPIPath string) error {
-	apiPath := v.pathMgr.GetVMCtlAddr()
-	if customAPIPath != "" {
-		apiPath = customAPIPath
-	}
+func (v *machineBuilder) configureVMCtlAPI() error {
+	apiPath := v.pathMgr.GetVMCtlSocketFile()
 
 	unixAddr := &url.URL{
 		Scheme: "unix",
@@ -517,7 +511,7 @@ func (v *machineBuilder) configureVMCtlAPI(customAPIPath string) error {
 		Path:   apiPath,
 	}
 
-	v.VMCtlAddress = unixAddr.String()
+	v.VMCtlAddr = unixAddr.String()
 
 	if err := os.MkdirAll(filepath.Dir(unixAddr.Path), 0755); err != nil {
 		return err
@@ -526,6 +520,19 @@ func (v *machineBuilder) configureVMCtlAPI(customAPIPath string) error {
 		return err
 	}
 	return nil
+}
+
+// createSymlink creates a symlink at linkPath pointing to target.
+// It ensures the parent directory of linkPath exists and removes any
+// pre-existing file or symlink at linkPath.
+func createSymlink(target, linkPath string) error {
+	if err := os.MkdirAll(filepath.Dir(linkPath), 0755); err != nil {
+		return err
+	}
+	if err := os.Remove(linkPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return os.Symlink(target, linkPath)
 }
 
 func (v *machineBuilder) applySystemProxy() error {
@@ -770,11 +777,11 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 		if err := mBuilder.withMountUserHome(ctx); err != nil {
 			return nil, nil, fmt.Errorf("mount user home: %w", err)
 		}
-		if err := mBuilder.configurePodman(ctx, cfg.PodmanProxyAPI); err != nil {
+		if err := mBuilder.configurePodman(ctx); err != nil {
 			return nil, nil, fmt.Errorf("configure podman: %w", err)
 		}
 
-		diskPath := mBuilder.pathMgr.GetBuiltInContainerStorageDiskPathInWorkspace()
+		diskPath := mBuilder.pathMgr.GetBuiltInContainerStorageDiskFile()
 		if cfg.ContainerDisk != "" {
 			diskPath = cfg.ContainerDisk
 		}
@@ -801,7 +808,7 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 	if err := mBuilder.configureGuestAgent(ctx); err != nil {
 		return nil, nil, fmt.Errorf("configure guest agent: %w", err)
 	}
-	if err := mBuilder.configureVMCtlAPI(cfg.ManageAPI); err != nil {
+	if err := mBuilder.configureVMCtlAPI(); err != nil {
 		return nil, nil, fmt.Errorf("configure vmctl API: %w", err)
 	}
 
@@ -817,10 +824,10 @@ func (v *machineBuilder) detectTTY() {
 		term.IsTerminal(int(os.Stderr.Fd()))
 }
 
-func getSessionPath(name string) string {
+func getSessionDir(name string) string {
 	return fmt.Sprintf("/tmp/%s", name)
 }
 
-func ignitionSockPath(workspace string) string {
+func ignitionSockFile(workspace string) string {
 	return filepath.Clean(filepath.Join(workspace, "socks", "ign.sock"))
 }

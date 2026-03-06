@@ -400,7 +400,7 @@ func (vm *LibkrunVM) addPrimaryConsole() (C.uint32_t, error) {
 
 // addGuestConsoleLogPort opens the guest log file and registers it as an inout console port.
 func (vm *LibkrunVM) addGuestConsoleLogPort(consoleID C.uint32_t) error {
-	f, err := os.OpenFile(vm.vmc.LogFilePath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	f, err := os.OpenFile(vm.vmc.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		return err
 	}

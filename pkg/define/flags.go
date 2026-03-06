@@ -1,10 +1,10 @@
 package define
 
 const (
+	SubCommand     = "gencfg"
 	FlagDockerMode = "docker"
 	FlagChroot     = "chroot"
 	FlagAttachMode = "attach"
-	FlagClean      = "clean"
 
 	FlagLogLevel         = "log-level"
 	FlagLogTo            = "log-to"
@@ -21,8 +21,9 @@ const (
 	FlagVNetworkType     = "network"
 	FlagSessionID        = "id"
 	FlagContainerDisk    = "container-disk"
-	FlagPodmanProxyAPI   = "podman-proxy-api"
-	FlagManageAPI        = "manage-api"
+	FlagPodmanProxyAPIFile = "podman-proxy-api-file"
+	FlagManageAPIFile      = "manage-api-file"
+	FlagSSHKeyDir          = "ssh-key-dir"
 
 	ContainerDiskUUID = "44f7d1c0-122c-4402-a20e-c1166cbbad6d"
 
@@ -31,29 +32,11 @@ const (
 )
 
 const (
-	FlagOVMInit = "init"
-
-	FlagOVMBoot        = "boot"
-	FlagOVMBootVersion = "boot-version"
-
+	FlagOVMBoot                 = "boot"
+	FlagOVMBootVersion          = "boot-version"
 	FlagOVMContainerDiskVersion = "data-version"
-
-	FlagOVMPPID = "ppid"
-
-	FlagOVMVolume = "volume"
-
-	FlagOVMSessionName = "name"
-
-	FlagOVMLogLevel   = "log-level"
-	FlagOVMWorkspace  = "workspace"
-	FlagOVMReportURL  = "report-url"
-	FlagOVMCPUS       = "cpus"
-	FlagOVMMemoryInMB = "memory"
-
-	SubCmdOVMInit  = "init"
-	SubCmdOVMStart = "start"
-
-	OVMContainerStorageMountPoint = "/var/lib/containers"
-	OVMContainerStorageDiskUUID   = "44f7d1c0-122c-4402-a20e-c1166cbbad6d"
-	OVMUserDataStorageDiskUUID    = "254879c7-7107-4267-a2c6-d25e27a5358d"
+	FlagOVMPPID                 = "ppid"
+	FlagOVMVolume               = "volume"
+	FlagOVMName                 = "name"
+	FlagOVMWorkspace            = "workspace"
 )

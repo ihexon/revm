@@ -73,8 +73,12 @@ var startRootfs = cli.Command{
 			Usage: "session name; used to derive the workspace directory (/tmp/<name>); defaults to a random string; sessions with the same name are mutually exclusive via flock",
 		},
 		&cli.StringFlag{
-			Name:  define.FlagManageAPI,
+			Name:  define.FlagManageAPIFile,
 			Usage: "custom Unix socket path for the host-side VM management API; defaults to <workspace>/socks/vmctl.sock",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagSSHKeyDir,
+			Usage: "directory to symlink the generated SSH key pair (key and key.pub) into; keys are always created inside the session directory",
 		},
 	},
 	Action: rootfsLifeCycle,
@@ -110,11 +114,14 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	if l := command.String(define.FlagLogTo); l != "" {
 		cfg.WithLogTo(l)
 	}
-	if m := command.String(define.FlagManageAPI); m != "" {
-		cfg.WithManageAPI(m)
+	if m := command.String(define.FlagManageAPIFile); m != "" {
+		cfg.WithManageAPIFile(m)
+	}
+	if sk := command.String(define.FlagSSHKeyDir); sk != "" {
+		cfg.WithSSHKeyDir(sk)
 	}
 
-	vm, err := librevm.New(ctx, cfg)
+	vm, err := librevm.New(cfg)
 	if err != nil {
 		return err
 	}

@@ -29,7 +29,7 @@ revm chroot \
 
 ```bash
 # 终端 1：保持 VM 存活
-revm chroot --name dev-env --rootfs ~/ubuntu-rootfs sleep 86400
+revm chroot --id dev-env --rootfs ~/ubuntu-rootfs sleep 86400
 
 # 终端 2：进入交互式 Shell
 revm attach --pty dev-env
@@ -57,6 +57,7 @@ revm chroot [flags] <command> [args...]
 | 参数               | 说明                                                | 默认值                   |
 |------------------|---------------------------------------------------|-----------------------|
 | `--rootfs`       | rootfs 目录路径，须包含 `/bin/sh`；不指定则使用内置 Alpine         | 内置 Alpine             |
+| `--id`           | 会话 ID，会话目录由此派生为 `/tmp/<id>`；默认随机字符串；同名会话通过 flock 互斥 | 随机值 |
 | `--cpus`         | 分配的 vCPU 核心数；不指定或小于 1 时自动取宿主机核心数                  | 宿主机核心数                |
 | `--memory`       | VM 内存大小（MB）；最小 512 MB；不指定时自动取宿主机可用内存              | 宿主机可用内存               |
 | `--workdir`      | 进入 VM 后执行命令前的工作目录                                 | `/`                   |
@@ -65,10 +66,12 @@ revm chroot [flags] <command> [args...]
 | `--envs`         | 传入环境变量（格式：`KEY=VALUE`，可重复）                        | —                     |
 | `--network`      | 网络栈：`gvisor`（完整虚拟网卡）或 `tsi`（透明 socket 转发）         | `gvisor`              |
 | `--system-proxy` | 读取 macOS 系统代理并以 `http_proxy`/`https_proxy` 注入到 VM | `false`               |
-| `--name`         | 会话名称，工作区目录由此派生为 `/tmp/.revm-<name>`；默认随机字符串       | 随机值                   |
+| `--manage-api`   | VM 管理 API socket 的符号链接路径；实际 socket 始终在会话目录内创建     | —                     |
+| `--ssh-key-dir`  | SSH 密钥对（`key` 和 `key.pub`）的符号链接目录；密钥始终在会话目录内生成   | —                     |
 | `--log-level`    | 日志级别：`trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic` | `info`          |
+| `--log-to`       | 自定义日志文件路径；默认为 `<会话目录>/logs/vm.log`                  | 会话目录内                 |
 | `--report-url`   | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock` 或 `tcp://host:port`） | —               |
 
 ## 另请参阅
 
-- [会话工作区与网络](insider_zh.md) — 工作区目录结构、复用/清理，以及网络模式（gvisor / tsi）
+- [会话工作区与网络](insider_zh.md) — 会话目录结构、复用/清理，以及网络模式（gvisor / tsi）
