@@ -66,6 +66,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y wget patchelf libarchive-tools libarchive-dev libext2fs-dev libblkid-dev uuid-dev zstd
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sudo sh -s -- -b /usr/local/bin
 
       - name: Build
         run: go run scripts/build.go

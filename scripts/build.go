@@ -270,7 +270,6 @@ func (b *builder) relocateLibsDarwin() {
 	run(nil, "install_name_tool", "-change", "libkrunfw.5.dylib", "@loader_path/../lib/libkrunfw.5.dylib", kr)
 	run(nil, "codesign", "--entitlements", ent, "--force", "-s", "-", kr)
 
-	run([]string{"PKG_CONFIG_PATH=" + b.pkgCfgDir}, "golangci-lint", "run")
 }
 
 func (b *builder) relocateLibsLinux() {
@@ -336,9 +335,18 @@ func (b *builder) relocateLibs() {
 	}
 }
 
+func (b *builder) lint() {
+	logrus.Info("running golangci-lint")
+	var env []string
+	if b.goos == "darwin" {
+		env = []string{"PKG_CONFIG_PATH=" + b.pkgCfgDir}
+	}
+	run(env, "golangci-lint", "run")
+}
+
 func (b *builder) packageTar() {
 	logrus.Info("packaging")
-	tarName := fmt.Sprintf("revm-%s-%s.tar.zst", strings.Title(b.goos), b.goarch)
+	tarName := fmt.Sprintf("revm-%s-%s.tar.zst", b.goos, b.goarch)
 	tarPath := filepath.Join(b.workspace, tarName)
 	run(nil, "bsdtar", "--zstd", "-cf", tarPath, "-C", b.outDir, ".")
 
@@ -369,5 +377,6 @@ func main() {
 	b.buildKrunRunner()
 	b.buildTarget()
 	b.relocateLibs()
+	b.lint()
 	b.packageTar()
 }
