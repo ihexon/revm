@@ -25,7 +25,8 @@ func setupLogger() error {
 	if level == "" {
 		level = "info"
 	}
-	return commonlog.SetupBasicLoggerWithStage(level, "guest-agent")
+	_, err := commonlog.SetupLogger(level, "guest-agent", "")
+	return err
 }
 
 // attachGuestLogPort finds the "guest-logs" virtio-console port and adds it

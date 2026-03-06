@@ -34,7 +34,7 @@ var startRootfs = cli.Command{
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagRawDisk,
-			Usage: "attach an ext4 raw disk image to the VM; auto-created as a 10 GB ext4 image if the path does not exist; mounted at /mnt/<UUID> inside the guest; can be specified multiple times",
+			Usage: "attach an ext4 raw disk image to the VM (format: <path>[,uuid]); auto-created as a 10 GB ext4 image if the path does not exist; UUID is auto-generated when omitted; mounted at /mnt/<UUID> inside the guest; can be specified multiple times",
 		},
 		&cli.StringSliceFlag{
 			Name:  define.FlagMount,
@@ -65,8 +65,20 @@ var startRootfs = cli.Command{
 			Value: "info",
 		},
 		&cli.StringFlag{
-			Name:  define.FlagSessionName,
-			Usage: "session name; used to derive the workspace directory (/tmp/.revm-<name>); defaults to a random string; sessions with the same name are mutually exclusive via flock",
+			Name:  define.FlagLogTo,
+			Usage: "custom log file path on host; defaults to <workspace>/logs/vm.log when unset",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagSessionID,
+			Usage: "session name; used to derive the workspace directory (/tmp/<name>); defaults to a random string; sessions with the same name are mutually exclusive via flock",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagManageAPIFile,
+			Usage: "custom Unix socket path for the host-side VM management API; defaults to <workspace>/socks/vmctl.sock",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagSSHKeyDir,
+			Usage: "directory to symlink the generated SSH key pair (key and key.pub) into; keys are always created inside the session directory",
 		},
 	},
 	Action: rootfsLifeCycle,
@@ -77,7 +89,7 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	cfg := librevm.DefaultConfig().
 		WithMode(librevm.ModeRootfs).
-		WithName(command.String(define.FlagSessionName)).
+		WithName(command.String(define.FlagSessionID)).
 		WithCPUs(int(command.Int8(define.FlagCPUS))).
 		WithMemory(command.Uint64(define.FlagMemoryInMB)).
 		WithNetwork(command.String(define.FlagVNetworkType)).
@@ -97,10 +109,19 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	}
 
 	if u := command.String(define.FlagReportURL); u != "" {
-		cfg.ReportURL = u
+		cfg.WithLegacyEventReport(u)
+	}
+	if l := command.String(define.FlagLogTo); l != "" {
+		cfg.WithLogTo(l)
+	}
+	if m := command.String(define.FlagManageAPIFile); m != "" {
+		cfg.WithManageAPIFile(m)
+	}
+	if sk := command.String(define.FlagSSHKeyDir); sk != "" {
+		cfg.WithSSHKeyDir(sk)
 	}
 
-	vm, err := librevm.New(ctx, cfg)
+	vm, err := librevm.New(cfg)
 	if err != nil {
 		return err
 	}

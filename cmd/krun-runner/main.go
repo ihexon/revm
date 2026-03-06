@@ -36,10 +36,10 @@ func runMain() error {
 		return err
 	}
 
-	if err := commonpkg.SetupBasicLoggerWithStageAndFile(
+	if _, err := commonpkg.SetupLogger(
 		currentLogLevelFromEnv(),
 		"krun-runner",
-		mc.LogFilePath,
+		mc.LogFile,
 	); err != nil {
 		return fmt.Errorf("krun-runner: setup logger: %w", err)
 	}

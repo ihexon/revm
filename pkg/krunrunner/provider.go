@@ -14,7 +14,6 @@ import (
 	"sync"
 
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/service/management"
 
 	"github.com/sirupsen/logrus"
 )
@@ -29,14 +28,6 @@ type RunnerProvider struct {
 
 func NewRunnerProvider(mc *define.Machine) *RunnerProvider {
 	return &RunnerProvider{mc: mc}
-}
-
-func (p *RunnerProvider) GetVMConfigure() *define.Machine {
-	return p.mc
-}
-
-func (p *RunnerProvider) Create(_ context.Context) error {
-	return nil // 子进程内执行
 }
 
 func (p *RunnerProvider) Start(_ context.Context) error {
@@ -102,14 +93,6 @@ func (p *RunnerProvider) Stop(_ context.Context) error {
 		return cmd.Process.Kill()
 	}
 	return nil
-}
-
-func (p *RunnerProvider) StartVMCtlServer(ctx context.Context, stopFn func()) error {
-	srv, err := management.NewServer(p.mc, stopFn)
-	if err != nil {
-		return err
-	}
-	return srv.Start(ctx)
 }
 
 // resolveRunnerPath 查找 krun-runner 二进制

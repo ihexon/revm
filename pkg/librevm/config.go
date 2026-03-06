@@ -24,33 +24,19 @@ const (
 	ModeRootfs RunMode = "rootfs"
 	// ModeContainer boots the VM with the built-in container runtime (Podman).
 	ModeContainer RunMode = "docker"
-
-	// ovm 模式特有的 RunMode
-	ModeOVMRun  RunMode = "run"
-	ModeOVMInit RunMode = "init"
 )
-
-func (m RunMode) IsOVMRun() bool { return m == ModeOVMRun }
-
-func (m RunMode) IsOVMInit() bool { return m == ModeOVMInit }
-
-func (m RunMode) IsOVM() bool { return m.IsOVMRun() || m.IsOVMInit() }
 
 func (m RunMode) IsValid() bool {
 	switch m {
-	case ModeRootfs, ModeContainer, ModeOVMRun, ModeOVMInit:
+	case ModeRootfs, ModeContainer:
 		return true
 	default:
 		return false
 	}
 }
 
-// Config declares the complete VM specification. Zero-value fields use
-// sensible defaults (filled in during [New]).
-// Config is serializable as TOML and JSON, and can also be built using the
-// fluent With* chain methods.
 type Config struct {
-	RunMode   RunMode `toml:"runMode" json:"runMode"`                         // required: "rootfs" | "docker" | "run" | "init"
+	RunMode   RunMode `toml:"runMode,omitempty" json:"runMode,omitempty"`
 	SessionID string  `toml:"sessionID,omitempty" json:"sessionID,omitempty"` // session name
 	CPUs      int     `toml:"cpus,omitempty"      json:"cpus,omitempty"`      // 0 → host CPU count
 	MemoryMB  uint64  `toml:"memory_mb,omitempty" json:"memoryMB,omitempty"`  // 0 → host total RAM
@@ -61,15 +47,19 @@ type Config struct {
 	WorkDir string   `toml:"workdir,omitempty"  json:"workdir,omitempty"`
 	Env     []string `toml:"env,omitempty"      json:"env,omitempty"`
 
-	Network       string   `toml:"network,omitempty"         json:"network,omitempty"` // "gvisor" | "tsi"
-	Mounts        []string `toml:"mounts,omitempty"          json:"mounts,omitempty"`  // "/host:/guest[,ro]"
-	Disks         []string `toml:"disks,omitempty"           json:"disks,omitempty"`   // ext4 paths
-	ContainerDisk        string `toml:"container_disk,omitempty"         json:"containerDisk,omitempty"`
-	ContainerDiskVersion string `toml:"container_disk_version,omitempty" json:"containerDiskVersion,omitempty"`
-	PodmanProxyAPI       string `toml:"podman_proxy_api,omitempty"       json:"podmanProxyAPI,omitempty"`
-	Proxy         bool     `toml:"proxy,omitempty"           json:"proxy,omitempty"`
-	LogLevel      string   `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
-	ReportURL     string   `toml:"report_url,omitempty"      json:"reportURL,omitempty"`
+	Network              string            `toml:"network,omitempty"         json:"network,omitempty"` // "gvisor" | "tsi"
+	Mounts               []string          `toml:"mounts,omitempty"          json:"mounts,omitempty"`  // "/host:/guest[,ro]"
+	Disks                map[string]string `toml:"disks,omitempty"           json:"disks,omitempty"`   // key=disk path, value=UUID (""→auto)
+	ContainerDisk        string            `toml:"container_disk,omitempty"         json:"containerDisk,omitempty"`
+	ContainerDiskVersion string            `toml:"container_disk_version,omitempty" json:"containerDiskVersion,omitempty"`
+	PodmanProxyAPIFile   string            `toml:"podman_proxy_api_file,omitempty"   json:"podmanProxyAPIFile,omitempty"`
+	ManageAPIFile        string            `toml:"manage_api_file,omitempty"         json:"manageAPIFile,omitempty"`
+	SSHKeyDir            string            `toml:"ssh_key_dir,omitempty"             json:"sshKeyDir,omitempty"`
+	Proxy                bool              `toml:"proxy,omitempty"           json:"proxy,omitempty"`
+	LogLevel             string            `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
+	LogTo                string            `toml:"log_to,omitempty"          json:"logTo,omitempty"`
+	V1EventReportURL     string            `toml:"v1_event_report_url,omitempty"     json:"v1EventReportURL,omitempty"`
+	LegacyEventReportURL string            `toml:"legacy_event_report_url,omitempty" json:"legacyEventReportURL,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.
@@ -96,9 +86,14 @@ func (c *Config) WithContainerDiskVersion(v string) *Config {
 	c.ContainerDiskVersion = v
 	return c
 }
-func (c *Config) WithPodmanProxyAPI(path string) *Config { c.PodmanProxyAPI = path; return c }
-func (c *Config) WithProxy(enable bool) *Config         { c.Proxy = enable; return c }
-func (c *Config) WithLogLevel(level string) *Config     { c.LogLevel = level; return c }
+func (c *Config) WithPodmanProxyAPIFile(path string) *Config { c.PodmanProxyAPIFile = path; return c }
+func (c *Config) WithManageAPIFile(path string) *Config      { c.ManageAPIFile = path; return c }
+func (c *Config) WithSSHKeyDir(dir string) *Config           { c.SSHKeyDir = dir; return c }
+func (c *Config) WithV1EventReport(url string) *Config       { c.V1EventReportURL = url; return c }
+func (c *Config) WithLegacyEventReport(url string) *Config   { c.LegacyEventReportURL = url; return c }
+func (c *Config) WithProxy(enable bool) *Config              { c.Proxy = enable; return c }
+func (c *Config) WithLogLevel(level string) *Config          { c.LogLevel = level; return c }
+func (c *Config) WithLogTo(path string) *Config              { c.LogTo = path; return c }
 
 func (c *Config) WithCommand(bin string, args ...string) *Config {
 	c.Command = append([]string{bin}, args...)
@@ -115,12 +110,81 @@ func (c *Config) WithMount(specs ...string) *Config {
 	return c
 }
 
-func (c *Config) WithDisk(paths ...string) *Config {
-	c.Disks = append(c.Disks, paths...)
+func (c *Config) WithDisk(specs ...string) *Config {
+	if c.Disks == nil {
+		c.Disks = make(map[string]string)
+	}
+	for _, spec := range specs {
+		diskFile, diskUUID, _ := strings.Cut(spec, ",")
+		c.Disks[diskFile] = diskUUID
+	}
 	return c
 }
 
 // --- Loading ---------------------------------------------------------------
+
+// WriteCfg marshals cfg as JSON and writes it to path.
+func (c *Config) WriteCfg(path string) error {
+	data, err := json.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return fmt.Errorf("write config file: %w", err)
+	}
+	return nil
+}
+
+// MergeFrom applies non-zero preference fields from other onto c.
+// Only fields that "init" is expected to set are merged; runtime-only
+// fields (RunMode, SessionID, event report URLs, etc.) are intentionally skipped.
+func (c *Config) MergeFrom(other *Config) {
+	if other == nil {
+		return
+	}
+
+	if other.Disks != nil {
+		c.Disks = other.Disks
+	}
+
+	if other.SessionID != "" {
+		c.SessionID = other.SessionID
+	}
+
+	if other.CPUs > 0 {
+		c.CPUs = other.CPUs
+	}
+	if other.MemoryMB > 0 {
+		c.MemoryMB = other.MemoryMB
+	}
+	if other.Network != "" {
+		c.Network = other.Network
+	}
+	if len(other.Mounts) > 0 {
+		c.Mounts = append(c.Mounts, other.Mounts...)
+	}
+	if other.ContainerDisk != "" {
+		c.ContainerDisk = other.ContainerDisk
+	}
+	if other.ContainerDiskVersion != "" {
+		c.ContainerDiskVersion = other.ContainerDiskVersion
+	}
+	if other.PodmanProxyAPIFile != "" {
+		c.PodmanProxyAPIFile = other.PodmanProxyAPIFile
+	}
+	if other.ManageAPIFile != "" {
+		c.ManageAPIFile = other.ManageAPIFile
+	}
+	if other.SSHKeyDir != "" {
+		c.SSHKeyDir = other.SSHKeyDir
+	}
+	if other.LogTo != "" {
+		c.LogTo = other.LogTo
+	}
+}
 
 // LoadFile reads a Config from path. The format is detected by extension:
 // .toml for TOML, .json for JSON. Any other extension returns an error.
@@ -164,7 +228,7 @@ func loadJSON(r io.Reader) (*Config, error) {
 // NormalizeConfig returns a copy of cfg with defaults resolved.
 func NormalizeConfig(cfg Config) (Config, error) {
 	if cfg.SessionID == "" {
-		cfg.SessionID = randomName()
+		cfg.SessionID = RandomString()
 	}
 
 	if cfg.CPUs <= 0 {
@@ -191,23 +255,16 @@ func NormalizeConfig(cfg Config) (Config, error) {
 		cfg.WorkDir = "/"
 	}
 
+	if err := validateConfig(cfg); err != nil {
+		return Config{}, err
+	}
+
 	return cfg, nil
 }
 
 func validateConfig(cfg Config) error {
 	if !cfg.RunMode.IsValid() {
-		return fmt.Errorf(
-			"mode must be %q, %q, %q or %q, got %q",
-			ModeRootfs,
-			ModeContainer,
-			ModeOVMRun,
-			ModeOVMInit,
-			cfg.RunMode,
-		)
-	}
-
-	if cfg.RunMode.IsOVM() {
-		return fmt.Errorf("ovm mode %q is not yet implemented", cfg.RunMode)
+		return fmt.Errorf("invalid run mode %q", cfg.RunMode)
 	}
 
 	if cfg.RunMode == ModeRootfs {
@@ -239,7 +296,7 @@ func validateConfig(cfg Config) error {
 
 const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
-func randomName() string {
+func RandomString() string {
 	b := make([]byte, 8)
 	randBytes := make([]byte, len(b))
 	if _, err := rand.Read(randBytes); err != nil {
@@ -253,3 +310,5 @@ func randomName() string {
 	}
 	return string(b)
 }
+
+// fuck

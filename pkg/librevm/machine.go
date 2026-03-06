@@ -5,10 +5,10 @@ package librevm
 import (
 	"context"
 	"fmt"
-	"io"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/disk"
 	"linuxvm/pkg/filesystem"
+	commonlog "linuxvm/pkg/log"
 	"linuxvm/pkg/network"
 	sshv2 "linuxvm/pkg/ssh_v2"
 	"linuxvm/pkg/static_resources"
@@ -25,6 +25,7 @@ import (
 	"github.com/google/uuid"
 	sysproxy "github.com/ihexon/getSysProxy"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/term"
 )
 
 type machineBuilder struct {
@@ -37,8 +38,8 @@ func newMachineBuilder(mode define.RunMode) *machineBuilder {
 	return &machineBuilder{
 		Machine: define.Machine{
 			MachineSpec: define.MachineSpec{
-				RunMode:       mode.String(),
-				DiskXattrs:    map[string]string{},
+				RunMode:    mode.String(),
+				DiskXattrs: map[string]string{},
 			},
 			MachineRuntime: define.NewMachineRuntime(),
 		},
@@ -66,13 +67,13 @@ func (v *machineBuilder) setupWorkspace(workspacePath string) error {
 		return fmt.Errorf("workspace must be under /tmp or home directory (%s), got %q", homeDir, workspacePath)
 	}
 
-	v.WorkspacePath = workspacePath
+	v.WorkspaceDir = workspacePath
 
-	if err = os.MkdirAll(v.WorkspacePath, 0755); err != nil {
+	if err = os.MkdirAll(v.WorkspaceDir, 0755); err != nil {
 		return err
 	}
 
-	v.pathMgr = newMachinePathManager(v.WorkspacePath)
+	v.pathMgr = newMachinePathManager(v.WorkspaceDir)
 
 	return v.lock()
 }
@@ -81,7 +82,7 @@ func (v *machineBuilder) lock() error {
 	// Lock file lives OUTSIDE the workspace so that the clean helper can
 	// acquire it after the workspace is deleted, preventing it from
 	// removing a workspace that belongs to a new session with the same name.
-	fileLock := flock.New(v.WorkspacePath + ".lock")
+	fileLock := flock.New(v.WorkspaceDir + ".lock")
 
 	locked, err := fileLock.TryLock()
 	if err != nil {
@@ -89,43 +90,28 @@ func (v *machineBuilder) lock() error {
 	}
 
 	if !locked {
-		return fmt.Errorf("session %q is locked by another instance", v.WorkspacePath)
+		return fmt.Errorf("session %q is locked by another instance", v.WorkspaceDir)
 	}
 
 	v.fileLock = fileLock
 	return nil
 }
 
-func (v *machineBuilder) setupLogLevel(level string) (*os.File, error) {
-	l, err := logrus.ParseLevel(level)
+func (v *machineBuilder) setupLogLevel(level, customLogPath string) (*os.File, error) {
+	logPath := filepath.Join(v.WorkspaceDir, "logs", "vm.log")
+	if customLogPath != "" {
+		absLogPath, err := filepath.Abs(filepath.Clean(customLogPath))
+		if err != nil {
+			return nil, err
+		}
+		logPath = absLogPath
+	}
+	v.LogFile = logPath
+
+	f, err := commonlog.SetupLogger(level, "", v.LogFile)
 	if err != nil {
-		return nil, fmt.Errorf("invalid log level: %w", err)
+		return nil, err
 	}
-
-	logrus.SetLevel(l)
-	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp:   true,
-		ForceColors:     true,
-		TimestampFormat: "2006-01-02 15:04:05.000",
-	})
-
-	v.LogFilePath = filepath.Join(v.WorkspacePath, "logs", "vm.log")
-
-	if err := os.MkdirAll(filepath.Dir(v.LogFilePath), 0755); err != nil {
-		return nil, fmt.Errorf("create log dir: %w", err)
-	}
-
-	if info, err := os.Stat(v.LogFilePath); err == nil && info.Size() > int64(filesystem.MiB(10).ToBytes()) {
-		_ = os.Truncate(v.LogFilePath, 0)
-	}
-
-	f, err := os.OpenFile(v.LogFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("open log file: %w", err)
-	}
-
-	logrus.SetOutput(io.MultiWriter(os.Stderr, f))
-
 	return f, nil
 }
 
@@ -185,55 +171,55 @@ func (v *machineBuilder) setupCmdLine(workdir, bin string, args, envs []string) 
 
 // machinePathManager handles all workspace-relative path calculations.
 type machinePathManager struct {
-	workspacePath string
+	workspaceDir string
 }
 
-func newMachinePathManager(workspacePath string) *machinePathManager {
-	return &machinePathManager{workspacePath: workspacePath}
+func newMachinePathManager(workspaceDir string) *machinePathManager {
+	return &machinePathManager{workspaceDir: workspaceDir}
 }
 
-func (p *machinePathManager) GetSocksPath(name string) string {
-	return filepath.Clean(filepath.Join(p.workspacePath, "socks", name))
+func (p *machinePathManager) GetSocketFile(name string) string {
+	return filepath.Clean(filepath.Join(p.workspaceDir, "socks", name))
 }
 
-func (p *machinePathManager) GetPodmanListenAddr() string {
-	return p.GetSocksPath("podman-api.sock")
+func (p *machinePathManager) GetPodmanSocketFile() string {
+	return p.GetSocketFile("podman-api.sock")
 }
 
-func (p *machinePathManager) GetVNetListenAddr() string {
-	return p.GetSocksPath("vnet.sock")
+func (p *machinePathManager) GetVNetSocketFile() string {
+	return p.GetSocketFile("vnet.sock")
 }
 
-func (p *machinePathManager) GetGVPCtlAddr() string {
-	return p.GetSocksPath("gvpctl.sock")
+func (p *machinePathManager) GetGVPCtlSocketFile() string {
+	return p.GetSocketFile("gvpctl.sock")
 }
 
-func (p *machinePathManager) GetVMCtlAddr() string {
-	return p.GetSocksPath("vmctl.sock")
+func (p *machinePathManager) GetVMCtlSocketFile() string {
+	return p.GetSocketFile("vmctl.sock")
 }
 
-func (p *machinePathManager) GetIgnAddr() string {
-	return p.GetSocksPath("ign.sock")
+func (p *machinePathManager) GetIgnSocketFile() string {
+	return p.GetSocketFile("ign.sock")
 }
 
 func (p *machinePathManager) GetSSHPrivateKeyFile() string {
-	return filepath.Clean(filepath.Join(p.workspacePath, "ssh", "key"))
+	return filepath.Clean(filepath.Join(p.workspaceDir, "ssh", "key"))
 }
 
 func (p *machinePathManager) GetLogsDir() string {
-	return filepath.Join(p.workspacePath, "logs")
+	return filepath.Join(p.workspaceDir, "logs")
 }
 
 func (p *machinePathManager) GetRootfsDir() string {
-	return filepath.Join(p.workspacePath, "rootfs")
+	return filepath.Join(p.workspaceDir, "rootfs")
 }
 
-func (p *machinePathManager) GetBuiltInContainerStorageDiskPathInWorkspace() string {
-	return filepath.Join(p.workspacePath, "raw-disk", "container-storage.ext4")
+func (p *machinePathManager) GetBuiltInContainerStorageDiskFile() string {
+	return filepath.Join(p.workspaceDir, "raw-disk", "container-storage.ext4")
 }
 
 func (v *machineBuilder) withBuiltInAlpineRootfs(ctx context.Context) error {
-	if v.WorkspacePath == "" {
+	if v.WorkspaceDir == "" {
 		return fmt.Errorf("workspace path is empty")
 	}
 
@@ -336,7 +322,7 @@ func (g *gVisorNetworkConfig) Configure(ctx context.Context, vmc *define.Machine
 	unixAddr := &url.URL{
 		Scheme: "unix",
 		Host:   "",
-		Path:   pathMgr.GetGVPCtlAddr(),
+		Path:   pathMgr.GetGVPCtlSocketFile(),
 	}
 
 	vmc.GVPCtlAddr = unixAddr.String()
@@ -344,14 +330,14 @@ func (g *gVisorNetworkConfig) Configure(ctx context.Context, vmc *define.Machine
 	// On Linux, use unix:// (stream socket for QemuProtocol).
 	// On macOS, use unixgram:// (datagram socket for VfkitProtocol).
 	if runtime.GOOS == "linux" {
-		vmc.GVPVNetAddr = fmt.Sprintf("unix://%s", pathMgr.GetVNetListenAddr())
+		vmc.GVPVNetAddr = fmt.Sprintf("unix://%s", pathMgr.GetVNetSocketFile())
 	} else {
-		vmc.GVPVNetAddr = fmt.Sprintf("unixgram://%s", pathMgr.GetVNetListenAddr())
+		vmc.GVPVNetAddr = fmt.Sprintf("unixgram://%s", pathMgr.GetVNetSocketFile())
 	}
 
 	// Clean up any existing sockets
-	_ = os.Remove(pathMgr.GetGVPCtlAddr())
-	_ = os.Remove(pathMgr.GetVNetListenAddr())
+	_ = os.Remove(pathMgr.GetGVPCtlSocketFile())
+	_ = os.Remove(pathMgr.GetVNetSocketFile())
 
 	// Ensure parent directory exists
 	if err := os.MkdirAll(filepath.Dir(unixAddr.Path), 0755); err != nil {
@@ -386,13 +372,13 @@ func (t *tsiNetworkConfig) Configure(ctx context.Context, vmc *define.Machine, p
 }
 
 func (v *machineBuilder) configureGuestAgent(ctx context.Context) error {
-	if v.WorkspacePath == "" {
+	if v.WorkspaceDir == "" {
 		return fmt.Errorf("workspace path is empty")
 	}
 
 	unixUSL := &url.URL{
 		Scheme: "unix",
-		Path:   v.pathMgr.GetIgnAddr(),
+		Path:   v.pathMgr.GetIgnSocketFile(),
 	}
 
 	if err := os.MkdirAll(filepath.Dir(unixUSL.Path), 0755); err != nil {
@@ -447,7 +433,7 @@ func (v *machineBuilder) configureGuestAgent(ctx context.Context) error {
 	return nil
 }
 
-func (v *machineBuilder) configurePodman(ctx context.Context, customAPIPath string) error {
+func (v *machineBuilder) configurePodman(ctx context.Context) error {
 	var envs []string
 
 	if v.ProxySetting.Use {
@@ -455,10 +441,7 @@ func (v *machineBuilder) configurePodman(ctx context.Context, customAPIPath stri
 		envs = append(envs, "https_proxy="+v.ProxySetting.HTTPSProxy)
 	}
 
-	apiPath := v.pathMgr.GetPodmanListenAddr()
-	if customAPIPath != "" {
-		apiPath = customAPIPath
-	}
+	apiPath := v.pathMgr.GetPodmanSocketFile()
 
 	podmanProxyAddr := &url.URL{
 		Scheme: "unix",
@@ -511,7 +494,7 @@ func (v *machineBuilder) configureSSH() error {
 		HostSSHPublicKey:       string(publicKey),
 		HostSSHPrivateKey:      string(privateKey),
 		HostSSHPrivateKeyFile:  keyPath,
-		GuestSSHPrivateKeyPath: "/run/dropbear/private.key",
+		GuestSSHPrivateKeyFile: "/run/dropbear/private.key",
 		GuestSSHAuthorizedKeys: "/run/dropbear/authorized_keys",
 		GuestSSHPidFile:        "/run/dropbear/dropbear.pid",
 	}
@@ -520,13 +503,15 @@ func (v *machineBuilder) configureSSH() error {
 }
 
 func (v *machineBuilder) configureVMCtlAPI() error {
+	apiPath := v.pathMgr.GetVMCtlSocketFile()
+
 	unixAddr := &url.URL{
 		Scheme: "unix",
 		Host:   "",
-		Path:   v.pathMgr.GetVMCtlAddr(),
+		Path:   apiPath,
 	}
 
-	v.VMCtlAddress = unixAddr.String()
+	v.VMCtlAddr = unixAddr.String()
 
 	if err := os.MkdirAll(filepath.Dir(unixAddr.Path), 0755); err != nil {
 		return err
@@ -535,6 +520,19 @@ func (v *machineBuilder) configureVMCtlAPI() error {
 		return err
 	}
 	return nil
+}
+
+// createSymlink creates a symlink at linkPath pointing to target.
+// It ensures the parent directory of linkPath exists and removes any
+// pre-existing file or symlink at linkPath.
+func createSymlink(target, linkPath string) error {
+	if err := os.MkdirAll(filepath.Dir(linkPath), 0755); err != nil {
+		return err
+	}
+	if err := os.Remove(linkPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return os.Symlink(target, linkPath)
 }
 
 func (v *machineBuilder) applySystemProxy() error {
@@ -635,18 +633,21 @@ func (v *machineBuilder) addRAWDiskToBlkList(ctx context.Context, rawDiskPath st
 	return nil
 }
 
-func (v *machineBuilder) withUserProvidedStorageRAWDisk(ctx context.Context, rawDiskS []string) error {
-	for _, f := range rawDiskS {
-		if f == "" {
+func (v *machineBuilder) withUserProvidedStorageRAWDisk(ctx context.Context, disks map[string]string) error {
+	for diskFile, diskUUID := range disks {
+		if diskFile == "" {
 			return fmt.Errorf("raw disk path is empty")
 		}
 
-		rawDiskPath, err := filepath.Abs(filepath.Clean(f))
+		rawDiskPath, err := filepath.Abs(filepath.Clean(diskFile))
 		if err != nil {
 			return err
 		}
 		if _, err = os.Stat(rawDiskPath); err != nil {
-			if err = v.generateRAWDisk(ctx, rawDiskPath, uuid.NewString()); err != nil {
+			if diskUUID == "" {
+				diskUUID = uuid.NewString()
+			}
+			if err = v.generateRAWDisk(ctx, rawDiskPath, diskUUID); err != nil {
 				return err
 			}
 		}
@@ -712,50 +713,51 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 	switch cfg.RunMode {
 	case ModeRootfs:
 		runMode = define.RootFsMode
-	case ModeContainer, ModeOVMRun, ModeOVMInit:
+	case ModeContainer:
 		runMode = define.ContainerMode
 	default:
 		return nil, nil, fmt.Errorf("unsupported run mode %q", cfg.RunMode)
 	}
 
-	vmc := newMachineBuilder(runMode)
+	mBuilder := newMachineBuilder(runMode)
 
 	cleanupCallbacks := system.NewCleanUp()
 	cleanup = cleanupCallbacks.DoClean
 	defer cleanupCallbacks.CleanIfErr(&retErr)
 
-	if err := vmc.setupWorkspace(workspacePath); err != nil {
+	if err := mBuilder.setupWorkspace(workspacePath); err != nil {
 		return nil, nil, fmt.Errorf("setup workspace: %w", err)
 	}
-	cleanupCallbacks.AddFunc(func() { _ = vmc.fileLock.Unlock(); _ = os.Remove(workspacePath + ".lock") })
+	cleanupCallbacks.AddFunc(func() { _ = mBuilder.fileLock.Unlock(); _ = os.Remove(workspacePath + ".lock") })
 	cleanupCallbacks.AddFunc(func() { _ = os.RemoveAll(workspacePath) })
 
-	if err := vmc.configureSSH(); err != nil {
-		return nil, nil, fmt.Errorf("generate ssh config: %w", err)
-	}
-	logFile, err := vmc.setupLogLevel(cfg.LogLevel)
+	logFile, err := mBuilder.setupLogLevel(cfg.LogLevel, cfg.LogTo)
 	if err != nil {
 		return nil, nil, fmt.Errorf("setup log level: %w", err)
 	}
+
 	cleanupCallbacks.AddFunc(func() { logrus.SetOutput(os.Stderr); _ = logFile.Close() })
-	if err := vmc.withResources(cfg.MemoryMB, uint8(cfg.CPUs)); err != nil {
+	if err := mBuilder.configureSSH(); err != nil {
+		return nil, nil, fmt.Errorf("generate ssh config: %w", err)
+	}
+	if err := mBuilder.withResources(cfg.MemoryMB, uint8(cfg.CPUs)); err != nil {
 		return nil, nil, fmt.Errorf("set resources: %w", err)
 	}
-	if err := vmc.configureNetwork(ctx, define.VNetMode(cfg.Network)); err != nil {
+	if err := mBuilder.configureNetwork(ctx, define.VNetMode(cfg.Network)); err != nil {
 		return nil, nil, fmt.Errorf("configure network: %w", err)
 	}
 	if cfg.Proxy {
-		if err := vmc.applySystemProxy(); err != nil {
+		if err := mBuilder.applySystemProxy(); err != nil {
 			return nil, nil, fmt.Errorf("apply system proxy: %w", err)
 		}
 	}
 
 	if cfg.Rootfs != "" {
-		if err := vmc.withUserProvidedRootfs(ctx, cfg.Rootfs); err != nil {
+		if err := mBuilder.withUserProvidedRootfs(ctx, cfg.Rootfs); err != nil {
 			return nil, nil, err
 		}
 	} else {
-		if err := vmc.withBuiltInAlpineRootfs(ctx); err != nil {
+		if err := mBuilder.withBuiltInAlpineRootfs(ctx); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -771,55 +773,64 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 		if len(cfg.Command) > 1 {
 			args = cfg.Command[1:]
 		}
-		if err := vmc.setupCmdLine(workDir, bin, args, cfg.Env); err != nil {
+		if err := mBuilder.setupCmdLine(workDir, bin, args, cfg.Env); err != nil {
 			return nil, nil, fmt.Errorf("setup cmdline: %w", err)
 		}
 	case define.ContainerMode:
-		if err := vmc.withMountUserHome(ctx); err != nil {
+		if err := mBuilder.withMountUserHome(ctx); err != nil {
 			return nil, nil, fmt.Errorf("mount user home: %w", err)
 		}
-		if err := vmc.configurePodman(ctx, cfg.PodmanProxyAPI); err != nil {
+		if err := mBuilder.configurePodman(ctx); err != nil {
 			return nil, nil, fmt.Errorf("configure podman: %w", err)
 		}
 
-		diskPath := vmc.pathMgr.GetBuiltInContainerStorageDiskPathInWorkspace()
+		diskPath := mBuilder.pathMgr.GetBuiltInContainerStorageDiskFile()
 		if cfg.ContainerDisk != "" {
 			diskPath = cfg.ContainerDisk
 		}
 		if cfg.ContainerDiskVersion != "" {
-			if err := vmc.resetOrReuseContainerRAWDisk(ctx, diskPath, cfg.ContainerDiskVersion); err != nil {
+			if err := mBuilder.resetOrReuseContainerRAWDisk(ctx, diskPath, cfg.ContainerDiskVersion); err != nil {
 				return nil, nil, fmt.Errorf("check container disk version: %w", err)
 			}
 		}
-		if err := vmc.configureContainerRAWDisk(ctx, diskPath); err != nil {
+		if err := mBuilder.configureContainerRAWDisk(ctx, diskPath); err != nil {
 			return nil, nil, fmt.Errorf("setup container disk: %w", err)
 		}
 	}
 
 	if len(cfg.Disks) > 0 {
-		if err := vmc.withUserProvidedStorageRAWDisk(ctx, cfg.Disks); err != nil {
+		if err := mBuilder.withUserProvidedStorageRAWDisk(ctx, cfg.Disks); err != nil {
 			return nil, nil, fmt.Errorf("attach raw disks: %w", err)
 		}
 	}
 	if len(cfg.Mounts) > 0 {
-		if err := vmc.withUserProvidedMounts(cfg.Mounts); err != nil {
+		if err := mBuilder.withUserProvidedMounts(cfg.Mounts); err != nil {
 			return nil, nil, fmt.Errorf("setup mounts: %w", err)
 		}
 	}
-	if err := vmc.configureGuestAgent(ctx); err != nil {
+	if err := mBuilder.configureGuestAgent(ctx); err != nil {
 		return nil, nil, fmt.Errorf("configure guest agent: %w", err)
 	}
-	if err := vmc.configureVMCtlAPI(); err != nil {
+	if err := mBuilder.configureVMCtlAPI(); err != nil {
 		return nil, nil, fmt.Errorf("configure vmctl API: %w", err)
 	}
 
-	return &vmc.Machine, cleanup, nil
+	// Detect TTY mode early so management API returns correct value
+	mBuilder.detectTTY()
+
+	return &mBuilder.Machine, cleanup, nil
 }
 
-func workspacePathForSession(name string) string {
-	return fmt.Sprintf("/tmp/.revm-%s", name)
+func (v *machineBuilder) detectTTY() {
+	v.TTY = term.IsTerminal(int(os.Stdin.Fd())) &&
+		term.IsTerminal(int(os.Stdout.Fd())) &&
+		term.IsTerminal(int(os.Stderr.Fd()))
 }
 
-func ignitionSockPath(workspace string) string {
+func getSessionDir(name string) string {
+	return fmt.Sprintf("/tmp/%s", name)
+}
+
+func ignitionSockFile(workspace string) string {
 	return filepath.Clean(filepath.Join(workspace, "socks", "ign.sock"))
 }

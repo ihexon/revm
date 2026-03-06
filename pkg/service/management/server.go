@@ -41,18 +41,21 @@ func NewServer(vmc *define.Machine, stopFn func()) (*Server, error) {
 	if stopFn == nil {
 		return nil, fmt.Errorf("stop callback must not be nil")
 	}
-	return &Server{vmc: vmc, srv: httpv2.NewUnixSockHTTPServer("management-api", vmc.VMCtlAddress), sse: ssev2.NewSSEServer(), stopFn: stopFn}, nil
+	return &Server{vmc: vmc, srv: httpv2.NewUnixSockHTTPServer("management-api", vmc.VMCtlAddr), sse: ssev2.NewSSEServer(), stopFn: stopFn}, nil
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	s.srv.Mux.HandleFunc("/healthz", s.handleHealth)
-	s.srv.Mux.HandleFunc("/vmconfig", s.handleVMConfig)
-	s.srv.Mux.HandleFunc("/exec", s.handleExec)
-	s.srv.Mux.HandleFunc("/legacy/exec", s.handleLegacyExec)
+	// new management api
+	s.srv.Mux.HandleFunc("/v2/healthz", s.handleHealth)
+	s.srv.Mux.HandleFunc("/v2/vmconfig", s.handleVMConfig)
+	s.srv.Mux.HandleFunc("/v2/exec", s.handleExec)
+	s.srv.Mux.HandleFunc("/v2/stop", s.handleRequestVMStop)
+
+	// ovm-mac compatible
+	s.srv.Mux.HandleFunc("/exec", s.handleLegacyExec)
 	s.srv.Mux.HandleFunc("/stop", s.handleRequestVMStop)
-	if s.vmc.RunMode == define.OVMode.String() {
-		s.srv.Mux.HandleFunc("/info", s.handleInfo)
-	}
+	s.srv.Mux.HandleFunc("/info", s.handleOVMInfo)
+
 	return s.srv.Serve(ctx)
 }
 
@@ -63,7 +66,7 @@ type Info struct {
 	HostDNSInGVPNetwork  string `json:"hostEndpoint"`
 }
 
-func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleOVMInfo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, nil)
 		return
@@ -102,8 +105,12 @@ func (s *Server) handleVMConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.vmc)
 }
 
+func (s *Server) handleOVMRequestVMStop(w http.ResponseWriter, r *http.Request) {
+	s.handleRequestVMStop(w, r)
+}
+
 func (s *Server) handleRequestVMStop(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}

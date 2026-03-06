@@ -84,7 +84,7 @@ func (d *Dropbear) Start(ctx context.Context) error {
 func StartGuestSSHServer(ctx context.Context, vmc *define.Machine) error {
 	cfg := DropbearConfig{
 		ListenAddr:         vmc.SSHInfo.GuestSSHServerListenAddr,
-		PrivateKeyPath:     vmc.SSHInfo.GuestSSHPrivateKeyPath,
+		PrivateKeyPath:     vmc.SSHInfo.GuestSSHPrivateKeyFile,
 		AuthorizedKeysFile: vmc.SSHInfo.GuestSSHAuthorizedKeys,
 		PidFile:            vmc.SSHInfo.GuestSSHPidFile,
 	}

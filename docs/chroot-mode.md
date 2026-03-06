@@ -30,7 +30,7 @@ revm chroot \
 
 ```bash
 # Terminal 1: keep the VM alive
-revm chroot --name dev-env --rootfs ~/ubuntu-rootfs sleep 86400
+revm chroot --id dev-env --rootfs ~/ubuntu-rootfs sleep 86400
 
 # Terminal 2: open an interactive shell
 revm attach --pty dev-env
@@ -55,21 +55,24 @@ revm chroot --raw-disk ~/data.ext4 sh -c 'ls /mnt'
 revm chroot [flags] <command> [args...]
 ```
 
-| Flag             | Description                                                                         | Default               |
-|------------------|-------------------------------------------------------------------------------------|-----------------------|
-| `--rootfs`       | Path to a rootfs directory; must contain `/bin/sh`; falls back to built-in Alpine   | built-in Alpine       |
-| `--cpus`         | Number of vCPU cores; defaults to host CPU count if unset or less than 1            | host CPU count        |
-| `--memory`       | VM memory in MB; minimum 512 MB; defaults to host available memory if unset         | host available memory |
-| `--workdir`      | Working directory inside the guest before running the command                       | `/`                   |
-| `--mount`        | Share a host directory via VirtIO-FS (format: `/host:/guest[,ro]`; repeatable)      | —                     |
-| `--raw-disk`     | Attach an ext4 disk image; auto-created as 10 GB if missing (repeatable)            | —                     |
-| `--envs`         | Pass environment variables (format: `KEY=VALUE`; repeatable)                        | —                     |
-| `--network`      | Network stack: `gvisor` (full virtual NIC) or `tsi` (transparent socket intercept)  | `gvisor`              |
-| `--system-proxy` | Read macOS system proxy and inject as `http_proxy`/`https_proxy` into the VM        | `false`               |
-| `--name`         | Session name; workspace is derived as `/tmp/.revm-<name>`; defaults to a random string | random              |
-| `--log-level`    | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`          | `info`                |
-| `--report-url`   | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock` or `tcp://host:port`) | —                     |
+| Flag               | Description                                                                         | Default               |
+|--------------------|-------------------------------------------------------------------------------------|-----------------------|
+| `--rootfs`         | Path to a rootfs directory; must contain `/bin/sh`; falls back to built-in Alpine   | built-in Alpine       |
+| `--id`             | Session ID; session directory is derived as `/tmp/<id>`; defaults to a random string; sessions with the same ID are mutually exclusive via flock | random |
+| `--cpus`           | Number of vCPU cores; defaults to host CPU count if unset or less than 1            | host CPU count        |
+| `--memory`         | VM memory in MB; minimum 512 MB; defaults to host available memory if unset         | host available memory |
+| `--workdir`        | Working directory inside the guest before running the command                       | `/`                   |
+| `--mount`          | Share a host directory via VirtIO-FS (format: `/host:/guest[,ro]`; repeatable)      | —                     |
+| `--raw-disk`       | Attach an ext4 disk image; auto-created as 10 GB if missing (repeatable)            | —                     |
+| `--envs`           | Pass environment variables (format: `KEY=VALUE`; repeatable)                        | —                     |
+| `--network`        | Network stack: `gvisor` (full virtual NIC) or `tsi` (transparent socket intercept)  | `gvisor`              |
+| `--system-proxy`   | Read macOS system proxy and inject as `http_proxy`/`https_proxy` into the VM        | `false`               |
+| `--manage-api`     | Symlink path for the VM management API socket; the actual socket is always inside the session directory | — |
+| `--ssh-key-dir`    | Directory to symlink the generated SSH key pair (`key` and `key.pub`) into; keys are always created inside the session directory | — |
+| `--log-level`      | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`          | `info`                |
+| `--log-to`         | Custom log file path on host; defaults to `<session_dir>/logs/vm.log`               | session-local         |
+| `--report-url`     | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock` or `tcp://host:port`) | — |
 
 ## See Also
 
-- [Session workspace & networking](insider.md) — workspace directory structure, reuse/cleanup, and network backends (gvisor / tsi)
+- [Session workspace & networking](insider.md) — session directory structure, reuse/cleanup, and network backends (gvisor / tsi)

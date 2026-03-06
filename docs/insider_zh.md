@@ -1,11 +1,11 @@
-# 会话工作区与网络
+# 会话目录与网络
 
-## 工作区结构
+## 会话目录结构
 
-每个会话的工作区目录位于 `/tmp/.revm-<name>`，由 `--name` 参数派生（不指定时使用随机字符串）：
+每个会话的目录位于 `/tmp/<id>`，由 `--id` 参数派生（不指定时使用随机字符串）：
 
 ```
-/tmp/.revm-<name>/
+/tmp/<id>/
 ├── socks/
 │   ├── podman-api.sock   # Podman API socket（docker 模式）
 │   ├── gvpctl.sock       # gvproxy 控制 socket（gvisor 模式）
@@ -13,38 +13,49 @@
 │   ├── vmctl.sock        # VM 管理 API socket
 │   └── ign.sock          # Ignition 配置服务 socket
 ├── ssh/
-│   └── private.key       # 自动生成的 SSH 私钥
+│   ├── key               # 自动生成的 SSH 私钥
+│   └── key.pub           # 自动生成的 SSH 公钥
 ├── logs/
 │   └── vm.log            # VM 内部日志
 ├── rootfs/               # 客户机根文件系统（chroot 模式）
 └── raw-disk/             # 容器存储磁盘（docker 模式）
 ```
 
+### 符号链接参数
+
+以下参数会创建指向会话目录内部的符号链接，方便外部工具通过固定路径访问资源，同时不破坏会话目录的完整性：
+
+| 参数               | 链接目标                                            |
+|--------------------|-------------------------------------------------|
+| `--podman-proxy-api` | `<会话目录>/socks/podman-api.sock`                |
+| `--manage-api`     | `<会话目录>/socks/vmctl.sock`                      |
+| `--ssh-key-dir`    | `<会话目录>/ssh/key` 和 `<会话目录>/ssh/key.pub`     |
+
 ### 会话生命周期
 
-工作区是**临时的** — VM 退出后，工作区目录 `/tmp/.revm-<name>/` 会在清理阶段自动删除。每次启动都从全新工作区开始。
+会话目录是**临时的** — VM 退出后，`/tmp/<id>/` 会在清理阶段自动删除。每次启动都从全新目录开始。
 
-**互斥**：同名会话通过 flock 互斥——同一时间只有一个 VM 可以使用给定的名称。因此 `--name` 适用于 `revm attach` 连接到正在运行的会话。
+**互斥**：同 ID 会话通过 flock 互斥——同一时间只有一个 VM 可以使用给定的 ID。因此 `--id` 适用于 `revm attach` 连接到正在运行的会话。
 
-**持久化数据**：如需跨会话保留数据，请使用指向工作区外部路径的显式参数：
+**持久化数据**：如需跨会话保留数据，请使用指向会话目录外部路径的显式参数：
 
 ```bash
 # 容器镜像跨会话保留
-revm docker --name my-engine --container-disk ~/container-storage.ext4
+revm docker --id my-engine --container-disk ~/container-storage.ext4
 
 # 任意数据也可持久化
 revm chroot --raw-disk ~/data.ext4 -- sh
 ```
 
-**清理**：如果进程被强制杀死（例如 `kill -9`），手动移除残留工作区：
+**清理**：如果进程被强制杀死（例如 `kill -9`），手动移除残留会话目录：
 
 ```bash
-rm -rf /tmp/.revm-my-engine
+rm -rf /tmp/my-engine
 ```
 
-## 网络模式（ TSI/GVISOR 互斥）
+## 网络模式（TSI/GVISOR 互斥）
 
-docker 模式和 chroot 模式都支持 TSI 和 GVISOR 两种网络模式，这两种模式是互斥的
+docker 模式和 chroot 模式都支持 TSI 和 GVISOR 两种网络模式，这两种模式是互斥的。
 
 ### gvisor（默认）
 

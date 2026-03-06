@@ -9,6 +9,7 @@ import (
 	"linuxvm/pkg/interfaces"
 	"linuxvm/pkg/krunrunner"
 	"linuxvm/pkg/service/lifecycle"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -25,7 +26,7 @@ type VM struct {
 	machine         *define.Machine
 	provider        interfaces.VMMProvider
 	svc             hostServices
-	workspacePath   string
+	sessionDir      string
 	cleanup         func()
 	eventDispatcher eventDispatcher
 
@@ -33,11 +34,6 @@ type VM struct {
 	state   vmState
 	seq     atomic.Uint64
 	stopper *stopController
-}
-
-// Workspace returns the workspace directory path.
-func (vm *VM) Workspace() string {
-	return vm.workspacePath
 }
 
 type stopController struct {
@@ -129,52 +125,112 @@ type hostServices interface {
 	ExitVirtualMachineWhenSomethingHappened(ctx context.Context) error
 }
 
-// New creates a VM from the given Config. It resolves defaults, validates the
-// configuration, sets up the workspace and file lock, builds the internal
-// Machine, and prepares the VM provider.
-//
-// Close must be called even if Start is never called.
-func New(ctx context.Context, cfg *Config) (*VM, error) {
+func evtProxy(sink SinkKind, evt Event) Event {
+	if sink == SinkLegacy {
+		switch evt.Kind {
+		case EventStopped:
+			evt.Kind = "Exit"
+		case EventPodmanReady:
+			evt.Kind = "Ready"
+		case EventError:
+			evt.Kind = "Error"
+		case EventSuccess:
+			evt.Kind = "Success"
+		case EventExit:
+			evt.Kind = "Exit"
+		}
+		return evt
+	}
+	return evt
+}
+
+func New(cfg *Config) (*VM, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
 	}
 
-	normalized, err := NormalizeConfig(*cfg)
+	normalizedCfg, err := NormalizeConfig(*cfg)
 	if err != nil {
 		return nil, fmt.Errorf("resolve defaults: %w", err)
 	}
-	if err := validateConfig(normalized); err != nil {
-		return nil, fmt.Errorf("validate config: %w", err)
+
+	vm := &VM{
+		cfg:        &normalizedCfg,
+		sessionDir: getSessionDir(normalizedCfg.SessionID),
+		state:      vmStateNew,
+		eventDispatcher: eventDispatcher{
+			proxy: evtProxy,
+		},
 	}
 
-	workspacePath := workspacePathForSession(normalized.SessionID)
-	mc, cleanup, err := buildMachine(ctx, normalized, workspacePath)
+	if normalizedCfg.V1EventReportURL != "" {
+		vm.registerV1EventSink()
+	}
+	if normalizedCfg.LegacyEventReportURL != "" {
+		vm.registerLegacyEventSink()
+	}
+
+	return vm, nil
+}
+
+// init acquires all heavyweight resources: workspace dirs, flock, SSH keys,
+// disk images, krun-runner provider, and host services. Called once at the
+// start of Run(). On failure it cleans up after itself.
+func (vm *VM) init(ctx context.Context) error {
+	mc, cleanup, err := buildMachine(ctx, *vm.cfg, vm.sessionDir)
 	if err != nil {
-		return nil, fmt.Errorf("build machine: %w", err)
+		return fmt.Errorf("build machine: %w", err)
+	}
+
+	if err := vm.createUserSymlinks(); err != nil {
+		cleanup()
+		return fmt.Errorf("create symlinks: %w", err)
 	}
 
 	vmp, err := newProvider(mc)
 	if err != nil {
 		cleanup()
-		return nil, fmt.Errorf("create vm provider: %w", err)
+		return fmt.Errorf("create vm provider: %w", err)
 	}
 
-	vm := &VM{
-		cfg:           &normalized,
-		machine:       mc,
-		provider:      vmp,
-		svc:           lifecycle.NewHostServices(vmp),
-		workspacePath: workspacePath,
-		cleanup:       cleanup,
-		state:         vmStateNew,
-		stopper:       newStopController(mc),
-	}
+	vm.machine = mc
+	vm.provider = vmp
+	vm.svc = lifecycle.NewHostServices(mc, vmp)
+	vm.cleanup = cleanup
+	vm.stopper = newStopController(mc)
+	return nil
+}
 
-	if normalized.ReportURL != "" {
-		registerHTTPEventSink(&vm.eventDispatcher, normalized.ReportURL, normalized.RunMode, normalized.SessionID)
-	}
+// createUserSymlinks links session-internal resources to user-specified paths.
+// All actual files remain inside sessionDir; the symlinks are just a convenience
+// bridge so external tools can find them at well-known locations.
+func (vm *VM) createUserSymlinks() error {
+	cfg := vm.cfg
+	dir := vm.sessionDir
 
-	return vm, nil
+	if cfg.PodmanProxyAPIFile != "" {
+		target := filepath.Join(dir, "socks", "podman-api.sock")
+		if err := createSymlink(target, cfg.PodmanProxyAPIFile); err != nil {
+			return fmt.Errorf("podman proxy socket: %w", err)
+		}
+	}
+	if cfg.ManageAPIFile != "" {
+		target := filepath.Join(dir, "socks", "vmctl.sock")
+		if err := createSymlink(target, cfg.ManageAPIFile); err != nil {
+			return fmt.Errorf("vmctl socket: %w", err)
+		}
+	}
+	if cfg.SSHKeyDir != "" {
+		keyFile := filepath.Join(dir, "ssh", "key")
+		pubKeyFile := keyFile + ".pub"
+		if err := createSymlink(keyFile, filepath.Join(cfg.SSHKeyDir, "key")); err != nil {
+			return fmt.Errorf("ssh private key: %w", err)
+		}
+		if err := createSymlink(pubKeyFile, filepath.Join(cfg.SSHKeyDir, "key.pub")); err != nil {
+			return fmt.Errorf("ssh public key: %w", err)
+		}
+	}
+	return nil
 }
 
 // Run launches all host services, runs the VM to completion, drains the
@@ -199,6 +255,10 @@ func (vm *VM) Run(ctx context.Context) error {
 		}
 		vm.mu.Unlock()
 	}()
+
+	if err := vm.init(ctx); err != nil {
+		return err
+	}
 
 	switch vm.cfg.RunMode {
 	case ModeRootfs, ModeContainer:
@@ -267,11 +327,12 @@ func (vm *VM) run(ctx context.Context) error {
 		vm.emit(EventNetworkReady, "host network ready")
 	}
 
-	// all thins ready , now we can start libkrun runner
+	// all services ready, now we can start libkrun runner
 	vmErr := vm.svc.StartVirtualMachine(ctx)
-	go func() {
-		logrus.Infof("host service error after krun runner started: %v", g.Wait())
-	}()
+	svcErr := g.Wait()
+	if svcErr != nil {
+		logrus.Infof("host service error after krun runner exited: %v", svcErr)
+	}
 
 	if vmErr != nil {
 		vm.emit(EventError, vmErr.Error())
@@ -281,13 +342,29 @@ func (vm *VM) run(ctx context.Context) error {
 	return vmErr
 }
 
-func (vm *VM) emit(kind RoutedEvent, msg string) {
-	if vm == nil || vm.cfg == nil || kind == nil {
-		return
+func GenerateVMConfig(ctx context.Context, cfg *Config, path string) error {
+	vm := &VM{
+		cfg: cfg,
+		eventDispatcher: eventDispatcher{
+			proxy: evtProxy,
+		},
 	}
-	resolvedKind, ok := kind.resolveForMode(vm.cfg.RunMode)
-	if !ok {
-		return
+
+	if cfg.LegacyEventReportURL != "" {
+		vm.registerLegacyEventSink()
 	}
-	vm.eventDispatcher.publish(vm.cfg.SessionID, vm.cfg.RunMode, resolvedKind, msg, vm.seq.Add(1))
+
+	if cfg.V1EventReportURL != "" {
+		vm.registerV1EventSink()
+	}
+	defer vm.emit(EventExit, "")
+
+	if err := cfg.WriteCfg(path); err != nil {
+		vm.emit(EventError, err.Error())
+		return err
+	}
+
+	vm.emit(EventSuccess, "")
+
+	return nil
 }

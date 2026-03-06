@@ -8,6 +8,7 @@ import (
 	"linuxvm/pkg/interfaces"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/service/ignition"
+	"linuxvm/pkg/service/management"
 	"net"
 	"os"
 	"os/signal"
@@ -20,61 +21,63 @@ import (
 )
 
 type HostServices struct {
+	vmc *define.Machine
 	vmp interfaces.VMMProvider
 }
 
-func NewHostServices(vmp interfaces.VMMProvider) *HostServices {
-	return &HostServices{vmp: vmp}
+func NewHostServices(vmc *define.Machine, vmp interfaces.VMMProvider) *HostServices {
+	return &HostServices{vmc: vmc, vmp: vmp}
 }
 
 func (s *HostServices) StartPodmanProxy(ctx context.Context) error {
-	if s.vmp.GetVMConfigure().RunMode == define.RootFsMode.String() {
+	if s.vmc.RunMode == define.RootFsMode.String() {
 		return nil
 	}
 
-	switch s.vmp.GetVMConfigure().VirtualNetworkMode {
+	switch s.vmc.VirtualNetworkMode {
 	case define.GVISOR:
-		_, portStr, _ := net.SplitHostPort(s.vmp.GetVMConfigure().PodmanInfo.GuestPodmanAPIListenAddr)
+		_, portStr, _ := net.SplitHostPort(s.vmc.PodmanInfo.GuestPodmanAPIListenAddr)
 		port, _ := strconv.ParseUint(portStr, 10, 16)
 		return gvproxy.TunnelHostUnixToGuest(ctx,
-			s.vmp.GetVMConfigure().GVPCtlAddr,
-			s.vmp.GetVMConfigure().PodmanInfo.HostPodmanProxyAddr,
+			s.vmc.GVPCtlAddr,
+			s.vmc.PodmanInfo.HostPodmanProxyAddr,
 			define.GuestIP,
 			uint16(port))
 	case define.TSI:
 		f := &network.LocalForwarder{
-			UnixSockAddr: s.vmp.GetVMConfigure().PodmanInfo.HostPodmanProxyAddr,
-			Target:       s.vmp.GetVMConfigure().PodmanInfo.GuestPodmanAPIListenAddr,
+			UnixSockAddr: s.vmc.PodmanInfo.HostPodmanProxyAddr,
+			Target:       s.vmc.PodmanInfo.GuestPodmanAPIListenAddr,
 			Timeout:      1 * time.Second,
 		}
 		return f.Run(ctx)
 	default:
-		return fmt.Errorf("unsupported virtual network mode: %s", s.vmp.GetVMConfigure().VirtualNetworkMode)
+		return fmt.Errorf("unsupported virtual network mode: %s", s.vmc.VirtualNetworkMode)
 	}
 }
 
 func (s *HostServices) StartNetworkStack(ctx context.Context) error {
-	if s.vmp.GetVMConfigure().VirtualNetworkMode == define.TSI {
+	if s.vmc.VirtualNetworkMode == define.TSI {
 		return nil
 	}
 
 	logrus.Info("Starting gvisor-tap-vsock network stack")
-	return gvproxy.Run(ctx, s.vmp.GetVMConfigure())
+	return gvproxy.Run(ctx, s.vmc)
 }
 
 func (s *HostServices) StartIgnitionService(ctx context.Context) error {
-	server := ignition.NewServer(s.vmp.GetVMConfigure())
+	server := ignition.NewServer(s.vmc)
 	return server.Start(ctx)
 }
 
 func (s *HostServices) StartMachineManagementAPI(ctx context.Context, stopFn func()) error {
-	return s.vmp.StartVMCtlServer(ctx, stopFn)
+	server, err := management.NewServer(s.vmc, stopFn)
+	if err != nil {
+		return err
+	}
+	return server.Start(ctx)
 }
 
 func (s *HostServices) StartVirtualMachine(ctx context.Context) error {
-	if err := s.vmp.Create(ctx); err != nil {
-		return fmt.Errorf("create virtual machine from libkrun builder fail: %v", err)
-	}
 	return s.vmp.Start(ctx)
 }
 
@@ -85,7 +88,7 @@ func (s *HostServices) ExitVirtualMachineWhenSomethingHappened(ctx context.Conte
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-s.vmp.GetVMConfigure().StopCh:
+		case <-s.vmc.StopCh:
 			return define.ErrStopChTrigger
 		}
 	})

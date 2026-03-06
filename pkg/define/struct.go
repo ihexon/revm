@@ -7,7 +7,7 @@ import (
 
 // MachineSpec contains serializable VM specification data.
 type MachineSpec struct {
-	WorkspacePath string `json:"workspacePath,omitempty"`
+	WorkspaceDir string `json:"workspaceDir,omitempty"`
 
 	MemoryInMB uint64 `json:"memoryInMB,omitempty"`
 	Cpus       uint8  `json:"cpus,omitempty"`
@@ -23,11 +23,11 @@ type MachineSpec struct {
 
 	VirtualNetworkMode VNetMode `json:"virtualNetworkMode,omitempty"`
 
-	LogFilePath       string            `json:"logFilePath,omitempty"`
+	LogFile           string            `json:"logFile,omitempty"`
 	Mounts            []Mount           `json:"mounts,omitempty"`
 	SSHInfo           SSHInfo           `json:"sshInfo,omitempty"`
 	PodmanInfo        PodmanInfo        `json:"podmanInfo,omitempty"` // 仅仅在 docker mode 下有意义
-	VMCtlAddress      string            `json:"vmCTLAddress,omitempty"`
+	VMCtlAddr         string            `json:"vmCtlAddr,omitempty"`
 	RunMode           string            `json:"runMode,omitempty"`
 	IgnitionServerCfg IgnitionServerCfg `json:"ignitionServerCfg,omitempty"`
 	GuestAgentCfg     GuestAgentCfg     `json:"guestAgentCfg,omitempty"`
@@ -114,7 +114,7 @@ type SSHInfo struct {
 
 	// GUEST
 	GuestSSHServerListenAddr string `json:"guestSSHServerListenAddr,omitempty"`
-	GuestSSHPrivateKeyPath   string `json:"guestSSHPrivateKeyPath,omitempty"`
+	GuestSSHPrivateKeyFile   string `json:"guestSSHPrivateKeyFile,omitempty"`
 	GuestSSHAuthorizedKeys   string `json:"guestSSHAuthorizedKeys,omitempty"`
 	GuestSSHPidFile          string `json:"guestSSHPidFile,omitempty"`
 }

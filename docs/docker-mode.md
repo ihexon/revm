@@ -8,15 +8,15 @@ or Podman Desktop required — spin up a full, lightweight container stack insta
 **Start the container engine**
 
 ```bash
-revm docker --name my-engine
+revm docker --id my-engine
 ```
 
-After startup, the Podman API socket is available at `/tmp/.revm-my-engine/socks/podman-api.sock`.
+After startup, the Podman API socket is available at `/tmp/my-engine/socks/podman-api.sock`.
 
 **Connect with podman or docker CLI**
 
 ```bash
-export CONTAINER_HOST=unix:///tmp/.revm-my-engine/socks/podman-api.sock
+export CONTAINER_HOST=unix:///tmp/my-engine/socks/podman-api.sock
 
 # Check runtime info
 podman info
@@ -30,7 +30,7 @@ podman run --rm -p 8080:80 nginx
 **Connect with docker CLI**
 
 ```bash
-export DOCKER_HOST=unix:///tmp/.revm-my-engine/socks/podman-api.sock
+export DOCKER_HOST=unix:///tmp/my-engine/socks/podman-api.sock
 docker run --rm hello-world
 ```
 
@@ -56,7 +56,7 @@ In environments that require a proxy, add `--system-proxy` to automatically read
 into containers:
 
 ```bash
-revm docker --name my-engine --system-proxy
+revm docker --id my-engine --system-proxy
 
 # apt/curl inside containers automatically use the proxy
 podman run --rm ubuntu:latest apt-get update
@@ -68,21 +68,25 @@ podman run --rm ubuntu:latest apt-get update
 revm docker [flags]
 ```
 
-| Flag             | Description                                                                                         | Default               |
-|------------------|-----------------------------------------------------------------------------------------------------|-----------------------|
-| `--cpus`         | Number of vCPU cores; defaults to host CPU count if unset or less than 1                            | host CPU count        |
-| `--memory`       | VM memory in MB; minimum 512 MB; defaults to host available memory if unset                         | host available memory |
-| `--mount`        | Share a host directory via VirtIO-FS (format: `/host:/guest[,ro]`; repeatable)                      | —                     |
-| `--raw-disk`     | Attach an ext4 disk image; auto-created if missing (repeatable)                                     | —                     |
-| `--network`      | Network stack: `gvisor` (full virtual NIC, supports port mapping) or `tsi` (transparent intercept)  | `gvisor`              |
-| `--system-proxy` | Read macOS system proxy and inject into containers; rewrites `127.0.0.1` to `host.containers.internal` | `false`            |
-| `--name`         | Session name; workspace is derived as `/tmp/.revm-<name>`; Podman API socket at `socks/podman-api.sock` inside the workspace | random |
-| `--container-disk` | Path to a persistent ext4 raw disk image for container storage; auto-created if missing; defaults to a workspace-local disk | workspace-local |
-| `--log-level`    | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`                          | `info`                |
-| `--report-url`   | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock` or `tcp://host:port`) | —                     |
+| Flag               | Description                                                                                         | Default               |
+|--------------------|-----------------------------------------------------------------------------------------------------|-----------------------|
+| `--id`             | Session ID; session directory is derived as `/tmp/<id>`; defaults to a random string; sessions with the same ID are mutually exclusive via flock | random |
+| `--cpus`           | Number of vCPU cores; defaults to host CPU count if unset or less than 1                            | host CPU count        |
+| `--memory`         | VM memory in MB; minimum 512 MB; defaults to host available memory if unset                         | host available memory |
+| `--mount`          | Share a host directory via VirtIO-FS (format: `/host:/guest[,ro]`; repeatable)                      | —                     |
+| `--raw-disk`       | Attach an ext4 disk image; auto-created if missing (repeatable)                                     | —                     |
+| `--network`        | Network stack: `gvisor` (full virtual NIC, supports port mapping) or `tsi` (transparent intercept)  | `gvisor`              |
+| `--system-proxy`   | Read macOS system proxy and inject into containers; rewrites `127.0.0.1` to `host.containers.internal` | `false`            |
+| `--container-disk` | Path to a persistent ext4 raw disk image for container storage; auto-created if missing; defaults to a session-local disk | session-local |
+| `--podman-proxy-api` | Symlink path for the Podman API socket; the actual socket is always inside the session directory   | —                     |
+| `--manage-api`     | Symlink path for the VM management API socket; the actual socket is always inside the session directory | —                  |
+| `--ssh-key-dir`    | Directory to symlink the generated SSH key pair (`key` and `key.pub`) into; keys are always created inside the session directory | — |
+| `--log-level`      | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`                          | `info`                |
+| `--log-to`         | Custom log file path on host; defaults to `<session_dir>/logs/vm.log`                               | session-local         |
+| `--report-url`     | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock` or `tcp://host:port`) | —                  |
 
 docker mode and chroot mode share most flags and can be configured as needed.
 
 ## See Also
 
-- [Session workspace & networking](insider.md) — workspace directory structure, reuse/cleanup, and network backends (gvisor / tsi)
+- [Session workspace & networking](insider.md) — session directory structure, reuse/cleanup, and network backends (gvisor / tsi)

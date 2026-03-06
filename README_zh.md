@@ -34,7 +34,7 @@ tar -xvf revm-Darwin-arm64.tar.zst
 | [chroot 模式](docs/chroot-mode_zh.md) | macOS 上的 Linux chroot 替代方案——以近乎原生的性能运行任意 rootfs |
 | [docker 模式](docs/docker-mode_zh.md) | 无需 Docker Desktop 的完整容器引擎——兼容 Podman/Docker CLI |
 | [attach](docs/attach_zh.md) | 连接到运行中的 VM 实例 |
-| [工作区与网络](docs/insider_zh.md) | 会话工作区结构、复用/清理，以及网络模式（gvisor / tsi） |
+| [工作区与网络](docs/insider_zh.md) | 会话目录结构、复用/清理，以及网络模式（gvisor / tsi） |
 | [管理 API](docs/management-api.md) | 通过 Unix socket 访问的 VM 管理 API |
 
 ## 问题反馈
