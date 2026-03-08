@@ -27,9 +27,11 @@
 
 | 参数               | 链接目标                                            |
 |--------------------|-------------------------------------------------|
-| `--podman-proxy-api` | `<会话目录>/socks/podman-api.sock`                |
-| `--manage-api`     | `<会话目录>/socks/vmctl.sock`                      |
+| `--podman-proxy-api-file` | `<会话目录>/socks/podman-api.sock`          |
+| `--manage-api-file` | `<会话目录>/socks/vmctl.sock`                    |
 | `--ssh-key-dir`    | `<会话目录>/ssh/key` 和 `<会话目录>/ssh/key.pub`     |
+| `--export-ssh-private-key` | `<会话目录>/ssh/key`                       |
+| `--export-ssh-public-key`  | `<会话目录>/ssh/key.pub`                   |
 
 ### 会话生命周期
 

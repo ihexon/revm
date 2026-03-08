@@ -73,17 +73,20 @@ revm docker [flags]
 | `--id`             | Session ID; session directory is derived as `/tmp/<id>`; defaults to a random string; sessions with the same ID are mutually exclusive via flock | random |
 | `--cpus`           | Number of vCPU cores; defaults to host CPU count if unset or less than 1                            | host CPU count        |
 | `--memory`         | VM memory in MB; minimum 512 MB; defaults to host available memory if unset                         | host available memory |
+| `--envs`           | Pass environment variables (format: `KEY=VALUE`; repeatable)                                        | —                     |
 | `--mount`          | Share a host directory via VirtIO-FS (format: `/host:/guest[,ro]`; repeatable)                      | —                     |
 | `--raw-disk`       | Attach an ext4 disk image; auto-created if missing (repeatable)                                     | —                     |
 | `--network`        | Network stack: `gvisor` (full virtual NIC, supports port mapping) or `tsi` (transparent intercept)  | `gvisor`              |
 | `--system-proxy`   | Read macOS system proxy and inject into containers; rewrites `127.0.0.1` to `host.containers.internal` | `false`            |
 | `--container-disk` | Path to a persistent ext4 raw disk image for container storage; auto-created if missing; defaults to a session-local disk | session-local |
-| `--podman-proxy-api` | Symlink path for the Podman API socket; the actual socket is always inside the session directory   | —                     |
-| `--manage-api`     | Symlink path for the VM management API socket; the actual socket is always inside the session directory | —                  |
+| `--podman-proxy-api-file` | Custom Unix socket path for the Podman API proxy; defaults to `<session_dir>/socks/podman-api.sock` | —                  |
+| `--manage-api-file` | Custom Unix socket path for the VM management API; defaults to `<session_dir>/socks/vmctl.sock` | —                  |
 | `--ssh-key-dir`    | Directory to symlink the generated SSH key pair (`key` and `key.pub`) into; keys are always created inside the session directory | — |
+| `--export-ssh-private-key` | File path to symlink the generated SSH private key to                        | —                     |
+| `--export-ssh-public-key`  | File path to symlink the generated SSH public key to                         | —                     |
 | `--log-level`      | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`                          | `info`                |
 | `--log-to`         | Custom log file path on host; defaults to `<session_dir>/logs/vm.log`                               | session-local         |
-| `--report-url`     | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock` or `tcp://host:port`) | —                  |
+| `--report-events-to` | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock` or `tcp://host:port`) | —                  |
 
 docker mode and chroot mode share most flags and can be configured as needed.
 

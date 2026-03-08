@@ -89,30 +89,6 @@ data: wait: exit status 2
 
 ---
 
-### `GET /info` *(OVMode only)*
-
-Returns connection info for Podman and SSH proxies. Only available when the VM is running in OVMode (`runMode: "oomol-studio"`).
-
-**Response:** `200 OK`
-
-```json
-{
-  "podmanSocketPath": "/tmp/.revm-abc123/podman.sock",
-  "sshPort": 6123,
-  "sshUser": "root",
-  "hostEndpoint": "host.containers.internal"
-}
-```
-
-| Field             | Description                                              |
-|-------------------|----------------------------------------------------------|
-| `podmanSocketPath`| Unix socket path for the Podman API proxy on the host    |
-| `sshPort`         | Host port forwarding SSH into the guest                  |
-| `sshUser`         | Default SSH user inside the guest                        |
-| `hostEndpoint`    | DNS name resolving to the host from within the VM (gvisor mode only) |
-
----
-
 ## Error responses
 
 All endpoints return a JSON error body on failure:

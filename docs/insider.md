@@ -28,9 +28,11 @@ a well-known path without breaking session directory integrity:
 
 | Flag               | Symlink target                                  |
 |--------------------|-------------------------------------------------|
-| `--podman-proxy-api` | `<session_dir>/socks/podman-api.sock`          |
-| `--manage-api`     | `<session_dir>/socks/vmctl.sock`                |
+| `--podman-proxy-api-file` | `<session_dir>/socks/podman-api.sock`    |
+| `--manage-api-file` | `<session_dir>/socks/vmctl.sock`                |
 | `--ssh-key-dir`    | `<session_dir>/ssh/key` and `<session_dir>/ssh/key.pub` |
+| `--export-ssh-private-key` | `<session_dir>/ssh/key`                 |
+| `--export-ssh-public-key`  | `<session_dir>/ssh/key.pub`             |
 
 ### Session Lifecycle
 
