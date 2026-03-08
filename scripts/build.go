@@ -12,7 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.6"
+const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.7"
 
 // run executes a command, inheriting stdout/stderr. If env is non-nil,
 // those vars are appended to the current environment.
@@ -190,10 +190,17 @@ func (b *builder) fetchDeps() {
 		}
 	}
 
-	logrus.Info("fetching rootfs")
+	rootfsCache := filepath.Join(b.depsDir, "rootfs", "rootfs.tar.zst")
+	if b.dirty && exists(rootfsCache) {
+		logrus.Infof("dirty mode: reusing cached rootfs in %s", rootfsCache)
+	} else {
+		logrus.Info("fetching rootfs")
+		mkdirAll(filepath.Dir(rootfsCache))
+		run(nil, "wget", "-qO", rootfsCache,
+			fmt.Sprintf("%s/alpine-rootfs-Linux-aarch64.tar.zst", assetsBase))
+	}
 	rootfsDest := filepath.Join(b.staticDir, "rootfs", "rootfs.tar.zst")
-	run(nil, "wget", "-qO", rootfsDest,
-		fmt.Sprintf("%s/alpine-rootfs-Linux-aarch64.tar.zst", assetsBase))
+	run(nil, "cp", "-av", rootfsCache, rootfsDest)
 }
 
 func (b *builder) buildTarget() {
@@ -269,7 +276,6 @@ func (b *builder) relocateLibsDarwin() {
 	run(nil, "install_name_tool", "-change", "libkrun.1.dylib", "@loader_path/../lib/libkrun.1.dylib", kr)
 	run(nil, "install_name_tool", "-change", "libkrunfw.5.dylib", "@loader_path/../lib/libkrunfw.5.dylib", kr)
 	run(nil, "codesign", "--entitlements", ent, "--force", "-s", "-", kr)
-
 }
 
 func (b *builder) relocateLibsLinux() {

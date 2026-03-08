@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/eventreporter"
 	"linuxvm/pkg/librevm"
 
 	"github.com/urfave/cli/v3"
@@ -56,7 +57,7 @@ var startRootfs = cli.Command{
 			Hidden: false,
 		},
 		&cli.StringFlag{
-			Name:  define.FlagReportURL,
+			Name:  define.FlagReportEvents,
 			Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888)",
 		},
 		&cli.StringFlag{
@@ -79,6 +80,14 @@ var startRootfs = cli.Command{
 		&cli.StringFlag{
 			Name:  define.FlagSSHKeyDir,
 			Usage: "directory to symlink the generated SSH key pair (key and key.pub) into; keys are always created inside the session directory",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagExportSSHKeyPrivateFile,
+			Usage: "file path to symlink the generated SSH private key to",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagExportSSHKeyPublicFile,
+			Usage: "file path to symlink the generated SSH public key to",
 		},
 	},
 	Action: rootfsLifeCycle,
@@ -108,8 +117,8 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 			WithEnv(command.StringSlice(define.FlagEnvs)...)
 	}
 
-	if u := command.String(define.FlagReportURL); u != "" {
-		cfg.WithLegacyEventReport(u)
+	if u := command.String(define.FlagReportEvents); u != "" {
+		cfg.WithEventReporter(eventreporter.NewV1(u, librevm.ModeRootfs))
 	}
 	if l := command.String(define.FlagLogTo); l != "" {
 		cfg.WithLogTo(l)
@@ -119,6 +128,12 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	}
 	if sk := command.String(define.FlagSSHKeyDir); sk != "" {
 		cfg.WithSSHKeyDir(sk)
+	}
+	if pk := command.String(define.FlagExportSSHKeyPrivateFile); pk != "" {
+		cfg.WithExportSSHKeyPrivateFile(pk)
+	}
+	if pub := command.String(define.FlagExportSSHKeyPublicFile); pub != "" {
+		cfg.WithExportSSHKeyPublicFile(pub)
 	}
 
 	vm, err := librevm.New(cfg)

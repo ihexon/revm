@@ -24,6 +24,7 @@ const (
 	ModeRootfs RunMode = "rootfs"
 	// ModeContainer boots the VM with the built-in container runtime (Podman).
 	ModeContainer RunMode = "docker"
+	ModeCfgGen    RunMode = "cfggen"
 )
 
 func (m RunMode) IsValid() bool {
@@ -47,19 +48,20 @@ type Config struct {
 	WorkDir string   `toml:"workdir,omitempty"  json:"workdir,omitempty"`
 	Env     []string `toml:"env,omitempty"      json:"env,omitempty"`
 
-	Network              string            `toml:"network,omitempty"         json:"network,omitempty"` // "gvisor" | "tsi"
-	Mounts               []string          `toml:"mounts,omitempty"          json:"mounts,omitempty"`  // "/host:/guest[,ro]"
-	Disks                map[string]string `toml:"disks,omitempty"           json:"disks,omitempty"`   // key=disk path, value=UUID (""→auto)
-	ContainerDisk        string            `toml:"container_disk,omitempty"         json:"containerDisk,omitempty"`
-	ContainerDiskVersion string            `toml:"container_disk_version,omitempty" json:"containerDiskVersion,omitempty"`
-	PodmanProxyAPIFile   string            `toml:"podman_proxy_api_file,omitempty"   json:"podmanProxyAPIFile,omitempty"`
-	ManageAPIFile        string            `toml:"manage_api_file,omitempty"         json:"manageAPIFile,omitempty"`
-	SSHKeyDir            string            `toml:"ssh_key_dir,omitempty"             json:"sshKeyDir,omitempty"`
-	Proxy                bool              `toml:"proxy,omitempty"           json:"proxy,omitempty"`
-	LogLevel             string            `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
-	LogTo                string            `toml:"log_to,omitempty"          json:"logTo,omitempty"`
-	V1EventReportURL     string            `toml:"v1_event_report_url,omitempty"     json:"v1EventReportURL,omitempty"`
-	LegacyEventReportURL string            `toml:"legacy_event_report_url,omitempty" json:"legacyEventReportURL,omitempty"`
+	Network                 string            `toml:"network,omitempty"         json:"network,omitempty"` // "gvisor" | "tsi"
+	Mounts                  []string          `toml:"mounts,omitempty"          json:"mounts,omitempty"`  // "/host:/guest[,ro]"
+	Disks                   map[string]string `toml:"disks,omitempty"           json:"disks,omitempty"`   // key=disk path, value=UUID (""→auto)
+	ContainerDisk           string            `toml:"container_disk,omitempty"         json:"containerDisk,omitempty"`
+	ContainerDiskVersion    string            `toml:"container_disk_version,omitempty" json:"containerDiskVersion,omitempty"`
+	PodmanProxyAPIFile      string            `toml:"podman_proxy_api_file,omitempty"   json:"podmanProxyAPIFile,omitempty"`
+	ManageAPIFile           string            `toml:"manage_api_file,omitempty"         json:"manageAPIFile,omitempty"`
+	SSHKeyDir               string            `toml:"ssh_key_dir,omitempty"                json:"sshKeyDir,omitempty"`
+	ExportSSHKeyPrivateFile string            `toml:"export_ssh_key_private_file,omitempty" json:"exportSSHKeyPrivateFile,omitempty"`
+	ExportSSHKeyPublicFile  string            `toml:"export_ssh_key_public_file,omitempty"  json:"exportSSHKeyPublicFile,omitempty"`
+	Proxy                   bool              `toml:"proxy,omitempty"           json:"proxy,omitempty"`
+	LogLevel                string            `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
+	LogTo                   string            `toml:"log_to,omitempty"          json:"logTo,omitempty"`
+	Reporters               []EventReporter   `toml:"-" json:"-"`
 }
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.
@@ -89,11 +91,25 @@ func (c *Config) WithContainerDiskVersion(v string) *Config {
 func (c *Config) WithPodmanProxyAPIFile(path string) *Config { c.PodmanProxyAPIFile = path; return c }
 func (c *Config) WithManageAPIFile(path string) *Config      { c.ManageAPIFile = path; return c }
 func (c *Config) WithSSHKeyDir(dir string) *Config           { c.SSHKeyDir = dir; return c }
-func (c *Config) WithV1EventReport(url string) *Config       { c.V1EventReportURL = url; return c }
-func (c *Config) WithLegacyEventReport(url string) *Config   { c.LegacyEventReportURL = url; return c }
-func (c *Config) WithProxy(enable bool) *Config              { c.Proxy = enable; return c }
-func (c *Config) WithLogLevel(level string) *Config          { c.LogLevel = level; return c }
-func (c *Config) WithLogTo(path string) *Config              { c.LogTo = path; return c }
+func (c *Config) WithExportSSHKeyPrivateFile(path string) *Config {
+	c.ExportSSHKeyPrivateFile = path
+	return c
+}
+func (c *Config) WithExportSSHKeyPublicFile(path string) *Config {
+	c.ExportSSHKeyPublicFile = path
+	return c
+}
+func (c *Config) WithEventReporter(reporters ...EventReporter) *Config {
+	for _, r := range reporters {
+		if r != nil {
+			c.Reporters = append(c.Reporters, r)
+		}
+	}
+	return c
+}
+func (c *Config) WithProxy(enable bool) *Config     { c.Proxy = enable; return c }
+func (c *Config) WithLogLevel(level string) *Config { c.LogLevel = level; return c }
+func (c *Config) WithLogTo(path string) *Config     { c.LogTo = path; return c }
 
 func (c *Config) WithCommand(bin string, args ...string) *Config {
 	c.Command = append([]string{bin}, args...)
@@ -180,6 +196,12 @@ func (c *Config) MergeFrom(other *Config) {
 	}
 	if other.SSHKeyDir != "" {
 		c.SSHKeyDir = other.SSHKeyDir
+	}
+	if other.ExportSSHKeyPrivateFile != "" {
+		c.ExportSSHKeyPrivateFile = other.ExportSSHKeyPrivateFile
+	}
+	if other.ExportSSHKeyPublicFile != "" {
+		c.ExportSSHKeyPublicFile = other.ExportSSHKeyPublicFile
 	}
 	if other.LogTo != "" {
 		c.LogTo = other.LogTo

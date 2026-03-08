@@ -617,10 +617,6 @@ func (v *machineBuilder) addRAWDiskToBlkList(ctx context.Context, rawDiskPath st
 		return err
 	}
 
-	if info.UUID == define.ContainerDiskUUID {
-		info.MountTo = define.ContainerStorageMountPoint
-	}
-
 	blkDev := define.BlkDev{
 		UUID:    info.UUID,
 		FsType:  info.FsType,

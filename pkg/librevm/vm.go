@@ -30,8 +30,9 @@ type VM struct {
 	cleanup         func()
 	eventDispatcher eventDispatcher
 
-	mu      sync.Mutex
-	state   vmState
+	mu    sync.Mutex
+	state vmState
+
 	seq     atomic.Uint64
 	stopper *stopController
 }
@@ -125,25 +126,6 @@ type hostServices interface {
 	ExitVirtualMachineWhenSomethingHappened(ctx context.Context) error
 }
 
-func evtProxy(sink SinkKind, evt Event) Event {
-	if sink == SinkLegacy {
-		switch evt.Kind {
-		case EventStopped:
-			evt.Kind = "Exit"
-		case EventPodmanReady:
-			evt.Kind = "Ready"
-		case EventError:
-			evt.Kind = "Error"
-		case EventSuccess:
-			evt.Kind = "Success"
-		case EventExit:
-			evt.Kind = "Exit"
-		}
-		return evt
-	}
-	return evt
-}
-
 func New(cfg *Config) (*VM, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
@@ -158,16 +140,10 @@ func New(cfg *Config) (*VM, error) {
 		cfg:        &normalizedCfg,
 		sessionDir: getSessionDir(normalizedCfg.SessionID),
 		state:      vmStateNew,
-		eventDispatcher: eventDispatcher{
-			proxy: evtProxy,
-		},
 	}
 
-	if normalizedCfg.V1EventReportURL != "" {
-		vm.registerV1EventSink()
-	}
-	if normalizedCfg.LegacyEventReportURL != "" {
-		vm.registerLegacyEventSink()
+	for _, r := range cfg.Reporters {
+		vm.eventDispatcher.addReporter(r)
 	}
 
 	return vm, nil
@@ -206,27 +182,30 @@ func (vm *VM) init(ctx context.Context) error {
 // bridge so external tools can find them at well-known locations.
 func (vm *VM) createUserSymlinks() error {
 	cfg := vm.cfg
-	dir := vm.sessionDir
+	p := newMachinePathManager(vm.sessionDir)
 
 	if cfg.PodmanProxyAPIFile != "" {
-		target := filepath.Join(dir, "socks", "podman-api.sock")
-		if err := createSymlink(target, cfg.PodmanProxyAPIFile); err != nil {
+		if err := createSymlink(p.GetPodmanSocketFile(), cfg.PodmanProxyAPIFile); err != nil {
 			return fmt.Errorf("podman proxy socket: %w", err)
 		}
 	}
 	if cfg.ManageAPIFile != "" {
-		target := filepath.Join(dir, "socks", "vmctl.sock")
-		if err := createSymlink(target, cfg.ManageAPIFile); err != nil {
+		if err := createSymlink(p.GetVMCtlSocketFile(), cfg.ManageAPIFile); err != nil {
 			return fmt.Errorf("vmctl socket: %w", err)
 		}
 	}
 	if cfg.SSHKeyDir != "" {
-		keyFile := filepath.Join(dir, "ssh", "key")
-		pubKeyFile := keyFile + ".pub"
-		if err := createSymlink(keyFile, filepath.Join(cfg.SSHKeyDir, "key")); err != nil {
+		if err := createSymlink(filepath.Dir(p.GetSSHPrivateKeyFile()), cfg.SSHKeyDir); err != nil {
+			return fmt.Errorf("ssh key dir: %w", err)
+		}
+	}
+	if cfg.ExportSSHKeyPrivateFile != "" {
+		if err := createSymlink(p.GetSSHPrivateKeyFile(), cfg.ExportSSHKeyPrivateFile); err != nil {
 			return fmt.Errorf("ssh private key: %w", err)
 		}
-		if err := createSymlink(pubKeyFile, filepath.Join(cfg.SSHKeyDir, "key.pub")); err != nil {
+	}
+	if cfg.ExportSSHKeyPublicFile != "" {
+		if err := createSymlink(p.GetSSHPrivateKeyFile()+".pub", cfg.ExportSSHKeyPublicFile); err != nil {
 			return fmt.Errorf("ssh public key: %w", err)
 		}
 	}
@@ -271,20 +250,20 @@ func (vm *VM) Run(ctx context.Context) error {
 func (vm *VM) run(ctx context.Context) error {
 	vm.emit(EventVMStarting, "starting vm")
 
-	g, gctx := errgroup.WithContext(ctx)
+	g, ctx := errgroup.WithContext(ctx)
 
-	g.Go(func() error { return vm.svc.ExitVirtualMachineWhenSomethingHappened(gctx) })
+	g.Go(func() error { return vm.svc.ExitVirtualMachineWhenSomethingHappened(ctx) })
 	g.Go(func() error {
 		vm.emit(EventIgnitionStarting, "starting ignition service")
-		return vm.svc.StartIgnitionService(gctx)
+		return vm.svc.StartIgnitionService(ctx)
 	})
 	g.Go(func() error {
 		vm.emit(EventNetworkStarting, "starting network stack")
-		return vm.svc.StartNetworkStack(gctx)
+		return vm.svc.StartNetworkStack(ctx)
 	})
 	g.Go(func() error {
 		vm.emit(EventManagementStarting, "starting management API")
-		return vm.svc.StartMachineManagementAPI(gctx, func() { _ = vm.Stop(context.Background()) })
+		return vm.svc.StartMachineManagementAPI(ctx, func() { _ = vm.Stop(context.Background()) })
 	})
 
 	switch vm.cfg.RunMode {
@@ -292,7 +271,7 @@ func (vm *VM) run(ctx context.Context) error {
 		g.Go(func() error {
 			go func() {
 				select {
-				case <-gctx.Done():
+				case <-ctx.Done():
 					return
 				case <-vm.machine.Readiness.PodmanReady:
 					vm.emit(EventPodmanReady, fmt.Sprintf("podman API proxy listening on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr))
@@ -300,11 +279,11 @@ func (vm *VM) run(ctx context.Context) error {
 				}
 			}()
 			select {
-			case <-gctx.Done():
-				return gctx.Err()
+			case <-ctx.Done():
+				return ctx.Err()
 			case <-vm.machine.Readiness.VNetHostReady:
 				vm.emit(EventPodmanProxyStarting, "starting podman proxy")
-				return vm.svc.StartPodmanProxy(gctx)
+				return vm.svc.StartPodmanProxy(ctx)
 			}
 		})
 	case ModeRootfs:
@@ -312,8 +291,8 @@ func (vm *VM) run(ctx context.Context) error {
 
 	g.Go(func() error {
 		select {
-		case <-gctx.Done():
-			return gctx.Err()
+		case <-ctx.Done():
+			return ctx.Err()
 		case <-vm.machine.Readiness.SSHReady:
 			vm.emit(EventSSHReady, "ssh ready")
 		}
@@ -321,18 +300,25 @@ func (vm *VM) run(ctx context.Context) error {
 	})
 
 	select {
-	case <-gctx.Done():
-		return context.Cause(gctx)
+	case <-ctx.Done():
+		return context.Cause(ctx)
 	case <-vm.machine.Readiness.VNetHostReady:
 		vm.emit(EventNetworkReady, "host network ready")
 	}
 
+	// When host services request shutdown (e.g. parent process exit), kill the VM process.
+	go func() {
+		<-ctx.Done()
+		_ = vm.Stop(context.Background())
+	}()
+
 	// all services ready, now we can start libkrun runner
 	vmErr := vm.svc.StartVirtualMachine(ctx)
-	svcErr := g.Wait()
-	if svcErr != nil {
-		logrus.Infof("host service error after krun runner exited: %v", svcErr)
-	}
+	go func() {
+		if svcErr := g.Wait(); svcErr != nil {
+			logrus.Infof("host service error after krun runner exited: %v", svcErr)
+		}
+	}()
 
 	if vmErr != nil {
 		vm.emit(EventError, vmErr.Error())
@@ -345,17 +331,10 @@ func (vm *VM) run(ctx context.Context) error {
 func GenerateVMConfig(ctx context.Context, cfg *Config, path string) error {
 	vm := &VM{
 		cfg: cfg,
-		eventDispatcher: eventDispatcher{
-			proxy: evtProxy,
-		},
 	}
 
-	if cfg.LegacyEventReportURL != "" {
-		vm.registerLegacyEventSink()
-	}
-
-	if cfg.V1EventReportURL != "" {
-		vm.registerV1EventSink()
+	for _, r := range cfg.Reporters {
+		vm.eventDispatcher.addReporter(r)
 	}
 	defer vm.emit(EventExit, "")
 

@@ -3,13 +3,8 @@
 package librevm
 
 import (
-	"fmt"
-	"linuxvm/pkg/network"
-	"strings"
 	"sync"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 // Event represents a single VM lifecycle event.
@@ -22,48 +17,36 @@ type Event struct {
 	Time      time.Time `json:"time"`
 }
 
-// SinkKind identifies the type of event sink.
-type SinkKind int
-
-const (
-	SinkV1     SinkKind = iota // v1 event reporting
-	SinkLegacy                 // legacy event reporting
-)
-
-// EventProxy transforms an Event per sink kind.
-// Implementations can return different Event values for v1 vs legacy.
-type EventProxy func(sink SinkKind, evt Event) Event
-
-type sinkEntry struct {
-	kind SinkKind
-	fn   func(Event)
+// EventReporter consumes VM lifecycle events.
+type EventReporter interface {
+	Report(evt Event)
+	Close()
 }
+
+// EventReporterFunc adapts a plain function to the EventReporter interface.
+type EventReporterFunc func(Event)
+
+func (f EventReporterFunc) Report(e Event) { f(e) }
+func (f EventReporterFunc) Close()         {}
 
 type eventDispatcher struct {
-	mu      sync.RWMutex
-	proxy   EventProxy
-	sinks   []sinkEntry
-	closers []func()
-	closed  bool
+	mu        sync.RWMutex
+	reporters []EventReporter
+	closed    bool
 }
 
-func (d *eventDispatcher) addHandler(kind SinkKind, fn func(Event), closer func()) {
-	if d == nil || fn == nil {
+func (d *eventDispatcher) addReporter(r EventReporter) {
+	if d == nil || r == nil {
 		return
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	if d.closed {
-		if closer != nil {
-			closer()
-		}
+		r.Close()
 		return
 	}
-	d.sinks = append(d.sinks, sinkEntry{kind: kind, fn: fn})
-	if closer != nil {
-		d.closers = append(d.closers, closer)
-	}
+	d.reporters = append(d.reporters, r)
 }
 
 func (d *eventDispatcher) publish(sessionID string, runMode RunMode, kind EventKind, msg string, seq uint64) {
@@ -84,12 +67,8 @@ func (d *eventDispatcher) publish(sessionID string, runMode RunMode, kind EventK
 		Seq:       seq,
 		Time:      time.Now(),
 	}
-	for _, s := range d.sinks {
-		out := evt
-		if d.proxy != nil {
-			out = d.proxy(s.kind, evt)
-		}
-		s.fn(out)
+	for _, r := range d.reporters {
+		r.Report(evt)
 	}
 }
 
@@ -104,14 +83,13 @@ func (d *eventDispatcher) close() {
 		return
 	}
 	d.closed = true
-	closers := make([]func(), len(d.closers))
-	copy(closers, d.closers)
-	d.sinks = nil
-	d.closers = nil
+	reporters := make([]EventReporter, len(d.reporters))
+	copy(reporters, d.reporters)
+	d.reporters = nil
 	d.mu.Unlock()
 
-	for _, fn := range closers {
-		fn()
+	for _, r := range reporters {
+		r.Close()
 	}
 }
 
@@ -120,27 +98,4 @@ func (vm *VM) emit(kind EventKind, msg string) {
 		return
 	}
 	vm.eventDispatcher.publish(vm.cfg.SessionID, vm.cfg.RunMode, kind, msg, vm.seq.Add(1))
-}
-
-func newEventSinkClient(endpoint string) *network.Client {
-	switch {
-	case strings.HasPrefix(endpoint, "unix://") || strings.HasPrefix(endpoint, "unixgram://"):
-		addr, err := network.ParseUnixAddr(endpoint)
-		if err != nil {
-			logrus.Warnf("event sink: invalid unix endpoint %q: %v", endpoint, err)
-			return nil
-		}
-		return network.NewUnixClient(addr.Path, network.WithTimeout(1*time.Second))
-	case strings.HasPrefix(endpoint, "tcp://"):
-		addr, err := network.ParseTcpAddr(endpoint)
-		if err != nil {
-			logrus.Warnf("event sink: invalid tcp endpoint %q: %v", endpoint, err)
-			return nil
-		}
-		hostPort := fmt.Sprintf("%s:%d", addr.Host, addr.Port)
-		return network.NewTCPClient(hostPort, network.WithTimeout(1*time.Second))
-	default:
-		logrus.Warnf("event sink: unsupported endpoint scheme %q", endpoint)
-		return nil
-	}
 }

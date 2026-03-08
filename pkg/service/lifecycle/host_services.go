@@ -102,6 +102,7 @@ func (s *HostServices) ExitVirtualMachineWhenSomethingHappened(ctx context.Conte
 				return ctx.Err()
 			case <-ticker.C:
 				if os.Getppid() == 1 {
+					logrus.Infof("parent process exit, exit virtual machine")
 					return define.ErrParentProcessExit
 				}
 			}

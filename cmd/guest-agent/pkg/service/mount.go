@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"os"
+	"path/filepath"
 
 	"github.com/sirupsen/logrus"
 )
@@ -232,5 +233,35 @@ func MountBlockDevices(ctx context.Context, vmc *define.Machine) error {
 		}
 	}
 
+	return nil
+}
+
+// SetupContainerStorage finds the container disk in vmc.BlkDevs (by ContainerDiskUUID),
+// removes /var/lib/containers, and creates a symlink /var/lib/containers -> /mnt/<UUID>.
+func SetupContainerStorage(vmc *define.Machine) error {
+	var mountPoint string
+	for _, dev := range vmc.BlkDevs {
+		if dev.UUID == define.ContainerDiskUUID {
+			mountPoint = dev.MountTo
+			break
+		}
+	}
+	if mountPoint == "" {
+		return fmt.Errorf("container disk (UUID %s) not found in block devices", define.ContainerDiskUUID)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(define.ContainerStorageMountPoint), 0755); err != nil {
+		return fmt.Errorf("failed to create parent dir for container storage: %w", err)
+	}
+
+	if err := os.RemoveAll(define.ContainerStorageMountPoint); err != nil {
+		return fmt.Errorf("failed to remove %s: %w", define.ContainerStorageMountPoint, err)
+	}
+
+	if err := os.Symlink(mountPoint, define.ContainerStorageMountPoint); err != nil {
+		return fmt.Errorf("failed to symlink %s -> %s: %w", define.ContainerStorageMountPoint, mountPoint, err)
+	}
+
+	logrus.Infof("container storage: %s -> %s", define.ContainerStorageMountPoint, mountPoint)
 	return nil
 }

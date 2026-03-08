@@ -170,8 +170,8 @@ func userRootfsMode(ctx context.Context, vmc *define.Machine) error {
 func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
 	logrus.Info("running in container mode")
 
-	if !service.IsMounted(define.ContainerStorageMountPoint) {
-		return fmt.Errorf("container storage is not mounted")
+	if err := service.SetupContainerStorage(vmc); err != nil {
+		return err
 	}
 
 	g, ctx := errgroup.WithContext(ctx)

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/eventreporter"
 	"linuxvm/pkg/librevm"
 	"os"
 
@@ -12,7 +13,7 @@ import (
 
 var startDocker = cli.Command{
 	Name:                      define.FlagDockerMode,
-	Aliases:                   []string{"start", "run"}, // for compatibility
+	Aliases:                   []string{"start"}, // for compatibility ovm-js ovm init
 	Usage:                     "start a Linux VM with the built-in container runtime",
 	UsageText:                 define.FlagDockerMode + " [flags]",
 	Description:               "boot a Linux microVM using libkrun with the built-in rootfs and podman container runtime; exposes a Podman-compatible API socket on the host",
@@ -21,21 +22,6 @@ var startDocker = cli.Command{
 		&cli.Int8Flag{
 			Name:  define.FlagCPUS,
 			Usage: "number of vCPU cores to assign to the VM; defaults to host CPU count if unset or less than 1",
-		},
-		&cli.StringFlag{
-			Name:        define.FlagOVMWorkspace,
-			Usage:       "not use any more, retained for compatibility",
-			HideDefault: true,
-		},
-		&cli.Int8Flag{
-			Name:        define.FlagOVMPPID,
-			Usage:       "not use any more, retained for compatibility",
-			HideDefault: true,
-		},
-		&cli.StringFlag{
-			Name:        define.FlagOVMName,
-			Usage:       "not use any more, retained for compatibility",
-			HideDefault: true,
 		},
 		&cli.Uint64Flag{
 			Name:  define.FlagMemoryInMB,
@@ -63,7 +49,7 @@ var startDocker = cli.Command{
 			Value: string(define.GVISOR),
 		},
 		&cli.StringFlag{
-			Name:  define.FlagReportURL,
+			Name:  define.FlagReportEvents,
 			Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888)",
 		},
 		&cli.StringFlag{
@@ -94,6 +80,36 @@ var startDocker = cli.Command{
 		&cli.StringFlag{
 			Name:  define.FlagSSHKeyDir,
 			Usage: "directory to symlink the generated SSH key pair (key and key.pub) into; keys are always created inside the session directory",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagExportSSHKeyPrivateFile,
+			Usage: "file path to symlink the generated SSH private key to",
+		},
+		&cli.StringFlag{
+			Name:  define.FlagExportSSHKeyPublicFile,
+			Usage: "file path to symlink the generated SSH public key to",
+		},
+
+		// legacy hidden flags set
+		&cli.StringFlag{
+			Name:   define.FlagOVMWorkspace,
+			Usage:  "not use any more, retained for compatibility",
+			Hidden: true,
+		},
+		&cli.Uint64Flag{
+			Name:   define.FlagOVMPPID,
+			Usage:  "not use any more, retained for compatibility",
+			Hidden: true,
+		},
+		&cli.StringFlag{
+			Name:   define.FlagOVMName,
+			Usage:  "not use any more, retained for compatibility",
+			Hidden: true,
+		},
+		&cli.StringFlag{
+			Name:   define.FlagOVMReportURL,
+			Usage:  "legacy event, for ovm-js compatibility, use --report-events-to instead",
+			Hidden: true,
 		},
 	},
 	Action: dockerLifeCycle,
@@ -126,10 +142,23 @@ func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
 	if sk := command.String(define.FlagSSHKeyDir); sk != "" {
 		cfg.WithSSHKeyDir(sk)
 	}
-
-	if u := command.String(define.FlagReportURL); u != "" {
-		cfg.WithLegacyEventReport(u)
+	if pk := command.String(define.FlagExportSSHKeyPrivateFile); pk != "" {
+		cfg.WithExportSSHKeyPrivateFile(pk)
 	}
+	if pub := command.String(define.FlagExportSSHKeyPublicFile); pub != "" {
+		cfg.WithExportSSHKeyPublicFile(pub)
+	}
+
+	// if legacy event reporter is set, use it
+	if u := command.String(define.FlagOVMReportURL); u != "" {
+		cfg.WithEventReporter(eventreporter.NewLegacyReporter(u, librevm.ModeContainer))
+	}
+
+	if u := command.String(define.FlagReportEvents); u != "" {
+		cfg.Reporters = nil
+		cfg.WithEventReporter(eventreporter.NewV1(u, librevm.ModeContainer))
+	}
+
 	if l := command.String(define.FlagLogTo); l != "" {
 		cfg.WithLogTo(l)
 	}
