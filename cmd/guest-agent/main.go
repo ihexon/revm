@@ -20,6 +20,12 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// exitCode wraps a process exit code as an error so it can flow back
+// through the error return chain to main(), which is the single os.Exit point.
+type exitCode int
+
+func (c exitCode) Error() string { return fmt.Sprintf("exit status %d", int(c)) }
+
 func setupLogger() error {
 	level := strings.ToLower(os.Getenv(define.EnvLogLevel))
 	if level == "" {
@@ -78,11 +84,13 @@ func main() {
 
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
 
-	if err := app.Run(ctx, os.Args); err != nil && !errors.Is(err, service.ErrProcessExitNormal) {
-		if cause := context.Cause(ctx); cause != nil && cause != err {
-			logrus.Fatalf("guest-agent exit with error: %v (cause: %v)", err, cause)
+	if err := app.Run(ctx, os.Args); err != nil {
+		var code exitCode
+		if errors.As(err, &code) {
+			os.Exit(int(code))
 		}
-		logrus.Fatalf("guest-agent exit with error: %v", err)
+		logrus.Error(err)
+		os.Exit(1)
 	}
 }
 
@@ -146,7 +154,7 @@ func userRootfsMode(ctx context.Context, vmc *define.Machine) error {
 	})
 
 	g.Go(func() error {
-		return service.DoExecCmdLine(ctx, vmc)
+		return exitCode(service.DoExecCmdLine(ctx, vmc))
 	})
 
 	g.Go(func() error {
