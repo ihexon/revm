@@ -10,14 +10,10 @@ import (
 	"linuxvm/pkg/service/ignition"
 	"linuxvm/pkg/service/management"
 	"net"
-	"os"
-	"os/signal"
 	"strconv"
-	"syscall"
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"golang.org/x/sync/errgroup"
 )
 
 type HostServices struct {
@@ -79,47 +75,4 @@ func (s *HostServices) StartMachineManagementAPI(ctx context.Context, stopFn fun
 
 func (s *HostServices) StartVirtualMachine(ctx context.Context) error {
 	return s.vmp.Start(ctx)
-}
-
-func (s *HostServices) ExitVirtualMachineWhenSomethingHappened(ctx context.Context) error {
-	g, ctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-s.vmc.StopCh:
-			return define.ErrStopChTrigger
-		}
-	})
-
-	g.Go(func() error {
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-ticker.C:
-				if os.Getppid() == 1 {
-					logrus.Infof("parent process exit, exit virtual machine")
-					return define.ErrParentProcessExit
-				}
-			}
-		}
-	})
-
-	g.Go(func() error {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
-		defer signal.Stop(sigCh)
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-sigCh:
-			return define.ErrSigTerm
-		}
-	})
-
-	return g.Wait()
 }
