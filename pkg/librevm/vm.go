@@ -9,10 +9,14 @@ import (
 	"linuxvm/pkg/interfaces"
 	"linuxvm/pkg/krunrunner"
 	"linuxvm/pkg/service/lifecycle"
+	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"syscall"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
@@ -33,23 +37,7 @@ type VM struct {
 	mu    sync.Mutex
 	state vmState
 
-	seq     atomic.Uint64
-	stopper *stopController
-}
-
-type stopController struct {
-	machine *define.Machine
-}
-
-func newStopController(machine *define.Machine) *stopController {
-	return &stopController{machine: machine}
-}
-
-func (s *stopController) Request() {
-	if s == nil || s.machine == nil {
-		return
-	}
-	s.machine.StopOnce.Do(func() { close(s.machine.StopCh) })
+	seq atomic.Uint64
 }
 
 // newProvider creates a RunnerProvider for the current platform, delegating
@@ -88,15 +76,9 @@ func (vm *VM) Stop(ctx context.Context) error {
 
 	vm.emit(EventStopping, "stopping vm")
 	if vm.provider != nil {
-		_ = vm.provider.Stop(ctx) // 先杀 krun-runner
+		_ = vm.provider.Stop(ctx)
 	}
-	vm.requestStopOtherServices() // 再通知其他服务关闭
 	return nil
-}
-
-// requestStopOtherServices 委托 stopController 关闭 StopCh 通道（once-safe）。
-func (vm *VM) requestStopOtherServices() {
-	vm.stopper.Request()
 }
 
 // Close 释放所有资源（文件锁、workspace 目录、event eventDispatcher）。
@@ -123,7 +105,6 @@ type hostServices interface {
 	StartIgnitionService(ctx context.Context) error
 	StartMachineManagementAPI(ctx context.Context, stopFn func()) error
 	StartVirtualMachine(ctx context.Context) error
-	ExitVirtualMachineWhenSomethingHappened(ctx context.Context) error
 }
 
 func New(cfg *Config) (*VM, error) {
@@ -173,7 +154,6 @@ func (vm *VM) init(ctx context.Context) error {
 	vm.provider = vmp
 	vm.svc = lifecycle.NewHostServices(mc, vmp)
 	vm.cleanup = cleanup
-	vm.stopper = newStopController(mc)
 	return nil
 }
 
@@ -250,9 +230,43 @@ func (vm *VM) Run(ctx context.Context) error {
 func (vm *VM) run(ctx context.Context) error {
 	vm.emit(EventVMStarting, "starting vm")
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// --- exit monitors: any trigger → cancel() ---
+	go func() { // signal
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+		defer signal.Stop(sigCh)
+		select {
+		case <-ctx.Done():
+			return
+		case <-sigCh:
+			logrus.Info("received signal, shutting down")
+			cancel()
+		}
+	}()
+
+	go func() { // parent process exit
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if os.Getppid() == 1 {
+					logrus.Info("parent process exited, shutting down")
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+
+	// --- host services errgroup ---
 	g, ctx := errgroup.WithContext(ctx)
 
-	g.Go(func() error { return vm.svc.ExitVirtualMachineWhenSomethingHappened(ctx) })
 	g.Go(func() error {
 		vm.emit(EventIgnitionStarting, "starting ignition service")
 		return vm.svc.StartIgnitionService(ctx)
@@ -263,7 +277,7 @@ func (vm *VM) run(ctx context.Context) error {
 	})
 	g.Go(func() error {
 		vm.emit(EventManagementStarting, "starting management API")
-		return vm.svc.StartMachineManagementAPI(ctx, func() { _ = vm.Stop(context.Background()) })
+		return vm.svc.StartMachineManagementAPI(ctx, cancel)
 	})
 
 	switch vm.cfg.RunMode {
@@ -299,6 +313,7 @@ func (vm *VM) run(ctx context.Context) error {
 		return nil
 	})
 
+	// wait for network ready
 	select {
 	case <-ctx.Done():
 		return context.Cause(ctx)
@@ -306,25 +321,27 @@ func (vm *VM) run(ctx context.Context) error {
 		vm.emit(EventNetworkReady, "host network ready")
 	}
 
-	// When host services request shutdown (e.g. parent process exit), kill the VM process.
-	go func() {
-		<-ctx.Done()
-		_ = vm.Stop(context.Background())
-	}()
-
-	// all services ready, now we can start libkrun runner
+	// start VM (blocks until VM exits)
 	vmErr := vm.svc.StartVirtualMachine(ctx)
 
-	go func() {
-		if svcErr := g.Wait(); svcErr != nil {
-			logrus.Infof("host service error after krun runner exited: %v", svcErr)
+	// VM exited → cancel ctx → all services get notified
+	cancel()
+
+	// wait for services with timeout
+	svcDone := make(chan error, 1)
+	go func() { svcDone <- g.Wait() }()
+	select {
+	case svcErr := <-svcDone:
+		if svcErr != nil {
+			logrus.Infof("host service shutdown: %v", svcErr)
 		}
-	}()
+	case <-time.After(5 * time.Second):
+		logrus.Warn("host services shutdown timed out")
+	}
 
 	if vmErr != nil {
 		vm.emit(EventError, vmErr.Error())
 	}
-	_ = vm.Stop(context.Background())
 	vm.emit(EventStopped, "vm stopped")
 	return vmErr
 }

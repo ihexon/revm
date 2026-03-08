@@ -2,7 +2,6 @@ package define
 
 import (
 	"encoding/json"
-	"sync"
 )
 
 // MachineSpec contains serializable VM specification data.
@@ -40,14 +39,11 @@ type MachineSpec struct {
 
 // MachineRuntime contains non-serializable runtime state.
 type MachineRuntime struct {
-	StopCh    chan struct{} `json:"-"`
-	StopOnce  sync.Once     `json:"-"`
-	Readiness *Readiness    `json:"-"`
+	Readiness *Readiness `json:"-"`
 }
 
 func NewMachineRuntime() *MachineRuntime {
 	return &MachineRuntime{
-		StopCh:    make(chan struct{}),
 		Readiness: NewReadiness(),
 	}
 }
