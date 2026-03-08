@@ -116,8 +116,6 @@ var startDocker = cli.Command{
 }
 
 func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
-	showVersionAndOSInfo()
-
 	cfg := librevm.DefaultConfig().
 		WithMode(librevm.ModeContainer).
 		WithName(command.String(define.FlagSessionID)).
@@ -165,7 +163,7 @@ func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
 
 	// Apply init vmconfig preferences if present.
 	if initCfg, err := librevm.LoadFile(vmConfigFilePath); err == nil {
-		logrus.Infof("apply vmconfig prefer from: %q", vmConfigFilePath)
+		logrus.Infof("[apply-vmconfig] apply vmconfig prefer from: %q", vmConfigFilePath)
 		cfg.MergeFrom(initCfg)
 		_ = os.Remove(vmConfigFilePath)
 	}
