@@ -71,17 +71,20 @@ revm docker [flags]
 | `--id`             | 会话 ID，会话目录由此派生为 `/tmp/<id>`；默认随机字符串；同名会话通过 flock 互斥 | 随机值 |
 | `--cpus`           | 分配的 vCPU 核心数；不指定或小于 1 时自动取宿主机核心数                                 | 宿主机核心数                |
 | `--memory`         | VM 内存大小（MB）；最小 512 MB；不指定时自动取宿主机可用内存                             | 宿主机可用内存               |
+| `--envs`           | 传入环境变量（格式：`KEY=VALUE`，可重复）                                              | —                     |
 | `--mount`          | 通过 VirtIO-FS 挂载宿主机目录（格式：`/host:/guest[,ro]`，可重复）                 | —                     |
 | `--raw-disk`       | 挂载 ext4 裸盘镜像，不存在时自动创建镜像（可重复）                                     | —                     |
 | `--network`        | 网络栈：`gvisor`（完整虚拟网卡，支持端口映射）或 `tsi`（透明转发）                         | `gvisor`              |
 | `--system-proxy`   | 读取 macOS 系统代理并注入容器内，自动将 127.0.0.1 重写为 `host.containers.internal` | `false`               |
 | `--container-disk` | 持久化容器存储磁盘路径（ext4 裸盘镜像）；不存在时自动创建；不指定则使用会话目录内的默认磁盘 | 会话目录内默认磁盘 |
-| `--podman-proxy-api` | Podman API socket 的符号链接路径；实际 socket 始终在会话目录内创建                 | —                     |
-| `--manage-api`     | VM 管理 API socket 的符号链接路径；实际 socket 始终在会话目录内创建                     | —                     |
+| `--podman-proxy-api-file` | Podman API socket 的自定义 Unix socket 路径；默认为 `<会话目录>/socks/podman-api.sock` | —                     |
+| `--manage-api-file` | VM 管理 API socket 的自定义 Unix socket 路径；默认为 `<会话目录>/socks/vmctl.sock` | —                     |
 | `--ssh-key-dir`    | SSH 密钥对（`key` 和 `key.pub`）的符号链接目录；密钥始终在会话目录内生成                   | —                     |
+| `--export-ssh-private-key` | SSH 私钥的符号链接文件路径                                                 | —                     |
+| `--export-ssh-public-key`  | SSH 公钥的符号链接文件路径                                                 | —                     |
 | `--log-level`      | 日志级别：`trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic`      | `info`                |
 | `--log-to`         | 自定义日志文件路径；默认为 `<会话目录>/logs/vm.log`                                | 会话目录内                 |
-| `--report-url`     | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock` 或 `tcp://host:port`） | —                     |
+| `--report-events-to` | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock` 或 `tcp://host:port`） | —                     |
 
 docker 模式与 chroot 模式共用大部分参数，可按需灵活配置。
 

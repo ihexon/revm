@@ -67,11 +67,13 @@ revm chroot [flags] <command> [args...]
 | `--envs`           | Pass environment variables (format: `KEY=VALUE`; repeatable)                        | —                     |
 | `--network`        | Network stack: `gvisor` (full virtual NIC) or `tsi` (transparent socket intercept)  | `gvisor`              |
 | `--system-proxy`   | Read macOS system proxy and inject as `http_proxy`/`https_proxy` into the VM        | `false`               |
-| `--manage-api`     | Symlink path for the VM management API socket; the actual socket is always inside the session directory | — |
+| `--manage-api-file` | Custom Unix socket path for the VM management API; defaults to `<session_dir>/socks/vmctl.sock` | — |
 | `--ssh-key-dir`    | Directory to symlink the generated SSH key pair (`key` and `key.pub`) into; keys are always created inside the session directory | — |
+| `--export-ssh-private-key` | File path to symlink the generated SSH private key to                         | —                     |
+| `--export-ssh-public-key`  | File path to symlink the generated SSH public key to                          | —                     |
 | `--log-level`      | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`          | `info`                |
 | `--log-to`         | Custom log file path on host; defaults to `<session_dir>/logs/vm.log`               | session-local         |
-| `--report-url`     | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock` or `tcp://host:port`) | — |
+| `--report-events-to` | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock` or `tcp://host:port`) | — |
 
 ## See Also
 

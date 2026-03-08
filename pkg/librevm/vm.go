@@ -328,12 +328,13 @@ func (vm *VM) run(ctx context.Context) error {
 	cancel()
 
 	// wait for services with timeout
-	svcDone := make(chan error, 1)
-	go func() { svcDone <- g.Wait() }()
+	svcErrChan := make(chan error, 1)
+	go func() { svcErrChan <- g.Wait() }()
+
 	select {
-	case svcErr := <-svcDone:
+	case svcErr := <-svcErrChan:
 		if svcErr != nil {
-			logrus.Infof("host service shutdown: %v", svcErr)
+			logrus.Infof("all host service shutdown: %v", svcErr)
 		}
 	case <-time.After(5 * time.Second):
 		logrus.Warn("host services shutdown timed out")
@@ -342,6 +343,7 @@ func (vm *VM) run(ctx context.Context) error {
 	if vmErr != nil {
 		vm.emit(EventError, vmErr.Error())
 	}
+
 	vm.emit(EventStopped, "vm stopped")
 	return vmErr
 }
