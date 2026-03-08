@@ -4,8 +4,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
+	"os/exec"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -38,6 +40,11 @@ func main() {
 	}
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
-		logrus.Fatal(err)
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			os.Exit(exitErr.ExitCode())
+		}
+		logrus.Error(err)
+		os.Exit(1)
 	}
 }

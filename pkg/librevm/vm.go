@@ -314,6 +314,7 @@ func (vm *VM) run(ctx context.Context) error {
 
 	// all services ready, now we can start libkrun runner
 	vmErr := vm.svc.StartVirtualMachine(ctx)
+
 	go func() {
 		if svcErr := g.Wait(); svcErr != nil {
 			logrus.Infof("host service error after krun runner exited: %v", svcErr)

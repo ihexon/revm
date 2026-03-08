@@ -13,8 +13,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var ErrProcessExitNormal = errors.New("process exit normally")
-
 // activeConsoleTTY reads /sys/class/tty/console/active to find the real
 // TTY device backing the kernel console. The kernel gives init fd 0/1/2
 // pointing to /dev/console (major 5:1), a redirect device that does NOT
@@ -52,11 +50,14 @@ func openActiveConsole() (*os.File, error) {
 	return os.NewFile(uintptr(fd), devPath), nil
 }
 
-func DoExecCmdLine(ctx context.Context, vmc *define.Machine) error {
+// DoExecCmdLine executes the user command and returns its exit code.
+// 0 = success, 127 = not found, 126 = not executable.
+func DoExecCmdLine(ctx context.Context, vmc *define.Machine) int {
 	logrus.Infof("exec: %s %v", vmc.Cmdline.Bin, vmc.Cmdline.Args)
 
 	if err := os.Chdir(vmc.Cmdline.WorkDir); err != nil {
-		return err
+		logrus.Errorf("chdir %q: %v", vmc.Cmdline.WorkDir, err)
+		return 1
 	}
 
 	cmd := exec.CommandContext(ctx, vmc.Cmdline.Bin, vmc.Cmdline.Args...)
@@ -67,7 +68,8 @@ func DoExecCmdLine(ctx context.Context, vmc *define.Machine) error {
 	if vmc.TTY {
 		fdFile, err := openActiveConsole()
 		if err != nil {
-			return fmt.Errorf("open active console: %w", err)
+			logrus.Errorf("open active console: %v", err)
+			return 1
 		}
 		defer fdFile.Close()
 
@@ -80,8 +82,20 @@ func DoExecCmdLine(ctx context.Context, vmc *define.Machine) error {
 	cmd.Env = append(os.Environ(), vmc.Cmdline.Envs...)
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("command %q failed: %w", vmc.Cmdline.Bin, err)
+		var execErr *exec.Error
+		if errors.As(err, &execErr) {
+			if errors.Is(execErr.Err, exec.ErrNotFound) {
+				return 127
+			}
+			return 126
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return exitErr.ExitCode()
+		}
+		logrus.Errorf("command %q failed: %v", vmc.Cmdline.Bin, err)
+		return 1
 	}
 
-	return ErrProcessExitNormal
+	return 0
 }
