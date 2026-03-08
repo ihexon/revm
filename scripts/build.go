@@ -332,12 +332,34 @@ func (b *builder) collectSoDeps(binary string) {
 	}
 }
 
+func (b *builder) writeLinuxLauncher() {
+	logrus.Info("writing revm.sh launcher")
+
+	var ldName string
+	if b.goarch == "aarch64" || b.goarch == "arm64" {
+		ldName = "ld-linux-aarch64.so.1"
+	} else {
+		ldName = "ld-linux-x86-64.so.2"
+	}
+
+	script := fmt.Sprintf(`#!/bin/sh
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$DIR/lib/%s" --library-path "$DIR/lib" "$DIR/bin/revm" "$@"
+`, ldName)
+
+	path := filepath.Join(b.outDir, "revm.sh")
+	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
+		logrus.Fatalf("write revm.sh: %v", err)
+	}
+}
+
 func (b *builder) relocateLibs() {
 	logrus.Info("preparing shared libraries")
 	if b.goos == "darwin" {
 		b.relocateLibsDarwin()
 	} else {
 		b.relocateLibsLinux()
+		b.writeLinuxLauncher()
 	}
 }
 
