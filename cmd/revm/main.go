@@ -4,13 +4,22 @@ package main
 
 import (
 	"context"
+	"io"
 	"os"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 )
 
+func setupLoggerEarly() {
+	f, _ := os.OpenFile("/tmp/vm-early.log", os.O_CREATE|os.O_WRONLY, 0644)
+	w := io.MultiWriter(os.Stderr, f)
+	logrus.SetOutput(w)
+}
+
 func main() {
+	setupLoggerEarly()
+
 	app := cli.Command{
 		Name:                      os.Args[0],
 		Usage:                     "run Linux microVMs on macOS/arm64 using libkrun",
