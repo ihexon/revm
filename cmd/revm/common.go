@@ -2,13 +2,10 @@ package main
 
 import (
 	"linuxvm/pkg/define"
-	"os"
 	"strings"
-
-	"github.com/sirupsen/logrus"
 )
 
-func showVersionAndOSInfo() {
+func showVersionAndOSInfo() string {
 	var version strings.Builder
 	if define.Version != "" {
 		version.WriteString(define.Version)
@@ -24,5 +21,5 @@ func showVersionAndOSInfo() {
 		version.WriteString(" (unknown)")
 	}
 
-	logrus.Infof("%s version: %s", os.Args[0], version.String())
+	return version.String()
 }

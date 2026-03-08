@@ -94,8 +94,6 @@ var startRootfs = cli.Command{
 }
 
 func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
-	showVersionAndOSInfo()
-
 	cfg := librevm.DefaultConfig().
 		WithMode(librevm.ModeRootfs).
 		WithName(command.String(define.FlagSessionID)).

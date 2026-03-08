@@ -323,7 +323,7 @@ func (vm *VM) run(ctx context.Context) error {
 	if vmErr != nil {
 		vm.emit(EventError, vmErr.Error())
 	}
-	vm.requestStopOtherServices()
+	_ = vm.Stop(context.Background())
 	vm.emit(EventStopped, "vm stopped")
 	return vmErr
 }
