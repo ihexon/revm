@@ -1,16 +1,8 @@
 .idea/
 bin/**
 out/**
-revm.tar.zst
 CLAUDE.md
 .claude/
 .deps/
-
 *.tar.zst
-req.md
-design.md
 task.md
-refactor.md
-AGENTS.md
-TODO.md
-revm
