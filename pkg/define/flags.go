@@ -30,6 +30,10 @@ const (
 
 	GuestLogConsolePort = "guest-logs"
 	GuestTTYConsoleName = "default-tty-console"
+
+	KrunStdinPortName  = "krun-stdin"
+	KrunStdoutPortName = "krun-stdout"
+	KrunStderrPortName = "krun-stderr"
 )
 
 const (

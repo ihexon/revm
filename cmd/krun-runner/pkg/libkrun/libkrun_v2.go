@@ -24,6 +24,7 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
 
+	"github.com/creack/pty"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
@@ -125,10 +126,12 @@ type LibkrunVM struct {
 
 	// Files whose fds are passed to C via libkrun.
 	// Stored here to prevent GC from finalizing and closing them.
-	stdinPipe    *os.File // read end → krun_add_virtio_console_default (non-TTY only)
-	stdoutPipe   *os.File // write end → krun_add_virtio_console_default (non-TTY only)
-	stderrPipe   *os.File // write end → krun_add_virtio_console_default (non-TTY only)
-	guestLogFile *os.File // → krun_add_console_port_inout
+	stdinPipe      *os.File // read end → krun_add_console_port_inout (non-TTY only)
+	stdoutPipe     *os.File // write end → krun_add_console_port_inout (non-TTY only)
+	stderrPipe     *os.File // write end → krun_add_console_port_inout (non-TTY only)
+	consolePtyMstr *os.File // pty master → backs /dev/console via krun_add_console_port_tty (non-TTY only)
+	consolePtySlv  *os.File // pty slave fd kept alive for C (non-TTY only)
+	guestLogFile   *os.File // → krun_add_console_port_inout
 }
 
 // guestMACAddress is the fixed MAC address for the guest VM network interface.
@@ -308,33 +311,56 @@ func (vm *LibkrunVM) configureMultiportConsole() error {
 		return fmt.Errorf("krun_disable_implicit_console failed with code %v", ret)
 	}
 
-	consoleID, err := vm.addPrimaryConsole()
-	if err != nil {
-		return err
+	consoleID := C.krun_add_virtio_console_multiport(C.uint32_t(vm.ctxID))
+	if consoleID < 0 {
+		return fmt.Errorf("krun_add_virtio_console_multiport failed with code %d", consoleID)
 	}
 
-	if err := vm.addGuestConsoleLogPort(consoleID); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// addPrimaryConsole configures the main console (TTY or default stdio)
-// and returns the multiport console ID for attaching additional ports.
-func (vm *LibkrunVM) addPrimaryConsole() (C.uint32_t, error) {
-	isTTy := vm.vmc.TTY
-
-	if !isTTy {
+	// Both TTY and non-TTY add a console port (port 0 → hvc0 → /dev/console).
+	// TTY uses the real terminal fd; non-TTY uses a pty so init's early printf
+	// is captured and fd 0/1/2 exist before setup_redirects() runs.
+	var ttyFd int
+	if vm.vmc.TTY {
+		logrus.Infof("running in tty mode (stdin, stdout and stderr are all terminals)")
+		var err error
+		ttyFd, err = syscall.Dup(int(os.Stdin.Fd()))
+		if err != nil {
+			return fmt.Errorf("dup stdin: %w", err)
+		}
+	} else {
 		logrus.Infof("running in non-tty mode")
+		ptyMstr, ptySlave, err := pty.Open()
+		if err != nil {
+			return fmt.Errorf("pty for init console: %w", err)
+		}
+		ttyFd = int(ptySlave.Fd())
+		vm.consolePtyMstr = ptyMstr
+		vm.consolePtySlv = ptySlave
+		go func() {
+			_, _ = io.Copy(os.Stderr, ptyMstr)
+		}()
+	}
 
+	consoleName := newCString(define.GuestTTYConsoleName)
+	ret = C.krun_add_console_port_tty(C.uint32_t(vm.ctxID), C.uint32_t(consoleID), consoleName.Ptr(), C.int(ttyFd))
+	consoleName.Free()
+	if ret != 0 {
+		if vm.vmc.TTY {
+			_ = syscall.Close(ttyFd)
+		}
+		return fmt.Errorf("krun_add_console_port_tty failed with code %v", ret)
+	}
+
+	// Non-TTY: add named ports for stdio redirection.
+	// init.c:setup_redirects() discovers these by name and dup2's fd 0/1/2.
+	if !vm.vmc.TTY {
 		// Use independent pipes to isolate all stdio from libkrun's O_NONBLOCK.
 		// libkrun sets O_NONBLOCK on the fds it receives; since dup'd fds share the
 		// same file description, that flag would leak back to the terminal pty and
 		// cause other processes (e.g. xxd after `revm ... | xxd`) to get EAGAIN.
 		stdinR, stdinW, err := os.Pipe()
 		if err != nil {
-			return 0, fmt.Errorf("pipe for stdin isolation: %w", err)
+			return fmt.Errorf("pipe for stdin isolation: %w", err)
 		}
 		go func() {
 			_, _ = io.Copy(stdinW, os.Stdin)
@@ -343,7 +369,7 @@ func (vm *LibkrunVM) addPrimaryConsole() (C.uint32_t, error) {
 
 		stdoutR, stdoutW, err := os.Pipe()
 		if err != nil {
-			return 0, fmt.Errorf("pipe for stdout isolation: %w", err)
+			return fmt.Errorf("pipe for stdout isolation: %w", err)
 		}
 		go func() {
 			_, _ = io.Copy(os.Stdout, stdoutR)
@@ -351,51 +377,43 @@ func (vm *LibkrunVM) addPrimaryConsole() (C.uint32_t, error) {
 
 		stderrR, stderrW, err := os.Pipe()
 		if err != nil {
-			return 0, fmt.Errorf("pipe for stderr isolation: %w", err)
+			return fmt.Errorf("pipe for stderr isolation: %w", err)
 		}
 		go func() {
 			_, _ = io.Copy(os.Stderr, stderrR)
 		}()
 
-		ret := C.krun_add_virtio_console_default(
-			C.uint32_t(vm.ctxID),
-			C.int(stdinR.Fd()),
-			C.int(stdoutW.Fd()),
-			C.int(stderrW.Fd()),
-		)
-		if ret != 0 {
-			return 0, fmt.Errorf("krun_add_virtio_console_default failed with code %v", ret)
+		type portSpec struct {
+			name  string
+			inFd  C.int
+			outFd C.int
+		}
+		ports := []portSpec{
+			{define.KrunStdinPortName, C.int(stdinR.Fd()), C.int(-1)},
+			{define.KrunStdoutPortName, C.int(-1), C.int(stdoutW.Fd())},
+			{define.KrunStderrPortName, C.int(-1), C.int(stderrW.Fd())},
+		}
+		for _, p := range ports {
+			pName := newCString(p.name)
+			ret := C.krun_add_console_port_inout(
+				C.uint32_t(vm.ctxID),
+				C.uint32_t(consoleID),
+				pName.Ptr(),
+				p.inFd,
+				p.outFd,
+			)
+			pName.Free()
+			if ret != 0 {
+				return fmt.Errorf("krun_add_console_port_inout(%s) failed with code %v", p.name, ret)
+			}
 		}
 
-		// Keep pipe ends alive so GC doesn't finalize and close
-		// the fds that were passed to C.
 		vm.stdinPipe = stdinR
 		vm.stdoutPipe = stdoutW
 		vm.stderrPipe = stderrW
 	}
 
-	consoleID := C.krun_add_virtio_console_multiport(C.uint32_t(vm.ctxID))
-	if consoleID < 0 {
-		return 0, fmt.Errorf("krun_add_virtio_console_multiport failed with code %d", consoleID)
-	}
-
-	if isTTy {
-		ttyFd, err := syscall.Dup(int(os.Stdin.Fd()))
-		if err != nil {
-			return 0, fmt.Errorf("dup stdin: %w", err)
-		}
-
-		name := newCString(define.GuestTTYConsoleName)
-		logrus.Infof("running in tty mode (stdin, stdout and stderr are all terminals)")
-		ret := C.krun_add_console_port_tty(C.uint32_t(vm.ctxID), C.uint32_t(consoleID), name.Ptr(), C.int(ttyFd))
-		name.Free()
-		if ret != 0 {
-			_ = syscall.Close(ttyFd)
-			return 0, fmt.Errorf("krun_add_console_port_tty failed with code %v", ret)
-		}
-	}
-
-	return C.uint32_t(consoleID), nil
+	return vm.addGuestConsoleLogPort(C.uint32_t(consoleID))
 }
 
 // addGuestConsoleLogPort opens the guest log file and registers it as an inout console port.
