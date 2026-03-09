@@ -289,7 +289,7 @@ func (vm *VM) run(ctx context.Context) error {
 					return
 				case <-vm.machine.Readiness.PodmanReady:
 					vm.emit(EventPodmanReady, fmt.Sprintf("podman API proxy listening on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr))
-					logrus.Infof("podman API proxy listening on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr)
+					logrus.Infof("podman API proxy ready on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr)
 				}
 			}()
 			select {
@@ -334,7 +334,7 @@ func (vm *VM) run(ctx context.Context) error {
 	select {
 	case svcErr := <-svcErrChan:
 		if svcErr != nil {
-			logrus.Infof("all host service shutdown: %v", svcErr)
+			logrus.Warnf("host service shutdown: %v", svcErr)
 		}
 	case <-time.After(5 * time.Second):
 		logrus.Warn("host services shutdown timed out")

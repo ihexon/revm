@@ -91,7 +91,7 @@ func (mnt *Mnt) Mount(ctx context.Context, action MountActionType) error {
 
 	args, err := mnt.makeMountCmdline(action)
 	if err != nil {
-		return err
+		return fmt.Errorf("mount %s: %w", mnt.Target, err)
 	}
 	return Mount(ctx, args...)
 }
@@ -171,9 +171,8 @@ func MountAllPseudoMnt(ctx context.Context) error {
 		}
 
 		if err := mnt.Mount(ctx, PseudoFsAction); err != nil {
-			return err
+			return fmt.Errorf("mount %s: %w", mnt.Target, err)
 		}
-		logrus.Debugf("mounted %s on %s", mnt.Type, mnt.Target)
 	}
 
 	return nil
@@ -187,18 +186,18 @@ func MountVirtiofs(ctx context.Context, vmc *define.Machine) error {
 
 	for _, virtiofsMnt := range vmc.Mounts {
 		mnt := &Mnt{
-			Tag:    virtiofsMnt.Tag,
-			Target: virtiofsMnt.Target,
-			Type:   virtiofsMnt.Type,
+			Tag:      virtiofsMnt.Tag,
+			Target:   virtiofsMnt.Target,
+			Type:     virtiofsMnt.Type,
 			ReadOnly: virtiofsMnt.ReadOnly,
 		}
 
 		if IsMounted(mnt.Target) {
-			logrus.Debugf("mount point %q is already mounted, skip", mnt.Target)
+			logrus.Debugf("mount point %s already mounted, skip", mnt.Target)
 			continue
 		}
 
-		logrus.Infof("mounting virtiofs %q to %q", mnt.Tag, mnt.Target)
+		logrus.Infof("mounting virtiofs %s to %s", mnt.Tag, mnt.Target)
 		if err := mnt.Mount(ctx, VirtioFsAction); err != nil {
 			return fmt.Errorf("mount virtio-fs failed: %q: %w", mnt.Target, err)
 		}
@@ -223,13 +222,13 @@ func MountBlockDevices(ctx context.Context, vmc *define.Machine) error {
 		}
 
 		if IsMounted(mnt.Target) {
-			logrus.Debugf("mount point %q is already mounted, skip", mnt.Target)
+			logrus.Debugf("mount point %s already mounted, skip", mnt.Target)
 			continue
 		}
 
-		logrus.Infof("mounting block device src=%q UUID=%q fs=%q to %q", mnt.Source, mnt.UUID, mnt.Type, mnt.Target)
+		logrus.Infof("mounting block device %s to %s", mnt.Source, mnt.Target)
 		if err := mnt.Mount(ctx, UUIDAction); err != nil {
-			return err
+			return fmt.Errorf("mount block device %s: %w", mnt.Source, err)
 		}
 	}
 
@@ -262,6 +261,5 @@ func SetupContainerStorage(vmc *define.Machine) error {
 		return fmt.Errorf("failed to symlink %s -> %s: %w", define.ContainerStorageMountPoint, mountPoint, err)
 	}
 
-	logrus.Infof("container storage: %s -> %s", define.ContainerStorageMountPoint, mountPoint)
 	return nil
 }

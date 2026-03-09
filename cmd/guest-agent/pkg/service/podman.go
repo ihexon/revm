@@ -17,7 +17,7 @@ func startGuestPodmanService(ctx context.Context, vmc *define.Machine) error {
 	cmd.Stderr = StderrWriter()
 	cmd.Env = append(os.Environ(), vmc.PodmanInfo.GuestPodmanRunWithEnvs...)
 
-	logrus.Infof("podman service starting on %s", vmc.PodmanInfo.GuestPodmanAPIListenAddr)
+	logrus.Debugf("podman cmdline %v", cmd.Args)
 	return cmd.Run()
 }
 

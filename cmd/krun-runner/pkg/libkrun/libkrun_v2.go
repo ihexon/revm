@@ -285,8 +285,8 @@ func (vm *LibkrunVM) configureVSockDevices() error {
 	); ret != 0 {
 		return fmt.Errorf("krun_add_vsock_port2 failed with code %v", ret)
 	}
-	logrus.Infof("VSock port %d mapped to ignition httpserver", vsockPort)
 
+	logrus.Infof("configured vsock port %d connected to unix socket %s", vsockPort, ignAddr.Path)
 	return nil
 }
 
@@ -458,7 +458,7 @@ func (vm *LibkrunVM) configureRootFS() error {
 func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
 	switch vm.vmc.VirtualNetworkMode {
 	case define.GVISOR:
-		logrus.Infof("Using gvisor-tap-vsock network backend")
+		logrus.Infof("configuring gvisor-tap-vsock network...")
 		backend := vm.vmc.GVPVNetAddr
 
 		if runtime.GOOS == "linux" {
@@ -506,7 +506,7 @@ func (vm *LibkrunVM) configureNetwork(ctx context.Context) error {
 		}
 		return nil
 	case define.TSI:
-		logrus.Infof("Using tsi-tap-vsock network backend")
+		logrus.Infof("configuring tsi-tap-vsock network...")
 		return nil
 	default:
 		return fmt.Errorf("unknown network mode %q", vm.vmc.VirtualNetworkMode)

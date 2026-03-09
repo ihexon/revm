@@ -33,14 +33,13 @@ func GetVMConfig(ctx context.Context) (*define.Machine, error) {
 		return nil, err
 	}
 
-	logrus.Infof("VM config received (mode: %s)", vmc.RunMode)
 	return vmc, WriteToJsonFile(vmc, define.VMConfigFilePathInGuest)
 }
 
 func WriteToJsonFile(vmc *define.Machine, file string) error {
 	b, err := json.Marshal(vmc)
 	if err != nil {
-		return fmt.Errorf("failed to marshal vmconfig: %v", err)
+		return fmt.Errorf("failed to marshal vmconfig: %w", err)
 	}
 
 	return os.WriteFile(file, b, 0644)

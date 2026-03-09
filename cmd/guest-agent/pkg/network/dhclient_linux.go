@@ -12,26 +12,22 @@ import (
 	"github.com/insomniacslk/dhcp/dhcpv4"
 	"github.com/insomniacslk/dhcp/dhcpv4/nclient4"
 	"github.com/insomniacslk/dhcp/netboot"
-	"github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
 )
 
 func DHClient4(ctx context.Context, ifName string, attempts int) error {
-	logrus.Infof("bring interface %s up", ifName)
 	ife, err := bringInterfaceUpFast(ifName)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to bring interface %q up: %w", ifName, err)
 	}
 
-	logrus.Infof("get netboot bootConf from DHCPv4 server")
 	bootConf, err := dhclient4(ctx, ife, attempts)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get netboot bootConf from DHCPv4 server: %w", err)
 	}
 
-	logrus.Infof("apply netboot configuration to %s", ifName)
 	if err = netboot.ConfigureInterface(ifName, &bootConf.NetConf); err != nil {
-		return err
+		return fmt.Errorf("failed to apply netboot configuration: %w", err)
 	}
 
 	return nil
@@ -53,7 +49,6 @@ func bringInterfaceUpFast(ifName string) (*net.Interface, error) {
 	}
 	return iface, nil
 }
-
 
 func dhclient4(ctx context.Context, iface *net.Interface, attempts int) (*netboot.BootConf, error) {
 	var (
