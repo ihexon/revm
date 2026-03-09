@@ -23,96 +23,56 @@ import (
 const machineConfigFD = 3
 
 func main() {
-	runtime.LockOSThread()
-
-	if err := runMain(); err != nil {
-		logrus.Fatal(err)
-	}
-}
-
-func runMain() error {
 	mc, err := loadMachineConfig(machineConfigFD)
 	if err != nil {
-		return err
+		exit(err)
 	}
 
-	if _, err := commonpkg.SetupLogger(
+	if _, err = commonpkg.SetupLogger(
 		currentLogLevelFromEnv(),
 		"krun-runner",
 		mc.LogFile,
 	); err != nil {
-		return fmt.Errorf("krun-runner: setup logger: %w", err)
+		exit(fmt.Errorf("krun-runner: setup logger: %w", err))
 	}
 
-	orphanCh, stopMonitor := startOrphanMonitor(200 * time.Millisecond)
-	defer stopMonitor()
-	sigCh, stopSignalMonitor := startSignalMonitor()
-	defer stopSignalMonitor()
+	go monitorOrphan(200 * time.Millisecond)
+	go monitorSignal()
 
+	// run() in a dedicated goroutine with LockOSThread,
+	// ensuring all libkrun CGo calls stay on the same OS thread.
 	runCh := make(chan error, 1)
 	go func() {
+		runtime.LockOSThread()
 		runCh <- run(context.Background(), mc)
 	}()
 
-	select {
-	case err := <-runCh:
-		return err
-	case err := <-orphanCh:
-		return err
-	case err := <-sigCh:
-		return err
+	if err := <-runCh; err != nil {
+		exit(err)
 	}
 }
 
-func startOrphanMonitor(interval time.Duration) (<-chan error, func()) {
-	errCh := make(chan error, 1)
-	done := make(chan struct{})
-
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				if os.Getppid() == 1 {
-					select {
-					case errCh <- define.ErrParentProcessExit:
-					default:
-					}
-					return
-				}
-			}
-		}
-	}()
-
-	return errCh, func() { close(done) }
+func exit(err error) {
+	logrus.Error(err)
+	os.Exit(1)
 }
 
-func startSignalMonitor() (<-chan error, func()) {
-	errCh := make(chan error, 1)
+func monitorOrphan(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if os.Getppid() == 1 {
+			exit(fmt.Errorf("parent process exited"))
+		}
+	}
+}
+
+func monitorSignal() {
 	sigCh := make(chan os.Signal, 1)
-	done := make(chan struct{})
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
-
-	go func() {
-		select {
-		case <-done:
-			return
-		case <-sigCh:
-			select {
-			case errCh <- define.ErrSigTerm:
-			default:
-			}
-		}
-	}()
-
-	return errCh, func() {
-		close(done)
-		signal.Stop(sigCh)
-	}
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	s := <-sigCh
+	exit(fmt.Errorf("received signal: %v", s))
 }
 
 func currentLogLevelFromEnv() string {
@@ -129,12 +89,7 @@ func run(ctx context.Context, mc *define.Machine) error {
 		return fmt.Errorf("krun-runner: create: %w", err)
 	}
 
-	// Start() 调用 krun_start_enter()，成功时 libkrun 调用 exit()
-	// 此进程会被直接终止，主进程通过 waitpid 感知退出
-	if err := vm.Start(ctx); err != nil {
-		return fmt.Errorf("krun-runner: start: %w", err)
-	}
-	return nil
+	return vm.Start(ctx)
 }
 
 func loadMachineConfig(fd uintptr) (*define.Machine, error) {
@@ -149,7 +104,6 @@ func loadMachineConfig(fd uintptr) (*define.Machine, error) {
 		return nil, fmt.Errorf("krun-runner: decode config: %w", err)
 	}
 
-	// 重建不可序列化字段
 	mc.EnsureRuntime()
 
 	return &mc, nil
