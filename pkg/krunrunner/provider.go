@@ -30,7 +30,7 @@ func NewRunnerProvider(mc *define.Machine) *RunnerProvider {
 	return &RunnerProvider{mc: mc}
 }
 
-func (p *RunnerProvider) Start(_ context.Context) error {
+func (p *RunnerProvider) Start(ctx context.Context) error {
 	// 序列化 Machine config
 	configJSON, err := json.Marshal(p.mc)
 	if err != nil {
@@ -52,7 +52,7 @@ func (p *RunnerProvider) Start(_ context.Context) error {
 	}
 
 	// 构造命令：Linux 通过 ld-linux 加载，macOS 直接运行
-	cmd := buildCommand(runnerBin)
+	cmd := buildCommand(ctx, runnerBin)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -79,8 +79,6 @@ func (p *RunnerProvider) Start(_ context.Context) error {
 	}
 	pw.Close()
 
-	// 阻塞等待子进程退出
-	// 当 libkrun 调用 exit(0) 时，子进程退出码为 0
 	return cmd.Wait()
 }
 
@@ -112,14 +110,14 @@ func resolveRunnerPath() (string, error) {
 // buildCommand 根据平台构造执行命令
 // Linux: 通过 bundled ld-linux 加载以确保使用正确的共享库
 // macOS: 直接执行（dylib 通过 @loader_path 引用）
-func buildCommand(runnerBin string) *exec.Cmd {
+func buildCommand(ctx context.Context, runnerBin string) *exec.Cmd {
 	if runtime.GOOS == "linux" {
 		helperDir := filepath.Dir(runnerBin)
 		libDir := filepath.Join(helperDir, "..", "lib")
 		ldLinux := filepath.Join(libDir, ldLinuxName())
-		return exec.Command(ldLinux, "--library-path", libDir, runnerBin)
+		return exec.CommandContext(ctx, ldLinux, "--library-path", libDir, runnerBin)
 	}
-	return exec.Command(runnerBin)
+	return exec.CommandContext(ctx, runnerBin)
 }
 
 func ldLinuxName() string {
