@@ -1,7 +1,6 @@
 package define
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -79,9 +78,4 @@ const (
 
 	DefaultTimeTicker   = 100 * time.Millisecond
 	DefaultProbeTimeout = 60 * time.Second
-)
-
-var (
-	ErrParentProcessExit = fmt.Errorf("parent process exit")
-	ErrSigTerm           = fmt.Errorf("received SIGTERM/SIGINT, shutting down")
 )
