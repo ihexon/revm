@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
-
-	"github.com/sirupsen/logrus"
 )
 
 //go:embed busybox.static
@@ -48,7 +46,6 @@ func InitBinDir() error {
 		if err := os.WriteFile(path, bin.bytes, 0755); err != nil {
 			return fmt.Errorf("extract %s: %w", bin.name, err)
 		}
-		logrus.Infof("extracted %q to %q", bin.name, path)
 	}
 
 	return nil

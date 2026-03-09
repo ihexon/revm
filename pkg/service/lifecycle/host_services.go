@@ -34,6 +34,7 @@ func (s *HostServices) StartPodmanProxy(ctx context.Context) error {
 	case define.GVISOR:
 		_, portStr, _ := net.SplitHostPort(s.vmc.PodmanInfo.GuestPodmanAPIListenAddr)
 		port, _ := strconv.ParseUint(portStr, 10, 16)
+		logrus.Infof("podman proxy listening in %s, forward to %s", s.vmc.PodmanInfo.HostPodmanProxyAddr, s.vmc.PodmanInfo.GuestPodmanAPIListenAddr)
 		return gvproxy.TunnelHostUnixToGuest(ctx,
 			s.vmc.GVPCtlAddr,
 			s.vmc.PodmanInfo.HostPodmanProxyAddr,
@@ -56,7 +57,7 @@ func (s *HostServices) StartNetworkStack(ctx context.Context) error {
 		return nil
 	}
 
-	logrus.Info("Starting gvisor-tap-vsock network stack")
+	logrus.Info("starting gvisor-tap-vsock network stack")
 	return gvproxy.Run(ctx, s.vmc)
 }
 
@@ -68,7 +69,7 @@ func (s *HostServices) StartIgnitionService(ctx context.Context) error {
 func (s *HostServices) StartMachineManagementAPI(ctx context.Context, stopFn func()) error {
 	server, err := management.NewServer(s.vmc, stopFn)
 	if err != nil {
-		return err
+		return fmt.Errorf("create management server: %w", err)
 	}
 	return server.Start(ctx)
 }

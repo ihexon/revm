@@ -76,7 +76,7 @@ func (d *Dropbear) Start(ctx context.Context) error {
 	cmd.Stderr = StderrWriter()
 	cmd.Stdout = StderrWriter()
 
-	logrus.Debugf("dropbear: %v", cmd.Args)
+	logrus.Debugf("dropbear cmdline: %v", cmd.Args)
 	return cmd.Run()
 }
 
@@ -99,6 +99,5 @@ func StartGuestSSHServer(ctx context.Context, vmc *define.Machine) error {
 		return fmt.Errorf("write authorized_keys: %w", err)
 	}
 
-	logrus.Infof("SSH server starting on %s", cfg.ListenAddr)
 	return dropbear.Start(ctx)
 }

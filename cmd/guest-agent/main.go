@@ -96,22 +96,20 @@ func main() {
 
 func run(ctx context.Context, _ *cli.Command) error {
 	if err := setupLogger(); err != nil {
-		return err
+		return fmt.Errorf("setup logger: %w", err)
 	}
 
 	if err := service.InitBinDir(); err != nil {
 		return fmt.Errorf("init bin dir: %w", err)
 	}
 
-	// 2. Get VM configuration from host
 	vmc, err := service.GetVMConfig(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("get vm config: %w", err)
 	}
 
-	// 3. Mount all pseudo filesystems (/proc, /sys, /dev, /tmp, etc.)
 	if err := service.MountAllPseudoMnt(ctx); err != nil {
-		return err
+		return fmt.Errorf("mount pseudo filesystems: %w", err)
 	}
 
 	// Now that /sys is available, attach the guest-logs virtio port
@@ -119,10 +117,10 @@ func run(ctx context.Context, _ *cli.Command) error {
 
 	// 4. Mount block devices and virtiofs
 	if err := service.MountBlockDevices(ctx, vmc); err != nil {
-		return err
+		return fmt.Errorf("mount block devices: %w", err)
 	}
 	if err := service.MountVirtiofs(ctx, vmc); err != nil {
-		return err
+		return fmt.Errorf("mount virtiofs: %w", err)
 	}
 
 	// 5. Run mode-specific services
@@ -176,10 +174,10 @@ func userRootfsMode(ctx context.Context, vmc *define.Machine) error {
 }
 
 func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
-	logrus.Info("running in container mode")
+	logrus.Info("starting container engine")
 
 	if err := service.SetupContainerStorage(vmc); err != nil {
-		return err
+		return fmt.Errorf("setup container storage: %w", err)
 	}
 
 	g, ctx := errgroup.WithContext(ctx)

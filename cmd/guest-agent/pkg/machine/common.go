@@ -72,7 +72,7 @@ func WaitGuestServiceReady(ctx context.Context, vmc *define.Machine) error {
 		return ctx.Err()
 	case err := <-errCh:
 		if err == nil {
-			logrus.Infof("[service] all guest services are ready")
+			logrus.Debugf("[service] all guest services are ready")
 		}
 		return err
 	}

@@ -55,7 +55,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	select {
 	case err := <-errChan:
-		return err
+		return fmt.Errorf("ignition server: %w", err)
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -71,7 +71,7 @@ func (s *Server) waitTSINetworkOnline(ctx context.Context) error {
 func (s *Server) waitGvisorVSockTapOnline(ctx context.Context) error {
 	addr, err := network.ParseUnixAddr(s.vmc.GVPCtlAddr)
 	if err != nil {
-		return err
+		return fmt.Errorf("parse gvproxy control address: %w", err)
 	}
 	client := network.NewUnixClient(addr.Path, network.WithTimeout(define.DefaultTimeTicker))
 	defer client.Close()
@@ -89,7 +89,7 @@ func (s *Server) waitGvisorVSockTapOnline(ctx context.Context) error {
 			network.CloseResponse(resp)
 			if resp.StatusCode == http.StatusOK {
 				if s.vmc.Readiness.SignalVNetHostReady() {
-					logrus.Infof("[ign] gvisor virtual-network online")
+					logrus.Debugf("[ign] gvisor virtual-network online")
 				}
 				return nil
 			}
@@ -166,15 +166,15 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	switch r.PathValue("service") {
 	case define.ServiceNameSSH:
 		if s.vmc.Readiness.SignalSSHReady() {
-			logrus.Info("[ign] guest ssh server online")
+			logrus.Debugf("[ign] guest ssh server online")
 		}
 	case define.ServiceNamePodman:
 		if s.vmc.Readiness.SignalPodmanAPIProxyReady() {
-			logrus.Info("[ign] guest podman online")
+			logrus.Debugf("[ign] guest podman online")
 		}
 	case define.ServiceNameGuestNetwork:
 		if s.vmc.Readiness.SignalVNetGuestReady() {
-			logrus.Info("[ign] guest network online")
+			logrus.Debugf("[ign] guest network online")
 		}
 	default:
 		writeJSON(w, http.StatusNotFound, nil)

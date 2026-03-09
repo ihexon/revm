@@ -43,7 +43,6 @@ func TunnelHostUnixToGuest(ctx context.Context, gvproxyCtlUnixAddr, listenUnixAd
 		closeLn()
 	}()
 
-	logrus.Infof("tunnel ready: %s → %s:%d", listenUnixAddr, targetIP, targetPort)
 	return acceptLoop(ctx, ln, gvproxyPath, targetIP, targetPort)
 }
 

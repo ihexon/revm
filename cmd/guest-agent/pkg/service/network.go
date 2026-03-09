@@ -7,8 +7,6 @@ import (
 	"linuxvm/pkg/define"
 	"os"
 	"path/filepath"
-
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -32,19 +30,17 @@ const (
 // ConfigureNetwork must support TSI/Gvisor network
 func ConfigureNetwork(ctx context.Context, mode define.VNetMode) error {
 	if mode == define.TSI {
-		// remove the podman-machine marker
 		_ = os.Remove(machineMarker)
-		logrus.Infof("set the Guest's default DNS to 1.1.1.1")
 		return os.WriteFile(resolveFile, []byte(defaultNameServer), 0644)
 	}
 
 	if mode == define.GVISOR {
 		if err := os.MkdirAll(filepath.Dir(machineMarker), 0755); err != nil {
-			return err
+			return fmt.Errorf("create podman-machine marker dir: %w", err)
 		}
 
 		if err := os.WriteFile(machineMarker, []byte("applehv"), 0644); err != nil {
-			return err
+			return fmt.Errorf("write podman-machine marker: %w", err)
 		}
 
 		return network.DHClient4(ctx, eth0, attempts)

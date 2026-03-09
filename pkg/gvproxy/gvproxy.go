@@ -83,16 +83,14 @@ func InitCfg(vmc *define.Machine) (*GvproxyConfig, error) {
 	// BUG: Port TOCTOU, but we don't care about it for now
 	port, err := network.GetAvailablePort(define.SSHLocalForwardListenPort)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get available port for ssh forwarding: %w", err)
 	}
-	logrus.Infof("ssh listen port: %d", port)
 
 	sshLocalForwardAddr := fmt.Sprintf("%s:%d", define.LocalHost, port)
 	_, sshPortStr, _ := net.SplitHostPort(vmc.SSHInfo.GuestSSHServerListenAddr)
 	sshServerGuestAddr := net.JoinHostPort(define.GuestIP, sshPortStr)
 
-	// ssh local forward: sshLocalForwardAddr -> sshServerGuestAddr
-	// 						HOST					GUEST
+	logrus.Infof("configuring local port forwarding from %s to %s", sshLocalForwardAddr, sshServerGuestAddr)
 	config.Stack.Forwards = map[string]string{
 		sshLocalForwardAddr: sshServerGuestAddr,
 	}
@@ -105,14 +103,14 @@ func InitCfg(vmc *define.Machine) (*GvproxyConfig, error) {
 func Run(ctx context.Context, vmc *define.Machine) error {
 	config, err := InitCfg(vmc)
 	if err != nil {
-		return err
+		return fmt.Errorf("init gvproxy config: %w", err)
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
 
 	vn, err := virtualnetwork.New(&config.Stack)
 	if err != nil {
-		return err
+		return fmt.Errorf("create virtual network: %w", err)
 	}
 
 	for _, endpoint := range config.Listen {
@@ -133,7 +131,7 @@ func Run(ctx context.Context, vmc *define.Machine) error {
 
 	ln, err := vn.Listen("tcp", fmt.Sprintf("%s:80", config.Stack.GatewayIP))
 	if err != nil {
-		return err
+		return fmt.Errorf("listen gateway: %w", err)
 	}
 
 	mux := http.NewServeMux()
