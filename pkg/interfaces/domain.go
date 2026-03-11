@@ -1,10 +1,8 @@
 package interfaces
 
-import (
-	"context"
-)
+import "context"
 
 type VMMProvider interface {
 	Start(ctx context.Context) error
-	Stop(ctx context.Context) error
+	Stop() error
 }

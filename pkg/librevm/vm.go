@@ -9,6 +9,7 @@ import (
 	"linuxvm/pkg/interfaces"
 	"linuxvm/pkg/krunrunner"
 	"linuxvm/pkg/service/lifecycle"
+	sshsvc "linuxvm/pkg/service/ssh"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
@@ -33,6 +35,7 @@ type VM struct {
 	sessionDir      string
 	cleanup         func()
 	eventDispatcher eventDispatcher
+	Cancel          context.CancelFunc
 
 	mu    sync.Mutex
 	state vmState
@@ -63,23 +66,6 @@ const (
 	vmStateStopped                 // Run() 已返回
 	vmStateClosed                  // Close() 已被调用
 )
-
-// Stop 发出停止信号，触发 VM 优雅关机。幂等，多次调用安全。
-func (vm *VM) Stop(ctx context.Context) error {
-	vm.mu.Lock()
-	if vm.state >= vmStateStopping {
-		vm.mu.Unlock()
-		return nil
-	}
-	vm.state = vmStateStopping
-	vm.mu.Unlock()
-
-	vm.emit(EventStopping, "stopping vm")
-	if vm.provider != nil {
-		_ = vm.provider.Stop(ctx)
-	}
-	return nil
-}
 
 // Close 释放所有资源（文件锁、workspace 目录、event eventDispatcher）。
 // 必须始终调用，即使 Run() 从未被调用。幂等。
@@ -121,6 +107,7 @@ func New(cfg *Config) (*VM, error) {
 		cfg:        &normalizedCfg,
 		sessionDir: getSessionDir(normalizedCfg.SessionID),
 		state:      vmStateNew,
+		Cancel:     nil,
 	}
 
 	for _, r := range cfg.Reporters {
@@ -221,131 +208,136 @@ func (vm *VM) Run(ctx context.Context) error {
 
 	switch vm.cfg.RunMode {
 	case ModeRootfs, ModeContainer:
-		return vm.run(ctx)
 	default:
 		return fmt.Errorf("unsupported run mode %q", vm.cfg.RunMode)
 	}
-}
 
-func (vm *VM) run(ctx context.Context) error {
 	vm.emit(EventVMStarting, "starting vm")
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	// --- exit monitors: any trigger → cancel() ---
-	go func() { // signal
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
-		defer signal.Stop(sigCh)
-		select {
-		case <-ctx.Done():
-			return
-		case <-sigCh:
-			logrus.Info("received signal, shutting down")
-			cancel()
-		}
-	}()
-
-	go func() { // parent process exit
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if os.Getppid() == 1 {
-					logrus.Info("parent process exited, shutting down")
-					cancel()
-					return
-				}
-			}
-		}
-	}()
+	// go vm.orphanMonitor(ctx)
 
 	// --- host services errgroup ---
 	g, ctx := errgroup.WithContext(ctx)
 
+	// start ignition server
 	g.Go(func() error {
-		vm.emit(EventIgnitionStarting, "starting ignition service")
 		return vm.svc.StartIgnitionService(ctx)
 	})
+
+	// start vnet
 	g.Go(func() error {
-		vm.emit(EventNetworkStarting, "starting network stack")
 		return vm.svc.StartNetworkStack(ctx)
 	})
+
+	// start virtual machine management API
 	g.Go(func() error {
-		vm.emit(EventManagementStarting, "starting management API")
-		return vm.svc.StartMachineManagementAPI(ctx, cancel)
+		return vm.svc.StartMachineManagementAPI(ctx, vm.Cancel)
 	})
 
-	switch vm.cfg.RunMode {
-	case ModeContainer:
-		g.Go(func() error {
-			go func() {
-				select {
-				case <-ctx.Done():
-					return
-				case <-vm.machine.Readiness.PodmanReady:
-					vm.emit(EventPodmanReady, fmt.Sprintf("podman API proxy listening on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr))
-					logrus.Infof("podman API proxy ready on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr)
-				}
-			}()
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-vm.machine.Readiness.VNetHostReady:
-				vm.emit(EventPodmanProxyStarting, "starting podman proxy")
-				return vm.svc.StartPodmanProxy(ctx)
-			}
-		})
-	case ModeRootfs:
-	}
-
+	// start podman api proxy
 	g.Go(func() error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-vm.machine.Readiness.SSHReady:
-			vm.emit(EventSSHReady, "ssh ready")
+		case <-vm.machine.Readiness.VNetHostReady:
+			return vm.svc.StartPodmanProxy(ctx)
 		}
-		return nil
 	})
 
-	// wait for network ready
+	// send podman ready
+	go func() {
+		if vm.cfg.RunMode == ModeContainer {
+			select {
+			case <-ctx.Done():
+				return
+			case <-vm.machine.Readiness.PodmanReady:
+				vm.emit(EventPodmanReady, fmt.Sprintf("podman API proxy listening on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr))
+				logrus.Infof("podman API proxy ready on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr)
+				return
+			}
+		}
+	}()
+
+	// send ssh ready
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-vm.machine.Readiness.SSHReady:
+			vm.emit(EventSSHReady, "ssh ready")
+			return
+		}
+	}()
+
+	// send host vnet ready
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-vm.machine.Readiness.VNetHostReady:
+			vm.emit(EventNetworkReady, "host network ready")
+			return
+		}
+	}()
+
+	go func() {
+		vm.WaitAndShutdownMachine(vm.Cancel)
+	}()
+
+	svcErrCh := make(chan error, 1)
+	go func() {
+		svcErrCh <- g.Wait()
+		close(svcErrCh)
+	}()
+
 	select {
 	case <-ctx.Done():
-		return context.Cause(ctx)
+		return <-svcErrCh
 	case <-vm.machine.Readiness.VNetHostReady:
-		vm.emit(EventNetworkReady, "host network ready")
+		err := vm.svc.StartVirtualMachine(context.Background()) // block
+		vm.Cancel()
+		<-svcErrCh // wait for svc group to finish
+		return err
 	}
+}
 
-	// start VM (blocks until VM exits)
-	vmErr := vm.svc.StartVirtualMachine(ctx)
-
-	// VM exited → cancel ctx → all services get notified
-	cancel()
-
-	// wait for services with timeout
-	svcErrChan := make(chan error, 1)
-	go func() { svcErrChan <- g.Wait() }()
-
-	select {
-	case svcErr := <-svcErrChan:
-		if svcErr != nil {
-			logrus.Warnf("host service shutdown: %v", svcErr)
+func (vm *VM) WaitAndShutdownMachine(cancel context.CancelFunc) {
+	go func() {
+		for {
+			if os.Getppid() == 1 {
+				logrus.Info("parent process exited, shutting down machine")
+				_ = vm.provider.Stop()
+				cancel()
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
 		}
-	case <-time.After(5 * time.Second):
-		logrus.Warn("host services shutdown timed out")
-	}
+	}()
 
-	if vmErr != nil {
-		vm.emit(EventError, vmErr.Error())
-	}
+	// shutdown when signal
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		<-sigCh
 
-	vm.emit(EventStopped, "vm stopped")
-	return vmErr
+		logrus.Info("received signal, shutting down")
+		_ = vm.provider.Stop()
+		cancel()
+	}()
+}
+
+// execIgnoreErr runs a command in the VM via SSH, logging but not returning errors.
+func (vm *VM) execIgnoreErr(ctx context.Context, cmdline ...string) {
+	client, err := sshsvc.MakeSSHClient(ctx, vm.machine)
+	if err != nil {
+		logrus.Warnf("ssh connect for %v: %v", cmdline, err)
+		return
+	}
+	defer client.Close()
+
+	if err := client.Run(ctx, shellescape.QuoteCommand(cmdline)); err != nil {
+		logrus.Warnf("exec %v: %v", cmdline, err)
+	}
 }
 
 func GenerateVMConfig(ctx context.Context, cfg *Config, path string) error {

@@ -115,7 +115,7 @@ var startDocker = cli.Command{
 	Action: dockerLifeCycle,
 }
 
-func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
+func dockerLifeCycle(_ context.Context, command *cli.Command) error {
 	cfg := librevm.DefaultConfig().
 		WithMode(librevm.ModeContainer).
 		WithName(command.String(define.FlagSessionID)).
@@ -172,7 +172,11 @@ func dockerLifeCycle(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+
 	defer vm.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	vm.Cancel = cancel
 
 	return vm.Run(ctx)
 }
