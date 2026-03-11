@@ -172,31 +172,7 @@ func (vm *VM) RunChroot(ctx context.Context) error {
 	})
 
 	// Monitor readiness events
-	go func() {
-		sshReady := false
-		networkReady := false
-
-		for {
-			if sshReady && networkReady {
-				return
-			}
-
-			select {
-			case <-ctx.Done():
-				return
-			case <-vm.machine.Readiness.SSHReady:
-				if !sshReady {
-					sshReady = true
-					vm.emit(EventSSHReady, "ssh ready")
-				}
-			case <-vm.machine.Readiness.VNetHostReady:
-				if !networkReady {
-					networkReady = true
-					vm.emit(EventNetworkReady, "host network ready")
-				}
-			}
-		}
-	}()
+	go vm.monitorReadinessEvents(ctx, false)
 
 	// Monitor for shutdown signals
 	go func() {
@@ -258,38 +234,7 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 	})
 
 	// Monitor readiness events
-	go func() {
-		podmanReady := false
-		sshReady := false
-		networkReady := false
-
-		for {
-			if podmanReady && sshReady && networkReady {
-				return
-			}
-
-			select {
-			case <-ctx.Done():
-				return
-			case <-vm.machine.Readiness.PodmanReady:
-				if !podmanReady {
-					podmanReady = true
-					vm.emit(EventPodmanReady, fmt.Sprintf("podman API proxy listening on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr))
-					logrus.Infof("podman API proxy ready on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr)
-				}
-			case <-vm.machine.Readiness.SSHReady:
-				if !sshReady {
-					sshReady = true
-					vm.emit(EventSSHReady, "ssh ready")
-				}
-			case <-vm.machine.Readiness.VNetHostReady:
-				if !networkReady {
-					networkReady = true
-					vm.emit(EventNetworkReady, "host network ready")
-				}
-			}
-		}
-	}()
+	go vm.monitorReadinessEvents(ctx, true)
 
 	// Monitor for shutdown signals
 	go func() {
@@ -312,6 +257,41 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 		vm.Cancel()
 		<-svcErrCh
 		return err
+	}
+}
+
+// monitorReadinessEvents monitors readiness channels and emits events.
+// It runs until all expected events are received or context is cancelled.
+func (vm *VM) monitorReadinessEvents(ctx context.Context, expectPodman bool) {
+	podmanReady := !expectPodman // If not expecting, mark as already done
+	sshReady := false
+	networkReady := false
+
+	for {
+		if podmanReady && sshReady && networkReady {
+			return
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-vm.machine.Readiness.PodmanReady:
+			if expectPodman && !podmanReady {
+				podmanReady = true
+				vm.emit(EventPodmanReady, fmt.Sprintf("podman API proxy listening on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr))
+				logrus.Infof("podman API proxy ready on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr)
+			}
+		case <-vm.machine.Readiness.SSHReady:
+			if !sshReady {
+				sshReady = true
+				vm.emit(EventSSHReady, "ssh ready")
+			}
+		case <-vm.machine.Readiness.VNetHostReady:
+			if !networkReady {
+				networkReady = true
+				vm.emit(EventNetworkReady, "host network ready")
+			}
+		}
 	}
 }
 
