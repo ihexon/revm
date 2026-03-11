@@ -7,7 +7,7 @@ import (
 	"io"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
-	sshv2 "linuxvm/pkg/ssh_v2"
+	ssh "linuxvm/pkg/ssh"
 	"net"
 	"time"
 
@@ -37,8 +37,8 @@ func GuestExec(ctx context.Context, vmc *define.Machine, bin string, args ...str
 	return &ProcessOutput{StdoutPipeReader: stdoutReader, StderrPipeReader: stderrReader, ErrChan: errChan}, nil
 }
 
-func MakeSSHClient(ctx context.Context, vmc *define.Machine) (*sshv2.Client, error) {
-	dialOpts := []sshv2.Option{sshv2.WithUser(define.DefaultGuestUser), sshv2.WithPrivateKey(vmc.SSHInfo.HostSSHPrivateKeyFile), sshv2.WithTimeout(2 * time.Second), sshv2.WithKeepalive(2 * time.Second)}
+func MakeSSHClient(ctx context.Context, vmc *define.Machine) (*ssh.Client, error) {
+	dialOpts := []ssh.Option{ssh.WithUser(define.DefaultGuestUser), ssh.WithPrivateKey(vmc.SSHInfo.HostSSHPrivateKeyFile), ssh.WithTimeout(2 * time.Second), ssh.WithKeepalive(2 * time.Second)}
 	var guestAddr string
 	if vmc.VirtualNetworkMode == define.GVISOR {
 		gvCtlAddr, err := network.ParseUnixAddr(vmc.GVPCtlAddr)
@@ -47,9 +47,9 @@ func MakeSSHClient(ctx context.Context, vmc *define.Machine) (*sshv2.Client, err
 		}
 		_, portStr, _ := net.SplitHostPort(vmc.SSHInfo.GuestSSHServerListenAddr)
 		guestAddr = net.JoinHostPort(define.GuestIP, portStr)
-		dialOpts = append(dialOpts, sshv2.WithTunnel(gvCtlAddr.Path))
+		dialOpts = append(dialOpts, ssh.WithTunnel(gvCtlAddr.Path))
 	} else {
 		guestAddr = vmc.SSHInfo.GuestSSHServerListenAddr
 	}
-	return sshv2.Dial(ctx, guestAddr, dialOpts...)
+	return ssh.Dial(ctx, guestAddr, dialOpts...)
 }

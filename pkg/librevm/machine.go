@@ -10,7 +10,7 @@ import (
 	"linuxvm/pkg/filesystem"
 	commonlog "linuxvm/pkg/log"
 	"linuxvm/pkg/network"
-	sshv2 "linuxvm/pkg/ssh_v2"
+	ssh "linuxvm/pkg/ssh"
 	"linuxvm/pkg/static_resources"
 	"linuxvm/pkg/system"
 	"net"
@@ -340,7 +340,7 @@ func (v *machineBuilder) configureSSH() error {
 		return err
 	}
 
-	privateKey, publicKey, err := sshv2.GenerateKey()
+	privateKey, publicKey, err := ssh.GenerateKey()
 	if err != nil {
 		return err
 	}
