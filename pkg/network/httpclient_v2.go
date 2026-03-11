@@ -10,6 +10,7 @@ import (
 	"path"
 	"time"
 
+	"github.com/mdlayher/vsock"
 	"github.com/sirupsen/logrus"
 )
 
@@ -121,6 +122,36 @@ func NewTCPClient(addr string, opts ...ClientOption) *Client {
 
 	baseURL := "http://" + addr
 	return newClient(baseURL, dialFunc, cfg)
+}
+
+// NewVSockClient creates a new HTTP client for VSock communication.
+func NewVSockClient(cid, port uint32, opts ...ClientOption) *Client {
+	cfg := defaultConfig()
+	applyOptions(cfg, opts)
+
+	dialFunc := func(ctx context.Context, _, _ string) (net.Conn, error) {
+		result := make(chan struct {
+			c   net.Conn
+			err error
+		}, 1)
+
+		go func() {
+			c, err := vsock.Dial(cid, port, nil)
+			result <- struct {
+				c   net.Conn
+				err error
+			}{c, err}
+		}()
+
+		select {
+		case <-ctx.Done():
+			return nil, context.Cause(ctx)
+		case r := <-result:
+			return r.c, r.err
+		}
+	}
+
+	return newClient("http://vsock", dialFunc, cfg)
 }
 
 // Close closes the HTTP client and cleans up resources
