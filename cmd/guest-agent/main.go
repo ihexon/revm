@@ -189,9 +189,7 @@ func userRootfsMode(ctx context.Context, vmc *define.Machine) error {
 	})
 
 	go func() {
-		if err := machine.WaitGuestServiceReady(ctx, vmc); err != nil {
-			logrus.Warnf("readiness probe failed: %v", err)
-		}
+		_ = machine.WaitGuestServiceReady(ctx, vmc)
 	}()
 
 	errChan := make(chan error, 1)
@@ -236,13 +234,10 @@ func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
 		return service.SyncRTCTime(ctx)
 	})
 
-	// Run readiness probes outside the errgroup so a transient probe failure
-	// (e.g. vsock PostReady EOF) does not cancel long-running services.
-	// The probes still share ctx, so if a service dies the probes stop too.
+	// Run readiness probes outside the errgroup. Probe failures are logged
+	// internally and do not affect service lifecycle.
 	go func() {
-		if err := machine.WaitGuestServiceReady(ctx, vmc); err != nil {
-			logrus.Warnf("readiness probe failed: %v", err)
-		}
+		_ = machine.WaitGuestServiceReady(ctx, vmc)
 	}()
 
 	errChan := make(chan error, 1)
