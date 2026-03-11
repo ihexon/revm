@@ -171,21 +171,30 @@ func (vm *VM) RunChroot(ctx context.Context) error {
 		return vm.svc.StartMachineManagementAPI(ctx)
 	})
 
-	// Send SSH ready event
+	// Monitor readiness events
 	go func() {
-		select {
-		case <-ctx.Done():
-		case <-vm.machine.Readiness.SSHReady:
-			vm.emit(EventSSHReady, "ssh ready")
-		}
-	}()
+		sshReady := false
+		networkReady := false
 
-	// Send network ready event
-	go func() {
-		select {
-		case <-ctx.Done():
-		case <-vm.machine.Readiness.VNetHostReady:
-			vm.emit(EventNetworkReady, "host network ready")
+		for {
+			if sshReady && networkReady {
+				return
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-vm.machine.Readiness.SSHReady:
+				if !sshReady {
+					sshReady = true
+					vm.emit(EventSSHReady, "ssh ready")
+				}
+			case <-vm.machine.Readiness.VNetHostReady:
+				if !networkReady {
+					networkReady = true
+					vm.emit(EventNetworkReady, "host network ready")
+				}
+			}
 		}
 	}()
 
@@ -248,31 +257,37 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 		}
 	})
 
-	// Send Podman ready event
+	// Monitor readiness events
 	go func() {
-		select {
-		case <-ctx.Done():
-		case <-vm.machine.Readiness.PodmanReady:
-			vm.emit(EventPodmanReady, fmt.Sprintf("podman API proxy listening on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr))
-			logrus.Infof("podman API proxy ready on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr)
-		}
-	}()
+		podmanReady := false
+		sshReady := false
+		networkReady := false
 
-	// Send SSH ready event
-	go func() {
-		select {
-		case <-ctx.Done():
-		case <-vm.machine.Readiness.SSHReady:
-			vm.emit(EventSSHReady, "ssh ready")
-		}
-	}()
+		for {
+			if podmanReady && sshReady && networkReady {
+				return
+			}
 
-	// Send network ready event
-	go func() {
-		select {
-		case <-ctx.Done():
-		case <-vm.machine.Readiness.VNetHostReady:
-			vm.emit(EventNetworkReady, "host network ready")
+			select {
+			case <-ctx.Done():
+				return
+			case <-vm.machine.Readiness.PodmanReady:
+				if !podmanReady {
+					podmanReady = true
+					vm.emit(EventPodmanReady, fmt.Sprintf("podman API proxy listening on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr))
+					logrus.Infof("podman API proxy ready on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr)
+				}
+			case <-vm.machine.Readiness.SSHReady:
+				if !sshReady {
+					sshReady = true
+					vm.emit(EventSSHReady, "ssh ready")
+				}
+			case <-vm.machine.Readiness.VNetHostReady:
+				if !networkReady {
+					networkReady = true
+					vm.emit(EventNetworkReady, "host network ready")
+				}
+			}
 		}
 	}()
 
