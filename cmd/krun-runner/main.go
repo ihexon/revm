@@ -75,11 +75,10 @@ func currentLogLevelFromEnv() string {
 }
 
 func run(ctx context.Context, mc *define.Machine) error {
-	vm := libkrun.NewLibkrunVM(mc)
+	vm := libkrun.New(mc)
 	if err := vm.Create(ctx); err != nil {
-		return fmt.Errorf("krun-runner: create: %w", err)
+		return fmt.Errorf("create VM: %w", err)
 	}
-
 	return vm.Start(ctx)
 }
 

@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"linuxvm/pkg/define"
 
@@ -92,8 +94,14 @@ func (p *RunnerProvider) Stop() error {
 	p.mu.Unlock()
 
 	if cmd != nil && cmd.Process != nil {
-		return cmd.Process.Kill()
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+
+		go func() {
+			time.Sleep(15 * time.Second)
+			_ = cmd.Process.Kill()
+		}()
 	}
+
 	return nil
 }
 
