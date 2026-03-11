@@ -26,7 +26,7 @@ func NewHostServices(vmc *define.Machine, vmp interfaces.VMMProvider) *HostServi
 }
 
 func (s *HostServices) StartPodmanProxy(ctx context.Context) error {
-	if s.vmc.RunMode == define.RootFsMode.String() {
+	if s.vmc.RunMode != define.ContainerMode.String() {
 		return nil
 	}
 

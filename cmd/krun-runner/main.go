@@ -9,10 +9,8 @@ import (
 	"linuxvm/pkg/define"
 	commonpkg "linuxvm/pkg/log"
 	"os"
-	"os/signal"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 
 	"linuxvm/cmd/krun-runner/pkg/libkrun"
@@ -37,7 +35,7 @@ func main() {
 	}
 
 	go monitorOrphan(200 * time.Millisecond)
-	go monitorSignal()
+	// go monitorSignal()
 
 	// run() in a dedicated goroutine with LockOSThread,
 	// ensuring all libkrun CGo calls stay on the same OS thread.
@@ -66,13 +64,6 @@ func monitorOrphan(interval time.Duration) {
 			exit(fmt.Errorf("parent process exited"))
 		}
 	}
-}
-
-func monitorSignal() {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
-	s := <-sigCh
-	exit(fmt.Errorf("received signal: %v", s))
 }
 
 func currentLogLevelFromEnv() string {

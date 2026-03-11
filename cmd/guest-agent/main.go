@@ -10,10 +10,8 @@ import (
 	"linuxvm/pkg/define"
 	commonlog "linuxvm/pkg/log"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -82,9 +80,7 @@ func main() {
 		DisableSliceFlagSeparator: true,
 	}
 
-	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
-
-	if err := app.Run(ctx, os.Args); err != nil {
+	if err := app.Run(context.Background(), os.Args); err != nil {
 		var code exitCode
 		if errors.As(err, &code) {
 			os.Exit(int(code))
@@ -122,6 +118,9 @@ func run(ctx context.Context, _ *cli.Command) error {
 	if err := service.MountVirtiofs(ctx, vmc); err != nil {
 		return fmt.Errorf("mount virtiofs: %w", err)
 	}
+	go func() {
+		service.Shutdown(ctx)
+	}()
 
 	// 5. Run mode-specific services
 	switch vmc.RunMode {

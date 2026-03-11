@@ -52,7 +52,7 @@ func (p *RunnerProvider) Start(ctx context.Context) error {
 	}
 
 	// 构造命令：Linux 通过 ld-linux 加载，macOS 直接运行
-	cmd := buildCommand(ctx, runnerBin)
+	cmd := buildCommand(runnerBin)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -82,7 +82,7 @@ func (p *RunnerProvider) Start(ctx context.Context) error {
 	return cmd.Wait()
 }
 
-func (p *RunnerProvider) Stop(_ context.Context) error {
+func (p *RunnerProvider) Stop() error {
 	p.mu.Lock()
 	cmd := p.cmd
 	p.mu.Unlock()
@@ -110,14 +110,14 @@ func resolveRunnerPath() (string, error) {
 // buildCommand 根据平台构造执行命令
 // Linux: 通过 bundled ld-linux 加载以确保使用正确的共享库
 // macOS: 直接执行（dylib 通过 @loader_path 引用）
-func buildCommand(ctx context.Context, runnerBin string) *exec.Cmd {
+func buildCommand(runnerBin string) *exec.Cmd {
 	if runtime.GOOS == "linux" {
 		helperDir := filepath.Dir(runnerBin)
 		libDir := filepath.Join(helperDir, "..", "lib")
 		ldLinux := filepath.Join(libDir, ldLinuxName())
-		return exec.CommandContext(ctx, ldLinux, "--library-path", libDir, runnerBin)
+		return exec.Command(ldLinux, "--library-path", libDir, runnerBin)
 	}
-	return exec.CommandContext(ctx, runnerBin)
+	return exec.Command(runnerBin)
 }
 
 func ldLinuxName() string {

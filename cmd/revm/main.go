@@ -21,6 +21,7 @@ func setupLoggerEarly() {
 
 func main() {
 	setupLoggerEarly()
+
 	logrus.Infof("[early-log] fully qualified command: %s", os.Args)
 	logrus.Infof("[early-log] version: %v", showVersionAndOSInfo())
 
