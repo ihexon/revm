@@ -147,42 +147,113 @@ func (vm *VM) createUserSymlinks() error {
 }
 
 // Run launches all host services, runs the VM to completion, drains the
-// services, and returns the VM's exit error. It blocks for the lifetime
-// of the VM.
+// Run starts the VM and blocks until it exits.
+//
+// Deprecated: Use RunChroot or RunDocker instead.
 func (vm *VM) Run(ctx context.Context) error {
+	switch vm.cfg.RunMode {
+	case ModeRootfs:
+		return vm.RunChroot(ctx)
+	case ModeContainer:
+		return vm.RunDocker(ctx)
+	default:
+		return fmt.Errorf("unsupported run mode %q", vm.cfg.RunMode)
+	}
+}
+
+// RunChroot starts the VM in rootfs mode and blocks until it exits.
+func (vm *VM) RunChroot(ctx context.Context) error {
 	if err := vm.init(ctx); err != nil {
 		return err
 	}
 
-	switch vm.cfg.RunMode {
-	case ModeRootfs, ModeContainer:
-	default:
-		return fmt.Errorf("unsupported run mode %q", vm.cfg.RunMode)
-	}
+	vm.emit(EventVMStarting, "starting vm in rootfs mode")
 
-	vm.emit(EventVMStarting, "starting vm")
-
-	// go vm.orphanMonitor(ctx)
-
-	// --- host services errgroup ---
 	g, ctx := errgroup.WithContext(ctx)
 
-	// start ignition server
+	// Start ignition server
 	g.Go(func() error {
 		return vm.svc.StartIgnitionService(ctx)
 	})
 
-	// start vnet
+	// Start network stack
 	g.Go(func() error {
 		return vm.svc.StartNetworkStack(ctx)
 	})
 
-	// start virtual machine management API
+	// Start management API
 	g.Go(func() error {
 		return vm.svc.StartMachineManagementAPI(ctx)
 	})
 
-	// start podman api proxy
+	// Send SSH ready event
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-vm.machine.Readiness.SSHReady:
+			vm.emit(EventSSHReady, "ssh ready")
+		}
+	}()
+
+	// Send network ready event
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-vm.machine.Readiness.VNetHostReady:
+			vm.emit(EventNetworkReady, "host network ready")
+		}
+	}()
+
+	// Monitor for shutdown signals
+	go func() {
+		vm.WaitAndShutdownMachine(ctx, vm.Cancel)
+	}()
+
+	// Wait for services to start
+	svcErrCh := make(chan error, 1)
+	go func() {
+		svcErrCh <- g.Wait()
+		close(svcErrCh)
+	}()
+
+	// Start VM when network is ready
+	select {
+	case <-ctx.Done():
+		return <-svcErrCh
+	case <-vm.machine.Readiness.VNetHostReady:
+		err := vm.svc.StartVirtualMachine(context.Background())
+		vm.Cancel()
+		<-svcErrCh
+		return err
+	}
+}
+
+// RunDocker starts the VM in container mode and blocks until it exits.
+func (vm *VM) RunDocker(ctx context.Context) error {
+	if err := vm.init(ctx); err != nil {
+		return err
+	}
+
+	vm.emit(EventVMStarting, "starting vm in container mode")
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	// Start ignition server
+	g.Go(func() error {
+		return vm.svc.StartIgnitionService(ctx)
+	})
+
+	// Start network stack
+	g.Go(func() error {
+		return vm.svc.StartNetworkStack(ctx)
+	})
+
+	// Start management API
+	g.Go(func() error {
+		return vm.svc.StartMachineManagementAPI(ctx)
+	})
+
+	// Start Podman proxy (wait for network first)
 	g.Go(func() error {
 		select {
 		case <-ctx.Done():
@@ -192,59 +263,54 @@ func (vm *VM) Run(ctx context.Context) error {
 		}
 	})
 
-	// send podman ready
-	go func() {
-		if vm.cfg.RunMode == ModeContainer {
-			select {
-			case <-ctx.Done():
-				return
-			case <-vm.machine.Readiness.PodmanReady:
-				vm.emit(EventPodmanReady, fmt.Sprintf("podman API proxy listening on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr))
-				logrus.Infof("podman API proxy ready on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr)
-				return
-			}
-		}
-	}()
-
-	// send ssh ready
+	// Send Podman ready event
 	go func() {
 		select {
 		case <-ctx.Done():
-			return
+		case <-vm.machine.Readiness.PodmanReady:
+			vm.emit(EventPodmanReady, fmt.Sprintf("podman API proxy listening on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr))
+			logrus.Infof("podman API proxy ready on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr)
+		}
+	}()
+
+	// Send SSH ready event
+	go func() {
+		select {
+		case <-ctx.Done():
 		case <-vm.machine.Readiness.SSHReady:
 			vm.emit(EventSSHReady, "ssh ready")
-			return
 		}
 	}()
 
-	// send host vnet ready
+	// Send network ready event
 	go func() {
 		select {
 		case <-ctx.Done():
-			return
 		case <-vm.machine.Readiness.VNetHostReady:
 			vm.emit(EventNetworkReady, "host network ready")
-			return
 		}
 	}()
 
+	// Monitor for shutdown signals
 	go func() {
 		vm.WaitAndShutdownMachine(ctx, vm.Cancel)
 	}()
 
+	// Wait for services to start
 	svcErrCh := make(chan error, 1)
 	go func() {
 		svcErrCh <- g.Wait()
 		close(svcErrCh)
 	}()
 
+	// Start VM when network is ready
 	select {
 	case <-ctx.Done():
 		return <-svcErrCh
 	case <-vm.machine.Readiness.VNetHostReady:
-		err := vm.svc.StartVirtualMachine(context.Background()) // block
+		err := vm.svc.StartVirtualMachine(context.Background())
 		vm.Cancel()
-		<-svcErrCh // wait for svc group to finish
+		<-svcErrCh
 		return err
 	}
 }
