@@ -7,24 +7,36 @@ import (
 	"guestAgent/pkg/vsock"
 	"linuxvm/pkg/define"
 	"os"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
 func getVMConfig(ctx context.Context) (*define.Machine, error) {
-	svc := vsock.NewVSockService()
-	defer func() {
-		if err := svc.Close(); err != nil {
-			logrus.Errorf("close vsock service error: %v", err)
+	ctx, cancel := context.WithTimeout(ctx, define.DefaultProbeTimeout)
+	defer cancel()
+
+	ticker := time.NewTicker(define.DefaultTimeTicker)
+	defer ticker.Stop()
+
+	var lastErr error
+	for {
+		svc := vsock.NewVSockService()
+		vmc, err := svc.GetVMConfig(ctx)
+		_ = svc.Close()
+		if err == nil {
+			return vmc, nil
 		}
-	}()
 
-	vmc, err := svc.GetVMConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get vmconfig from vsock: %w", err)
+		lastErr = err
+		logrus.Debugf("get vmconfig attempt failed: %v, retrying...", err)
+
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("failed to get vmconfig from vsock: %w (last: %v)", ctx.Err(), lastErr)
+		case <-ticker.C:
+		}
 	}
-
-	return vmc, nil
 }
 
 func GetVMConfig(ctx context.Context) (*define.Machine, error) {

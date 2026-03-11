@@ -146,21 +146,6 @@ func (vm *VM) createUserSymlinks() error {
 	return nil
 }
 
-// Run launches all host services, runs the VM to completion, drains the
-// Run starts the VM and blocks until it exits.
-//
-// Deprecated: Use RunChroot or RunDocker instead.
-func (vm *VM) Run(ctx context.Context) error {
-	switch vm.cfg.RunMode {
-	case ModeRootfs:
-		return vm.RunChroot(ctx)
-	case ModeContainer:
-		return vm.RunDocker(ctx)
-	default:
-		return fmt.Errorf("unsupported run mode %q", vm.cfg.RunMode)
-	}
-}
-
 // RunChroot starts the VM in rootfs mode and blocks until it exits.
 func (vm *VM) RunChroot(ctx context.Context) error {
 	if err := vm.init(ctx); err != nil {
