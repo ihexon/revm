@@ -8,7 +8,6 @@ import (
 	"linuxvm/pkg/define"
 
 	"github.com/sirupsen/logrus"
-	"golang.org/x/sync/errgroup"
 )
 
 type Machine define.Machine
@@ -30,50 +29,24 @@ func WaitGuestServiceReady(ctx context.Context, vmc *define.Machine) error {
 
 	rd := service.NewServiceReadiness(vmc)
 
-	g, gctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		if rd.IsSSHReady(gctx) {
-			if err := svc.PostReady(gctx, define.ServiceNameSSH); err != nil {
-				return err
-			}
-			return nil
+	if rd.IsSSHReady(ctx) {
+		if err := svc.PostReady(ctx, define.ServiceNameSSH); err != nil {
+			return fmt.Errorf("post ssh ready: %w", err)
 		}
-		return fmt.Errorf("[service] guest ssh not ready")
-	})
-
-	g.Go(func() error {
-		if rd.IsPodmanReady(gctx) {
-			if err := svc.PostReady(gctx, define.ServiceNamePodman); err != nil {
-				return err
-			}
-			return nil
-		}
-		return fmt.Errorf("[service] guest podman not ready")
-	})
-
-	g.Go(func() error {
-		if rd.IsInterfaceReady(gctx) {
-			if err := svc.PostReady(gctx, define.ServiceNameGuestNetwork); err != nil {
-				return err
-			}
-
-			return nil
-		}
-		return fmt.Errorf("[service] guest interface not ready")
-	})
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- g.Wait()
-	}()
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-errCh:
-		if err == nil {
-			logrus.Debugf("[service] all guest services are ready")
-		}
-		return err
 	}
+
+	if rd.IsPodmanReady(ctx) {
+		if err := svc.PostReady(ctx, define.ServiceNamePodman); err != nil {
+			return fmt.Errorf("post podman ready: %w", err)
+		}
+	}
+
+	if rd.IsInterfaceReady(ctx) {
+		if err := svc.PostReady(ctx, define.ServiceNameGuestNetwork); err != nil {
+			return fmt.Errorf("post guest network ready: %w", err)
+		}
+	}
+
+	logrus.Debugf("[service] all guest services are ready")
+	return nil
 }
