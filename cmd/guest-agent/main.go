@@ -119,7 +119,7 @@ func run(ctx context.Context, _ *cli.Command) error {
 		return fmt.Errorf("mount virtiofs: %w", err)
 	}
 	go func() {
-		service.Shutdown(ctx)
+		service.WaitAndShutdown()
 	}()
 
 	// 5. Run mode-specific services

@@ -26,6 +26,10 @@ type RunnerProvider struct {
 	cmd *exec.Cmd
 }
 
+func (p *RunnerProvider) GetVMConfig() *define.Machine {
+	return p.mc
+}
+
 func NewRunnerProvider(mc *define.Machine) *RunnerProvider {
 	return &RunnerProvider{mc: mc}
 }
