@@ -70,8 +70,8 @@ func defaultConfig() *clientConfig {
 	return &clientConfig{
 		timeout:             defaultTimeout,
 		idleConnTimeout:     defaultIdleConnTimeout,
-		disableKeepAlives:   true,
-		maxIdleConnsPerHost: 1,
+		disableKeepAlives:   false, // Use standard keep-alive
+		maxIdleConnsPerHost: 0,     // Use Go default (no limit)
 	}
 }
 
