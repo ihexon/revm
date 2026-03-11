@@ -166,7 +166,6 @@ func (v *machineBuilder) setupCmdLine(workdir, bin string, args, envs []string) 
 	return nil
 }
 
-
 func (v *machineBuilder) withBuiltInAlpineRootfs(ctx context.Context) error {
 	if v.WorkspaceDir == "" {
 		return fmt.Errorf("workspace path is empty")
@@ -228,7 +227,6 @@ func (v *machineBuilder) withUserProvidedMounts(dirs []string) error {
 	v.Mounts = append(v.Mounts, mounts...)
 	return nil
 }
-
 
 func (v *machineBuilder) configureGuestAgent(ctx context.Context) error {
 	if v.WorkspaceDir == "" {

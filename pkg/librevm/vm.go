@@ -221,7 +221,7 @@ func (vm *VM) RunChroot(ctx context.Context) error {
 	case <-ctx.Done():
 		return <-svcErrCh
 	case <-vm.machine.Readiness.VNetHostReady:
-		err := vm.svc.StartVirtualMachine(context.Background())
+		err := vm.svc.StartVirtualMachine(ctx)
 		vm.Cancel()
 		<-svcErrCh
 		return err
@@ -308,35 +308,48 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 	case <-ctx.Done():
 		return <-svcErrCh
 	case <-vm.machine.Readiness.VNetHostReady:
-		err := vm.svc.StartVirtualMachine(context.Background())
+		err := vm.svc.StartVirtualMachine(ctx)
 		vm.Cancel()
 		<-svcErrCh
 		return err
 	}
 }
 
-func (vm *VM) WaitAndShutdownMachine(_ context.Context, cancel context.CancelFunc) {
+func (vm *VM) WaitAndShutdownMachine(ctx context.Context, cancel context.CancelFunc) {
+	// Monitor parent process exit
 	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
 		for {
-			if os.Getppid() == 1 {
-				logrus.Info("parent process exited, shutting down machine")
-				_ = vm.svc.StopVirtualMachine()
-				cancel()
+			select {
+			case <-ctx.Done():
 				return
+			case <-ticker.C:
+				if os.Getppid() == 1 {
+					logrus.Info("parent process exited, shutting down machine")
+					_ = vm.svc.StopVirtualMachine()
+					cancel()
+					return
+				}
 			}
-			time.Sleep(100 * time.Millisecond)
 		}
 	}()
 
-	// shutdown when signal
+	// Monitor shutdown signals
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		<-sigCh
+		defer signal.Stop(sigCh)
 
-		logrus.Info("received signal, shutting down")
-		_ = vm.svc.StopVirtualMachine()
-		cancel()
+		select {
+		case <-ctx.Done():
+			return
+		case <-sigCh:
+			logrus.Info("received signal, shutting down")
+			_ = vm.svc.StopVirtualMachine()
+			cancel()
+		}
 	}()
 }
 
