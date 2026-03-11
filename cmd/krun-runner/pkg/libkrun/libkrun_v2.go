@@ -12,10 +12,12 @@ import "C"
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"linuxvm/pkg/system"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"syscall"
@@ -131,7 +133,8 @@ type LibkrunVM struct {
 	stderrPipe     *os.File // write end → krun_add_console_port_inout (non-TTY only)
 	consolePtyMstr *os.File // pty master → backs /dev/console via krun_add_console_port_tty (non-TTY only)
 	consolePtySlv  *os.File // pty slave fd kept alive for C (non-TTY only)
-	guestLogFile   *os.File // → krun_add_console_port_inout
+	guestLogFile   *os.File // → krun_add_console_port_inout (output)
+	signalPipeW    *os.File // write end → host writes signal JSON here
 }
 
 // guestMACAddress is the fixed MAC address for the guest VM network interface.
@@ -305,6 +308,11 @@ func (vm *LibkrunVM) configureGPU() error {
 	return nil
 }
 
+// SIGNAL 通道，Host 写 json 消息，Guest 读取 json 消息
+type signStruct struct {
+	SignalName string `json:"signalName,omitempty"`
+}
+
 func (vm *LibkrunVM) configureMultiportConsole() error {
 	ret := C.krun_disable_implicit_console(C.uint32_t(vm.ctxID))
 	if ret != 0 {
@@ -316,9 +324,25 @@ func (vm *LibkrunVM) configureMultiportConsole() error {
 		return fmt.Errorf("krun_add_virtio_console_multiport failed with code %d", consoleID)
 	}
 
-	// Both TTY and non-TTY add a console port (port 0 → hvc0 → /dev/console).
-	// TTY uses the real terminal fd; non-TTY uses a pty so init's early printf
-	// is captured and fd 0/1/2 exist before setup_redirects() runs.
+	if err := vm.addTTYConsolePort(consoleID); err != nil {
+		return err
+	}
+
+	if !vm.vmc.TTY {
+		if err := vm.addStdioConsolePorts(consoleID); err != nil {
+			return err
+		}
+	}
+
+	if err := vm.addGuestLogConsolePort(consoleID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// addTTYConsolePort adds the main console port (hvc0 → /dev/console).
+func (vm *LibkrunVM) addTTYConsolePort(consoleID C.int32_t) error {
 	var ttyFd int
 	if vm.vmc.TTY {
 		logrus.Infof("running in tty mode (stdin, stdout and stderr are all terminals)")
@@ -342,7 +366,7 @@ func (vm *LibkrunVM) configureMultiportConsole() error {
 	}
 
 	consoleName := newCString(define.GuestTTYConsoleName)
-	ret = C.krun_add_console_port_tty(C.uint32_t(vm.ctxID), C.uint32_t(consoleID), consoleName.Ptr(), C.int(ttyFd))
+	ret := C.krun_add_console_port_tty(C.uint32_t(vm.ctxID), C.uint32_t(consoleID), consoleName.Ptr(), C.int(ttyFd))
 	consoleName.Free()
 	if ret != 0 {
 		if vm.vmc.TTY {
@@ -350,74 +374,103 @@ func (vm *LibkrunVM) configureMultiportConsole() error {
 		}
 		return fmt.Errorf("krun_add_console_port_tty failed with code %v", ret)
 	}
-
-	// Non-TTY: add named ports for stdio redirection.
-	// init.c:setup_redirects() discovers these by name and dup2's fd 0/1/2.
-	if !vm.vmc.TTY {
-		// Use independent pipes to isolate all stdio from libkrun's O_NONBLOCK.
-		// libkrun sets O_NONBLOCK on the fds it receives; since dup'd fds share the
-		// same file description, that flag would leak back to the terminal pty and
-		// cause other processes (e.g. xxd after `revm ... | xxd`) to get EAGAIN.
-		stdinR, stdinW, err := os.Pipe()
-		if err != nil {
-			return fmt.Errorf("pipe for stdin isolation: %w", err)
-		}
-		go func() {
-			_, _ = io.Copy(stdinW, os.Stdin)
-			_ = stdinW.Close()
-		}()
-
-		stdoutR, stdoutW, err := os.Pipe()
-		if err != nil {
-			return fmt.Errorf("pipe for stdout isolation: %w", err)
-		}
-		go func() {
-			_, _ = io.Copy(os.Stdout, stdoutR)
-		}()
-
-		stderrR, stderrW, err := os.Pipe()
-		if err != nil {
-			return fmt.Errorf("pipe for stderr isolation: %w", err)
-		}
-		go func() {
-			_, _ = io.Copy(os.Stderr, stderrR)
-		}()
-
-		type portSpec struct {
-			name  string
-			inFd  C.int
-			outFd C.int
-		}
-		ports := []portSpec{
-			{define.KrunStdinPortName, C.int(stdinR.Fd()), C.int(-1)},
-			{define.KrunStdoutPortName, C.int(-1), C.int(stdoutW.Fd())},
-			{define.KrunStderrPortName, C.int(-1), C.int(stderrW.Fd())},
-		}
-		for _, p := range ports {
-			pName := newCString(p.name)
-			ret := C.krun_add_console_port_inout(
-				C.uint32_t(vm.ctxID),
-				C.uint32_t(consoleID),
-				pName.Ptr(),
-				p.inFd,
-				p.outFd,
-			)
-			pName.Free()
-			if ret != 0 {
-				return fmt.Errorf("krun_add_console_port_inout(%s) failed with code %v", p.name, ret)
-			}
-		}
-
-		vm.stdinPipe = stdinR
-		vm.stdoutPipe = stdoutW
-		vm.stderrPipe = stderrW
-	}
-
-	return vm.addGuestConsoleLogPort(C.uint32_t(consoleID))
+	return nil
 }
 
-// addGuestConsoleLogPort opens the guest log file and registers it as an inout console port.
-func (vm *LibkrunVM) addGuestConsoleLogPort(consoleID C.uint32_t) error {
+// addStdioConsolePorts adds named ports for stdin/stdout/stderr redirection (non-TTY mode only).
+func (vm *LibkrunVM) addStdioConsolePorts(consoleID C.int32_t) error {
+	// Use independent pipes to isolate all stdio from libkrun's O_NONBLOCK.
+	stdinR, stdinW, err := os.Pipe()
+	if err != nil {
+		return fmt.Errorf("pipe for stdin isolation: %w", err)
+	}
+	go func() {
+		_, _ = io.Copy(stdinW, os.Stdin)
+		_ = stdinW.Close()
+	}()
+
+	stdoutR, stdoutW, err := os.Pipe()
+	if err != nil {
+		return fmt.Errorf("pipe for stdout isolation: %w", err)
+	}
+	go func() {
+		_, _ = io.Copy(os.Stdout, stdoutR)
+	}()
+
+	stderrR, stderrW, err := os.Pipe()
+	if err != nil {
+		return fmt.Errorf("pipe for stderr isolation: %w", err)
+	}
+	go func() {
+		_, _ = io.Copy(os.Stderr, stderrR)
+	}()
+
+	type portSpec struct {
+		name  string
+		inFd  C.int
+		outFd C.int
+	}
+	ports := []portSpec{
+		{define.KrunStdinPortName, C.int(stdinR.Fd()), C.int(-1)},
+		{define.KrunStdoutPortName, C.int(-1), C.int(stdoutW.Fd())},
+		{define.KrunStderrPortName, C.int(-1), C.int(stderrW.Fd())},
+	}
+	for _, p := range ports {
+		pName := newCString(p.name)
+		ret := C.krun_add_console_port_inout(
+			C.uint32_t(vm.ctxID),
+			C.uint32_t(consoleID),
+			pName.Ptr(),
+			p.inFd,
+			p.outFd,
+		)
+		pName.Free()
+		if ret != 0 {
+			return fmt.Errorf("krun_add_console_port_inout(%s) failed with code %v", p.name, ret)
+		}
+	}
+
+	vm.stdinPipe = stdinR
+	vm.stdoutPipe = stdoutW
+	vm.stderrPipe = stderrW
+	return nil
+}
+
+// setupSignalForwarding creates a pipe and starts a goroutine to forward host signals to guest.
+func (vm *LibkrunVM) setupSignalForwarding() (*os.File, error) {
+	sigR, sigW, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("pipe for signal: %w", err)
+	}
+	vm.signalPipeW = sigW
+
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+		defer signal.Stop(sigCh)
+
+		for sig := range sigCh {
+			b, err := json.Marshal(signStruct{SignalName: sig.String()})
+			if err != nil {
+				continue
+			}
+			if _, err := sigW.Write(b); err != nil {
+				return
+			}
+			_, _ = sigW.WriteString("\n")
+		}
+	}()
+
+	return sigR, nil
+}
+
+// addGuestLogConsolePort adds the guest-logs port with signal input and log output.
+func (vm *LibkrunVM) addGuestLogConsolePort(consoleID C.int32_t) error {
+	sigR, err := vm.setupSignalForwarding()
+	if err != nil {
+		return err
+	}
+
 	f, err := os.OpenFile(vm.vmc.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		return err
@@ -428,10 +481,11 @@ func (vm *LibkrunVM) addGuestConsoleLogPort(consoleID C.uint32_t) error {
 
 	ret := C.krun_add_console_port_inout(
 		C.uint32_t(vm.ctxID),
-		consoleID,
+		C.uint32_t(consoleID),
 		name.Ptr(),
-		C.int(-1),
-		C.int(f.Fd()))
+		C.int(sigR.Fd()),
+		C.int(f.Fd()),
+	)
 	if ret != 0 {
 		_ = f.Close()
 		return fmt.Errorf("krun_add_console_port_inout(%s) failed with code %v", define.GuestLogConsolePort, ret)
@@ -688,6 +742,12 @@ func (vm *LibkrunVM) applyGuestAgentCfg() error {
 // The caller must ensure this runs on a locked OS thread.
 func (vm *LibkrunVM) enterVMLifecycle(ctx context.Context) error {
 	ret := C.krun_start_enter(C.uint32_t(vm.ctxID))
+
+	// VM has exited, close signal pipe to stop the signal handler goroutine
+	if vm.signalPipeW != nil {
+		_ = vm.signalPipeW.Close()
+	}
+
 	if ret != 0 {
 		errno := syscall.Errno(-ret)
 		return fmt.Errorf("VM execution failed: %w (libkrun code: %d)", errno, ret)
