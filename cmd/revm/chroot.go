@@ -93,7 +93,11 @@ var startRootfs = cli.Command{
 	Action: rootfsLifeCycle,
 }
 
-func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
+func rootfsLifeCycle(_ context.Context, command *cli.Command) error {
+	// 屏蔽上层 ctx，防止上游 ctx 导致 vm 意外退出
+	// 如果要安全停止虚拟机，应该呼叫 cancel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	cfg := librevm.DefaultConfig().
 		WithMode(librevm.ModeRootfs).
 		WithName(command.String(define.FlagSessionID)).
@@ -138,6 +142,7 @@ func rootfsLifeCycle(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	vm.Cancel = cancel
 
 	defer vm.Close()
 

@@ -16,64 +16,78 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type HostServices struct {
-	vmc *define.Machine
+type HostServices interface {
+	StartPodmanProxy(ctx context.Context) error
+	StartNetworkStack(ctx context.Context) error
+	StartIgnitionService(ctx context.Context) error
+	StartMachineManagementAPI(ctx context.Context) error
+	StartVirtualMachine(ctx context.Context) error
+	StopVirtualMachine() error
+}
+
+type Service struct {
 	vmp interfaces.VMMProvider
 }
 
-func NewHostServices(vmc *define.Machine, vmp interfaces.VMMProvider) *HostServices {
-	return &HostServices{vmc: vmc, vmp: vmp}
+func NewHostServices(vmp interfaces.VMMProvider) *Service {
+	return &Service{vmp: vmp}
 }
 
-func (s *HostServices) StartPodmanProxy(ctx context.Context) error {
-	if s.vmc.RunMode != define.ContainerMode.String() {
+func (s *Service) StartPodmanProxy(ctx context.Context) error {
+	vmc := s.vmp.GetVMConfig()
+	if vmc.RunMode != define.ContainerMode.String() {
 		return nil
 	}
 
-	switch s.vmc.VirtualNetworkMode {
+	switch vmc.VirtualNetworkMode {
 	case define.GVISOR:
-		_, portStr, _ := net.SplitHostPort(s.vmc.PodmanInfo.GuestPodmanAPIListenAddr)
+		_, portStr, _ := net.SplitHostPort(vmc.PodmanInfo.GuestPodmanAPIListenAddr)
 		port, _ := strconv.ParseUint(portStr, 10, 16)
-		logrus.Infof("podman proxy listening in %s, forward to %s", s.vmc.PodmanInfo.HostPodmanProxyAddr, s.vmc.PodmanInfo.GuestPodmanAPIListenAddr)
+		logrus.Infof("podman proxy listening in %s, forward to %s", vmc.PodmanInfo.HostPodmanProxyAddr, vmc.PodmanInfo.GuestPodmanAPIListenAddr)
 		return gvproxy.TunnelHostUnixToGuest(ctx,
-			s.vmc.GVPCtlAddr,
-			s.vmc.PodmanInfo.HostPodmanProxyAddr,
+			vmc.GVPCtlAddr,
+			vmc.PodmanInfo.HostPodmanProxyAddr,
 			define.GuestIP,
 			uint16(port))
 	case define.TSI:
 		f := &network.LocalForwarder{
-			UnixSockAddr: s.vmc.PodmanInfo.HostPodmanProxyAddr,
-			Target:       s.vmc.PodmanInfo.GuestPodmanAPIListenAddr,
+			UnixSockAddr: vmc.PodmanInfo.HostPodmanProxyAddr,
+			Target:       vmc.PodmanInfo.GuestPodmanAPIListenAddr,
 			Timeout:      1 * time.Second,
 		}
 		return f.Run(ctx)
 	default:
-		return fmt.Errorf("unsupported virtual network mode: %s", s.vmc.VirtualNetworkMode)
+		return fmt.Errorf("unsupported virtual network mode: %s", vmc.VirtualNetworkMode)
 	}
 }
 
-func (s *HostServices) StartNetworkStack(ctx context.Context) error {
-	if s.vmc.VirtualNetworkMode == define.TSI {
+func (s *Service) StartNetworkStack(ctx context.Context) error {
+	vmc := s.vmp.GetVMConfig()
+	if vmc.VirtualNetworkMode == define.TSI {
 		return nil
 	}
 
 	logrus.Info("starting gvisor-tap-vsock network stack")
-	return gvproxy.Run(ctx, s.vmc)
+	return gvproxy.Run(ctx, vmc)
 }
 
-func (s *HostServices) StartIgnitionService(ctx context.Context) error {
-	server := ignition.NewServer(s.vmc)
+func (s *Service) StartIgnitionService(ctx context.Context) error {
+	server := ignition.NewServer(s.vmp.GetVMConfig())
 	return server.Start(ctx)
 }
 
-func (s *HostServices) StartMachineManagementAPI(ctx context.Context, stopFn func()) error {
-	server, err := management.NewServer(s.vmc, stopFn)
+func (s *Service) StartMachineManagementAPI(ctx context.Context) error {
+	server, err := management.NewServer(s.vmp)
 	if err != nil {
 		return fmt.Errorf("create management server: %w", err)
 	}
 	return server.Start(ctx)
 }
 
-func (s *HostServices) StartVirtualMachine(ctx context.Context) error {
+func (s *Service) StartVirtualMachine(ctx context.Context) error {
 	return s.vmp.Start(ctx)
+}
+
+func (s *Service) StopVirtualMachine() error {
+	return s.vmp.Stop()
 }

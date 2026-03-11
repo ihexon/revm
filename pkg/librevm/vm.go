@@ -14,7 +14,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -31,14 +30,11 @@ type VM struct {
 
 	machine         *define.Machine
 	provider        interfaces.VMMProvider
-	svc             hostServices
+	svc             lifecycle.HostServices
 	sessionDir      string
 	cleanup         func()
 	eventDispatcher eventDispatcher
 	Cancel          context.CancelFunc
-
-	mu    sync.Mutex
-	state vmState
 
 	seq atomic.Uint64
 }
@@ -56,41 +52,14 @@ func newProvider(mc *define.Machine) (*krunrunner.RunnerProvider, error) {
 	return krunrunner.NewRunnerProvider(mc), nil
 }
 
-// vmState 表示 VM 的生命周期状态（单调递增）。
-type vmState uint8
-
-const (
-	vmStateNew      vmState = iota // New() 成功后的初始状态
-	vmStateRunning                 // Run() 正在执行中
-	vmStateStopping                // Stop() 已被调用
-	vmStateStopped                 // Run() 已返回
-	vmStateClosed                  // Close() 已被调用
-)
-
 // Close 释放所有资源（文件锁、workspace 目录、event eventDispatcher）。
 // 必须始终调用，即使 Run() 从未被调用。幂等。
 func (vm *VM) Close() error {
-	vm.mu.Lock()
-	if vm.state == vmStateClosed {
-		vm.mu.Unlock()
-		return nil
-	}
-	vm.state = vmStateClosed
-	vm.mu.Unlock()
-
 	if vm.cleanup != nil {
 		vm.cleanup()
 	}
 	vm.eventDispatcher.close()
 	return nil
-}
-
-type hostServices interface {
-	StartPodmanProxy(ctx context.Context) error
-	StartNetworkStack(ctx context.Context) error
-	StartIgnitionService(ctx context.Context) error
-	StartMachineManagementAPI(ctx context.Context, stopFn func()) error
-	StartVirtualMachine(ctx context.Context) error
 }
 
 func New(cfg *Config) (*VM, error) {
@@ -106,8 +75,6 @@ func New(cfg *Config) (*VM, error) {
 	vm := &VM{
 		cfg:        &normalizedCfg,
 		sessionDir: getSessionDir(normalizedCfg.SessionID),
-		state:      vmStateNew,
-		Cancel:     nil,
 	}
 
 	for _, r := range cfg.Reporters {
@@ -139,7 +106,7 @@ func (vm *VM) init(ctx context.Context) error {
 
 	vm.machine = mc
 	vm.provider = vmp
-	vm.svc = lifecycle.NewHostServices(mc, vmp)
+	vm.svc = lifecycle.NewHostServices(vmp)
 	vm.cleanup = cleanup
 	return nil
 }
@@ -183,25 +150,6 @@ func (vm *VM) createUserSymlinks() error {
 // services, and returns the VM's exit error. It blocks for the lifetime
 // of the VM.
 func (vm *VM) Run(ctx context.Context) error {
-	vm.mu.Lock()
-	if vm.state == vmStateClosed {
-		vm.mu.Unlock()
-		return fmt.Errorf("vm is closed")
-	}
-	if vm.state != vmStateNew {
-		vm.mu.Unlock()
-		return fmt.Errorf("vm already started")
-	}
-	vm.state = vmStateRunning
-	vm.mu.Unlock()
-	defer func() {
-		vm.mu.Lock()
-		if vm.state == vmStateRunning || vm.state == vmStateStopping {
-			vm.state = vmStateStopped
-		}
-		vm.mu.Unlock()
-	}()
-
 	if err := vm.init(ctx); err != nil {
 		return err
 	}
@@ -231,7 +179,7 @@ func (vm *VM) Run(ctx context.Context) error {
 
 	// start virtual machine management API
 	g.Go(func() error {
-		return vm.svc.StartMachineManagementAPI(ctx, vm.Cancel)
+		return vm.svc.StartMachineManagementAPI(ctx)
 	})
 
 	// start podman api proxy
@@ -281,7 +229,7 @@ func (vm *VM) Run(ctx context.Context) error {
 	}()
 
 	go func() {
-		vm.WaitAndShutdownMachine(vm.Cancel)
+		vm.WaitAndShutdownMachine(ctx, vm.Cancel)
 	}()
 
 	svcErrCh := make(chan error, 1)
@@ -301,12 +249,12 @@ func (vm *VM) Run(ctx context.Context) error {
 	}
 }
 
-func (vm *VM) WaitAndShutdownMachine(cancel context.CancelFunc) {
+func (vm *VM) WaitAndShutdownMachine(_ context.Context, cancel context.CancelFunc) {
 	go func() {
 		for {
 			if os.Getppid() == 1 {
 				logrus.Info("parent process exited, shutting down machine")
-				_ = vm.provider.Stop()
+				_ = vm.svc.StopVirtualMachine()
 				cancel()
 				return
 			}
@@ -321,7 +269,7 @@ func (vm *VM) WaitAndShutdownMachine(cancel context.CancelFunc) {
 		<-sigCh
 
 		logrus.Info("received signal, shutting down")
-		_ = vm.provider.Stop()
+		_ = vm.svc.StopVirtualMachine()
 		cancel()
 	}()
 }

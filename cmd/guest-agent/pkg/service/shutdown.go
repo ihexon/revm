@@ -1,8 +1,10 @@
 package service
 
 import (
-	"context"
+	"os"
 	"os/exec"
+	"os/signal"
+	"syscall"
 
 	"github.com/sirupsen/logrus"
 )
@@ -29,9 +31,10 @@ func (s *Step) PowerOff() {
 	_ = exec.Command("poweroff", "-f").Run()
 }
 
-// 暂时不调用
-func Shutdown(ctx context.Context) {
-	<-ctx.Done()
+func WaitAndShutdown() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+	<-sigCh
 
 	stepS := &Step{
 		podmanStop: make(chan bool),
@@ -49,7 +52,6 @@ func Shutdown(ctx context.Context) {
 
 	<-stepS.podmanStop
 	<-stepS.diskSync
-	logrus.Infof("poweroff machine...")
+
 	stepS.PowerOff()
-	return
 }

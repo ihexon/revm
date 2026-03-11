@@ -10,6 +10,7 @@ import (
 	"io"
 	"linuxvm/pkg/define"
 	httpv2 "linuxvm/pkg/http"
+	"linuxvm/pkg/interfaces"
 	sshsvc "linuxvm/pkg/service/ssh"
 	ssev2 "linuxvm/pkg/sse"
 	"net/http"
@@ -21,10 +22,9 @@ import (
 )
 
 type Server struct {
-	vmc    *define.Machine
-	srv    *httpv2.Server
-	sse    *ssev2.Server
-	stopFn func()
+	srv *httpv2.Server
+	sse *ssev2.Server
+	vmp interfaces.VMMProvider
 }
 
 type errResponse struct {
@@ -37,11 +37,12 @@ func writeJSON(w http.ResponseWriter, code int, value interface{}) {
 	_ = json.NewEncoder(w).Encode(value) //nolint:errchkjson
 }
 
-func NewServer(vmc *define.Machine, stopFn func()) (*Server, error) {
-	if stopFn == nil {
-		return nil, fmt.Errorf("stop callback must not be nil")
-	}
-	return &Server{vmc: vmc, srv: httpv2.NewUnixSockHTTPServer("management-api", vmc.VMCtlAddr), sse: ssev2.NewSSEServer(), stopFn: stopFn}, nil
+func NewServer(vmp interfaces.VMMProvider) (*Server, error) {
+	return &Server{
+		vmp: vmp,
+		srv: httpv2.NewUnixSockHTTPServer("management-api", vmp.GetVMConfig().VMCtlAddr),
+		sse: ssev2.NewSSEServer(),
+	}, nil
 }
 
 func (s *Server) Start(ctx context.Context) error {
@@ -71,12 +72,13 @@ func (s *Server) handleOVMInfo(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	podmanProxyaddr, err := url.Parse(s.vmc.PodmanInfo.HostPodmanProxyAddr)
+	vmc := s.vmp.GetVMConfig()
+	podmanProxyaddr, err := url.Parse(vmc.PodmanInfo.HostPodmanProxyAddr)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errResponse{Error: err.Error()})
 		return
 	}
-	sshProxyAddr, err := url.Parse(fmt.Sprintf("tcp://%s", s.vmc.SSHInfo.HostSSHProxyListenAddr))
+	sshProxyAddr, err := url.Parse(fmt.Sprintf("tcp://%s", vmc.SSHInfo.HostSSHProxyListenAddr))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errResponse{Error: err.Error()})
 		return
@@ -102,7 +104,7 @@ func (s *Server) handleVMConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.vmc)
+	writeJSON(w, http.StatusOK, s.vmp.GetVMConfig())
 }
 
 func (s *Server) handleOVMRequestVMStop(w http.ResponseWriter, r *http.Request) {
@@ -114,8 +116,8 @@ func (s *Server) handleRequestVMStop(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
+	_ = s.vmp.Stop()
 	writeJSON(w, http.StatusOK, nil)
-	s.stopFn()
 }
 
 type execRequest struct {
@@ -143,7 +145,8 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) executeCommand(ctx context.Context, cancel context.CancelFunc, topic string, req execRequest) {
 	defer cancel()
-	proc, err := sshsvc.GuestExec(ctx, s.vmc, req.Bin, req.Args...)
+	vmc := s.vmp.GetVMConfig()
+	proc, err := sshsvc.GuestExec(ctx, vmc, req.Bin, req.Args...)
 	if err != nil {
 		s.sse.Publish(topic, ssev2.TypeErr, "guest exec failed: "+err.Error())
 		return
@@ -197,7 +200,7 @@ func (s *Server) handleLegacyExec(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) executeLegacyCommand(ctx context.Context, cancel context.CancelFunc, topic string, command string) {
 	defer cancel()
-	sshClient, err := sshsvc.MakeSSHClient(ctx, s.vmc)
+	sshClient, err := sshsvc.MakeSSHClient(ctx, s.vmp.GetVMConfig())
 	if err != nil {
 		s.sse.Publish(topic, ssev2.TypeErr, "dial ssh: "+err.Error())
 		return
