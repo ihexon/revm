@@ -21,7 +21,7 @@
 //	if err := client.Shell(ctx); err != nil {
 //	    return err
 //	}
-package ssh_v2
+package ssh
 
 import (
 	"context"

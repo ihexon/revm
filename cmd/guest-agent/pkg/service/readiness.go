@@ -5,7 +5,7 @@ import (
 	"io"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
-	"linuxvm/pkg/ssh_v2"
+	"linuxvm/pkg/ssh"
 	"net"
 	"net/http"
 	"os"
@@ -44,9 +44,9 @@ func (r *Readiness) IsSSHReady(ctx context.Context) bool {
 		case <-ticker.C:
 			logrus.Debugf("[readiness] check ssh ready")
 			_, portStr, _ := net.SplitHostPort(r.vmc.SSHInfo.GuestSSHServerListenAddr)
-			client, err := ssh_v2.Dial(ctx, net.JoinHostPort(define.LocalHost, portStr),
-				ssh_v2.WithPrivateKey(tmpKey),
-				ssh_v2.WithUser(define.DefaultGuestUser),
+			client, err := ssh.Dial(ctx, net.JoinHostPort(define.LocalHost, portStr),
+				ssh.WithPrivateKey(tmpKey),
+				ssh.WithUser(define.DefaultGuestUser),
 			)
 
 			if err != nil {

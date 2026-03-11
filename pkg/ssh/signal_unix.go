@@ -1,6 +1,6 @@
 //go:build !windows
 
-package ssh_v2
+package ssh
 
 import (
 	"os"
