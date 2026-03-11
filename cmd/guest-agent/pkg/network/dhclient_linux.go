@@ -16,7 +16,9 @@ import (
 )
 
 func DHClient4(ctx context.Context, ifName string, attempts int) error {
-	ife, err := bringInterfaceUpFast(ifName)
+	// Wait for the interface to appear — the VMM may not have created
+	// the virtual NIC by the time the guest-agent starts.
+	ife, err := waitInterfaceUp(ctx, ifName)
 	if err != nil {
 		return fmt.Errorf("failed to bring interface %q up: %w", ifName, err)
 	}
@@ -31,6 +33,24 @@ func DHClient4(ctx context.Context, ifName string, attempts int) error {
 	}
 
 	return nil
+}
+
+func waitInterfaceUp(ctx context.Context, ifName string) (*net.Interface, error) {
+	ticker := time.NewTicker(define.DefaultTimeTicker)
+	defer ticker.Stop()
+
+	for {
+		ife, err := bringInterfaceUpFast(ifName)
+		if err == nil {
+			return ife, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("waiting for interface %q: %w", ifName, ctx.Err())
+		case <-ticker.C:
+		}
+	}
 }
 
 func bringInterfaceUpFast(ifName string) (*net.Interface, error) {

@@ -135,5 +135,5 @@ func dockerLifeCycle(_ context.Context, command *cli.Command) error {
 
 	defer vm.Close()
 
-	return vm.Run(ctx)
+	return vm.RunDocker(ctx)
 }

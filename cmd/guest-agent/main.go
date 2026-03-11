@@ -40,7 +40,7 @@ func setupLogger() error {
 func setupGuestLogAndSignalPort(ctx context.Context) {
 	f, err := openVirtioPort(define.GuestLogConsolePort, os.O_RDWR)
 	if err != nil {
-		logrus.Debugf("guest-log port not available: %w", err)
+		logrus.Debugf("guest-log port not available: %v", err)
 		return
 	}
 
@@ -170,11 +170,11 @@ func run(ctx context.Context, _ *cli.Command) error {
 func userRootfsMode(ctx context.Context, vmc *define.Machine) error {
 	logrus.Info("running in rootfs mode")
 
-	g, ctx := errgroup.WithContext(ctx)
+	if err := service.ConfigureNetwork(ctx, (*machine.Machine)(vmc).GetVirtualNetworkType()); err != nil {
+		return fmt.Errorf("configure network: %w", err)
+	}
 
-	g.Go(func() error {
-		return service.ConfigureNetwork(ctx, (*machine.Machine)(vmc).GetVirtualNetworkType())
-	})
+	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
 		return service.StartGuestSSHServer(ctx, vmc)
@@ -188,9 +188,11 @@ func userRootfsMode(ctx context.Context, vmc *define.Machine) error {
 		return exitCode(service.DoExecCmdLine(ctx, vmc))
 	})
 
-	g.Go(func() error {
-		return machine.WaitGuestServiceReady(ctx, vmc)
-	})
+	go func() {
+		if err := machine.WaitGuestServiceReady(ctx, vmc); err != nil {
+			logrus.Warnf("readiness probe failed: %v", err)
+		}
+	}()
 
 	errChan := make(chan error, 1)
 	go func() {
@@ -213,11 +215,14 @@ func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
 		return fmt.Errorf("setup container storage: %w", err)
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
+	// Configure network before starting services — it's a prerequisite,
+	// not a parallel task. If DHCP fails (e.g. eth0 not yet created by VMM),
+	// we don't want to cancel already-running services.
+	if err := service.ConfigureNetwork(ctx, (*machine.Machine)(vmc).GetVirtualNetworkType()); err != nil {
+		return fmt.Errorf("configure network: %w", err)
+	}
 
-	g.Go(func() error {
-		return service.ConfigureNetwork(ctx, (*machine.Machine)(vmc).GetVirtualNetworkType())
-	})
+	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
 		return service.StartPodmanAPIServices(ctx, vmc)
@@ -227,14 +232,18 @@ func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
 		return service.StartGuestSSHServer(ctx, vmc)
 	})
 
-	// time sync error does not matter
 	g.Go(func() error {
 		return service.SyncRTCTime(ctx)
 	})
 
-	g.Go(func() error {
-		return machine.WaitGuestServiceReady(ctx, vmc)
-	})
+	// Run readiness probes outside the errgroup so a transient probe failure
+	// (e.g. vsock PostReady EOF) does not cancel long-running services.
+	// The probes still share ctx, so if a service dies the probes stop too.
+	go func() {
+		if err := machine.WaitGuestServiceReady(ctx, vmc); err != nil {
+			logrus.Warnf("readiness probe failed: %v", err)
+		}
+	}()
 
 	errChan := make(chan error, 1)
 	go func() {
