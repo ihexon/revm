@@ -50,6 +50,40 @@ func (vm *VM) Run(ctx context.Context) error // Deprecated
 - 信号转发：转发给子进程和自己
 - 触发优雅关闭流程
 
+### 4. CLI Flag 统一 ✅
+
+**重构前**: chroot.go 和 docker.go 重复定义 flag (336 行)
+**重构后**: 提取到 flags.go 共享定义
+
+```
+cmd/revm/
+├── flags.go   - 共享 flag 定义 (87 行)
+├── chroot.go  - Rootfs 模式 (102 行, -48 行)
+└── docker.go  - Container 模式 (139 行, -47 行)
+```
+
+**改进**:
+- 消除重复：减少 95 行重复代码
+- 统一定义：flag 定义集中管理
+- 易于维护：修改一处即可
+
+### 5. librevm 模块拆分 ✅
+
+**重构前**: machine.go 单文件 (832 行)
+**重构后**: 拆分为 3 个模块
+
+```
+pkg/librevm/
+├── machine.go  - 核心 builder 逻辑 (693 行, -139 行)
+├── paths.go    - 路径管理 (54 行)
+└── network.go  - 网络策略 (109 行)
+```
+
+**改进**:
+- 职责分离：路径、网络独立模块
+- 降低复杂度：单文件从 832 降至 693 行
+- 提高可读性：相关代码聚合
+
 ## 架构改进
 
 ### 模块化设计
@@ -65,28 +99,32 @@ func (vm *VM) Run(ctx context.Context) error // Deprecated
 
 ### 代码简化
 
-**减少代码量**: 20% (750→600 行)
-**提高可读性**: 文件平均 100 行
+**减少代码量**:
+- krun-runner: -20% (750→600 行)
+- cmd/revm: -8 行 (566→558 行)
+- librevm: -139 行 (832→693 行)
+
+**提高可读性**: 文件平均 100-200 行
 **降低复杂度**: 消除嵌套和重复
 
 ## 下一步建议
 
 ### 高优先级
 
-1. **统一 CLI Flag 定义** (cmd/revm)
-   - 当前：chroot.go 和 docker.go 重复定义
-   - 目标：提取到 flags.go，共享定义
-   - 预期：减少 200+ 行重复代码
+1. ~~**统一 CLI Flag 定义** (cmd/revm)~~ ✅
+   - ~~当前：chroot.go 和 docker.go 重复定义~~
+   - ~~目标：提取到 flags.go，共享定义~~
+   - ~~预期：减少 200+ 行重复代码~~
 
-2. **拆分 machine.go** (pkg/librevm)
-   - 当前：832 行单文件
-   - 目标：拆分为 builder.go, paths.go, network.go
-   - 预期：每个文件 200-300 行
+2. ~~**拆分 machine.go** (pkg/librevm)~~ ✅
+   - ~~当前：832 行单文件~~
+   - ~~目标：拆分为 builder.go, paths.go, network.go~~
+   - ~~预期：每个文件 200-300 行~~
 
 3. **简化 guest-agent** (cmd/guest-agent)
    - 当前：main.go 251 行 + 多个 service 文件
-   - 目标：合并相关服务，减少文件数
-   - 预期：减少到 3-4 个核心文件
+   - 状态：结构已经相对清晰，暂不需要大改
+   - 建议：保持现状，按需优化
 
 ### 中优先级
 
@@ -127,8 +165,8 @@ func (vm *VM) Run(ctx context.Context) error // Deprecated
 
 ### 量化指标
 
-- 代码量：-20% (krun-runner)
-- 文件数：+4 (但更清晰)
+- 代码量：-20% (krun-runner), -17% (machine.go)
+- 文件数：+7 (但更清晰)
 - 平均文件大小：150 行
 - 函数平均长度：20 行
 
