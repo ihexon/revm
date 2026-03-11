@@ -16,7 +16,10 @@ import (
 	"linuxvm/pkg/define"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"unsafe"
+
+	"github.com/sirupsen/logrus"
 )
 
 // VM wraps libkrun context and manages VM lifecycle.
@@ -192,7 +195,11 @@ func (a *cstringArray) free() {
 
 func must(ret C.int32_t) {
 	if ret != 0 {
-		panic(errCode(ret))
+		err := errCode(ret)
+		logrus.Errorf("libkrun fatal error: %v", err)
+		// Log stack trace for debugging
+		logrus.Errorf("stack trace: %s", debug.Stack())
+		panic(err)
 	}
 }
 

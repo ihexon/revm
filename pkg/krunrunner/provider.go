@@ -93,16 +93,31 @@ func (p *RunnerProvider) Stop() error {
 	cmd := p.cmd
 	p.mu.Unlock()
 
-	if cmd != nil && cmd.Process != nil {
-		_ = cmd.Process.Signal(syscall.SIGTERM)
-
-		go func() {
-			time.Sleep(15 * time.Second)
-			_ = cmd.Process.Kill()
-		}()
+	if cmd == nil || cmd.Process == nil {
+		return nil
 	}
 
-	return nil
+	// Send SIGTERM and wait with timeout
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		logrus.Warnf("failed to send SIGTERM: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(15 * time.Second):
+		logrus.Warn("process did not exit after SIGTERM, sending SIGKILL")
+		if err := cmd.Process.Kill(); err != nil {
+			logrus.Warnf("failed to kill process: %v", err)
+		}
+		<-done
+		return nil
+	}
 }
 
 // resolveRunnerPath 查找 krun-runner 二进制

@@ -41,8 +41,14 @@ func (s *Service) StartPodmanProxy(ctx context.Context) error {
 
 	switch vmc.VirtualNetworkMode {
 	case define.GVISOR:
-		_, portStr, _ := net.SplitHostPort(vmc.PodmanInfo.GuestPodmanAPIListenAddr)
-		port, _ := strconv.ParseUint(portStr, 10, 16)
+		_, portStr, err := net.SplitHostPort(vmc.PodmanInfo.GuestPodmanAPIListenAddr)
+		if err != nil {
+			return fmt.Errorf("invalid guest podman address %q: %w", vmc.PodmanInfo.GuestPodmanAPIListenAddr, err)
+		}
+		port, err := strconv.ParseUint(portStr, 10, 16)
+		if err != nil {
+			return fmt.Errorf("invalid port in guest podman address %q: %w", portStr, err)
+		}
 		logrus.Infof("podman proxy listening in %s, forward to %s", vmc.PodmanInfo.HostPodmanProxyAddr, vmc.PodmanInfo.GuestPodmanAPIListenAddr)
 		return gvproxy.TunnelHostUnixToGuest(ctx,
 			vmc.GVPCtlAddr,
