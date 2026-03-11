@@ -452,21 +452,26 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 	}
 
 	cleanupCallbacks.AddFunc(func() { logrus.SetOutput(os.Stderr); _ = logFile.Close() })
+
 	if err := mBuilder.configureSSH(); err != nil {
 		return nil, nil, fmt.Errorf("generate ssh config: %w", err)
 	}
+
 	if err := mBuilder.withResources(cfg.MemoryMB, uint8(cfg.CPUs)); err != nil {
 		return nil, nil, fmt.Errorf("set resources: %w", err)
 	}
+
 	if err := mBuilder.configureNetwork(ctx, define.VNetMode(cfg.Network)); err != nil {
 		return nil, nil, fmt.Errorf("configure network: %w", err)
 	}
+
 	if cfg.Proxy {
 		if err := mBuilder.applySystemProxy(); err != nil {
 			return nil, nil, fmt.Errorf("apply system proxy: %w", err)
 		}
 	}
 
+	logrus.Info("Preparing rootfs...")
 	if cfg.Rootfs != "" {
 		if err := mBuilder.withUserProvidedRootfs(ctx, cfg.Rootfs); err != nil {
 			return nil, nil, err
@@ -503,11 +508,14 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 		if cfg.ContainerDisk != "" {
 			diskPath = cfg.ContainerDisk
 		}
+
 		if cfg.ContainerDiskVersion != "" {
 			if err := mBuilder.resetOrReuseContainerRAWDisk(ctx, diskPath, cfg.ContainerDiskVersion); err != nil {
 				return nil, nil, fmt.Errorf("check container disk version: %w", err)
 			}
 		}
+
+		logrus.Info("Preparing container storage disk...")
 		if err := mBuilder.configureContainerRAWDisk(ctx, diskPath); err != nil {
 			return nil, nil, fmt.Errorf("setup container disk: %w", err)
 		}
@@ -523,9 +531,11 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 			return nil, nil, fmt.Errorf("setup mounts: %w", err)
 		}
 	}
+
 	if err := mBuilder.configureGuestAgent(ctx); err != nil {
 		return nil, nil, fmt.Errorf("configure guest agent: %w", err)
 	}
+
 	if err := mBuilder.configureVMCtlAPI(); err != nil {
 		return nil, nil, fmt.Errorf("configure vmctl API: %w", err)
 	}
