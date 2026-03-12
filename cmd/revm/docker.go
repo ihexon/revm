@@ -82,28 +82,15 @@ func dockerLifeCycle(_ context.Context, command *cli.Command) error {
 		WithNetwork(command.String(define.FlagVNetworkType)).
 		WithProxy(command.Bool(define.FlagUsingSystemProxy)).
 		WithLogLevel(command.String(define.FlagLogLevel)).
+		WithLogTo(command.String(define.FlagLogTo)).
 		WithDisk(command.StringSlice(define.FlagRawDisk)...).
-		WithMount(command.StringSlice(define.FlagMount)...)
-
-	if cd := command.String(define.FlagContainerDisk); cd != "" {
-		cfg.WithContainerDisk(cd)
-	}
-
-	if p := command.String(define.FlagPodmanProxyAPIFile); p != "" {
-		cfg.WithPodmanProxyAPIFile(p)
-	}
-	if m := command.String(define.FlagManageAPIFile); m != "" {
-		cfg.WithManageAPIFile(m)
-	}
-	if sk := command.String(define.FlagSSHKeyDir); sk != "" {
-		cfg.WithSSHKeyDir(sk)
-	}
-	if pk := command.String(define.FlagExportSSHKeyPrivateFile); pk != "" {
-		cfg.WithExportSSHKeyPrivateFile(pk)
-	}
-	if pub := command.String(define.FlagExportSSHKeyPublicFile); pub != "" {
-		cfg.WithExportSSHKeyPublicFile(pub)
-	}
+		WithMount(command.StringSlice(define.FlagMount)...).
+		WithContainerDisk(command.String(define.FlagContainerDisk)).
+		WithPodmanProxyAPIFile(command.String(define.FlagPodmanProxyAPIFile)).
+		WithManageAPIFile(command.String(define.FlagManageAPIFile)).
+		WithSSHKeyDir(command.String(define.FlagSSHKeyDir)).
+		WithExportSSHKeyPrivateFile(command.String(define.FlagExportSSHKeyPrivateFile)).
+		WithExportSSHKeyPublicFile(command.String(define.FlagExportSSHKeyPublicFile))
 
 	// if legacy event reporter is set, use it
 	if u := command.String(define.FlagOVMReportURL); u != "" {
@@ -113,10 +100,6 @@ func dockerLifeCycle(_ context.Context, command *cli.Command) error {
 	if u := command.String(define.FlagReportEvents); u != "" {
 		cfg.Reporters = nil
 		cfg.WithEventReporter(eventreporter.NewV1(u, librevm.ModeContainer))
-	}
-
-	if l := command.String(define.FlagLogTo); l != "" {
-		cfg.WithLogTo(l)
 	}
 
 	// Apply init vmconfig preferences if present.

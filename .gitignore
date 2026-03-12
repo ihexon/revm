@@ -6,3 +6,5 @@ CLAUDE.md
 .deps/
 *.tar.zst
 task.md
+ANALYSIS.md
+test_20runs.sh

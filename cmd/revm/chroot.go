@@ -58,12 +58,14 @@ func rootfsLifeCycle(_ context.Context, command *cli.Command) error {
 		WithNetwork(command.String(define.FlagVNetworkType)).
 		WithProxy(command.Bool(define.FlagUsingSystemProxy)).
 		WithLogLevel(command.String(define.FlagLogLevel)).
+		WithLogTo(command.String(define.FlagLogTo)).
+		WithRootfs(command.String(define.FlagRootfs)).
+		WithManageAPIFile(command.String(define.FlagManageAPIFile)).
+		WithSSHKeyDir(command.String(define.FlagSSHKeyDir)).
+		WithExportSSHKeyPrivateFile(command.String(define.FlagExportSSHKeyPrivateFile)).
+		WithExportSSHKeyPublicFile(command.String(define.FlagExportSSHKeyPublicFile)).
 		WithDisk(command.StringSlice(define.FlagRawDisk)...).
 		WithMount(command.StringSlice(define.FlagMount)...)
-
-	if r := command.String(define.FlagRootfs); r != "" {
-		cfg.WithRootfs(r)
-	}
 
 	if command.Args().Len() > 0 {
 		cfg.WithCommand(command.Args().First(), command.Args().Tail()...).
@@ -73,21 +75,6 @@ func rootfsLifeCycle(_ context.Context, command *cli.Command) error {
 
 	if u := command.String(define.FlagReportEvents); u != "" {
 		cfg.WithEventReporter(eventreporter.NewV1(u, librevm.ModeRootfs))
-	}
-	if l := command.String(define.FlagLogTo); l != "" {
-		cfg.WithLogTo(l)
-	}
-	if m := command.String(define.FlagManageAPIFile); m != "" {
-		cfg.WithManageAPIFile(m)
-	}
-	if sk := command.String(define.FlagSSHKeyDir); sk != "" {
-		cfg.WithSSHKeyDir(sk)
-	}
-	if pk := command.String(define.FlagExportSSHKeyPrivateFile); pk != "" {
-		cfg.WithExportSSHKeyPrivateFile(pk)
-	}
-	if pub := command.String(define.FlagExportSSHKeyPublicFile); pub != "" {
-		cfg.WithExportSSHKeyPublicFile(pub)
 	}
 
 	vm, err := librevm.New(cfg)
