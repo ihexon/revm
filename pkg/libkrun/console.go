@@ -8,11 +8,9 @@ package libkrun
 import "C"
 
 import (
-	"encoding/json"
 	"io"
 	"linuxvm/pkg/define"
 	"os"
-	"os/signal"
 	"syscall"
 
 	"github.com/creack/pty"
@@ -130,23 +128,6 @@ func (v *VM) addStdioRedirect(consoleID C.int32_t) error {
 func (v *VM) addLogAndSignal(consoleID C.int32_t) error {
 	sigR, sigW := pipe()
 	v.files.signalPipe = sigW
-
-	// Forward host signals to guest
-	go func() {
-		ch := make(chan os.Signal, 1)
-		signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-		defer signal.Stop(ch)
-
-		for sig := range ch {
-			msg := struct{ SignalName string }{SignalName: sig.String()}
-			if b, err := json.Marshal(msg); err == nil {
-				if _, err := sigW.Write(b); err != nil {
-					return
-				}
-				sigW.WriteString("\n")
-			}
-		}
-	}()
 
 	logFile, err := os.OpenFile(v.cfg.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {

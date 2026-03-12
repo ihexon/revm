@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/interfaces"
-	"linuxvm/pkg/krunrunner"
+	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/service/lifecycle"
 	sshsvc "linuxvm/pkg/service/ssh"
 	"os"
@@ -39,17 +39,19 @@ type VM struct {
 	seq atomic.Uint64
 }
 
-// newProvider creates a RunnerProvider for the current platform, delegating
-// all libkrun CGo calls to a child process to prevent libkrun's exit() from
-// terminating the main process before cleanup can run.
-func newProvider(mc *define.Machine) (*krunrunner.RunnerProvider, error) {
+// newProvider creates a libkrun Provider for the current platform.
+func newProvider(mc *define.Machine) (interfaces.VMMProvider, error) {
 	switch {
 	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
 	case runtime.GOOS == "linux" && (runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64"):
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
-	return krunrunner.NewRunnerProvider(mc), nil
+	p := libkrun.NewProvider(mc)
+	if err := p.Create(context.Background()); err != nil {
+		return nil, fmt.Errorf("create libkrun VM: %w", err)
+	}
+	return p, nil
 }
 
 // Close 释放所有资源（文件锁、workspace 目录、event eventDispatcher）。
@@ -85,7 +87,7 @@ func New(cfg *Config) (*VM, error) {
 }
 
 // init acquires all heavyweight resources: workspace dirs, flock, SSH keys,
-// disk images, krun-runner provider, and host services. Called once at the
+// disk images, libkrun provider, and host services. Called once at the
 // start of Run(). On failure it cleans up after itself.
 func (vm *VM) init(ctx context.Context) error {
 	mc, cleanup, err := buildMachine(ctx, *vm.cfg, vm.sessionDir)

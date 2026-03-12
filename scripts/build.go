@@ -138,19 +138,6 @@ func (b *builder) buildGuestAgent() {
 		"-o", filepath.Join(b.helperDir, "guest-agent"), "main.go")
 }
 
-func (b *builder) buildKrunRunner() {
-	logrus.Info("building krun-runner")
-	out := filepath.Join(b.helperDir, "krun-runner")
-	src := filepath.Join(b.workspace, "cmd", "krun-runner")
-	if b.goos == "darwin" {
-		run([]string{"PKG_CONFIG_PATH=" + b.pkgCfgDir},
-			"go", "build", "-ldflags=-s -w", "-o", out, src)
-	} else {
-		run([]string{"CGO_ENABLED=1"},
-			"go", "build", "-ldflags=-s -w", "-o", out, src)
-	}
-}
-
 func (b *builder) fetchAsset(name, url, dest string) {
 	logrus.Infof("fetching %s", name)
 	mkdirAll(dest)
@@ -266,22 +253,19 @@ func (b *builder) relocateLibsDarwin() {
 		run(nil, "codesign", "--force", "-s", "-", p)
 	}
 
+	// Fix revm libkrun references (must happen before codesign)
+	revm := filepath.Join(b.binDir, "revm")
+	run(nil, "install_name_tool", "-change", "libkrun.1.dylib", "@loader_path/../lib/libkrun.1.dylib", revm)
+	run(nil, "install_name_tool", "-change", "libkrunfw.5.dylib", "@loader_path/../lib/libkrunfw.5.dylib", revm)
+
 	// Sign target binary
 	ent := filepath.Join(b.workspace, "revm.entitlements")
-	run(nil, "codesign", "--entitlements", ent, "--force", "-s", "-",
-		filepath.Join(b.binDir, "revm"))
-
-	// Fix krun-runner
-	kr := filepath.Join(b.helperDir, "krun-runner")
-	run(nil, "install_name_tool", "-change", "libkrun.1.dylib", "@loader_path/../lib/libkrun.1.dylib", kr)
-	run(nil, "install_name_tool", "-change", "libkrunfw.5.dylib", "@loader_path/../lib/libkrunfw.5.dylib", kr)
-	run(nil, "codesign", "--entitlements", ent, "--force", "-s", "-", kr)
+	run(nil, "codesign", "--entitlements", ent, "--force", "-s", "-", revm)
 }
 
 func (b *builder) relocateLibsLinux() {
 	lib := b.libDir
 	bin := filepath.Join(b.binDir, "revm")
-	kr := filepath.Join(b.helperDir, "krun-runner")
 
 	// Copy shared libs
 	run(nil, "sh", "-c", fmt.Sprintf("cp -av %s/libkrun/lib64/*.so* '%s/'", b.depsDir, lib))
@@ -303,10 +287,6 @@ func (b *builder) relocateLibsLinux() {
 	for _, sf := range sofiles {
 		run(nil, "patchelf", "--set-rpath", "$ORIGIN", sf)
 	}
-	run(nil, "patchelf", "--set-rpath", "$ORIGIN/../lib", kr)
-
-	// Collect krun-runner deps
-	b.collectSoDeps(kr)
 }
 
 func (b *builder) collectSoDeps(binary string) {
@@ -402,7 +382,6 @@ func main() {
 	b.initEnv()
 	b.buildGuestAgent()
 	b.fetchDeps()
-	b.buildKrunRunner()
 	b.buildTarget()
 	b.relocateLibs()
 	b.lint()
