@@ -12,6 +12,7 @@ import "C"
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"linuxvm/pkg/define"
 	"os"
@@ -83,6 +84,18 @@ func (v *VM) Start(ctx context.Context) error {
 		return fmt.Errorf("VM failed: %w", errCode(ret))
 	}
 	return nil
+}
+
+// SendSignal writes a signal message to the VM's signal pipe.
+func (v *VM) SendSignal(name string) {
+	if v.files.signalPipe == nil {
+		return
+	}
+	msg := struct{ SignalName string }{SignalName: name}
+	if b, err := json.Marshal(msg); err == nil {
+		_, _ = v.files.signalPipe.Write(b)
+		_, _ = v.files.signalPipe.Write([]byte("\n"))
+	}
 }
 
 // init creates libkrun context and initializes logging.
