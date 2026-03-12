@@ -10,16 +10,16 @@ any Linux rootfs directly from macOS.
 
 ```bash
 # Integration test with your own Ubuntu rootfs
-revm chroot --rootfs ~/ubuntu-jammy -- bash -c 'apt-get install -y libssl-dev && make test'
+revm chroot --id build --rootfs ~/ubuntu-jammy -- bash -c 'apt-get install -y libssl-dev && make test'
 
 # Just need a quick Linux shell — use the built-in Alpine rootfs
-revm chroot -- sh -c 'uname -r'
+revm chroot --id quick -- sh -c 'uname -r'
 ```
 
 **Mount a host source directory for compilation**
 
 ```bash
-revm chroot \
+revm chroot --id compile \
   --rootfs ~/ubuntu-rootfs \
   --mount /Users/me/myproject:/workspace \
   --workdir /workspace \
@@ -43,10 +43,10 @@ revm attach dev-env -- df -h
 
 ```bash
 # First run: auto-creates an ext4 image, mounted at /mnt/<UUID> inside the guest
-revm chroot --raw-disk ~/data.ext4 sh -c 'mount'
+revm chroot --id disktest --raw-disk ~/data.ext4 sh -c 'mount'
 
 # Subsequent runs: reuse the same disk, data persists
-revm chroot --raw-disk ~/data.ext4 sh -c 'ls /mnt'
+revm chroot --id disktest --raw-disk ~/data.ext4 sh -c 'ls /mnt'
 ```
 
 ## Flags
@@ -58,7 +58,7 @@ revm chroot [flags] <command> [args...]
 | Flag               | Description                                                                         | Default               |
 |--------------------|-------------------------------------------------------------------------------------|-----------------------|
 | `--rootfs`         | Path to a rootfs directory; must contain `/bin/sh`; falls back to built-in Alpine   | built-in Alpine       |
-| `--id`             | Session ID; session directory is derived as `/tmp/<id>`; defaults to a random string; sessions with the same ID are mutually exclusive via flock | random |
+| `--id`             | **Required.** Session ID; session directory is derived as `/tmp/<id>`; sessions with the same ID are mutually exclusive via flock | — |
 | `--cpus`           | Number of vCPU cores; defaults to host CPU count if unset or less than 1            | host CPU count        |
 | `--memory`         | VM memory in MB; minimum 512 MB; defaults to host available memory if unset         | host available memory |
 | `--workdir`        | Working directory inside the guest before running the command                       | `/`                   |

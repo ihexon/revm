@@ -2,7 +2,7 @@
 
 ## Session Directory Layout
 
-Each session has a directory at `/tmp/<id>`, derived from the `--id` flag (or a random string if omitted):
+Each session has a directory at `/tmp/<id>`, derived from the required `--id` flag:
 
 ```
 /tmp/<id>/
@@ -49,7 +49,7 @@ ID at a time. This makes `--id` useful for `revm attach` to connect to a running
 revm docker --id my-engine --container-disk ~/container-storage.ext4
 
 # Arbitrary data persists too
-revm chroot --raw-disk ~/data.ext4 -- sh
+revm chroot --id myenv --raw-disk ~/data.ext4 -- sh
 ```
 
 **Cleanup**: if the process was forcefully killed (e.g. `kill -9`), manually remove the stale session directory:

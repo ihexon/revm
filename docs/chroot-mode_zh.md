@@ -9,16 +9,16 @@ revm 的 chroot 模式通过启动一个真正的 Linux Kernel 来执行 Rootfs 
 
 ```bash
 # 用自己的 Ubuntu rootfs 做集成测试
-revm chroot --rootfs ~/ubuntu-jammy -- bash -c 'apt-get install -y libssl-dev && make test'
+revm chroot --id build --rootfs ~/ubuntu-jammy -- bash -c 'apt-get install -y libssl-dev && make test'
 
 # 只需快速启动一个 Linux Shell，直接使用内置 Alpine Rootfs
-revm chroot -- sh -c 'uname -r'
+revm chroot --id quick -- sh -c 'uname -r'
 ```
 
 **挂载宿主机源码目录进行编译**
 
 ```bash
-revm chroot \
+revm chroot --id compile \
   --rootfs ~/ubuntu-rootfs \
   --mount /Users/me/myproject:/workspace \
   --workdir /workspace \
@@ -42,10 +42,10 @@ revm attach dev-env -- df -h
 
 ```bash
 # 第一次运行时自动创建 ext4 磁盘镜像，revm 会自动挂载到 /mnt/<UUID> 下
-revm chroot --raw-disk ~/data.ext4 sh -c 'mount'
+revm chroot --id disktest --raw-disk ~/data.ext4 sh -c 'mount'
 
 # 下次运行时复用同一块盘，数据持久保留
-revm chroot --raw-disk ~/data.ext4 sh -c 'ls /mnt'
+revm chroot --id disktest --raw-disk ~/data.ext4 sh -c 'ls /mnt'
 ```
 
 ## 参数列表
@@ -57,7 +57,7 @@ revm chroot [flags] <command> [args...]
 | 参数               | 说明                                                | 默认值                   |
 |------------------|---------------------------------------------------|-----------------------|
 | `--rootfs`       | rootfs 目录路径，须包含 `/bin/sh`；不指定则使用内置 Alpine         | 内置 Alpine             |
-| `--id`           | 会话 ID，会话目录由此派生为 `/tmp/<id>`；默认随机字符串；同名会话通过 flock 互斥 | 随机值 |
+| `--id`           | **必填。** 会话 ID，会话目录由此派生为 `/tmp/<id>`；同名会话通过 flock 互斥 | — |
 | `--cpus`         | 分配的 vCPU 核心数；不指定或小于 1 时自动取宿主机核心数                  | 宿主机核心数                |
 | `--memory`       | VM 内存大小（MB）；最小 512 MB；不指定时自动取宿主机可用内存              | 宿主机可用内存               |
 | `--workdir`      | 进入 VM 后执行命令前的工作目录                                 | `/`                   |

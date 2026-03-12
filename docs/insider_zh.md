@@ -2,7 +2,7 @@
 
 ## 会话目录结构
 
-每个会话的目录位于 `/tmp/<id>`，由 `--id` 参数派生（不指定时使用随机字符串）：
+每个会话的目录位于 `/tmp/<id>`，由必填参数 `--id` 派生：
 
 ```
 /tmp/<id>/
@@ -46,7 +46,7 @@
 revm docker --id my-engine --container-disk ~/container-storage.ext4
 
 # 任意数据也可持久化
-revm chroot --raw-disk ~/data.ext4 -- sh
+revm chroot --id myenv --raw-disk ~/data.ext4 -- sh
 ```
 
 **清理**：如果进程被强制杀死（例如 `kill -9`），手动移除残留会话目录：
