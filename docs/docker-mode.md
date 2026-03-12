@@ -70,7 +70,7 @@ revm docker [flags]
 
 | Flag               | Description                                                                                         | Default               |
 |--------------------|-----------------------------------------------------------------------------------------------------|-----------------------|
-| `--id`             | Session ID; session directory is derived as `/tmp/<id>`; defaults to a random string; sessions with the same ID are mutually exclusive via flock | random |
+| `--id`             | **Required.** Session ID; session directory is derived as `/tmp/<id>`; sessions with the same ID are mutually exclusive via flock | — |
 | `--cpus`           | Number of vCPU cores; defaults to host CPU count if unset or less than 1                            | host CPU count        |
 | `--memory`         | VM memory in MB; minimum 512 MB; defaults to host available memory if unset                         | host available memory |
 | `--envs`           | Pass environment variables (format: `KEY=VALUE`; repeatable)                                        | —                     |
