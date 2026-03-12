@@ -61,8 +61,9 @@ var (
 	}
 
 	sessionIDFlag = &cli.StringFlag{
-		Name:  define.FlagSessionID,
-		Usage: "session name; used to derive the workspace directory (/tmp/<session_id>); defaults to a random string; sessions with the same name are mutually exclusive via flock",
+		Name:     define.FlagSessionID,
+		Usage:    "session name; used to derive the workspace directory (/tmp/<session_id>); sessions with the same name are mutually exclusive via flock",
+		Required: true,
 	}
 
 	manageAPIFlag = &cli.StringFlag{

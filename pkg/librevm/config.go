@@ -76,27 +76,53 @@ func DefaultConfig() *Config {
 
 // --- Chain (fluent) methods ------------------------------------------------
 
-func (c *Config) WithMode(m RunMode) *Config            { c.RunMode = m; return c }
-func (c *Config) WithName(name string) *Config          { c.SessionID = name; return c }
-func (c *Config) WithCPUs(n int) *Config                { c.CPUs = n; return c }
-func (c *Config) WithMemory(mb uint64) *Config          { c.MemoryMB = mb; return c }
-func (c *Config) WithRootfs(path string) *Config        { c.Rootfs = path; return c }
-func (c *Config) WithWorkDir(dir string) *Config        { c.WorkDir = dir; return c }
-func (c *Config) WithNetwork(mode string) *Config       { c.Network = mode; return c }
-func (c *Config) WithContainerDisk(path string) *Config { c.ContainerDisk = path; return c }
-func (c *Config) WithContainerDiskVersion(v string) *Config {
-	c.ContainerDiskVersion = v
+func (c *Config) WithMode(m RunMode) *Config      { c.RunMode = m; return c }
+func (c *Config) WithName(name string) *Config    { c.SessionID = name; return c }
+func (c *Config) WithCPUs(n int) *Config          { c.CPUs = n; return c }
+func (c *Config) WithMemory(mb uint64) *Config    { c.MemoryMB = mb; return c }
+func (c *Config) WithRootfs(path string) *Config  { c.Rootfs = path; return c }
+func (c *Config) WithWorkDir(dir string) *Config  { c.WorkDir = dir; return c }
+func (c *Config) WithNetwork(mode string) *Config { c.Network = mode; return c }
+func (c *Config) WithContainerDisk(path string) *Config {
+	if path != "" {
+		c.ContainerDisk = path
+	}
 	return c
 }
-func (c *Config) WithPodmanProxyAPIFile(path string) *Config { c.PodmanProxyAPIFile = path; return c }
-func (c *Config) WithManageAPIFile(path string) *Config      { c.ManageAPIFile = path; return c }
-func (c *Config) WithSSHKeyDir(dir string) *Config           { c.SSHKeyDir = dir; return c }
+func (c *Config) WithContainerDiskVersion(v string) *Config {
+	if v != "" {
+		c.ContainerDiskVersion = v
+	}
+	return c
+}
+func (c *Config) WithPodmanProxyAPIFile(path string) *Config {
+	if path != "" {
+		c.PodmanProxyAPIFile = path
+	}
+	return c
+}
+func (c *Config) WithManageAPIFile(path string) *Config {
+	if path != "" {
+		c.ManageAPIFile = path
+	}
+	return c
+}
+func (c *Config) WithSSHKeyDir(dir string) *Config {
+	if dir != "" {
+		c.SSHKeyDir = dir
+	}
+	return c
+}
 func (c *Config) WithExportSSHKeyPrivateFile(path string) *Config {
-	c.ExportSSHKeyPrivateFile = path
+	if path != "" {
+		c.ExportSSHKeyPrivateFile = path
+	}
 	return c
 }
 func (c *Config) WithExportSSHKeyPublicFile(path string) *Config {
-	c.ExportSSHKeyPublicFile = path
+	if path != "" {
+		c.ExportSSHKeyPublicFile = path
+	}
 	return c
 }
 func (c *Config) WithEventReporter(reporters ...EventReporter) *Config {
@@ -109,7 +135,12 @@ func (c *Config) WithEventReporter(reporters ...EventReporter) *Config {
 }
 func (c *Config) WithProxy(enable bool) *Config     { c.Proxy = enable; return c }
 func (c *Config) WithLogLevel(level string) *Config { c.LogLevel = level; return c }
-func (c *Config) WithLogTo(path string) *Config     { c.LogTo = path; return c }
+func (c *Config) WithLogTo(path string) *Config {
+	if path != "" {
+		c.LogTo = path
+	}
+	return c
+}
 
 func (c *Config) WithCommand(bin string, args ...string) *Config {
 	c.Command = append([]string{bin}, args...)
