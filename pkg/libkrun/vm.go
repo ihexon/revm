@@ -33,7 +33,7 @@ type VM struct {
 		stdin, stdout, stderr *os.File
 		consolePty            [2]*os.File // master, slave
 		guestLog              *os.File
-		signalPipe            *os.File // write end
+		signalPipeW           *os.File // write end
 	}
 }
 
@@ -73,28 +73,51 @@ func (v *VM) Create(ctx context.Context) error {
 
 // Start launches the VM and blocks until it exits.
 func (v *VM) Start(ctx context.Context) error {
+	// krun_start_enter 后的代码在 https://github.com/containers/libkrun/issues/561 得到修复前，
+	// 永远没有机会执行，因为 libkrun 会使用 exit 退出程序
+	//
+	// 但我仍然做象征意义上的清理工作，因为这样让人感到愉悦
 	ret := C.krun_start_enter(C.uint32_t(v.ctxID))
 
-	// Cleanup
-	if v.files.signalPipe != nil {
-		_ = v.files.signalPipe.Close()
+	// 让人愉悦但永远没机会执行的代码
+	if v.files.signalPipeW != nil {
+		_ = v.files.signalPipeW.Close()
+	}
+	if v.files.guestLog != nil {
+		_ = v.files.guestLog.Close()
+	}
+	if v.files.consolePty[0] != nil {
+		_ = v.files.consolePty[0].Close()
+	}
+	if v.files.consolePty[1] != nil {
+		_ = v.files.consolePty[1].Close()
+	}
+	if v.files.stdin != nil {
+		_ = v.files.stdin.Close()
+	}
+	if v.files.stdout != nil {
+		_ = v.files.stdout.Close()
+	}
+	if v.files.stderr != nil {
+		_ = v.files.stderr.Close()
 	}
 
 	if ret != 0 {
 		return fmt.Errorf("VM failed: %w", errCode(ret))
 	}
+
 	return nil
 }
 
 // SendSignal writes a signal message to the VM's signal pipe.
 func (v *VM) SendSignal(name string) {
-	if v.files.signalPipe == nil {
+	if v.files.signalPipeW == nil {
 		return
 	}
 	msg := struct{ SignalName string }{SignalName: name}
 	if b, err := json.Marshal(msg); err == nil {
-		_, _ = v.files.signalPipe.Write(b)
-		_, _ = v.files.signalPipe.Write([]byte("\n"))
+		_, _ = v.files.signalPipeW.Write(b)
+		_, _ = v.files.signalPipeW.Write([]byte("\n"))
 	}
 }
 

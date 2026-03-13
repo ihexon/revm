@@ -471,7 +471,7 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 		}
 	}
 
-	logrus.Info("Preparing rootfs...")
+	logrus.Info("preparing rootfs...")
 	if cfg.Rootfs != "" {
 		if err := mBuilder.withUserProvidedRootfs(ctx, cfg.Rootfs); err != nil {
 			return nil, nil, err
@@ -481,6 +481,7 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 			return nil, nil, err
 		}
 	}
+	logrus.Info("preparing rootfs completed")
 
 	switch runMode {
 	case define.RootFsMode:

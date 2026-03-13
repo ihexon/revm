@@ -127,7 +127,7 @@ func (v *VM) addStdioRedirect(consoleID C.int32_t) error {
 // addLogAndSignal adds the guest-logs port with signal forwarding.
 func (v *VM) addLogAndSignal(consoleID C.int32_t) error {
 	sigR, sigW := pipe()
-	v.files.signalPipe = sigW
+	v.files.signalPipeW = sigW
 
 	logFile, err := os.OpenFile(v.cfg.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
