@@ -193,6 +193,7 @@ func (vm *VM) RunChroot(ctx context.Context) error {
 	case <-ctx.Done():
 		return <-svcErrCh
 	case <-vm.machine.Readiness.VNetHostReady:
+		logrus.Infof("boot virtual machine...")
 		err := vm.svc.StartVirtualMachine(ctx)
 		vm.Cancel()
 		<-svcErrCh
@@ -255,6 +256,7 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 	case <-ctx.Done():
 		return <-svcErrCh
 	case <-vm.machine.Readiness.VNetHostReady:
+		logrus.Infof("boot virtual machine...")
 		err := vm.svc.StartVirtualMachine(ctx)
 		vm.Cancel()
 		<-svcErrCh
