@@ -141,7 +141,7 @@ func (b *builder) buildGuestAgent() {
 func (b *builder) fetchAsset(name, url, dest string) {
 	logrus.Infof("fetching %s", name)
 	mkdirAll(dest)
-	run(nil, "sh", "-c", fmt.Sprintf("wget -qO- '%s' | bsdtar --zstd -x -C '%s'", url, dest))
+	run(nil, "sh", "-c", fmt.Sprintf("wget -qO- '%s' | bsdtar --zstd -x -f - -C '%s'", url, dest))
 }
 
 func (b *builder) fetchDeps() {
