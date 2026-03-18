@@ -2,37 +2,44 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"guestAgent/pkg/supervisor"
 	"linuxvm/pkg/define"
 	"os"
-	"os/exec"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
-func startGuestPodmanService(ctx context.Context, vmc *define.Machine) error {
-	addr := "tcp://" + vmc.PodmanInfo.GuestPodmanAPIListenAddr //nolint:nosprintfhostport
-	cmd := exec.CommandContext(ctx, "podman", "--log-level", logrus.GetLevel().String(), "system", "service", "--time=0", addr)
-	cmd.Stdin = nil
-	cmd.Stdout = StderrWriter()
-	cmd.Stderr = StderrWriter()
-	cmd.Env = append(os.Environ(), vmc.PodmanInfo.GuestPodmanRunWithEnvs...)
+// CreatePodmanInitRCFile 会创建 /etc/init.d/podman，这个 shell script 文件什么都不做，主要是兼容
+// https://github.com/oomol/oomol-studio-code/blob/96b3a492f29f581319cfe13c21d5dce400a120ee/oomol-studio-main/desktop/container-server/image/sh/load_images.sh#L17
+//
+// TODO: 删除这个函数，因为这个函数让人感到困惑
+func CreatePodmanInitRCFile() error {
+	logrus.Infof("create podman init rc file, but this rc file do nothing just for compatibility")
+	err := os.WriteFile("/etc/init.d/podman", []byte(""), 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create podman init rc file: %s", err)
+	}
 
-	logrus.Debugf("podman cmdline %v", cmd.Args)
-	return cmd.Run()
+	return nil
 }
 
-// StartPodmanAPIServices support TSI/Gvisor network
-func StartPodmanAPIServices(ctx context.Context, vmc *define.Machine) error {
-	errChan := make(chan error, 1)
-	go func() {
-		errChan <- startGuestPodmanService(ctx, vmc)
-		close(errChan)
-	}()
+func StartGuestPodmanService(ctx context.Context, vmc *define.Machine) error {
+	addr := "tcp://" + vmc.PodmanInfo.GuestPodmanAPIListenAddr //nolint:nosprintfhostport
 
-	select {
-	case <-ctx.Done():
-		return context.Cause(ctx)
-	case err := <-errChan:
-		return err
-	}
+	s := supervisor.New(supervisor.Config{
+		Cmd: "podman",
+		Args: []string{
+			"--log-level", logrus.GetLevel().String(), "system", "service",
+			"--time=0", addr,
+		},
+		Restart:     true,
+		MaxRetries:  5,
+		RetryDelay:  500 * time.Millisecond,
+		StopTimeout: 5 * time.Second,
+	})
+
+	s.Run(ctx)
+	return nil
 }
