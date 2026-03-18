@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"guestAgent/pkg/supervisor"
 	"time"
 )
 
@@ -15,18 +16,19 @@ var servers = []string{
 }
 
 func SyncRTCTime(ctx context.Context) error {
-	return syncTimeFromNtpServerForever(ctx, 10)
-}
-
-func syncTimeFromNtpServerForever(ctx context.Context, sleepTimeInSecond uint64) error {
-	for {
-		for i := range servers {
-			select {
-			case <-ctx.Done():
-				return context.Cause(ctx)
-			case <-time.After(time.Duration(sleepTimeInSecond) * time.Second):
-				_ = ExecOutput(ctx, nil, StderrWriter(), "ntpd", "-q", "-n", "-p", servers[i])
-			}
-		}
+	args := []string{"ntpd", "-n"}
+	for _, s := range servers {
+		args = append(args, "-p", s)
 	}
+
+	sv := supervisor.New(supervisor.Config{
+		Name:       "ntpd",
+		Cmd:        BusyboxPath(),
+		Args:       args,
+		Stderr:     StderrWriter(),
+		Restart:    true,
+		RetryDelay: 5 * time.Second,
+	})
+	sv.Run(ctx)
+	return nil
 }

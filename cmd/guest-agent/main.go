@@ -12,6 +12,7 @@ import (
 	"linuxvm/pkg/define"
 	commonlog "linuxvm/pkg/log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -21,11 +22,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// exitCode wraps a process exit code as an error so it can flow back
-// through the error return chain to main(), which is the single os.Exit point.
-type exitCode int
-
-func (c exitCode) Error() string { return fmt.Sprintf("exit status %d", int(c)) }
+// CmdlineExitNormal signals that the user command completed successfully.
+// Used as a non-nil error to cancel the errgroup.
+var CmdlineExitNormal = errors.New("command exited normally")
 
 func setupLogger() error {
 	level := strings.ToLower(os.Getenv(define.EnvLogLevel))
@@ -51,7 +50,9 @@ func setupGuestLogAndSignalPort(ctx context.Context) {
 	go func() {
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
-			var msg struct{ SignalName string `json:"signalName,omitempty"` }
+			var msg struct {
+				SignalName string `json:"signalName,omitempty"`
+			}
 			if json.Unmarshal(scanner.Bytes(), &msg) == nil {
 				logrus.Infof("received signal: %s", msg.SignalName)
 
@@ -115,12 +116,21 @@ func main() {
 	}
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
-		var code exitCode
-		if errors.As(err, &code) {
-			os.Exit(int(code))
+		if errors.Is(err, CmdlineExitNormal) {
+			logrus.Infof("%v", CmdlineExitNormal)
+			return
 		}
-		logrus.Error(err)
-		os.Exit(1)
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			logrus.Errorf("cmdline exit unexpected: %v", err)
+			os.Exit(exitErr.ExitCode())
+		}
+		if errors.Is(err, exec.ErrNotFound) {
+			logrus.Errorf("cmdline exit unexpected: %v", err)
+			os.Exit(127)
+		}
+
+		logrus.Fatalf("cmdline exit unexpected: %v", err)
 	}
 }
 
@@ -185,7 +195,10 @@ func userRootfsMode(ctx context.Context, vmc *define.Machine) error {
 	})
 
 	g.Go(func() error {
-		return exitCode(service.DoExecCmdLine(ctx, vmc))
+		if err := service.DoExecCmdLine(ctx, vmc); err != nil {
+			return err
+		}
+		return CmdlineExitNormal
 	})
 
 	go func() {
@@ -223,7 +236,7 @@ func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return service.StartPodmanAPIServices(ctx, vmc)
+		return service.StartGuestPodmanService(ctx, vmc)
 	})
 
 	g.Go(func() error {
@@ -237,7 +250,7 @@ func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
 	// Run readiness probes outside the errgroup. Probe failures are logged
 	// internally and do not affect service lifecycle.
 	go func() {
-		_ = machine.WaitGuestServiceReady(ctx, vmc)
+		_ = machine.WaitGuestServiceReady(ctx, vmc) // short time function
 	}()
 
 	errChan := make(chan error, 1)

@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"guestAgent/pkg/supervisor"
 	"linuxvm/pkg/define"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -56,8 +58,8 @@ func (d *Dropbear) WriteAuthorizedKeys(publicKey string) error {
 	return nil
 }
 
-// Start starts the dropbear SSH server. Blocks until the server exits.
-func (d *Dropbear) Start(ctx context.Context) error {
+// Start starts the dropbear SSH server via supervisor. Blocks until ctx is cancelled.
+func (d *Dropbear) Start(ctx context.Context) {
 	args := []string{
 		"dropbear",
 		"-D", filepath.Dir(d.cfg.AuthorizedKeysFile),
@@ -71,13 +73,17 @@ func (d *Dropbear) Start(ctx context.Context) error {
 		args = append(args, "-P", d.cfg.PidFile)
 	}
 
-	cmd := exec.CommandContext(ctx, DropbearmultiPath(), args...)
-	cmd.Env = append(os.Environ(), "PASS_FILEPEM_CHECK=1")
-	cmd.Stderr = StderrWriter()
-	cmd.Stdout = StderrWriter()
-
-	logrus.Debugf("dropbear cmdline: %v", cmd.Args)
-	return cmd.Run()
+	sv := supervisor.New(supervisor.Config{
+		Name:       "dropbear",
+		Cmd:        DropbearmultiPath(),
+		Args:       args,
+		Env:        []string{"PASS_FILEPEM_CHECK=1"},
+		Stdout:     StderrWriter(),
+		Stderr:     StderrWriter(),
+		Restart:    true,
+		RetryDelay: 500 * time.Millisecond,
+	})
+	sv.Run(ctx)
 }
 
 // StartGuestSSHServer support TSI/Gvisor network mode
@@ -99,5 +105,6 @@ func StartGuestSSHServer(ctx context.Context, vmc *define.Machine) error {
 		return fmt.Errorf("write authorized_keys: %w", err)
 	}
 
-	return dropbear.Start(ctx)
+	dropbear.Start(ctx)
+	return nil
 }
