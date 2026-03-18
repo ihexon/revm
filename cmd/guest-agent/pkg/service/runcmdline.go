@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"linuxvm/pkg/define"
 	"os"
@@ -50,14 +49,12 @@ func openActiveConsole() (*os.File, error) {
 	return os.NewFile(uintptr(fd), devPath), nil
 }
 
-// DoExecCmdLine executes the user command and returns its exit code.
-// 0 = success, 127 = not found, 126 = not executable.
-func DoExecCmdLine(ctx context.Context, vmc *define.Machine) int {
+// DoExecCmdLine executes the user command and returns its error.
+func DoExecCmdLine(ctx context.Context, vmc *define.Machine) error {
 	logrus.Infof("exec: %s %v", vmc.Cmdline.Bin, vmc.Cmdline.Args)
 
 	if err := os.Chdir(vmc.Cmdline.WorkDir); err != nil {
-		logrus.Errorf("chdir %q: %v", vmc.Cmdline.WorkDir, err)
-		return 1
+		return fmt.Errorf("chdir %q: %w", vmc.Cmdline.WorkDir, err)
 	}
 
 	cmd := exec.CommandContext(ctx, vmc.Cmdline.Bin, vmc.Cmdline.Args...)
@@ -68,8 +65,7 @@ func DoExecCmdLine(ctx context.Context, vmc *define.Machine) int {
 	if vmc.TTY {
 		fdFile, err := openActiveConsole()
 		if err != nil {
-			logrus.Errorf("open active console: %v", err)
-			return 1
+			return fmt.Errorf("open active console: %w", err)
 		}
 		defer fdFile.Close()
 
@@ -81,21 +77,5 @@ func DoExecCmdLine(ctx context.Context, vmc *define.Machine) int {
 
 	cmd.Env = append(os.Environ(), vmc.Cmdline.Envs...)
 
-	if err := cmd.Run(); err != nil {
-		var execErr *exec.Error
-		if errors.As(err, &execErr) {
-			if errors.Is(execErr.Err, exec.ErrNotFound) {
-				return 127
-			}
-			return 126
-		}
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return exitErr.ExitCode()
-		}
-		logrus.Errorf("command %q failed: %v", vmc.Cmdline.Bin, err)
-		return 1
-	}
-
-	return 0
+	return cmd.Run()
 }
