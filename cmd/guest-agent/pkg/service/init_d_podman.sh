@@ -7,21 +7,9 @@
 #
 # Usage: ./podman stop
 #        ./podman start # do nothing
-kill_podman() {
-    if [ "$1" = "stop" ]; then
-        killall podman
-    fi
-}
-
-start_podman() {
-    if [ "$1" = "start" ]; then
-        true
-    fi
-}
 
 main() {
-    kill_podman "$1"
-    start_podman "$1"
+    killall podman
 }
 
 main "$@"

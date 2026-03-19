@@ -26,7 +26,7 @@ const (
 	FlagExportSSHKeyPublicFile  = "export-ssh-public-key"
 	FlagReportEvents            = "report-events-to"
 
-	ContainerDiskUUID = "44f7d1c0-122c-4402-a20e-c1166cbbad6d"
+	ContainerDiskUUID = "162cf68f-93c7-49ad-be53-45ed0e9fe42b"
 
 	GuestLogConsolePort = "guest-logs"
 	GuestTTYConsoleName = "default-tty-console"
