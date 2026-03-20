@@ -23,12 +23,6 @@ type EventReporter interface {
 	Close()
 }
 
-// EventReporterFunc adapts a plain function to the EventReporter interface.
-type EventReporterFunc func(Event)
-
-func (f EventReporterFunc) Report(e Event) { f(e) }
-func (f EventReporterFunc) Close()         {}
-
 type eventDispatcher struct {
 	mu        sync.RWMutex
 	reporters []EventReporter
