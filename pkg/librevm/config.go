@@ -280,10 +280,6 @@ func loadJSON(r io.Reader) (*Config, error) {
 
 // NormalizeConfig returns a copy of cfg with defaults resolved.
 func NormalizeConfig(cfg Config) (Config, error) {
-	if cfg.SessionID == "" {
-		cfg.SessionID = RandomString()
-	}
-
 	if cfg.CPUs <= 0 {
 		cfg.CPUs = runtime.NumCPU()
 	}
@@ -316,6 +312,10 @@ func NormalizeConfig(cfg Config) (Config, error) {
 }
 
 func validateConfig(cfg Config) error {
+	if cfg.SessionID == "" {
+		return fmt.Errorf("session name must not be empty, flag --id is required")
+	}
+
 	if !cfg.RunMode.IsValid() {
 		return fmt.Errorf("invalid run mode %q", cfg.RunMode)
 	}

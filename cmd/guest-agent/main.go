@@ -222,10 +222,6 @@ func userRootfsMode(ctx context.Context, vmc *define.Machine) error {
 func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
 	logrus.Info("starting container engine")
 
-	if err := service.SetupContainerStorage(vmc); err != nil {
-		return fmt.Errorf("setup container storage: %w", err)
-	}
-
 	// Configure network before starting services — it's a prerequisite,
 	// not a parallel task. If DHCP fails (e.g. eth0 not yet created by VMM),
 	// we don't want to cancel already-running services.

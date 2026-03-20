@@ -83,6 +83,7 @@ func generateOVMCfgAction(ctx context.Context, cmd *cli.Command) error {
 		Mounts:                  cmd.StringSlice(define.FlagOVMVolume),
 		CPUs:                    cmd.Int(define.FlagCPUS),
 		MemoryMB:                cmd.Uint64(define.FlagMemoryInMB),
+		SessionID:               "oomol-studio-19452",
 	}
 
 	if u := cmd.String(define.FlagOVMReportURL); u != "" {

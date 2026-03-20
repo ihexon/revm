@@ -10,20 +10,11 @@ import (
 )
 
 type Step struct {
-	podmanStop chan bool
-	diskSync   chan bool
-}
-
-func (s *Step) PodmanStop() {
-	_ = exec.Command("podman", "stop", "-a", "-t", "1").Run()
-	s.podmanStop <- true
-	close(s.podmanStop)
+	diskSync chan bool
 }
 
 func (s *Step) SyncDisk() {
-
 	_ = exec.Command("sync").Run()
-	s.diskSync <- true
 	close(s.diskSync)
 }
 
@@ -37,21 +28,16 @@ func WaitAndShutdown() {
 	<-sigCh
 
 	stepS := &Step{
-		podmanStop: make(chan bool),
-		diskSync:   make(chan bool),
+		diskSync: make(chan bool),
 	}
 
 	go func() {
-		logrus.Infof("Waiting for podman to stop...")
-		stepS.PodmanStop()
-	}()
-	go func() {
-		logrus.Infof("Waiting for disk to sync...")
 		stepS.SyncDisk()
 	}()
 
-	<-stepS.podmanStop
+	logrus.Infof("[shutdown] waiting for disk to sync...")
 	<-stepS.diskSync
 
+	logrus.Infof("[shutdown] poweroff virtual machine...")
 	stepS.PowerOff()
 }

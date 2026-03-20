@@ -7,6 +7,8 @@ import (
 	"linuxvm/pkg/filesystem"
 	"os"
 	"path/filepath"
+
+	"github.com/sirupsen/logrus"
 )
 
 type Manager interface {
@@ -57,6 +59,7 @@ func (b RawDiskManager) NewUUID(ctx context.Context, id string, blkPath string) 
 		return err
 	}
 
+	logrus.Debugf("change uuid of ext4 raw disk %v to %v", blkPath, id)
 	_, _, err = SetUUID(blkPath, id)
 	if err != nil {
 		return err
