@@ -48,20 +48,19 @@ type Config struct {
 	WorkDir string   `toml:"workdir,omitempty"  json:"workdir,omitempty"`
 	Env     []string `toml:"env,omitempty"      json:"env,omitempty"`
 
-	Network                 string          `toml:"network,omitempty"         json:"network,omitempty"` // "gvisor" | "tsi"
-	Mounts                  []string        `toml:"mounts,omitempty"          json:"mounts,omitempty"`  // "/host:/guest[,ro]"
-	Disks                   []RawDiskSpec   `toml:"disks,omitempty"           json:"disks,omitempty"`
-	ContainerDisk           string          `toml:"container_disk,omitempty"         json:"containerDisk,omitempty"`
-	ContainerDiskVersion    string          `toml:"container_disk_version,omitempty" json:"containerDiskVersion,omitempty"`
-	PodmanProxyAPIFile      string          `toml:"podman_proxy_api_file,omitempty"   json:"podmanProxyAPIFile,omitempty"`
-	ManageAPIFile           string          `toml:"manage_api_file,omitempty"         json:"manageAPIFile,omitempty"`
-	SSHKeyDir               string          `toml:"ssh_key_dir,omitempty"                json:"sshKeyDir,omitempty"`
-	ExportSSHKeyPrivateFile string          `toml:"export_ssh_key_private_file,omitempty" json:"exportSSHKeyPrivateFile,omitempty"`
-	ExportSSHKeyPublicFile  string          `toml:"export_ssh_key_public_file,omitempty"  json:"exportSSHKeyPublicFile,omitempty"`
-	Proxy                   bool            `toml:"proxy,omitempty"           json:"proxy,omitempty"`
-	LogLevel                string          `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
-	LogTo                   string          `toml:"log_to,omitempty"          json:"logTo,omitempty"`
-	Reporters               []EventReporter `toml:"-" json:"-"`
+	Network                 string             `toml:"network,omitempty"         json:"network,omitempty"` // "gvisor" | "tsi"
+	Mounts                  []string           `toml:"mounts,omitempty"          json:"mounts,omitempty"`  // "/host:/guest[,ro]"
+	Disks                   []RawDiskSpec      `toml:"disks,omitempty"           json:"disks,omitempty"`
+	ContainerDisk           *ContainerDiskSpec `toml:"container_disk,omitempty" json:"containerDisk,omitempty"`
+	PodmanProxyAPIFile      string             `toml:"podman_proxy_api_file,omitempty"   json:"podmanProxyAPIFile,omitempty"`
+	ManageAPIFile           string             `toml:"manage_api_file,omitempty"         json:"manageAPIFile,omitempty"`
+	SSHKeyDir               string             `toml:"ssh_key_dir,omitempty"                json:"sshKeyDir,omitempty"`
+	ExportSSHKeyPrivateFile string             `toml:"export_ssh_key_private_file,omitempty" json:"exportSSHKeyPrivateFile,omitempty"`
+	ExportSSHKeyPublicFile  string             `toml:"export_ssh_key_public_file,omitempty"  json:"exportSSHKeyPublicFile,omitempty"`
+	Proxy                   bool               `toml:"proxy,omitempty"           json:"proxy,omitempty"`
+	LogLevel                string             `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
+	LogTo                   string             `toml:"log_to,omitempty"          json:"logTo,omitempty"`
+	Reporters               []EventReporter    `toml:"-" json:"-"`
 }
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.
@@ -83,15 +82,10 @@ func (c *Config) WithMemory(mb uint64) *Config    { c.MemoryMB = mb; return c }
 func (c *Config) WithRootfs(path string) *Config  { c.Rootfs = path; return c }
 func (c *Config) WithWorkDir(dir string) *Config  { c.WorkDir = dir; return c }
 func (c *Config) WithNetwork(mode string) *Config { c.Network = mode; return c }
-func (c *Config) WithContainerDisk(path string) *Config {
-	if path != "" {
-		c.ContainerDisk = path
-	}
-	return c
-}
-func (c *Config) WithContainerDiskVersion(v string) *Config {
-	if v != "" {
-		c.ContainerDiskVersion = v
+func (c *Config) WithContainerDiskSpec(spec *ContainerDiskSpec) *Config {
+	if spec != nil {
+		specCopy := *spec
+		c.ContainerDisk = &specCopy
 	}
 	return c
 }
@@ -207,11 +201,9 @@ func (c *Config) MergeFrom(other *Config) {
 	if len(other.Mounts) > 0 {
 		c.Mounts = append(c.Mounts, other.Mounts...)
 	}
-	if other.ContainerDisk != "" {
-		c.ContainerDisk = other.ContainerDisk
-	}
-	if other.ContainerDiskVersion != "" {
-		c.ContainerDiskVersion = other.ContainerDiskVersion
+	if other.ContainerDisk != nil {
+		specCopy := *other.ContainerDisk
+		c.ContainerDisk = &specCopy
 	}
 	if other.PodmanProxyAPIFile != "" {
 		c.PodmanProxyAPIFile = other.PodmanProxyAPIFile

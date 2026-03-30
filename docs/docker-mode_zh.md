@@ -76,7 +76,7 @@ revm docker [flags]
 | `--raw-disk`       | 挂载 ext4 裸盘镜像（格式：`<path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>]`）；只传路径即可；新磁盘会自动创建，默认随机 UUID，并挂载到 `/mnt/<UUID>`（可重复） | — |
 | `--network`        | 网络栈：`gvisor`（完整虚拟网卡，支持端口映射）或 `tsi`（透明转发）                         | `gvisor`              |
 | `--system-proxy`   | 读取 macOS 系统代理并注入容器内，自动将 127.0.0.1 重写为 `host.containers.internal` | `false`               |
-| `--container-disk` | 持久化容器存储磁盘路径（ext4 裸盘镜像）；不存在时自动创建；不指定则使用会话目录内的默认磁盘 | 会话目录内默认磁盘 |
+| `--container-disk` | 容器存储磁盘规格（格式：`<path>[,version=<string>]`）；只传路径即可；默认使用会话目录内的磁盘和内置 version；如果已有磁盘的 version xattr 缺失或不匹配，会直接重建 | 会话目录内默认磁盘 + 内置 version |
 | `--podman-proxy-api-file` | Podman API socket 的自定义 Unix socket 路径；默认为 `<会话目录>/socks/podman-api.sock` | —                     |
 | `--manage-api-file` | VM 管理 API socket 的自定义 Unix socket 路径；默认为 `<会话目录>/socks/vmctl.sock` | —                     |
 | `--ssh-key-dir`    | SSH 密钥对（`key` 和 `key.pub`）的符号链接目录；密钥始终在会话目录内生成                   | —                     |

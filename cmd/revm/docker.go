@@ -49,6 +49,15 @@ func dockerLifeCycle(_ context.Context, command *cli.Command) error {
 		return err
 	}
 
+	var containerDiskSpec *librevm.ContainerDiskSpec
+	if value := command.String(define.FlagContainerDisk); value != "" {
+		spec, err := librevm.ParseContainerDiskSpec(value)
+		if err != nil {
+			return err
+		}
+		containerDiskSpec = &spec
+	}
+
 	cfg := librevm.DefaultConfig().
 		WithMode(librevm.ModeContainer).
 		WithName(command.String(define.FlagSessionID)).
@@ -59,7 +68,7 @@ func dockerLifeCycle(_ context.Context, command *cli.Command) error {
 		WithLogLevel(command.String(define.FlagLogLevel)).
 		WithLogTo(command.String(define.FlagLogTo)).
 		WithMount(command.StringSlice(define.FlagMount)...).
-		WithContainerDisk(command.String(define.FlagContainerDisk)).
+		WithContainerDiskSpec(containerDiskSpec).
 		WithPodmanProxyAPIFile(command.String(define.FlagPodmanProxyAPIFile)).
 		WithManageAPIFile(command.String(define.FlagManageAPIFile)).
 		WithSSHKeyDir(command.String(define.FlagSSHKeyDir)).
