@@ -17,21 +17,14 @@ var startRootfs = cli.Command{
 	Description:               "boot a Linux microVM using libkrun and execute commands inside it, similar to chroot but with full kernel isolation",
 	DisableSliceFlagSeparator: true,
 	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:  define.FlagRootfs,
-			Usage: "path to a rootfs directory to use as the VM root filesystem; must contain /bin/sh; takes priority over the built-in rootfs",
-		},
+		rootfsFlag,
 		cpuFlag,
 		memoryFlag,
 		envsFlag,
 		diskFlag,
 		mountFlag,
 		proxyFlag,
-		&cli.StringFlag{
-			Name:  define.FlagWorkDir,
-			Usage: "working directory for command execution inside the guest; the guest-agent chdirs to this path before running the command",
-			Value: "/",
-		},
+		workDirFlag,
 		networkFlag,
 		reportEventsFlag,
 		logLevelFlag,
@@ -50,6 +43,12 @@ func rootfsLifeCycle(_ context.Context, command *cli.Command) error {
 	// 如果要安全停止虚拟机，应该呼叫 cancel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	rawDiskSpecs, err := librevm.ParseRawDiskSpecs(command.StringSlice(define.FlagRawDisk))
+	if err != nil {
+		return err
+	}
+
 	cfg := librevm.DefaultConfig().
 		WithMode(librevm.ModeRootfs).
 		WithName(command.String(define.FlagSessionID)).
@@ -64,8 +63,9 @@ func rootfsLifeCycle(_ context.Context, command *cli.Command) error {
 		WithSSHKeyDir(command.String(define.FlagSSHKeyDir)).
 		WithExportSSHKeyPrivateFile(command.String(define.FlagExportSSHKeyPrivateFile)).
 		WithExportSSHKeyPublicFile(command.String(define.FlagExportSSHKeyPublicFile)).
-		WithDisk(command.StringSlice(define.FlagRawDisk)...).
 		WithMount(command.StringSlice(define.FlagMount)...)
+
+	cfg.WithRawDiskSpecs(rawDiskSpecs...)
 
 	if command.Args().Len() > 0 {
 		cfg.WithCommand(command.Args().First(), command.Args().Tail()...).

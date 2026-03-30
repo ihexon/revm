@@ -2,12 +2,18 @@ package main
 
 import (
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/librevm"
 
 	"github.com/urfave/cli/v3"
 )
 
-// Common flags shared between chroot and docker commands
+// Reusable CLI flags shared across revm subcommands.
 var (
+	rootfsFlag = &cli.StringFlag{
+		Name:  define.FlagRootfs,
+		Usage: "path to a rootfs directory to use as the VM root filesystem; must contain /bin/sh; takes priority over the built-in rootfs",
+	}
+
 	cpuFlag = &cli.Int8Flag{
 		Name:  define.FlagCPUS,
 		Usage: "number of vCPU cores to assign to the VM; defaults to host CPU count if unset or less than 1",
@@ -25,7 +31,7 @@ var (
 
 	diskFlag = &cli.StringSliceFlag{
 		Name:  define.FlagRawDisk,
-		Usage: "attach an ext4 raw disk image to the VM (format: <path>[,uuid]); auto-created if the file does not exist; UUID is auto-generated when omitted; mounted at /mnt/<UUID> inside the guest; can be specified multiple times",
+		Usage: "attach an ext4 raw disk image to the VM (format: <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>]); auto-created if the file does not exist; new disks default to a random UUID and mount at /mnt/<UUID>; can be specified multiple times",
 	}
 
 	mountFlag = &cli.StringSliceFlag{
@@ -36,6 +42,12 @@ var (
 	proxyFlag = &cli.BoolFlag{
 		Name:  define.FlagUsingSystemProxy,
 		Usage: "read the macOS system HTTP/HTTPS proxy and forward it to the guest as http_proxy/https_proxy env vars; in gvisor mode, 127.0.0.1 is automatically rewritten to host.containers.internal",
+	}
+
+	workDirFlag = &cli.StringFlag{
+		Name:  define.FlagWorkDir,
+		Usage: "working directory for command execution inside the guest; the guest-agent chdirs to this path before running the command",
+		Value: "/",
 	}
 
 	networkFlag = &cli.StringFlag{
@@ -63,11 +75,22 @@ var (
 	sessionIDFlag = &cli.StringFlag{
 		Name:  define.FlagSessionID,
 		Usage: "session name; used to derive the workspace directory (/tmp/<session_id>); sessions with the same name are mutually exclusive via flock",
+		Value: librevm.RandomString(),
 	}
 
 	manageAPIFlag = &cli.StringFlag{
 		Name:  define.FlagManageAPIFile,
 		Usage: "custom Unix socket path for the host-side VM management API; defaults to /tmp/<session_id>/socks/vmctl.sock",
+	}
+
+	containerDiskFlag = &cli.StringFlag{
+		Name:  define.FlagContainerDisk,
+		Usage: "path to a persistent ext4 raw disk image for container storage; auto-created if the file does not exist; defaults to a workspace-local disk if unset",
+	}
+
+	podmanProxyAPIFileFlag = &cli.StringFlag{
+		Name:  define.FlagPodmanProxyAPIFile,
+		Usage: "custom Unix socket path for the host-side Podman API proxy; defaults to /tmp/<session_id>/socks/podman-api.sock",
 	}
 
 	sshKeyDirFlag = &cli.StringFlag{

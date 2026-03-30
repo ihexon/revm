@@ -2,7 +2,6 @@ package disk
 
 import (
 	"context"
-	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/filesystem"
 	"os"
@@ -36,10 +35,9 @@ func (b RawDiskManager) Inspect(ctx context.Context, blkPath string) (*define.Bl
 	}
 
 	return &define.BlkDev{
-		UUID:    info.UUID,
-		FsType:  info.Type,
-		Path:    blkPath,
-		MountTo: fmt.Sprintf("/mnt/%s", info.UUID),
+		UUID:   info.UUID,
+		FsType: info.Type,
+		Path:   blkPath,
 	}, nil
 }
 

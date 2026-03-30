@@ -73,7 +73,7 @@ revm docker [flags]
 | `--memory`         | VM 内存大小（MB）；最小 512 MB；不指定时自动取宿主机可用内存                             | 宿主机可用内存               |
 | `--envs`           | 传入环境变量（格式：`KEY=VALUE`，可重复）                                              | —                     |
 | `--mount`          | 通过 VirtIO-FS 挂载宿主机目录（格式：`/host:/guest[,ro]`，可重复）                 | —                     |
-| `--raw-disk`       | 挂载 ext4 裸盘镜像，不存在时自动创建镜像（可重复）                                     | —                     |
+| `--raw-disk`       | 挂载 ext4 裸盘镜像（格式：`<path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>]`）；只传路径即可；新磁盘会自动创建，默认随机 UUID，并挂载到 `/mnt/<UUID>`（可重复） | — |
 | `--network`        | 网络栈：`gvisor`（完整虚拟网卡，支持端口映射）或 `tsi`（透明转发）                         | `gvisor`              |
 | `--system-proxy`   | 读取 macOS 系统代理并注入容器内，自动将 127.0.0.1 重写为 `host.containers.internal` | `false`               |
 | `--container-disk` | 持久化容器存储磁盘路径（ext4 裸盘镜像）；不存在时自动创建；不指定则使用会话目录内的默认磁盘 | 会话目录内默认磁盘 |
