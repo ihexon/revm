@@ -35,8 +35,7 @@ func newMachineBuilder(mode define.RunMode) *machineBuilder {
 	return &machineBuilder{
 		Machine: define.Machine{
 			MachineSpec: define.MachineSpec{
-				RunMode:    mode.String(),
-				DiskXattrs: map[string]string{},
+				RunMode: mode.String(),
 			},
 			MachineRuntime: define.NewMachineRuntime(),
 		},
@@ -510,14 +509,8 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 			diskPath = cfg.ContainerDisk
 		}
 
-		if cfg.ContainerDiskVersion != "" {
-			if err := mBuilder.resetOrReuseContainerRAWDisk(ctx, diskPath, cfg.ContainerDiskVersion); err != nil {
-				return nil, nil, fmt.Errorf("check container disk version: %w", err)
-			}
-		}
-
 		logrus.Info("Preparing container storage disk...")
-		if err := mBuilder.configureContainerRAWDisk(ctx, diskPath); err != nil {
+		if err := mBuilder.configureContainerRAWDisk(ctx, diskPath, cfg.ContainerDiskVersion); err != nil {
 			return nil, nil, fmt.Errorf("setup container disk: %w", err)
 		}
 	}

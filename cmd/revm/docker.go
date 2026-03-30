@@ -5,9 +5,7 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/eventreporter"
 	"linuxvm/pkg/librevm"
-	"os"
 
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 )
 
@@ -30,40 +28,12 @@ var startDocker = cli.Command{
 		logLevelFlag,
 		logToFlag,
 		sessionIDFlag,
-		&cli.StringFlag{
-			Name:  define.FlagContainerDisk,
-			Usage: "path to a persistent ext4 raw disk image for container storage; auto-created if the file does not exist; defaults to a workspace-local disk if unset",
-		},
-		&cli.StringFlag{
-			Name:  define.FlagPodmanProxyAPIFile,
-			Usage: "custom Unix socket path for the host-side Podman API proxy; defaults to /tmp/<session_id>/socks/podman-api.sock",
-		},
+		containerDiskFlag,
+		podmanProxyAPIFileFlag,
 		manageAPIFlag,
 		sshKeyDirFlag,
 		sshPrivateKeyFlag,
 		sshPublicKeyFlag,
-
-		// legacy hidden flags set
-		&cli.StringFlag{
-			Name:   define.FlagOVMWorkspace,
-			Usage:  "not use any more, retained for compatibility",
-			Hidden: true,
-		},
-		&cli.Uint64Flag{
-			Name:   define.FlagOVMPPID,
-			Usage:  "not use any more, retained for compatibility",
-			Hidden: true,
-		},
-		&cli.StringFlag{
-			Name:   define.FlagOVMName,
-			Usage:  "not use any more, retained for compatibility",
-			Hidden: true,
-		},
-		&cli.StringFlag{
-			Name:   define.FlagOVMReportURL,
-			Usage:  "legacy event, for ovm-js compatibility, use --report-events-to instead",
-			Hidden: true,
-		},
 	},
 	Action: dockerLifeCycle,
 }
@@ -74,6 +44,11 @@ func dockerLifeCycle(_ context.Context, command *cli.Command) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	rawDiskSpecs, err := librevm.ParseRawDiskSpecs(command.StringSlice(define.FlagRawDisk))
+	if err != nil {
+		return err
+	}
+
 	cfg := librevm.DefaultConfig().
 		WithMode(librevm.ModeContainer).
 		WithName(command.String(define.FlagSessionID)).
@@ -83,7 +58,6 @@ func dockerLifeCycle(_ context.Context, command *cli.Command) error {
 		WithProxy(command.Bool(define.FlagUsingSystemProxy)).
 		WithLogLevel(command.String(define.FlagLogLevel)).
 		WithLogTo(command.String(define.FlagLogTo)).
-		WithDisk(command.StringSlice(define.FlagRawDisk)...).
 		WithMount(command.StringSlice(define.FlagMount)...).
 		WithContainerDisk(command.String(define.FlagContainerDisk)).
 		WithPodmanProxyAPIFile(command.String(define.FlagPodmanProxyAPIFile)).
@@ -92,21 +66,11 @@ func dockerLifeCycle(_ context.Context, command *cli.Command) error {
 		WithExportSSHKeyPrivateFile(command.String(define.FlagExportSSHKeyPrivateFile)).
 		WithExportSSHKeyPublicFile(command.String(define.FlagExportSSHKeyPublicFile))
 
-	// if legacy event reporter is set, use it
-	if u := command.String(define.FlagOVMReportURL); u != "" {
-		cfg.WithEventReporter(eventreporter.NewLegacyReporter(u, librevm.ModeContainer))
-	}
+	cfg.WithRawDiskSpecs(rawDiskSpecs...)
 
 	if u := command.String(define.FlagReportEvents); u != "" {
 		cfg.Reporters = nil
 		cfg.WithEventReporter(eventreporter.NewV1(u, librevm.ModeContainer))
-	}
-
-	// Apply init vmconfig preferences if present.
-	if initCfg, err := librevm.LoadFile(vmConfigFilePath); err == nil {
-		logrus.Infof("[apply-vmconfig] apply vmconfig prefer from: %q", vmConfigFilePath)
-		cfg.MergeFrom(initCfg)
-		_ = os.Remove(vmConfigFilePath)
 	}
 
 	vm, err := librevm.New(cfg)

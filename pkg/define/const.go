@@ -40,17 +40,6 @@ const (
 	VMConfigFilePathInGuest = "/vmconfig.json"
 	HostDomainInGVPNet      = "host.containers.internal"
 
-	LibexecDirName = "libexec"
-
-	SSHPrivateKeyFileName = "private.key"
-	SSHPublicKeyFileName  = "public.key"
-
-	DropBearRuntimeDir = "/run/dropbear"
-
-	DropBearPrivateKeyPath = DropBearRuntimeDir + "/" + SSHPrivateKeyFileName
-
-	DropBearPidFile = DropBearRuntimeDir + "/dropbear.pid"
-
 	ContainerStorageMountPoint = "/var/lib/containers"
 
 	DefaultGuestUser = "root"

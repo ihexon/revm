@@ -1,15 +1,13 @@
-pullcode_rpi() {
-    rsync -avz --delete  --no-perms --exclude='revm-*' --exclude=.git --exclude='.idea/' --exclude='out/' -e "ssh -p 8522" ihexon@192.168.1.251:/home/ihexon/revm/ "$(pwd)/"
+export SSH_PORT=10024
+export LOCAL_SRC_DIR="$(pwd)/"
+export SSH_REMOTE_ADDR="ihexon@192.168.1.210:/home/ihexon/revm/"
+
+pullcode ()
+{
+    rsync -avz --delete --no-perms --exclude='revm-*' --exclude=.git --exclude='.idea/' --exclude='out/' -e "ssh -p $SSH_PORT" "$SSH_REMOTE_ADDR" "$LOCAL_SRC_DIR"
 }
 
-pushcode_rpi() {
-    rsync -avz --delete  --no-perms --exclude='revm-*' --exclude=.git --exclude='.idea/' --exclude='out/' -e "ssh -p 8522" "$(pwd)/" ihexon@192.168.1.251:/home/ihexon/revm/
-}
-
-pullcode_rk5b() {
-    rsync -avz --delete  --no-perms --exclude='revm-*' --exclude=.git --exclude='.idea/' --exclude='out/' -e "ssh -p 22" ihexon@192.168.1.252:/home/ihexon/revm/ "$(pwd)/"
-}
-
-pushcode_rk5b() {
-    rsync -avz --delete  --no-perms --exclude='revm-*' --exclude=.git --exclude='.idea/' --exclude='out/' -e "ssh -p 22" "$(pwd)/" ihexon@192.168.1.252:/home/ihexon/revm/
+pushcode ()
+{
+    rsync -avz --delete --no-perms --exclude='revm-*' --exclude=.git --exclude='.idea/' --exclude='out/' -e "ssh -p $SSH_PORT" "$LOCAL_SRC_DIR" "$SSH_REMOTE_ADDR"
 }

@@ -31,7 +31,6 @@ type MachineSpec struct {
 	IgnitionServerCfg IgnitionServerCfg `json:"ignitionServerCfg,omitempty"`
 	GuestAgentCfg     GuestAgentCfg     `json:"guestAgentCfg,omitempty"`
 	Cmdline           Cmdline           `json:"cmdline,omitempty"` // 仅仅在 rootfs mode 有意义
-	DiskXattrs        map[string]string `json:"diskXattrs,omitempty"`
 	ProxySetting      ProxySetting      `json:"systemProxy,omitempty"`
 
 	TTY bool `json:"TTY"`
