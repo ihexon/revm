@@ -85,7 +85,7 @@ var (
 
 	containerDiskFlag = &cli.StringFlag{
 		Name:  define.FlagContainerDisk,
-		Usage: "path to a persistent ext4 raw disk image for container storage; auto-created if the file does not exist; defaults to a workspace-local disk if unset",
+		Usage: "persistent ext4 raw disk image for container storage (format: <path>[,version=<string>]); auto-created if missing; if the stored version xattr is missing or mismatched, the disk is recreated; defaults to a workspace-local disk with the built-in container disk version when unset",
 	}
 
 	podmanProxyAPIFileFlag = &cli.StringFlag{
