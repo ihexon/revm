@@ -15,6 +15,7 @@ import (
 type XattrManager interface {
 	SetXattr(ctx context.Context, filePath string, key string, value string, overwrite bool) error
 	GetXattr(ctx context.Context, filePath string, key string) (string, error)
+	LookupXattr(ctx context.Context, filePath string, key string) (string, bool, error)
 }
 
 type xattrManager struct {
@@ -45,8 +46,8 @@ func (b xattrManager) SetXattr(ctx context.Context, blkPath string, namespace st
 		return err
 	}
 
-	existValue, _ := b.GetXattr(ctx, blkPath, namespace)
-	if existValue != "" && !overwrite {
+	existValue, ok, _ := b.LookupXattr(ctx, blkPath, namespace)
+	if ok && existValue != "" && !overwrite {
 		return nil
 	}
 
@@ -62,9 +63,21 @@ func (b xattrManager) SetXattr(ctx context.Context, blkPath string, namespace st
 }
 
 func (b xattrManager) GetXattr(ctx context.Context, blkPath string, namespace string) (string, error) {
-	blkPath, err := filepath.Abs(filepath.Clean(blkPath))
+	value, ok, err := b.LookupXattr(ctx, blkPath, namespace)
 	if err != nil {
 		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("getxattr %q on %q: attribute not found", namespace, blkPath)
+	}
+
+	return value, nil
+}
+
+func (b xattrManager) LookupXattr(ctx context.Context, blkPath string, namespace string) (string, bool, error) {
+	blkPath, err := filepath.Abs(filepath.Clean(blkPath))
+	if err != nil {
+		return "", false, err
 	}
 
 	cmd := exec.CommandContext(ctx, b.bin, "-p", namespace, blkPath)
@@ -77,8 +90,12 @@ func (b xattrManager) GetXattr(ctx context.Context, blkPath string, namespace st
 	cmd.Stdin = nil
 
 	if err = cmd.Run(); err != nil {
-		return "", fmt.Errorf("getxattr %q on %q: %w (%s)", namespace, blkPath, err, strings.TrimSpace(errMsg.String()))
+		msg := strings.TrimSpace(errMsg.String())
+		if strings.Contains(msg, "No such xattr:") {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("getxattr %q on %q: %w (%s)", namespace, blkPath, err, msg)
 	}
 
-	return value.String(), nil
+	return value.String(), true, nil
 }

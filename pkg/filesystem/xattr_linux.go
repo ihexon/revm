@@ -4,6 +4,7 @@ package filesystem
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 type XattrManager interface {
 	SetXattr(ctx context.Context, filePath string, key string, value string, overwrite bool) error
 	GetXattr(ctx context.Context, filePath string, key string) (string, error)
+	LookupXattr(ctx context.Context, filePath string, key string) (string, bool, error)
 }
 
 type xattrManager struct{}
@@ -40,8 +42,8 @@ func (b xattrManager) SetXattr(ctx context.Context, blkPath string, namespace st
 		return err
 	}
 
-	existValue, _ := b.GetXattr(ctx, blkPath, namespace)
-	if existValue != "" && !overwrite {
+	existValue, ok, _ := b.LookupXattr(ctx, blkPath, namespace)
+	if ok && existValue != "" && !overwrite {
 		return nil
 	}
 
@@ -49,22 +51,37 @@ func (b xattrManager) SetXattr(ctx context.Context, blkPath string, namespace st
 }
 
 func (b xattrManager) GetXattr(ctx context.Context, blkPath string, namespace string) (string, error) {
-	blkPath, err := filepath.Abs(filepath.Clean(blkPath))
+	value, ok, err := b.LookupXattr(ctx, blkPath, namespace)
 	if err != nil {
 		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("getxattr %q on %q: attribute not found", namespace, blkPath)
+	}
+
+	return value, nil
+}
+
+func (b xattrManager) LookupXattr(ctx context.Context, blkPath string, namespace string) (string, bool, error) {
+	blkPath, err := filepath.Abs(filepath.Clean(blkPath))
+	if err != nil {
+		return "", false, err
 	}
 
 	// First call to get size
 	sz, err := unix.Getxattr(blkPath, namespace, nil)
 	if err != nil {
-		return "", fmt.Errorf("getxattr %q on %q: %w", namespace, blkPath, err)
+		if errors.Is(err, unix.ENODATA) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("getxattr %q on %q: %w", namespace, blkPath, err)
 	}
 
 	buf := make([]byte, sz)
 	_, err = unix.Getxattr(blkPath, namespace, buf)
 	if err != nil {
-		return "", fmt.Errorf("getxattr %q on %q (read %d bytes): %w", namespace, blkPath, sz, err)
+		return "", false, fmt.Errorf("getxattr %q on %q (read %d bytes): %w", namespace, blkPath, sz, err)
 	}
 
-	return string(buf), nil
+	return string(buf), true, nil
 }
