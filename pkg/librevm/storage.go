@@ -5,16 +5,10 @@ package librevm
 import (
 	"context"
 	"fmt"
-	"linuxvm/pkg/define"
 )
 
-func (v *machineBuilder) configureContainerRAWDisk(ctx context.Context, diskPath string, version string) error {
-	blkDev, err := v.prepareRawDisk(ctx, RawDiskSpec{
-		Path:    diskPath,
-		UUID:    define.ContainerDiskUUID,
-		Version: version,
-		MountTo: define.ContainerStorageMountPoint,
-	})
+func (v *machineBuilder) configureContainerRAWDisk(ctx context.Context, spec *ContainerDiskSpec, defaultPath string) error {
+	blkDev, err := v.prepareContainerStorageDisk(ctx, spec, defaultPath)
 	if err != nil {
 		return fmt.Errorf("prepare container storage raw disk: %w", err)
 	}

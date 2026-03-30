@@ -129,6 +129,44 @@ func TestParseRawDiskSpec_RejectsNonKeyValueOptions(t *testing.T) {
 	}
 }
 
+func TestParseContainerDiskSpec_PathOnly(t *testing.T) {
+	spec, err := ParseContainerDiskSpec("/tmp/container-storage.ext4")
+	if err != nil {
+		t.Fatalf("ParseContainerDiskSpec returned error: %v", err)
+	}
+
+	if spec.Path != "/tmp/container-storage.ext4" {
+		t.Fatalf("unexpected path: %q", spec.Path)
+	}
+	if spec.Version != "" {
+		t.Fatalf("expected version to be empty, got %q", spec.Version)
+	}
+}
+
+func TestParseContainerDiskSpec_WithVersion(t *testing.T) {
+	spec, err := ParseContainerDiskSpec("/tmp/container-storage.ext4,version=v2")
+	if err != nil {
+		t.Fatalf("ParseContainerDiskSpec returned error: %v", err)
+	}
+
+	if spec.Path != "/tmp/container-storage.ext4" {
+		t.Fatalf("unexpected path: %q", spec.Path)
+	}
+	if spec.Version != "v2" {
+		t.Fatalf("unexpected version: %q", spec.Version)
+	}
+}
+
+func TestParseContainerDiskSpec_RejectsUnsupportedOption(t *testing.T) {
+	_, err := ParseContainerDiskSpec("/tmp/container-storage.ext4,uuid=" + uuid.NewString())
+	if err == nil {
+		t.Fatal("expected ParseContainerDiskSpec to reject unsupported option")
+	}
+	if !strings.Contains(err.Error(), "unsupported container disk option") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestEnsureRAWDisk_CreatesMissingDiskWithDefaults(t *testing.T) {
 	diskMgr, xattrMgr, extracted := installRawDiskTestDoubles(t)
 	rawDiskPath := filepath.Join(t.TempDir(), "new.ext4")
@@ -256,6 +294,120 @@ func TestEnsureRAWDisk_RecreatesWhenVersionMismatches(t *testing.T) {
 		t.Fatalf("expected recreated UUID %q, got %q", newUUID, blkDev.UUID)
 	}
 	if blkDev.MountTo != "/mnt/"+newUUID {
+		t.Fatalf("unexpected mount target: %q", blkDev.MountTo)
+	}
+}
+
+func TestPrepareContainerStorageDisk_DefaultsWhenUnset(t *testing.T) {
+	diskMgr, xattrMgr, extracted := installRawDiskTestDoubles(t)
+	defaultPath := filepath.Join(t.TempDir(), "container-storage.ext4")
+
+	blkDev, err := (&machineBuilder{}).prepareContainerStorageDisk(context.Background(), nil, defaultPath)
+	if err != nil {
+		t.Fatalf("prepareContainerStorageDisk returned error: %v", err)
+	}
+
+	defaultPath = mustAbsPath(defaultPath)
+	if len(*extracted) != 1 || (*extracted)[0] != defaultPath {
+		t.Fatalf("expected container disk to be extracted once, got %v", *extracted)
+	}
+	if len(diskMgr.newUUIDCalls) != 1 || diskMgr.newUUIDCalls[0].uuid != define.ContainerDiskUUID {
+		t.Fatalf("expected container disk UUID %q, got %v", define.ContainerDiskUUID, diskMgr.newUUIDCalls)
+	}
+	if got := xattrMgr.values[defaultPath][define.XattrDiskVersionKey]; got != define.DefaultContainerDiskVersion {
+		t.Fatalf("unexpected default container disk version xattr: %q", got)
+	}
+	if blkDev.MountTo != define.ContainerStorageMountPoint {
+		t.Fatalf("unexpected mount target: %q", blkDev.MountTo)
+	}
+}
+
+func TestPrepareContainerStorageDisk_RecreatesWhenVersionXattrMissing(t *testing.T) {
+	diskMgr, xattrMgr, extracted := installRawDiskTestDoubles(t)
+	rawDiskPath := filepath.Join(t.TempDir(), "container-storage.ext4")
+	createTestFile(t, rawDiskPath)
+
+	rawDiskPath = mustAbsPath(rawDiskPath)
+	diskMgr.uuids[rawDiskPath] = uuid.NewString()
+
+	blkDev, err := (&machineBuilder{}).prepareContainerStorageDisk(context.Background(), &ContainerDiskSpec{
+		Path:    rawDiskPath,
+		Version: "v2",
+	}, filepath.Join(t.TempDir(), "unused.ext4"))
+	if err != nil {
+		t.Fatalf("prepareContainerStorageDisk returned error: %v", err)
+	}
+
+	if len(*extracted) != 1 || (*extracted)[0] != rawDiskPath {
+		t.Fatalf("expected container disk recreation, got %v", *extracted)
+	}
+	if len(diskMgr.newUUIDCalls) != 1 || diskMgr.newUUIDCalls[0].uuid != define.ContainerDiskUUID {
+		t.Fatalf("expected recreated container disk UUID %q, got %v", define.ContainerDiskUUID, diskMgr.newUUIDCalls)
+	}
+	if got := xattrMgr.values[rawDiskPath][define.XattrDiskVersionKey]; got != "v2" {
+		t.Fatalf("unexpected container disk version xattr: %q", got)
+	}
+	if blkDev.MountTo != define.ContainerStorageMountPoint {
+		t.Fatalf("unexpected mount target: %q", blkDev.MountTo)
+	}
+}
+
+func TestPrepareContainerStorageDisk_RecreatesWhenVersionMismatches(t *testing.T) {
+	diskMgr, xattrMgr, extracted := installRawDiskTestDoubles(t)
+	rawDiskPath := filepath.Join(t.TempDir(), "container-storage.ext4")
+	createTestFile(t, rawDiskPath)
+
+	rawDiskPath = mustAbsPath(rawDiskPath)
+	diskMgr.uuids[rawDiskPath] = define.ContainerDiskUUID
+	xattrMgr.values[rawDiskPath] = map[string]string{
+		define.XattrDiskVersionKey: "old-version",
+	}
+
+	_, err := (&machineBuilder{}).prepareContainerStorageDisk(context.Background(), &ContainerDiskSpec{
+		Path:    rawDiskPath,
+		Version: "new-version",
+	}, filepath.Join(t.TempDir(), "unused.ext4"))
+	if err != nil {
+		t.Fatalf("prepareContainerStorageDisk returned error: %v", err)
+	}
+
+	if len(*extracted) != 1 || (*extracted)[0] != rawDiskPath {
+		t.Fatalf("expected container disk recreation, got %v", *extracted)
+	}
+	if len(diskMgr.newUUIDCalls) != 1 || diskMgr.newUUIDCalls[0].uuid != define.ContainerDiskUUID {
+		t.Fatalf("expected recreated container disk UUID %q, got %v", define.ContainerDiskUUID, diskMgr.newUUIDCalls)
+	}
+	if got := xattrMgr.values[rawDiskPath][define.XattrDiskVersionKey]; got != "new-version" {
+		t.Fatalf("unexpected container disk version xattr: %q", got)
+	}
+}
+
+func TestPrepareContainerStorageDisk_ReusesWhenVersionMatches(t *testing.T) {
+	diskMgr, xattrMgr, extracted := installRawDiskTestDoubles(t)
+	rawDiskPath := filepath.Join(t.TempDir(), "container-storage.ext4")
+	createTestFile(t, rawDiskPath)
+
+	rawDiskPath = mustAbsPath(rawDiskPath)
+	diskMgr.uuids[rawDiskPath] = define.ContainerDiskUUID
+	xattrMgr.values[rawDiskPath] = map[string]string{
+		define.XattrDiskVersionKey: "v3",
+	}
+
+	blkDev, err := (&machineBuilder{}).prepareContainerStorageDisk(context.Background(), &ContainerDiskSpec{
+		Path:    rawDiskPath,
+		Version: "v3",
+	}, filepath.Join(t.TempDir(), "unused.ext4"))
+	if err != nil {
+		t.Fatalf("prepareContainerStorageDisk returned error: %v", err)
+	}
+
+	if len(*extracted) != 0 {
+		t.Fatalf("expected existing container disk to be reused, got %v", *extracted)
+	}
+	if len(diskMgr.newUUIDCalls) != 0 {
+		t.Fatalf("expected no UUID rewrite, got %v", diskMgr.newUUIDCalls)
+	}
+	if blkDev.MountTo != define.ContainerStorageMountPoint {
 		t.Fatalf("unexpected mount target: %q", blkDev.MountTo)
 	}
 }

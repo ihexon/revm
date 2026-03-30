@@ -40,7 +40,8 @@ const (
 	VMConfigFilePathInGuest = "/vmconfig.json"
 	HostDomainInGVPNet      = "host.containers.internal"
 
-	ContainerStorageMountPoint = "/var/lib/containers"
+	ContainerStorageMountPoint  = "/var/lib/containers"
+	DefaultContainerDiskVersion = "revm-container-storage-v1"
 
 	DefaultGuestUser = "root"
 

@@ -504,13 +504,8 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 			return nil, nil, fmt.Errorf("configure podman: %w", err)
 		}
 
-		diskPath := mBuilder.pathMgr.GetBuiltInContainerStorageDiskFile()
-		if cfg.ContainerDisk != "" {
-			diskPath = cfg.ContainerDisk
-		}
-
 		logrus.Info("Preparing container storage disk...")
-		if err := mBuilder.configureContainerRAWDisk(ctx, diskPath, cfg.ContainerDiskVersion); err != nil {
+		if err := mBuilder.configureContainerRAWDisk(ctx, cfg.ContainerDisk, mBuilder.pathMgr.GetBuiltInContainerStorageDiskFile()); err != nil {
 			return nil, nil, fmt.Errorf("setup container disk: %w", err)
 		}
 	}
