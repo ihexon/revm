@@ -245,6 +245,8 @@ func (c *Config) WithLogSetup(level string, logFilePath string) *Config {
 	logrus.SetOutput(io.MultiWriter(os.Stderr, f))
 
 	c.LogTo = logFilePath
+
+	logrus.Infof("start virtualMachine, full cmdline: %q", os.Args)
 	return c
 }
 
