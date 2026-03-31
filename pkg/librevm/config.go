@@ -10,10 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 
-	"github.com/BurntSushi/toml"
 	"github.com/shirou/gopsutil/v4/mem"
+	"github.com/sirupsen/logrus"
 )
 
 // RunMode selects the VM run mode.
@@ -65,94 +64,234 @@ type Config struct {
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.
 // Zero-value resource fields (CPUs, MemoryMB) are resolved at VM creation time.
-func DefaultConfig() *Config {
+func DefaultConfig(sessionID string) *Config {
+	if sessionID == "" {
+		sessionID = RandomString()
+		logrus.Warnf("DefaultConfig: session name is empty, autogenerate a random one: %s", sessionID)
+	}
+
 	return &Config{
-		Network:  "gvisor",
-		LogLevel: "info",
-		WorkDir:  "/",
+		Network:   "gvisor",
+		LogLevel:  "info",
+		WorkDir:   "/",
+		SessionID: sessionID,
 	}
 }
 
 // --- Chain (fluent) methods ------------------------------------------------
 
-func (c *Config) WithMode(m RunMode) *Config      { c.RunMode = m; return c }
-func (c *Config) WithName(name string) *Config    { c.SessionID = name; return c }
-func (c *Config) WithCPUs(n int) *Config          { c.CPUs = n; return c }
-func (c *Config) WithMemory(mb uint64) *Config    { c.MemoryMB = mb; return c }
-func (c *Config) WithRootfs(path string) *Config  { c.Rootfs = path; return c }
-func (c *Config) WithWorkDir(dir string) *Config  { c.WorkDir = dir; return c }
-func (c *Config) WithNetwork(mode string) *Config { c.Network = mode; return c }
-func (c *Config) WithContainerDiskSpec(spec *ContainerDiskSpec) *Config {
-	if spec != nil {
-		specCopy := *spec
-		c.ContainerDisk = &specCopy
+func (c *Config) WithMode(m RunMode) *Config {
+	if m == "" {
+		return c
 	}
+	c.RunMode = m
+	return c
+}
+
+func (c *Config) WithCPUs(n int) *Config {
+	if n <= 0 {
+		c.CPUs = 0 // auto-detect in build vm
+		return c
+	}
+	c.CPUs = n
+	return c
+}
+
+func (c *Config) WithMemory(mb uint64) *Config {
+	if mb == 0 {
+		c.MemoryMB = 0 // auto-detect in build vm
+		return c
+	}
+	c.MemoryMB = mb
+	return c
+}
+
+func (c *Config) WithRootfs(path string) *Config {
+	if path == "" {
+		return c
+	}
+	c.Rootfs = path
+	return c
+}
+
+func (c *Config) WithWorkDir(dir string) *Config {
+	if dir == "" {
+		return c
+	}
+	c.WorkDir = dir
+	return c
+}
+
+func (c *Config) WithNetwork(mode string) *Config {
+	if mode == "" {
+		return c
+	}
+	c.Network = mode
+	return c
+}
+
+func (c *Config) WithContainerDiskSpec(spec *ContainerDiskSpec) *Config {
+	if spec == nil {
+		return c
+	}
+	if spec.Path == "" {
+		return c
+	}
+	specCopy := *spec
+	c.ContainerDisk = &specCopy
 	return c
 }
 func (c *Config) WithPodmanProxyAPIFile(path string) *Config {
-	if path != "" {
-		c.PodmanProxyAPIFile = path
+	if path == "" {
+		return c
 	}
+	c.PodmanProxyAPIFile = path
 	return c
 }
 func (c *Config) WithManageAPIFile(path string) *Config {
-	if path != "" {
-		c.ManageAPIFile = path
+	if path == "" {
+		return c
 	}
+	c.ManageAPIFile = path
 	return c
 }
+
 func (c *Config) WithSSHKeyDir(dir string) *Config {
-	if dir != "" {
-		c.SSHKeyDir = dir
+	if dir == "" {
+		return c
 	}
+	c.SSHKeyDir = dir
 	return c
 }
 func (c *Config) WithExportSSHKeyPrivateFile(path string) *Config {
-	if path != "" {
-		c.ExportSSHKeyPrivateFile = path
+	if path == "" {
+		return c
 	}
+	c.ExportSSHKeyPrivateFile = path
 	return c
 }
 func (c *Config) WithExportSSHKeyPublicFile(path string) *Config {
-	if path != "" {
-		c.ExportSSHKeyPublicFile = path
+	if path == "" {
+		return c
 	}
+	c.ExportSSHKeyPublicFile = path
 	return c
 }
 func (c *Config) WithEventReporter(reporters ...EventReporter) *Config {
-	for _, r := range reporters {
-		if r != nil {
-			c.Reporters = append(c.Reporters, r)
-		}
+	if len(reporters) == 0 {
+		return c
 	}
-	return c
-}
-func (c *Config) WithProxy(enable bool) *Config     { c.Proxy = enable; return c }
-func (c *Config) WithLogLevel(level string) *Config { c.LogLevel = level; return c }
-func (c *Config) WithLogTo(path string) *Config {
-	if path != "" {
-		c.LogTo = path
+	for _, r := range reporters {
+		if r == nil {
+			continue
+		}
+		c.Reporters = append(c.Reporters, r)
 	}
 	return c
 }
 
+func (c *Config) WithProxy(enable bool) *Config {
+	logrus.Infof("get proxy setting from system: %v", enable)
+	c.Proxy = enable
+	return c
+}
+
+const maxLogFileSize = 10 * 1024 * 1024
+
+func (c *Config) WithLogSetup(level string, logFilePath string) *Config {
+	if level == "" {
+		level = logrus.InfoLevel.String()
+		logrus.Infof("default log level: %q", level)
+	}
+
+	// setup logrus
+	l, err := logrus.ParseLevel(level)
+	if err != nil {
+		l = logrus.InfoLevel
+		logrus.Warnf("failed to parse log level: %v, using default log level %s", err, l.String())
+	}
+
+	logrus.SetLevel(l)
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp:   true,
+		TimestampFormat: "2006-01-02 15:04:05.000",
+		ForceColors:     true,
+	})
+
+	c.LogLevel = level
+
+	if logFilePath == "" {
+		logFilePath = filepath.Join(getSessionDir(c.SessionID), "logs", "revm.log")
+		logrus.Infof("default log file path: %q", logFilePath)
+	} else {
+		logrus.Infof("custom log file path: %q", logFilePath)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(logFilePath), 0755); err != nil {
+		logrus.Warnf("Config.WithLogSetup failed to create log directory: %v", err)
+		return c
+	}
+
+	if info, err := os.Stat(logFilePath); err == nil && info.Size() > maxLogFileSize {
+		_ = os.Truncate(logFilePath, 0)
+	}
+
+	f, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		logrus.Warnf("Config.WithLogSetup failed to open log file: %v", err)
+		return c
+	}
+
+	logrus.SetOutput(io.MultiWriter(os.Stderr, f))
+
+	c.LogTo = logFilePath
+	return c
+}
+
 func (c *Config) WithCommand(bin string, args ...string) *Config {
+	if bin == "" {
+		return c
+	}
 	c.Command = append([]string{bin}, args...)
 	return c
 }
 
 func (c *Config) WithEnv(kvs ...string) *Config {
-	c.Env = append(c.Env, kvs...)
+	if len(kvs) == 0 {
+		return c
+	}
+	for _, kv := range kvs {
+		if kv == "" {
+			continue
+		}
+		c.Env = append(c.Env, kv)
+	}
 	return c
 }
 
 func (c *Config) WithMount(specs ...string) *Config {
-	c.Mounts = append(c.Mounts, specs...)
+	if len(specs) == 0 {
+		return c
+	}
+	for _, spec := range specs {
+		if spec == "" {
+			continue
+		}
+		c.Mounts = append(c.Mounts, spec)
+	}
 	return c
 }
 
 func (c *Config) WithRawDiskSpecs(specs ...RawDiskSpec) *Config {
-	c.Disks = append(c.Disks, specs...)
+	if len(specs) == 0 {
+		return c
+	}
+	for _, spec := range specs {
+		if spec.Path == "" {
+			continue
+		}
+		c.Disks = append(c.Disks, spec)
+	}
 	return c
 }
 
@@ -171,95 +310,6 @@ func (c *Config) WriteCfg(path string) error {
 		return fmt.Errorf("write config file: %w", err)
 	}
 	return nil
-}
-
-// MergeFrom applies non-zero preference fields from other onto c.
-// Only fields that "init" is expected to set are merged; runtime-only
-// fields (RunMode, SessionID, event report URLs, etc.) are intentionally skipped.
-func (c *Config) MergeFrom(other *Config) {
-	if other == nil {
-		return
-	}
-
-	if len(other.Disks) > 0 {
-		c.Disks = append([]RawDiskSpec(nil), other.Disks...)
-	}
-
-	if other.SessionID != "" {
-		c.SessionID = other.SessionID
-	}
-
-	if other.CPUs > 0 {
-		c.CPUs = other.CPUs
-	}
-	if other.MemoryMB > 0 {
-		c.MemoryMB = other.MemoryMB
-	}
-	if other.Network != "" {
-		c.Network = other.Network
-	}
-	if len(other.Mounts) > 0 {
-		c.Mounts = append(c.Mounts, other.Mounts...)
-	}
-	if other.ContainerDisk != nil {
-		specCopy := *other.ContainerDisk
-		c.ContainerDisk = &specCopy
-	}
-	if other.PodmanProxyAPIFile != "" {
-		c.PodmanProxyAPIFile = other.PodmanProxyAPIFile
-	}
-	if other.ManageAPIFile != "" {
-		c.ManageAPIFile = other.ManageAPIFile
-	}
-	if other.SSHKeyDir != "" {
-		c.SSHKeyDir = other.SSHKeyDir
-	}
-	if other.ExportSSHKeyPrivateFile != "" {
-		c.ExportSSHKeyPrivateFile = other.ExportSSHKeyPrivateFile
-	}
-	if other.ExportSSHKeyPublicFile != "" {
-		c.ExportSSHKeyPublicFile = other.ExportSSHKeyPublicFile
-	}
-	if other.LogTo != "" {
-		c.LogTo = other.LogTo
-	}
-}
-
-// LoadFile reads a Config from path. The format is detected by extension:
-// .toml for TOML, .json for JSON. Any other extension returns an error.
-func LoadFile(path string) (*Config, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	ext := strings.ToLower(filepath.Ext(path))
-	switch ext {
-	case ".toml":
-		return Load(f)
-	case ".json":
-		return loadJSON(f)
-	default:
-		return nil, fmt.Errorf("unsupported config format %q (use .toml or .json)", ext)
-	}
-}
-
-// Load reads a TOML-encoded Config from r.
-func Load(r io.Reader) (*Config, error) {
-	var cfg Config
-	if _, err := toml.NewDecoder(r).Decode(&cfg); err != nil {
-		return nil, fmt.Errorf("decode toml config: %w", err)
-	}
-	return &cfg, nil
-}
-
-func loadJSON(r io.Reader) (*Config, error) {
-	var cfg Config
-	if err := json.NewDecoder(r).Decode(&cfg); err != nil {
-		return nil, fmt.Errorf("decode json config: %w", err)
-	}
-	return &cfg, nil
 }
 
 // --- Normalization & Validation --------------------------------------------
@@ -349,5 +399,3 @@ func RandomString() string {
 	}
 	return string(b)
 }
-
-// fuck
