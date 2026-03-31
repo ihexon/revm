@@ -10,7 +10,6 @@ import (
 	"guestAgent/pkg/service"
 	"io"
 	"linuxvm/pkg/define"
-	commonlog "linuxvm/pkg/log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,13 +25,25 @@ import (
 // Used as a non-nil error to cancel the errgroup.
 var CmdlineExitNormal = errors.New("command exited normally")
 
-func setupLogger() error {
+func setupLogger() {
 	level := strings.ToLower(os.Getenv(define.EnvLogLevel))
 	if level == "" {
 		level = "info"
 	}
-	_, err := commonlog.SetupLogger(level, "guest-agent", "")
-	return err
+
+	l, err := logrus.ParseLevel(level)
+	if err != nil {
+		l = logrus.InfoLevel
+	}
+
+	logrus.SetLevel(l)
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp:   true,
+		TimestampFormat: "2006-01-02 15:04:05.000",
+		ForceColors:     true,
+	})
+
+	return
 }
 
 // setupGuestLogAndSignalPort opens the guest-logs port for logging and signal handling.
@@ -135,9 +146,7 @@ func main() {
 }
 
 func run(ctx context.Context, _ *cli.Command) error {
-	if err := setupLogger(); err != nil {
-		return fmt.Errorf("setup logger: %w", err)
-	}
+	setupLogger()
 
 	if err := service.InitBinDir(); err != nil {
 		return fmt.Errorf("init bin dir: %w", err)

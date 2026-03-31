@@ -58,24 +58,21 @@ func dockerLifeCycle(_ context.Context, command *cli.Command) error {
 		containerDiskSpec = &spec
 	}
 
-	cfg := librevm.DefaultConfig().
+	cfg := librevm.DefaultConfig(command.String(define.FlagSessionID)).
+		WithLogSetup(command.String(define.FlagLogLevel), command.String(define.FlagLogTo)).
 		WithMode(librevm.ModeContainer).
-		WithName(command.String(define.FlagSessionID)).
 		WithCPUs(int(command.Int8(define.FlagCPUS))).
 		WithMemory(command.Uint64(define.FlagMemoryInMB)).
 		WithNetwork(command.String(define.FlagVNetworkType)).
 		WithProxy(command.Bool(define.FlagUsingSystemProxy)).
-		WithLogLevel(command.String(define.FlagLogLevel)).
-		WithLogTo(command.String(define.FlagLogTo)).
 		WithMount(command.StringSlice(define.FlagMount)...).
 		WithContainerDiskSpec(containerDiskSpec).
 		WithPodmanProxyAPIFile(command.String(define.FlagPodmanProxyAPIFile)).
 		WithManageAPIFile(command.String(define.FlagManageAPIFile)).
 		WithSSHKeyDir(command.String(define.FlagSSHKeyDir)).
 		WithExportSSHKeyPrivateFile(command.String(define.FlagExportSSHKeyPrivateFile)).
-		WithExportSSHKeyPublicFile(command.String(define.FlagExportSSHKeyPublicFile))
-
-	cfg.WithRawDiskSpecs(rawDiskSpecs...)
+		WithExportSSHKeyPublicFile(command.String(define.FlagExportSSHKeyPublicFile)).
+		WithRawDiskSpecs(rawDiskSpecs...)
 
 	if u := command.String(define.FlagReportEvents); u != "" {
 		cfg.Reporters = nil

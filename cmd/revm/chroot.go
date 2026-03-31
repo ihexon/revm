@@ -49,23 +49,20 @@ func rootfsLifeCycle(_ context.Context, command *cli.Command) error {
 		return err
 	}
 
-	cfg := librevm.DefaultConfig().
+	cfg := librevm.DefaultConfig(command.String(define.FlagSessionID)).
+		WithLogSetup(command.String(define.FlagLogLevel), command.String(define.FlagLogTo)).
 		WithMode(librevm.ModeRootfs).
-		WithName(command.String(define.FlagSessionID)).
 		WithCPUs(int(command.Int8(define.FlagCPUS))).
 		WithMemory(command.Uint64(define.FlagMemoryInMB)).
 		WithNetwork(command.String(define.FlagVNetworkType)).
 		WithProxy(command.Bool(define.FlagUsingSystemProxy)).
-		WithLogLevel(command.String(define.FlagLogLevel)).
-		WithLogTo(command.String(define.FlagLogTo)).
 		WithRootfs(command.String(define.FlagRootfs)).
 		WithManageAPIFile(command.String(define.FlagManageAPIFile)).
 		WithSSHKeyDir(command.String(define.FlagSSHKeyDir)).
 		WithExportSSHKeyPrivateFile(command.String(define.FlagExportSSHKeyPrivateFile)).
 		WithExportSSHKeyPublicFile(command.String(define.FlagExportSSHKeyPublicFile)).
-		WithMount(command.StringSlice(define.FlagMount)...)
-
-	cfg.WithRawDiskSpecs(rawDiskSpecs...)
+		WithMount(command.StringSlice(define.FlagMount)...).
+		WithRawDiskSpecs(rawDiskSpecs...)
 
 	if command.Args().Len() > 0 {
 		cfg.WithCommand(command.Args().First(), command.Args().Tail()...).

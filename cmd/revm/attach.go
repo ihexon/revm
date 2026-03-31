@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/librevm"
-	"linuxvm/pkg/log"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -34,9 +33,16 @@ var AttachConsole = cli.Command{
 }
 
 func attachConsole(ctx context.Context, command *cli.Command) error {
-	if _, err := log.SetupLogger(command.String(define.FlagLogLevel), "", ""); err != nil {
-		return fmt.Errorf("failed to setup basic logger: %w", err)
+	level := command.String(define.FlagLogLevel)
+	if level == "" {
+		level = "info"
 	}
+
+	l, err := logrus.ParseLevel(level)
+	if err != nil {
+		return fmt.Errorf("failed to parse log level: %w", err)
+	}
+	logrus.SetLevel(l)
 
 	name := command.Args().First()
 	enablePTY := command.Bool(define.FlagPTY)
