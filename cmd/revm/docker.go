@@ -10,7 +10,6 @@ import (
 
 var startDocker = cli.Command{
 	Name:                      define.FlagDockerMode,
-	Aliases:                   []string{"start"}, // for compatibility ovm-js ovm init
 	Usage:                     "start a Linux VM with the built-in container runtime",
 	UsageText:                 define.FlagDockerMode + " [flags]",
 	Description:               "boot a Linux microVM using libkrun with the built-in rootfs and podman container runtime; exposes a Podman-compatible API socket on the host",
