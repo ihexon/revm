@@ -19,8 +19,8 @@ const (
 	FlagVNetworkType            = "network"
 	FlagSessionID               = "id"
 	FlagContainerDisk           = "container-disk"
-	FlagPodmanProxyAPIFile      = "podman-proxy-api-file"
-	FlagManageAPIFile           = "manage-api-file"
+	FlagPodmanProxyAPIFile      = "podman-api"
+	FlagManageAPIFile           = "manage-api"
 	FlagExportSSHKeyPrivateFile = "ssh-key"
 	FlagReportEvents            = "report-events"
 
@@ -32,15 +32,4 @@ const (
 	KrunStdinPortName  = "krun-stdin"
 	KrunStdoutPortName = "krun-stdout"
 	KrunStderrPortName = "krun-stderr"
-)
-
-const (
-	FlagOVMBoot                 = "boot"
-	FlagOVMBootVersion          = "boot-version"
-	FlagOVMContainerDiskVersion = "data-version"
-	FlagOVMPPID                 = "ppid"
-	FlagOVMVolume               = "volume"
-	FlagOVMName                 = "name"
-	FlagOVMWorkspace            = "workspace"
-	FlagOVMReportURL            = "report-url"
 )

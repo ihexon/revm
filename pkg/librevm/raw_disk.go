@@ -19,15 +19,15 @@ import (
 )
 
 type RawDiskSpec struct {
-	Path    string `toml:"path,omitempty"     json:"path,omitempty"`
-	UUID    string `toml:"uuid,omitempty"     json:"uuid,omitempty"`
-	Version string `toml:"version,omitempty"  json:"version,omitempty"`
-	MountTo string `toml:"mount_to,omitempty" json:"mountTo,omitempty"`
+	Path    string `json:"path,omitempty"`
+	UUID    string `json:"uuid,omitempty"`
+	Version string `json:"version,omitempty"`
+	MountTo string `json:"mountTo,omitempty"`
 }
 
 type ContainerDiskSpec struct {
-	Path    string `toml:"path,omitempty"    json:"path,omitempty"`
-	Version string `toml:"version,omitempty" json:"version,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Version string `json:"version,omitempty"`
 }
 
 var (

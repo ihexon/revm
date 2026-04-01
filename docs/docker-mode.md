@@ -1,4 +1,4 @@
-# dockerd mode — full container engine without Docker Desktop
+# docker mode — full container engine without Docker Desktop
 
 revm embeds a complete container engine and exposes it via a Unix socket to `podman`/`docker` CLI. No Docker Desktop
 or Podman Desktop required — spin up a full, lightweight container stack instantly.
@@ -8,7 +8,7 @@ or Podman Desktop required — spin up a full, lightweight container stack insta
 **Start the container engine**
 
 ```bash
-revm dockerd --id my-engine
+revm docker --id my-engine
 ```
 
 After startup, the Podman API socket is available at `/tmp/my-engine/socks/podman-api.sock`.
@@ -36,7 +36,7 @@ docker run --rm hello-world
 
 ## Port Mapping
 
-In dockerd mode, container port mappings (`-p`) are automatically forwarded to macOS via gvproxy:
+In docker mode, container port mappings (`-p`) are automatically forwarded to macOS via gvproxy:
 
 ```bash
 podman run --rm -p 8888:80 nginx
@@ -56,7 +56,7 @@ In environments that require a proxy, add `--system-proxy` to automatically read
 into containers:
 
 ```bash
-revm dockerd --id my-engine --system-proxy
+revm docker --id my-engine --system-proxy
 
 # apt/curl inside containers automatically use the proxy
 podman run --rm ubuntu:latest apt-get update
@@ -65,7 +65,7 @@ podman run --rm ubuntu:latest apt-get update
 ## Flags
 
 ```bash
-revm dockerd [flags]
+revm docker [flags]
 ```
 
 | Flag               | Description                                                                                         | Default               |
@@ -81,12 +81,14 @@ revm dockerd [flags]
 | `--container-disk` | Container storage disk spec (format: `<path>[,version=<string>]`); path-only works; defaults to a session-local disk with the built-in container disk version; if the stored version xattr is missing or mismatched, the disk is recreated | session-local + built-in version |
 | `--podman-proxy-api-file` | Custom Unix socket path for the Podman API proxy; defaults to `<session_dir>/socks/podman-api.sock` | —                  |
 | `--manage-api-file` | Custom Unix socket path for the VM management API; defaults to `<session_dir>/socks/vmctl.sock` | —                  |
-| `--ssh-key`        | File path prefix to symlink the generated SSH key pair to; creates `<path>` for the private key and `<path>.pub` for the public key | — |
+| `--ssh-key-dir`    | Directory to symlink the generated SSH key pair (`key` and `key.pub`) into; keys are always created inside the session directory | — |
+| `--export-ssh-private-key` | File path to symlink the generated SSH private key to                        | —                     |
+| `--export-ssh-public-key`  | File path to symlink the generated SSH public key to                         | —                     |
 | `--log-level`      | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`                          | `info`                |
 | `--log-to`         | Custom log file path on host; defaults to `<session_dir>/logs/vm.log`                               | session-local         |
-| `--report-events`  | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock` or `tcp://host:port`) | —                  |
+| `--report-events-to` | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock` or `tcp://host:port`) | —                  |
 
-dockerd mode and chroot mode share most flags and can be configured as needed.
+docker mode and chroot mode share most flags and can be configured as needed.
 
 ## See Also
 

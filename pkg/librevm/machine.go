@@ -331,7 +331,7 @@ func (v *machineBuilder) configureSSH() error {
 		HostSSHPublicKey:      string(publicKey),
 		HostSSHPrivateKey:     string(privateKey),
 		HostSSHPrivateKeyFile: keyPath,
-		
+
 		GuestSSHPrivateKeyFile: "/run/dropbear/private.key",
 		GuestSSHAuthorizedKeys: "/run/dropbear/authorized_keys",
 		GuestSSHPidFile:        "/run/dropbear/dropbear.pid",

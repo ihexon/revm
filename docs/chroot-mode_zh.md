@@ -67,10 +67,12 @@ revm chroot [flags] <command> [args...]
 | `--network`      | 网络栈：`gvisor`（完整虚拟网卡）或 `tsi`（透明 socket 转发）         | `gvisor`              |
 | `--system-proxy` | 读取 macOS 系统代理并以 `http_proxy`/`https_proxy` 注入到 VM | `false`               |
 | `--manage-api-file` | VM 管理 API socket 的自定义 Unix socket 路径；默认为 `<会话目录>/socks/vmctl.sock` | —                     |
-| `--ssh-key`      | SSH 密钥对的符号链接路径前缀；会创建 `<path>` 私钥和 `<path>.pub` 公钥         | —                     |
+| `--ssh-key-dir`  | SSH 密钥对（`key` 和 `key.pub`）的符号链接目录；密钥始终在会话目录内生成   | —                     |
+| `--export-ssh-private-key` | SSH 私钥的符号链接文件路径                                    | —                     |
+| `--export-ssh-public-key`  | SSH 公钥的符号链接文件路径                                    | —                     |
 | `--log-level`    | 日志级别：`trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic` | `info`          |
 | `--log-to`       | 自定义日志文件路径；默认为 `<会话目录>/logs/vm.log`                  | 会话目录内                 |
-| `--report-events` | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock` 或 `tcp://host:port`） | —               |
+| `--report-events-to` | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock` 或 `tcp://host:port`） | —               |
 
 ## 另请参阅
 

@@ -1,4 +1,4 @@
-# dockerd 模式 — 你不需要安装 Docker Desktop 就可以迅速启动完整的 container 引擎
+# docker 模式 — 你不需要安装 Docker Desktop 就可以迅速启动完整的 container 引擎
 
 revm 内建完整的容器引擎，并通过 Unix socket 暴露给 podman-cli/docker-cli 调用，无需安装 Docker Desktop 或 Podman Desktop，即可快速启动完整的轻量容器软件栈。
 
@@ -7,7 +7,7 @@ revm 内建完整的容器引擎，并通过 Unix socket 暴露给 podman-cli/do
 **启动容器引擎**
 
 ```bash
-revm dockerd --id my-engine
+revm docker --id my-engine
 ```
 
 启动后 Podman API socket 暴露在 `/tmp/my-engine/socks/podman-api.sock`。
@@ -35,7 +35,7 @@ docker run --rm hello-world
 
 ## 端口映射
 
-dockerd 模式下，容器的端口映射（`-p`）通过 gvproxy 自动转发到 macOS 本机：
+docker 模式下，容器的端口映射（`-p`）通过 gvproxy 自动转发到 macOS 本机：
 
 ```bash
 podman run --rm -p 8888:80 nginx
@@ -54,7 +54,7 @@ podman run --rm -v /Users/me/data:/data ubuntu:latest ls /data
 在需要代理访问网络的环境下，加上 `--system-proxy` 自动读取 macOS 系统代理并注入到容器内：
 
 ```bash
-revm dockerd --id my-engine --system-proxy
+revm docker --id my-engine --system-proxy
 
 # 容器内 apt/curl 自动走代理
 podman run --rm ubuntu:latest apt-get update
@@ -63,7 +63,7 @@ podman run --rm ubuntu:latest apt-get update
 ## 参数列表
 
 ```bash
-revm dockerd [flags]
+revm docker [flags]
 ```
 
 | 参数                 | 说明                                                               | 默认值                   |
@@ -79,12 +79,14 @@ revm dockerd [flags]
 | `--container-disk` | 容器存储磁盘规格（格式：`<path>[,version=<string>]`）；只传路径即可；默认使用会话目录内的磁盘和内置 version；如果已有磁盘的 version xattr 缺失或不匹配，会直接重建 | 会话目录内默认磁盘 + 内置 version |
 | `--podman-proxy-api-file` | Podman API socket 的自定义 Unix socket 路径；默认为 `<会话目录>/socks/podman-api.sock` | —                     |
 | `--manage-api-file` | VM 管理 API socket 的自定义 Unix socket 路径；默认为 `<会话目录>/socks/vmctl.sock` | —                     |
-| `--ssh-key`        | SSH 密钥对的符号链接路径前缀；会创建 `<path>` 私钥和 `<path>.pub` 公钥                         | —                     |
+| `--ssh-key-dir`    | SSH 密钥对（`key` 和 `key.pub`）的符号链接目录；密钥始终在会话目录内生成                   | —                     |
+| `--export-ssh-private-key` | SSH 私钥的符号链接文件路径                                                 | —                     |
+| `--export-ssh-public-key`  | SSH 公钥的符号链接文件路径                                                 | —                     |
 | `--log-level`      | 日志级别：`trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic`      | `info`                |
 | `--log-to`         | 自定义日志文件路径；默认为 `<会话目录>/logs/vm.log`                                | 会话目录内                 |
-| `--report-events`  | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock` 或 `tcp://host:port`） | —                     |
+| `--report-events-to` | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock` 或 `tcp://host:port`） | —                     |
 
-dockerd 模式与 chroot 模式共用大部分参数，可按需灵活配置。
+docker 模式与 chroot 模式共用大部分参数，可按需灵活配置。
 
 ## 另请参阅
 

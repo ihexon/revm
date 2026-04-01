@@ -4,7 +4,6 @@ go 1.25.5
 
 require (
 	al.essio.dev/pkg/shellescape v1.6.1-0.20250626071713-b09271781b1a
-	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/keygen v0.5.4
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/gofrs/flock v0.13.0

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/eventreporter"
 	"linuxvm/pkg/librevm"
 
 	"github.com/urfave/cli/v3"
@@ -67,7 +66,7 @@ func rootfsLifeCycle(_ context.Context, command *cli.Command) error {
 	}
 
 	if u := command.String(define.FlagReportEvents); u != "" {
-		cfg.WithEventReporter(eventreporter.NewV1(u, librevm.ModeRootfs))
+		cfg.WithEventReporter(u)
 	}
 
 	vm, err := librevm.New(cfg)
