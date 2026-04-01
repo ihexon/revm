@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/eventreporter"
 	"linuxvm/pkg/librevm"
 
 	"github.com/urfave/cli/v3"
@@ -71,8 +70,7 @@ func dockerLifeCycle(_ context.Context, command *cli.Command) error {
 		WithRawDiskSpecs(rawDiskSpecs...)
 
 	if u := command.String(define.FlagReportEvents); u != "" {
-		cfg.Reporters = nil
-		cfg.WithEventReporter(eventreporter.NewV1(u, librevm.ModeContainer))
+		cfg.WithEventReporter(u)
 	}
 
 	vm, err := librevm.New(cfg)

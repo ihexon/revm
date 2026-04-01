@@ -78,8 +78,8 @@ func New(cfg *Config) (*VM, error) {
 		sessionDir: getSessionDir(normalizedCfg.SessionID),
 	}
 
-	for _, r := range cfg.Reporters {
-		vm.eventDispatcher.addReporter(r)
+	if reporter := newEventReporter(normalizedCfg.ReportURL); reporter != nil {
+		vm.eventDispatcher.addReporter(reporter)
 	}
 
 	return vm, nil
@@ -354,8 +354,8 @@ func GenerateVMConfig(ctx context.Context, cfg *Config, path string) error {
 		cfg: cfg,
 	}
 
-	for _, r := range cfg.Reporters {
-		vm.eventDispatcher.addReporter(r)
+	if reporter := newEventReporter(cfg.ReportURL); reporter != nil {
+		vm.eventDispatcher.addReporter(reporter)
 	}
 	defer vm.emit(EventExit, "")
 

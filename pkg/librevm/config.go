@@ -36,28 +36,28 @@ func (m RunMode) IsValid() bool {
 }
 
 type Config struct {
-	RunMode   RunMode `toml:"runMode,omitempty" json:"runMode,omitempty"`
-	SessionID string  `toml:"sessionID,omitempty" json:"sessionID,omitempty"` // session name
-	CPUs      int     `toml:"cpus,omitempty"      json:"cpus,omitempty"`      // 0 → host CPU count
-	MemoryMB  uint64  `toml:"memory_mb,omitempty" json:"memoryMB,omitempty"`  // 0 → host total RAM
-	Rootfs    string  `toml:"rootfs,omitempty"    json:"rootfs,omitempty"`    // empty → built-in Alpine
+	RunMode   RunMode `json:"runMode,omitempty"`
+	SessionID string  `json:"sessionID,omitempty"` // session name
+	CPUs      int     `json:"cpus,omitempty"`      // 0 → host CPU count
+	MemoryMB  uint64  `json:"memoryMB,omitempty"`  // 0 → host total RAM
+	Rootfs    string  `json:"rootfs,omitempty"`    // empty → built-in Alpine
 
 	// Command specifies the program to run inside the VM (rootfs mode only).
-	Command []string `toml:"command,omitempty"  json:"command,omitempty"`
-	WorkDir string   `toml:"workdir,omitempty"  json:"workdir,omitempty"`
-	Env     []string `toml:"env,omitempty"      json:"env,omitempty"`
+	Command []string `json:"command,omitempty"`
+	WorkDir string   `json:"workdir,omitempty"`
+	Env     []string `json:"env,omitempty"`
 
-	Network              string             `toml:"network,omitempty"         json:"network,omitempty"` // "gvisor" | "tsi"
-	Mounts               []string           `toml:"mounts,omitempty"          json:"mounts,omitempty"`  // "/host:/guest[,ro]"
-	Disks                []RawDiskSpec      `toml:"disks,omitempty"           json:"disks,omitempty"`
-	ContainerDisk        *ContainerDiskSpec `toml:"container_disk,omitempty" json:"containerDisk,omitempty"`
-	PodmanProxyAPIFile   string             `toml:"podman_proxy_api_file,omitempty"   json:"podmanProxyAPIFile,omitempty"`
-	ManageAPIFile        string             `toml:"manage_api_file,omitempty"         json:"manageAPIFile,omitempty"`
-	SSHKeyFileSymbolPath string             `toml:"ssh_key_file_symbol_path,omitempty" json:"SSHKeyFileSymbolPath,omitempty"`
-	Proxy                bool               `toml:"proxy,omitempty"           json:"proxy,omitempty"`
-	LogLevel             string             `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
-	LogTo                string             `toml:"log_to,omitempty"          json:"logTo,omitempty"`
-	Reporters            []EventReporter    `toml:"-" json:"-"`
+	Network              string             `json:"network,omitempty"` // "gvisor" | "tsi"
+	Mounts               []string           `json:"mounts,omitempty"`  // "/host:/guest[,ro]"
+	Disks                []RawDiskSpec      `json:"disks,omitempty"`
+	ContainerDisk        *ContainerDiskSpec `json:"containerDisk,omitempty"`
+	PodmanProxyAPIFile   string             `json:"podmanProxyAPIFile,omitempty"`
+	ManageAPIFile        string             `json:"manageAPIFile,omitempty"`
+	SSHKeyFileSymbolPath string             `json:"SSHKeyFileSymbolPath,omitempty"`
+	ReportURL            string             `json:"reportURL,omitempty"`
+	Proxy                bool               `json:"proxy,omitempty"`
+	LogLevel             string             `json:"logLevel,omitempty"` // default "info"
+	LogTo                string             `json:"logTo,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.
@@ -65,12 +65,12 @@ type Config struct {
 func DefaultConfig(sessionID string) *Config {
 	if sessionID == "" {
 		sessionID = RandomString()
-		logrus.Warnf("DefaultConfig: session name is empty, autogenerate a random one: %s", sessionID)
 	}
 
 	return &Config{
 		Network:   "gvisor",
 		LogLevel:  "info",
+		LogTo:     filepath.Join(getSessionDir(sessionID), "logs", "revm.log"),
 		WorkDir:   "/",
 		SessionID: sessionID,
 	}
@@ -163,16 +163,11 @@ func (c *Config) WithExportSSHKeyPrivateFile(path string) *Config {
 	return c
 }
 
-func (c *Config) WithEventReporter(reporters ...EventReporter) *Config {
-	if len(reporters) == 0 {
+func (c *Config) WithEventReporter(reportURL string) *Config {
+	if reportURL == "" {
 		return c
 	}
-	for _, r := range reporters {
-		if r == nil {
-			continue
-		}
-		c.Reporters = append(c.Reporters, r)
-	}
+	c.ReportURL = reportURL
 	return c
 }
 
