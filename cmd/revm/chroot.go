@@ -31,9 +31,7 @@ var startRootfs = cli.Command{
 		logToFlag,
 		sessionIDFlag,
 		manageAPIFlag,
-		sshKeyDirFlag,
 		sshPrivateKeyFlag,
-		sshPublicKeyFlag,
 	},
 	Action: rootfsLifeCycle,
 }
@@ -58,9 +56,7 @@ func rootfsLifeCycle(_ context.Context, command *cli.Command) error {
 		WithProxy(command.Bool(define.FlagUsingSystemProxy)).
 		WithRootfs(command.String(define.FlagRootfs)).
 		WithManageAPIFile(command.String(define.FlagManageAPIFile)).
-		WithSSHKeyDir(command.String(define.FlagSSHKeyDir)).
 		WithExportSSHKeyPrivateFile(command.String(define.FlagExportSSHKeyPrivateFile)).
-		WithExportSSHKeyPublicFile(command.String(define.FlagExportSSHKeyPublicFile)).
 		WithMount(command.StringSlice(define.FlagMount)...).
 		WithRawDiskSpecs(rawDiskSpecs...)
 

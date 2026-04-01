@@ -31,9 +31,7 @@ var startDocker = cli.Command{
 		containerDiskFlag,
 		podmanProxyAPIFileFlag,
 		manageAPIFlag,
-		sshKeyDirFlag,
 		sshPrivateKeyFlag,
-		sshPublicKeyFlag,
 	},
 	Action: dockerLifeCycle,
 }
@@ -69,9 +67,7 @@ func dockerLifeCycle(_ context.Context, command *cli.Command) error {
 		WithContainerDiskSpec(containerDiskSpec).
 		WithPodmanProxyAPIFile(command.String(define.FlagPodmanProxyAPIFile)).
 		WithManageAPIFile(command.String(define.FlagManageAPIFile)).
-		WithSSHKeyDir(command.String(define.FlagSSHKeyDir)).
 		WithExportSSHKeyPrivateFile(command.String(define.FlagExportSSHKeyPrivateFile)).
-		WithExportSSHKeyPublicFile(command.String(define.FlagExportSSHKeyPublicFile)).
 		WithRawDiskSpecs(rawDiskSpecs...)
 
 	if u := command.String(define.FlagReportEvents); u != "" {

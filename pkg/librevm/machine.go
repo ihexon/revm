@@ -310,7 +310,7 @@ func (v *machineBuilder) configurePodman(ctx context.Context) error {
 }
 
 func (v *machineBuilder) configureSSH() error {
-	keyPath := v.pathMgr.GetSSHPrivateKeyFile()
+	keyPath := v.pathMgr.GetSSHKeyFilePath()
 	pubKeyPath := keyPath + ".pub"
 	if err := os.MkdirAll(filepath.Dir(keyPath), 0700); err != nil {
 		return err
@@ -328,9 +328,10 @@ func (v *machineBuilder) configureSSH() error {
 	}
 
 	v.SSHInfo = define.SSHInfo{
-		HostSSHPublicKey:       string(publicKey),
-		HostSSHPrivateKey:      string(privateKey),
-		HostSSHPrivateKeyFile:  keyPath,
+		HostSSHPublicKey:      string(publicKey),
+		HostSSHPrivateKey:     string(privateKey),
+		HostSSHPrivateKeyFile: keyPath,
+		
 		GuestSSHPrivateKeyFile: "/run/dropbear/private.key",
 		GuestSSHAuthorizedKeys: "/run/dropbear/authorized_keys",
 		GuestSSHPidFile:        "/run/dropbear/dropbear.pid",

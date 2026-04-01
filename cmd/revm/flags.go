@@ -93,18 +93,8 @@ var (
 		Usage: "custom Unix socket path for the host-side Podman API proxy; defaults to /tmp/<session_id>/socks/podman-api.sock",
 	}
 
-	sshKeyDirFlag = &cli.StringFlag{
-		Name:  define.FlagSSHKeyDir,
-		Usage: "directory to symlink the generated SSH key pair (key and key.pub) into; keys are always created inside the session directory",
-	}
-
 	sshPrivateKeyFlag = &cli.StringFlag{
 		Name:  define.FlagExportSSHKeyPrivateFile,
-		Usage: "file path to symlink the generated SSH private key to",
-	}
-
-	sshPublicKeyFlag = &cli.StringFlag{
-		Name:  define.FlagExportSSHKeyPublicFile,
-		Usage: "file path to symlink the generated SSH public key to",
+		Usage: "file path to symlink the generated SSH key to",
 	}
 )
