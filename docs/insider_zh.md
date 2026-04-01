@@ -7,18 +7,18 @@
 ```
 /tmp/<id>/
 ├── socks/
-│   ├── podman-api.sock   # Podman API socket（docker 模式）
+│   ├── podman-api.sock   # Podman API socket（dockerd 模式）
 │   ├── gvpctl.sock       # gvproxy 控制 socket（gvisor 模式）
 │   ├── vnet.sock         # 虚拟网络 socket（gvisor 模式）
 │   ├── vmctl.sock        # VM 管理 API socket
 │   └── ign.sock          # Ignition 配置服务 socket
 ├── ssh/
-│   ├── key               # 自动生成的 SSH 私钥
-│   └── key.pub           # 自动生成的 SSH 公钥
+│   ├── ssh-key           # 自动生成的 SSH 私钥
+│   └── ssh-key.pub       # 自动生成的 SSH 公钥
 ├── logs/
 │   └── vm.log            # VM 内部日志
 ├── rootfs/               # 客户机根文件系统（chroot 模式）
-└── raw-disk/             # 容器存储磁盘（docker 模式）
+└── raw-disk/             # 容器存储磁盘（dockerd 模式）
 ```
 
 ### 符号链接参数
@@ -29,9 +29,7 @@
 |--------------------|-------------------------------------------------|
 | `--podman-proxy-api-file` | `<会话目录>/socks/podman-api.sock`          |
 | `--manage-api-file` | `<会话目录>/socks/vmctl.sock`                    |
-| `--ssh-key-dir`    | `<会话目录>/ssh/key` 和 `<会话目录>/ssh/key.pub`     |
-| `--export-ssh-private-key` | `<会话目录>/ssh/key`                       |
-| `--export-ssh-public-key`  | `<会话目录>/ssh/key.pub`                   |
+| `--ssh-key`        | `<会话目录>/ssh/ssh-key` 和 `<会话目录>/ssh/ssh-key.pub` |
 
 ### 会话生命周期
 
@@ -43,7 +41,7 @@
 
 ```bash
 # 容器镜像跨会话保留
-revm docker --id my-engine --container-disk ~/container-storage.ext4
+revm dockerd --id my-engine --container-disk ~/container-storage.ext4
 
 # 任意数据也可持久化
 revm chroot --id myenv --raw-disk ~/data.ext4 -- sh
@@ -57,7 +55,7 @@ rm -rf /tmp/my-engine
 
 ## 网络模式（TSI/GVISOR 互斥）
 
-docker 模式和 chroot 模式都支持 TSI 和 GVISOR 两种网络模式，这两种模式是互斥的。
+dockerd 模式和 chroot 模式都支持 TSI 和 GVISOR 两种网络模式，这两种模式是互斥的。
 
 ### gvisor（默认）
 

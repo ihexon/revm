@@ -7,18 +7,18 @@ Each session has a directory at `/tmp/<id>`, derived from the required `--id` fl
 ```
 /tmp/<id>/
 ├── socks/
-│   ├── podman-api.sock   # Podman API socket (docker mode)
+│   ├── podman-api.sock   # Podman API socket (dockerd mode)
 │   ├── gvpctl.sock       # gvproxy control socket (gvisor mode)
 │   ├── vnet.sock         # virtual network socket (gvisor mode)
 │   ├── vmctl.sock        # VM management API socket
 │   └── ign.sock          # ignition config service socket
 ├── ssh/
-│   ├── key               # auto-generated SSH private key
-│   └── key.pub           # auto-generated SSH public key
+│   ├── ssh-key           # auto-generated SSH private key
+│   └── ssh-key.pub       # auto-generated SSH public key
 ├── logs/
 │   └── vm.log            # VM internal logs
 ├── rootfs/               # guest root filesystem (chroot mode)
-└── raw-disk/             # container storage disk (docker mode)
+└── raw-disk/             # container storage disk (dockerd mode)
 ```
 
 ### Symlink Flags
@@ -30,9 +30,7 @@ a well-known path without breaking session directory integrity:
 |--------------------|-------------------------------------------------|
 | `--podman-proxy-api-file` | `<session_dir>/socks/podman-api.sock`    |
 | `--manage-api-file` | `<session_dir>/socks/vmctl.sock`                |
-| `--ssh-key-dir`    | `<session_dir>/ssh/key` and `<session_dir>/ssh/key.pub` |
-| `--export-ssh-private-key` | `<session_dir>/ssh/key`                 |
-| `--export-ssh-public-key`  | `<session_dir>/ssh/key.pub`             |
+| `--ssh-key`        | `<session_dir>/ssh/ssh-key` and `<session_dir>/ssh/ssh-key.pub` |
 
 ### Session Lifecycle
 
@@ -46,7 +44,7 @@ ID at a time. This makes `--id` useful for `revm attach` to connect to a running
 
 ```bash
 # Container images survive across sessions
-revm docker --id my-engine --container-disk ~/container-storage.ext4
+revm dockerd --id my-engine --container-disk ~/container-storage.ext4
 
 # Arbitrary data persists too
 revm chroot --id myenv --raw-disk ~/data.ext4 -- sh
@@ -60,7 +58,7 @@ rm -rf /tmp/my-engine
 
 ## Networking (TSI / GVISOR, mutually exclusive)
 
-Both docker mode and chroot mode support two network backends. They are mutually exclusive.
+Both dockerd mode and chroot mode support two network backends. They are mutually exclusive.
 
 ### gvisor (default)
 
