@@ -9,8 +9,8 @@
 [README_EN](./README.md) | [README_ZH](./README_zh.md)
 
 A lightweight Linux microVM for macOS powered by [libkrun](https://github.com/containers/libkrun). Two independent
-modes: **chroot mode** (run commands inside an isolated Linux rootfs) and **docker mode** (run a full Podman container
-engine on Apple Silicon).
+modes: **chroot mode** (run commands inside an isolated Linux rootfs) and **dockerd mode** (run a full Podman container
+engine on Apple Silicon via the `revm dockerd` subcommand).
 
 ## Requirements
 
@@ -33,7 +33,7 @@ tar -xvf revm-Darwin-arm64.tar.zst
 | Document | Description |
 |----------|-------------|
 | [chroot mode](docs/chroot-mode.md) | Linux chroot alternative on macOS — run any rootfs with near-native performance |
-| [docker mode](docs/docker-mode.md) | Full container engine without Docker Desktop — Podman/Docker CLI compatible |
+| [dockerd mode](docs/docker-mode.md) | Full container engine without Docker Desktop — Podman/Docker CLI compatible |
 | [attach](docs/attach.md) | Connect to a running VM instance |
 | [workspace & networking](docs/insider.md) | Session directory layout, reuse/cleanup, and network backends (gvisor / tsi) |
 | [management API](docs/management-api.md) | VM management API via Unix socket |
