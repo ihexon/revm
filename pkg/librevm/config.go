@@ -47,19 +47,17 @@ type Config struct {
 	WorkDir string   `toml:"workdir,omitempty"  json:"workdir,omitempty"`
 	Env     []string `toml:"env,omitempty"      json:"env,omitempty"`
 
-	Network                 string             `toml:"network,omitempty"         json:"network,omitempty"` // "gvisor" | "tsi"
-	Mounts                  []string           `toml:"mounts,omitempty"          json:"mounts,omitempty"`  // "/host:/guest[,ro]"
-	Disks                   []RawDiskSpec      `toml:"disks,omitempty"           json:"disks,omitempty"`
-	ContainerDisk           *ContainerDiskSpec `toml:"container_disk,omitempty" json:"containerDisk,omitempty"`
-	PodmanProxyAPIFile      string             `toml:"podman_proxy_api_file,omitempty"   json:"podmanProxyAPIFile,omitempty"`
-	ManageAPIFile           string             `toml:"manage_api_file,omitempty"         json:"manageAPIFile,omitempty"`
-	SSHKeyDir               string             `toml:"ssh_key_dir,omitempty"                json:"sshKeyDir,omitempty"`
-	ExportSSHKeyPrivateFile string             `toml:"export_ssh_key_private_file,omitempty" json:"exportSSHKeyPrivateFile,omitempty"`
-	ExportSSHKeyPublicFile  string             `toml:"export_ssh_key_public_file,omitempty"  json:"exportSSHKeyPublicFile,omitempty"`
-	Proxy                   bool               `toml:"proxy,omitempty"           json:"proxy,omitempty"`
-	LogLevel                string             `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
-	LogTo                   string             `toml:"log_to,omitempty"          json:"logTo,omitempty"`
-	Reporters               []EventReporter    `toml:"-" json:"-"`
+	Network              string             `toml:"network,omitempty"         json:"network,omitempty"` // "gvisor" | "tsi"
+	Mounts               []string           `toml:"mounts,omitempty"          json:"mounts,omitempty"`  // "/host:/guest[,ro]"
+	Disks                []RawDiskSpec      `toml:"disks,omitempty"           json:"disks,omitempty"`
+	ContainerDisk        *ContainerDiskSpec `toml:"container_disk,omitempty" json:"containerDisk,omitempty"`
+	PodmanProxyAPIFile   string             `toml:"podman_proxy_api_file,omitempty"   json:"podmanProxyAPIFile,omitempty"`
+	ManageAPIFile        string             `toml:"manage_api_file,omitempty"         json:"manageAPIFile,omitempty"`
+	SSHKeyFileSymbolPath string             `toml:"ssh_key_file_symbol_path,omitempty" json:"SSHKeyFileSymbolPath,omitempty"`
+	Proxy                bool               `toml:"proxy,omitempty"           json:"proxy,omitempty"`
+	LogLevel             string             `toml:"log_level,omitempty"       json:"logLevel,omitempty"` // default "info"
+	LogTo                string             `toml:"log_to,omitempty"          json:"logTo,omitempty"`
+	Reporters            []EventReporter    `toml:"-" json:"-"`
 }
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.
@@ -156,27 +154,15 @@ func (c *Config) WithManageAPIFile(path string) *Config {
 	return c
 }
 
-func (c *Config) WithSSHKeyDir(dir string) *Config {
-	if dir == "" {
-		return c
-	}
-	c.SSHKeyDir = dir
-	return c
-}
 func (c *Config) WithExportSSHKeyPrivateFile(path string) *Config {
 	if path == "" {
 		return c
 	}
-	c.ExportSSHKeyPrivateFile = path
+
+	c.SSHKeyFileSymbolPath = path
 	return c
 }
-func (c *Config) WithExportSSHKeyPublicFile(path string) *Config {
-	if path == "" {
-		return c
-	}
-	c.ExportSSHKeyPublicFile = path
-	return c
-}
+
 func (c *Config) WithEventReporter(reporters ...EventReporter) *Config {
 	if len(reporters) == 0 {
 		return c
