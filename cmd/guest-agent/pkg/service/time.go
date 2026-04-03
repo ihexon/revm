@@ -8,26 +8,17 @@ import (
 	"time"
 )
 
-var servers = []string{
-	"asia.pool.ntp.org",
-	"tw.pool.ntp.org",
-	"north-america.pool.ntp.org",
-	"jp.pool.ntp.org",
-}
-
 func SyncRTCTime(ctx context.Context) error {
-	args := []string{"ntpd", "-n"}
-	for _, s := range servers {
-		args = append(args, "-p", s)
-	}
+	args := []string{"ntpd", "-q", "-p", "pool.ntp.org"}
 
 	sv := supervisor.New(supervisor.Config{
 		Name:       "ntpd",
 		Cmd:        BusyboxPath(),
 		Args:       args,
 		Stderr:     StderrWriter(),
+		Stdout:     StderrWriter(),
 		Restart:    true,
-		RetryDelay: 5 * time.Second,
+		RetryDelay: 1 * time.Minute,
 	})
 	sv.Run(ctx)
 	return nil
