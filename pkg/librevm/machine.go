@@ -524,7 +524,11 @@ func (v *machineBuilder) detectTTY() {
 }
 
 func getSessionDir(name string) string {
-	return fmt.Sprintf("/tmp/%s", name)
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join("/tmp", "revm", name)
+	}
+	return filepath.Join(dir, ".cache", "revm", name)
 }
 
 func ignitionSockFile(workspace string) string {
