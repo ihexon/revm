@@ -7,8 +7,6 @@ import (
 const (
 	ContainerMode RunMode = iota
 	RootFsMode
-	// OVMode As the underlying virtual machine running mode for Oomol Studio, this mode bundles many default business logic
-	OVMode
 )
 
 type RunMode int32
@@ -19,8 +17,6 @@ func (m RunMode) String() string {
 		return "container"
 	case RootFsMode:
 		return "rootfs"
-	case OVMode:
-		return "oomol-studio"
 	default:
 		return "unknown"
 	}
