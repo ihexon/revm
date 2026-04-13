@@ -31,7 +31,7 @@ func (p *Provider) Start(ctx context.Context) error {
 }
 
 func (p *Provider) Stop() error {
-	p.vm.SendSignal("terminated")
+	p.vm.SendSignal(define.GuestSignalTerminated)
 	return nil
 }
 

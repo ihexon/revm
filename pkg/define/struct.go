@@ -147,3 +147,15 @@ type GuestAgentCfg struct {
 	Args    []string `json:"args,omitempty"`
 	Env     []string `json:"env,omitempty"`
 }
+
+type GuestSignalName string
+
+const (
+	GuestSignalInterrupt  GuestSignalName = "interrupt"
+	GuestSignalTerminated GuestSignalName = "terminated"
+	GuestSignalQuit       GuestSignalName = "quit"
+)
+
+type GuestSignal struct {
+	SignalName GuestSignalName `json:"signalName,omitempty"`
+}

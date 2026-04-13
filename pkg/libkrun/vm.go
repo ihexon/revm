@@ -33,6 +33,7 @@ type VM struct {
 		stdin, stdout, stderr *os.File
 		consolePty            [2]*os.File // master, slave
 		guestLog              *os.File
+		signalPipeR           *os.File // read end kept alive for libkrun
 		signalPipeW           *os.File // write end
 	}
 }
@@ -80,6 +81,9 @@ func (v *VM) Start(ctx context.Context) error {
 	ret := C.krun_start_enter(C.uint32_t(v.ctxID))
 
 	// 让人愉悦但永远没机会执行的代码
+	if v.files.signalPipeR != nil {
+		_ = v.files.signalPipeR.Close()
+	}
 	if v.files.signalPipeW != nil {
 		_ = v.files.signalPipeW.Close()
 	}
@@ -110,11 +114,11 @@ func (v *VM) Start(ctx context.Context) error {
 }
 
 // SendSignal writes a signal message to the VM's signal pipe.
-func (v *VM) SendSignal(name string) {
+func (v *VM) SendSignal(name define.GuestSignalName) {
 	if v.files.signalPipeW == nil {
 		return
 	}
-	msg := struct{ SignalName string }{SignalName: name}
+	msg := define.GuestSignal{SignalName: name}
 	if b, err := json.Marshal(msg); err == nil {
 		_, _ = v.files.signalPipeW.Write(b)
 		_, _ = v.files.signalPipeW.Write([]byte("\n"))

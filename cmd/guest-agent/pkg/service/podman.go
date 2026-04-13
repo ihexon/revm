@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"guestAgent/pkg/supervisor"
 	"linuxvm/pkg/define"
 	"time"
@@ -11,14 +12,11 @@ import (
 )
 
 func StartGuestPodmanService(ctx context.Context, vmc *define.Machine) error {
-
-	addr := "tcp://" + vmc.PodmanInfo.GuestPodmanAPIListenAddr //nolint:nosprintfhostport
-
 	s := supervisor.New(supervisor.Config{
 		Cmd: "podman",
 		Args: []string{
 			"--log-level", logrus.GetLevel().String(), "system", "service",
-			"--time=0", addr,
+			"--time=0", fmt.Sprintf("tcp://%s", vmc.PodmanInfo.GuestPodmanAPIListenAddr),
 		},
 		Restart:     true,
 		MaxRetries:  5,
