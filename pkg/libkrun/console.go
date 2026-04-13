@@ -36,7 +36,11 @@ func (v *VM) setupConsole() error {
 		}
 	}
 
-	return v.addLogAndSignal(consoleID)
+	if err := v.addGuestLogPort(consoleID); err != nil {
+		return err
+	}
+
+	return v.addGuestSignalPort(consoleID)
 }
 
 // addMainConsole adds the primary console (hvc0 → /dev/console).
@@ -124,16 +128,12 @@ func (v *VM) addStdioRedirect(consoleID C.int32_t) error {
 	return nil
 }
 
-// addLogAndSignal adds the guest-logs port with signal forwarding.
-func (v *VM) addLogAndSignal(consoleID C.int32_t) error {
-	sigR, sigW := pipe()
-	v.files.signalPipeW = sigW
-
-	logFile, err := os.OpenFile(v.cfg.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+// addGuestLogPort attaches a dedicated guest-log port.
+func (v *VM) addGuestLogPort(consoleID C.int32_t) error {
+	logFile, err := os.OpenFile(v.cfg.LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		return err
 	}
-	v.files.guestLog = logFile
 
 	name := cstr(define.GuestLogConsolePort)
 	defer free(name)
@@ -142,13 +142,40 @@ func (v *VM) addLogAndSignal(consoleID C.int32_t) error {
 		C.uint32_t(v.ctxID),
 		C.uint32_t(consoleID),
 		name,
-		C.int(sigR.Fd()),
+		C.int(-1),
 		C.int(logFile.Fd()),
 	)
 	if ret != 0 {
-		logFile.Close()
+		_ = logFile.Close()
 		return errCode(ret)
 	}
+
+	v.files.guestLog = logFile
+	return nil
+}
+
+// addGuestSignalPort attaches a dedicated guest-signal port.
+func (v *VM) addGuestSignalPort(consoleID C.int32_t) error {
+	sigR, sigW := pipe()
+
+	name := cstr(define.GuestSignalConsolePort)
+	defer free(name)
+
+	ret := C.krun_add_console_port_inout(
+		C.uint32_t(v.ctxID),
+		C.uint32_t(consoleID),
+		name,
+		C.int(sigR.Fd()),
+		C.int(-1),
+	)
+	if ret != 0 {
+		_ = sigR.Close()
+		_ = sigW.Close()
+		return errCode(ret)
+	}
+
+	v.files.signalPipeR = sigR
+	v.files.signalPipeW = sigW
 	return nil
 }
 

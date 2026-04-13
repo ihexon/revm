@@ -26,8 +26,9 @@ const (
 
 	ContainerDiskUUID = "162cf68f-93c7-49ad-be53-45ed0e9fe42b"
 
-	GuestLogConsolePort = "guest-logs"
-	GuestTTYConsoleName = "default-tty-console"
+	GuestLogConsolePort    = "guest-log"
+	GuestSignalConsolePort = "guest-signal"
+	GuestTTYConsoleName    = "default-tty-console"
 
 	KrunStdinPortName  = "krun-stdin"
 	KrunStdoutPortName = "krun-stdout"

@@ -46,51 +46,67 @@ func setupLogger() {
 	return
 }
 
-// setupGuestLogAndSignalPort opens the guest-logs port for logging and signal handling.
-func setupGuestLogAndSignalPort(ctx context.Context) {
-	f, err := openVirtioPort(define.GuestLogConsolePort, os.O_RDWR)
+// setupGuestLogPort opens the guest-log port and routes guest logs to it.
+func setupGuestLogPort() {
+	f, err := openVirtioPort(define.GuestLogConsolePort, os.O_WRONLY)
 	if err != nil {
 		logrus.Debugf("guest-log port not available: %v", err)
 		return
 	}
 
-	logrus.SetOutput(io.MultiWriter(os.Stderr, f))
-	service.SetStderrWriter(io.MultiWriter(os.Stderr, f))
+	writer := io.MultiWriter(os.Stderr, f)
+	logrus.SetOutput(writer)
+	service.SetStderrWriter(writer)
 	logrus.Infof("guest logs attached to virtio port %s", f.Name())
+}
+
+// setupGuestSignalPort opens the guest-signal port and listens for host signals.
+func setupGuestSignalPort() {
+	f, err := openVirtioPort(define.GuestSignalConsolePort, os.O_RDONLY)
+	if err != nil {
+		logrus.Debugf("guest-signal port not available: %v", err)
+		return
+	}
+
+	logrus.Infof("guest signal listener attached to virtio port %s", f.Name())
 
 	go func() {
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
-			var msg struct {
-				SignalName string `json:"signalName,omitempty"`
+			var msg define.GuestSignal
+			if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
+				logrus.Warnf("invalid signal message: %v", err)
+				continue
 			}
-			if json.Unmarshal(scanner.Bytes(), &msg) == nil {
-				logrus.Infof("received signal: %s", msg.SignalName)
 
-				// Parse signal name to syscall.Signal
-				var sig syscall.Signal
-				switch msg.SignalName {
-				case "interrupt":
-					sig = syscall.SIGINT
-				case "terminated":
-					sig = syscall.SIGTERM
-				case "quit":
-					sig = syscall.SIGQUIT
-				default:
-					logrus.Warnf("unknown signal name: %s", msg.SignalName)
-					continue
-				}
+			logrus.Infof("received signal: %s", msg.SignalName)
 
-				// Forward signal to all child processes
-				if err := syscall.Kill(-1, sig); err != nil {
-					logrus.Errorf("failed to send %s to children: %v", msg.SignalName, err)
-				}
-
-				// Send signal to self to trigger WaitAndShutdown
-				if err := syscall.Kill(os.Getpid(), sig); err != nil {
-					logrus.Errorf("failed to send %s to self: %v", msg.SignalName, err)
-				}
+			// Parse signal name to syscall.Signal
+			var sig syscall.Signal
+			switch msg.SignalName {
+			case define.GuestSignalInterrupt:
+				sig = syscall.SIGINT
+			case define.GuestSignalTerminated:
+				sig = syscall.SIGTERM
+			case define.GuestSignalQuit:
+				sig = syscall.SIGQUIT
+			default:
+				logrus.Warnf("unknown signal name: %s", msg.SignalName)
+				continue
 			}
+
+			// Forward signal to all child processes
+			if err := syscall.Kill(-1, sig); err != nil {
+				logrus.Errorf("failed to send %s to children: %v", msg.SignalName, err)
+			}
+
+			// Send signal to self to trigger WaitAndShutdown
+			if err := syscall.Kill(os.Getpid(), sig); err != nil {
+				logrus.Errorf("failed to send %s to self: %v", msg.SignalName, err)
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			logrus.Warnf("guest signal port closed: %v", err)
 		}
 	}()
 }
@@ -161,8 +177,9 @@ func run(ctx context.Context, _ *cli.Command) error {
 		return fmt.Errorf("mount pseudo filesystems: %w", err)
 	}
 
-	// Now that /sys is available, setup guest-logs port for logging and signal handling
-	setupGuestLogAndSignalPort(ctx)
+	// Now that /sys is available, wire up the dedicated guest log and signal ports.
+	setupGuestLogPort()
+	setupGuestSignalPort()
 
 	// 4. Mount block devices and virtiofs
 	if err := service.MountBlockDevices(ctx, vmc); err != nil {
