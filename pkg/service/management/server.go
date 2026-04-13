@@ -6,15 +6,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
-	"linuxvm/pkg/define"
 	httpv2 "linuxvm/pkg/http"
 	"linuxvm/pkg/interfaces"
 	sshsvc "linuxvm/pkg/service/ssh"
 	ssev2 "linuxvm/pkg/sse"
 	"net/http"
-	"net/url"
-	"strconv"
 	"sync"
 
 	"github.com/google/uuid"
@@ -61,30 +57,6 @@ type Info struct {
 	HostDNSInGVPNetwork  string `json:"hostEndpoint"`
 }
 
-func (s *Server) handleOVMInfo(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, nil)
-		return
-	}
-	vmc := s.vmp.GetVMConfig()
-	podmanProxyaddr, err := url.Parse(vmc.PodmanInfo.HostPodmanProxyAddr)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errResponse{Error: err.Error()})
-		return
-	}
-	sshProxyAddr, err := url.Parse(fmt.Sprintf("tcp://%s", vmc.SSHInfo.HostSSHProxyListenAddr))
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errResponse{Error: err.Error()})
-		return
-	}
-	sshPort, err := strconv.Atoi(sshProxyAddr.Port())
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errResponse{Error: err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, Info{PodmanAPIProxyOnHost: podmanProxyaddr.Path, SSHProxyPortOnHost: sshPort, SSHUserOnGuest: define.DefaultGuestUser, HostDNSInGVPNetwork: define.HostDomainInGVPNet})
-}
-
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, nil)
@@ -99,10 +71,6 @@ func (s *Server) handleVMConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.vmp.GetVMConfig())
-}
-
-func (s *Server) handleOVMRequestVMStop(w http.ResponseWriter, r *http.Request) {
-	s.handleRequestVMStop(w, r)
 }
 
 func (s *Server) handleRequestVMStop(w http.ResponseWriter, r *http.Request) {

@@ -23,7 +23,6 @@ const (
 	ModeRootfs RunMode = "rootfs"
 	// ModeContainer boots the VM with the built-in container runtime (Podman).
 	ModeContainer RunMode = "docker"
-	ModeCfgGen    RunMode = "cfggen"
 )
 
 func (m RunMode) IsValid() bool {
