@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package librevm
+package revm
 
 import (
 	"sync"
@@ -43,7 +43,7 @@ func (d *eventDispatcher) addReporter(r EventReporter) {
 	d.reporters = append(d.reporters, r)
 }
 
-func (d *eventDispatcher) publish(sessionID string, runMode RunMode, kind EventKind, msg string, seq uint64) {
+func (d *eventDispatcher) emit(sessionID string, runMode RunMode, kind EventKind, msg string, seq uint64) {
 	if d == nil {
 		return
 	}
@@ -85,11 +85,4 @@ func (d *eventDispatcher) close() {
 	for _, r := range reporters {
 		r.Close()
 	}
-}
-
-func (vm *VM) emit(kind EventKind, msg string) {
-	if vm == nil || vm.cfg == nil {
-		return
-	}
-	vm.eventDispatcher.publish(vm.cfg.SessionID, vm.cfg.RunMode, kind, msg, vm.seq.Add(1))
 }

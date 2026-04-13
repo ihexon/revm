@@ -18,7 +18,7 @@ import (
 
 type HostServices interface {
 	StartPodmanProxy(ctx context.Context) error
-	StartNetworkStack(ctx context.Context) error
+	StartHostNetworkStack(ctx context.Context) error
 	StartIgnitionService(ctx context.Context) error
 	StartMachineManagementAPI(ctx context.Context) error
 	StartVirtualMachine(ctx context.Context) error
@@ -67,7 +67,7 @@ func (s *Service) StartPodmanProxy(ctx context.Context) error {
 	}
 }
 
-func (s *Service) StartNetworkStack(ctx context.Context) error {
+func (s *Service) StartHostNetworkStack(ctx context.Context) error {
 	vmc := s.vmp.GetVMConfig()
 	if vmc.VirtualNetworkMode == define.TSI {
 		return nil
