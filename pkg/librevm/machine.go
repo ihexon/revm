@@ -402,8 +402,9 @@ func (v *machineBuilder) applySystemProxy() error {
 // --- Machine assembly (from Config) ----------------------------------------
 
 // buildMachine converts Config directly into define.Machine.
-// The returned cleanup func releases all resources (file lock, log file,
-// workspace directory). Caller must always invoke it.
+// The returned cleanup func releases runtime resources (such as the session
+// lock), but intentionally keeps the session workspace on disk. Caller must
+// always invoke it.
 func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *define.Machine, cleanup func(), retErr error) {
 	var runMode define.RunMode
 	switch cfg.RunMode {
@@ -425,7 +426,6 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 		return nil, nil, fmt.Errorf("setup workspace: %w", err)
 	}
 	cleanupCallbacks.AddFunc(func() { _ = mBuilder.fileLock.Unlock(); _ = os.Remove(workspacePath + ".lock") })
-	cleanupCallbacks.AddFunc(func() { _ = os.RemoveAll(workspacePath) })
 
 	// cfg.LogTo is set by WithLogSetup; fall back to workspace-relative path.
 	if cfg.LogTo != "" {

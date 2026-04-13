@@ -32,12 +32,10 @@ func TunnelHostUnixToGuest(ctx context.Context, gvproxyCtlUnixAddr, listenUnixAd
 		return err
 	}
 
-	// Use sync.Once to ensure listener is closed exactly once
 	var closeOnce sync.Once
 	closeLn := func() { closeOnce.Do(func() { _ = ln.Close() }) }
 	defer closeLn()
 
-	// Close listener when context is cancelled to unblock Accept()
 	go func() {
 		<-ctx.Done()
 		closeLn()
@@ -58,7 +56,7 @@ func parseUnixSocketPath(addr string) (string, error) {
 }
 
 func createUnixListenerSockFile(path string) (net.Listener, error) {
-	_ = os.Remove(path) // ignore error if not exists
+	_ = os.Remove(path)
 
 	ln, err := net.Listen("unix", path)
 	if err != nil {
@@ -88,41 +86,67 @@ func acceptLoop(ctx context.Context, ln net.Listener, gvproxyPath, targetIP stri
 			continue
 		}
 
-		go handleTunnelConn(conn, gvproxyPath, targetIP, targetPort)
+		go handleTunnelConn(ctx, conn, gvproxyPath, targetIP, targetPort)
 	}
 }
 
-func handleTunnelConn(clientConn net.Conn, gvproxyPath, targetIP string, targetPort uint16) {
-	defer clientConn.Close()
+func handleTunnelConn(ctx context.Context, hostConn net.Conn, gvproxyPath, targetIP string, targetPort uint16) {
+	defer hostConn.Close()
 
 	guestConn, err := net.Dial("unix", gvproxyPath)
 	if err != nil {
-		logrus.Errorf("dial gvproxy: %v", err)
+		logrus.Errorf("dial gvproxy %s: %v", gvproxyPath, err)
 		return
 	}
 	defer guestConn.Close()
 
 	if err := transport.Tunnel(guestConn, targetIP, int(targetPort)); err != nil {
-		logrus.Errorf("tunnel setup failed: %v", err)
+		logrus.Errorf("tunnel setup to %s:%d failed: %v", targetIP, targetPort, err)
 		return
 	}
 
-	bidirectionalCopy(clientConn, guestConn)
-}
-
-func bidirectionalCopy(conn1, conn2 net.Conn) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	copyFn := func(dst, src net.Conn) {
-		defer wg.Done()
-		_, _ = io.Copy(dst, src)
-		_ = dst.Close()
-		_ = src.Close()
-	}
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = hostConn.Close()
+			_ = guestConn.Close()
+		case <-done:
+		}
+	}()
 
-	go copyFn(conn1, conn2)
-	go copyFn(conn2, conn1)
+	go copyDataGuestToHost(&wg, hostConn, guestConn)
+	go copyDataHostToGuest(&wg, hostConn, guestConn)
 
 	wg.Wait()
+	close(done)
+}
+
+// copyDataGuestToHost copies guest output back to the host and propagates EOF.
+func copyDataGuestToHost(wg *sync.WaitGroup, hostConn, guestConn net.Conn) {
+	defer wg.Done()
+
+	_, _ = io.Copy(hostConn, guestConn)
+	_ = closeWrite(hostConn)
+}
+
+// copyDataHostToGuest copies host input into the guest.
+// EOF stays local so read-only attach flows do not get closed prematurely.
+func copyDataHostToGuest(wg *sync.WaitGroup, hostConn, guestConn net.Conn) {
+	defer wg.Done()
+
+	_, _ = io.Copy(guestConn, hostConn)
+}
+
+func closeWrite(conn net.Conn) error {
+	if tcp, ok := conn.(*net.TCPConn); ok {
+		return tcp.CloseWrite()
+	}
+	if unix, ok := conn.(*net.UnixConn); ok {
+		return unix.CloseWrite()
+	}
+	return conn.Close()
 }

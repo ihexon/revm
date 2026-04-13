@@ -285,6 +285,10 @@ func containerDiskVersionValue(spec *ContainerDiskSpec) string {
 	return spec.Version
 }
 
+func normalizeDiskVersionValue(value string) string {
+	return strings.TrimRight(value, "\r\n\x00")
+}
+
 func rawDiskExists(rawDiskPath string) (bool, error) {
 	_, err := os.Stat(rawDiskPath)
 	if err == nil {
@@ -312,12 +316,14 @@ func shouldRecreateRAWDisk(ctx context.Context, spec RawDiskSpec) (bool, error) 
 		return false, nil
 	}
 
-	if stored != spec.Version {
-		logrus.Infof("raw disk version mismatch: path=%q stored=%q expected=%q", spec.Path, stored, spec.Version)
+	normalizedStored := normalizeDiskVersionValue(stored)
+	normalizedExpected := normalizeDiskVersionValue(spec.Version)
+	if normalizedStored != normalizedExpected {
+		logrus.Infof("raw disk version mismatch: path=%q stored=%q normalized_stored=%q expected=%q", spec.Path, stored, normalizedStored, spec.Version)
 		return true, nil
 	}
 
-	logrus.Infof("raw disk version matches: path=%q version=%q", spec.Path, stored)
+	logrus.Infof("raw disk version matches: path=%q stored=%q normalized=%q", spec.Path, stored, normalizedStored)
 	return false, nil
 }
 
@@ -331,12 +337,14 @@ func shouldBumpContainerDisk(ctx context.Context, spec RawDiskSpec) (bool, error
 		logrus.Infof("container disk version xattr is missing, bumping disk: path=%q", spec.Path)
 		return true, nil
 	}
-	if stored != spec.Version {
-		logrus.Infof("container disk version mismatch: path=%q stored=%q expected=%q", spec.Path, stored, spec.Version)
+	normalizedStored := normalizeDiskVersionValue(stored)
+	normalizedExpected := normalizeDiskVersionValue(spec.Version)
+	if normalizedStored != normalizedExpected {
+		logrus.Infof("container disk version mismatch: path=%q stored=%q normalized_stored=%q expected=%q", spec.Path, stored, normalizedStored, spec.Version)
 		return true, nil
 	}
 
-	logrus.Infof("container disk version matches: path=%q version=%q", spec.Path, stored)
+	logrus.Infof("container disk version matches: path=%q stored=%q normalized=%q", spec.Path, stored, normalizedStored)
 	return false, nil
 }
 
