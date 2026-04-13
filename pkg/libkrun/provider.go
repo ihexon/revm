@@ -9,29 +9,29 @@ import (
 )
 
 type Provider struct {
-	mc *define.Machine
-	vm *VM
+	mc      *define.Machine
+	libkrun *Libkrun
 }
 
 func NewProvider(mc *define.Machine) *Provider {
-	return &Provider{mc: mc, vm: New(mc)}
+	return &Provider{mc: mc, libkrun: New(mc)}
 }
 
 func (p *Provider) Create(ctx context.Context) error {
-	return p.vm.Create(ctx)
+	return p.libkrun.Create(ctx)
 }
 
 func (p *Provider) Start(ctx context.Context) error {
 	ch := make(chan error, 1)
 	go func() {
 		runtime.LockOSThread()
-		ch <- p.vm.Start(ctx)
+		ch <- p.libkrun.Start(ctx)
 	}()
 	return <-ch
 }
 
 func (p *Provider) Stop() error {
-	p.vm.SendSignal(define.GuestSignalTerminated)
+	p.libkrun.SendSignal(define.GuestSignalTerminated)
 	return nil
 }
 

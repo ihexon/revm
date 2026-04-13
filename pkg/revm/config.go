@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package librevm
+package revm
 
 import (
 	"crypto/rand"

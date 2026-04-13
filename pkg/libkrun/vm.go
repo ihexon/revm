@@ -23,8 +23,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// VM wraps libkrun context and manages VM lifecycle.
-type VM struct {
+// Libkrun wraps Libkrun context and manages Libkrun lifecycle.
+type Libkrun struct {
 	cfg   *define.Machine
 	ctxID uint32
 
@@ -33,18 +33,18 @@ type VM struct {
 		stdin, stdout, stderr *os.File
 		consolePty            [2]*os.File // master, slave
 		guestLog              *os.File
-		signalPipeR           *os.File // read end kept alive for libkrun
+		signalPipeR           *os.File // read end kept alive for Libkrun
 		signalPipeW           *os.File // write end
 	}
 }
 
-// New creates a new VM instance.
-func New(cfg *define.Machine) *VM {
-	return &VM{cfg: cfg}
+// New creates a new Libkrun instance.
+func New(cfg *define.Machine) *Libkrun {
+	return &Libkrun{cfg: cfg}
 }
 
-// Create initializes the VM configuration.
-func (v *VM) Create(ctx context.Context) error {
+// Create initializes the Libkrun configuration.
+func (v *Libkrun) Create(ctx context.Context) error {
 	if err := v.init(); err != nil {
 		return err
 	}
@@ -72,10 +72,10 @@ func (v *VM) Create(ctx context.Context) error {
 	return nil
 }
 
-// Start launches the VM and blocks until it exits.
-func (v *VM) Start(ctx context.Context) error {
+// Start launches the Libkrun and blocks until it exits.
+func (v *Libkrun) Start(ctx context.Context) error {
 	// krun_start_enter 后的代码在 https://github.com/containers/libkrun/issues/561 得到修复前，
-	// 永远没有机会执行，因为 libkrun 会使用 exit 退出程序
+	// 永远没有机会执行，因为 Libkrun 会使用 exit 退出程序
 	//
 	// 但我仍然做象征意义上的清理工作，因为这样让人感到愉悦
 	ret := C.krun_start_enter(C.uint32_t(v.ctxID))
@@ -107,17 +107,18 @@ func (v *VM) Start(ctx context.Context) error {
 	}
 
 	if ret != 0 {
-		return fmt.Errorf("VM failed: %w", errCode(ret))
+		return fmt.Errorf("Libkrun failed: %w", errCode(ret))
 	}
 
 	return nil
 }
 
-// SendSignal writes a signal message to the VM's signal pipe.
-func (v *VM) SendSignal(name define.GuestSignalName) {
+// SendSignal writes a signal message to the Libkrun's signal pipe.
+func (v *Libkrun) SendSignal(name define.GuestSignalName) {
 	if v.files.signalPipeW == nil {
 		return
 	}
+
 	msg := define.GuestSignal{SignalName: name}
 	if b, err := json.Marshal(msg); err == nil {
 		_, _ = v.files.signalPipeW.Write(b)
@@ -125,8 +126,8 @@ func (v *VM) SendSignal(name define.GuestSignalName) {
 	}
 }
 
-// init creates libkrun context and initializes logging.
-func (v *VM) init() error {
+// init creates Libkrun context and initializes logging.
+func (v *Libkrun) init() error {
 	level := logLevel(os.Getenv("LIBKRUN_DEBUG"))
 	if ret := C.krun_init_log(C.KRUN_LOG_TARGET_DEFAULT, level, C.KRUN_LOG_STYLE_AUTO, C.KRUN_LOG_OPTION_NO_ENV); ret != 0 {
 		return errCode(ret)
@@ -142,7 +143,7 @@ func (v *VM) init() error {
 }
 
 // setResources configures CPU, memory, and limits.
-func (v *VM) setResources() {
+func (v *Libkrun) setResources() {
 	must(C.krun_set_vm_config(
 		C.uint32_t(v.ctxID),
 		C.uint8_t(v.cfg.Cpus),
@@ -155,14 +156,14 @@ func (v *VM) setResources() {
 }
 
 // setRootFS sets the root filesystem path.
-func (v *VM) setRootFS() {
+func (v *Libkrun) setRootFS() {
 	rootfs := cstr(v.cfg.RootFS)
 	defer free(rootfs)
 	must(C.krun_set_root(C.uint32_t(v.ctxID), rootfs))
 }
 
 // setGuestAgent configures the guest agent executable.
-func (v *VM) setGuestAgent() {
+func (v *Libkrun) setGuestAgent() {
 	workdir := cstr(v.cfg.GuestAgentCfg.Workdir)
 	defer free(workdir)
 	must(C.krun_set_workdir(C.uint32_t(v.ctxID), workdir))
@@ -180,7 +181,7 @@ func (v *VM) setGuestAgent() {
 }
 
 // setupGPU enables GPU passthrough on macOS.
-func (v *VM) setupGPU() {
+func (v *Libkrun) setupGPU() {
 	if runtime.GOOS != "darwin" {
 		return
 	}
@@ -189,7 +190,7 @@ func (v *VM) setupGPU() {
 }
 
 // setupNestedVirt enables nested virtualization if supported.
-func (v *VM) setupNestedVirt() {
+func (v *Libkrun) setupNestedVirt() {
 	if C.krun_check_nested_virt() == 1 {
 		_ = C.krun_set_nested_virt(C.uint32_t(v.ctxID), true)
 	}
@@ -236,7 +237,7 @@ func (a *cstringArray) free() {
 func must(ret C.int32_t) {
 	if ret != 0 {
 		err := errCode(ret)
-		logrus.Errorf("libkrun fatal error: %v", err)
+		logrus.Errorf("Libkrun fatal error: %v", err)
 		// Log stack trace for debugging
 		logrus.Errorf("stack trace: %s", debug.Stack())
 		panic(err)
@@ -244,7 +245,7 @@ func must(ret C.int32_t) {
 }
 
 func errCode(code C.int32_t) error {
-	return fmt.Errorf("libkrun error: %d", code)
+	return fmt.Errorf("Libkrun error: %d", code)
 }
 
 func logLevel(env string) C.uint32_t {

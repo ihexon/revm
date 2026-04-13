@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package librevm
+package revm
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"linuxvm/pkg/interfaces"
 	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/service/lifecycle"
-	sshsvc "linuxvm/pkg/service/ssh"
 	"os"
 	"os/signal"
 	"runtime"
@@ -17,7 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"al.essio.dev/pkg/shellescape"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
@@ -48,7 +46,7 @@ func newProvider(mc *define.Machine) (interfaces.VMMProvider, error) {
 	}
 	p := libkrun.NewProvider(mc)
 	if err := p.Create(context.Background()); err != nil {
-		return nil, fmt.Errorf("create libkrun VM: %w", err)
+		return nil, fmt.Errorf("create libkrun libkrun: %w", err)
 	}
 	return p, nil
 }
@@ -152,22 +150,23 @@ func (vm *VM) RunChroot(ctx context.Context) error {
 		return err
 	}
 
-	vm.emit(EventVMStarting, "starting vm in rootfs mode")
-
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Start ignition server
 	g.Go(func() error {
+		vm.emit(EventIgnitionService, "starting ignition service")
 		return vm.svc.StartIgnitionService(ctx)
 	})
 
 	// Start network stack
 	g.Go(func() error {
-		return vm.svc.StartNetworkStack(ctx)
+		vm.emit(EventHostNetworkStack, "starting host network stack")
+		return vm.svc.StartHostNetworkStack(ctx)
 	})
 
 	// Start management API
 	g.Go(func() error {
+		vm.emit(EventManagementAPIStarting, "starting vm management api")
 		return vm.svc.StartMachineManagementAPI(ctx)
 	})
 
@@ -186,12 +185,14 @@ func (vm *VM) RunChroot(ctx context.Context) error {
 		close(svcErrCh)
 	}()
 
-	// Start VM when network is ready
+	// Start libkrun when network is ready
 	select {
 	case <-ctx.Done():
 		return <-svcErrCh
-	case <-vm.machine.Readiness.VNetHostReady:
-		logrus.Infof("boot virtual machine...")
+	case <-vm.machine.Readiness.VNetHostReady: // Start libkrun when network is ready
+		reason := fmt.Errorf("boot virtual machine")
+		logrus.Info(reason.Error())
+		vm.emit(EventVirtualMachineBooting, reason.Error())
 		err := vm.svc.StartVirtualMachine(ctx)
 		vm.Cancel()
 		<-svcErrCh
@@ -205,22 +206,23 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 		return err
 	}
 
-	vm.emit(EventVMStarting, "starting vm in container mode")
-
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Start ignition server
 	g.Go(func() error {
+		vm.emit(EventIgnitionService, "starting ignition service")
 		return vm.svc.StartIgnitionService(ctx)
 	})
 
 	// Start network stack
 	g.Go(func() error {
-		return vm.svc.StartNetworkStack(ctx)
+		vm.emit(EventHostNetworkStack, "starting host network stack")
+		return vm.svc.StartHostNetworkStack(ctx)
 	})
 
 	// Start management API
 	g.Go(func() error {
+		vm.emit(EventManagementAPIStarting, "starting vm management api")
 		return vm.svc.StartMachineManagementAPI(ctx)
 	})
 
@@ -249,12 +251,13 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 		close(svcErrCh)
 	}()
 
-	// Start VM when network is ready
 	select {
 	case <-ctx.Done():
 		return <-svcErrCh
-	case <-vm.machine.Readiness.VNetHostReady:
-		logrus.Infof("boot virtual machine...")
+	case <-vm.machine.Readiness.VNetHostReady: // Start libkrun when network is ready
+		reason := fmt.Errorf("boot virtual machine")
+		logrus.Info(reason.Error())
+		vm.emit(EventVirtualMachineBooting, reason.Error())
 		err := vm.svc.StartVirtualMachine(ctx)
 		vm.Cancel()
 		<-svcErrCh
@@ -309,7 +312,9 @@ func (vm *VM) WaitAndShutdownMachine(ctx context.Context, cancel context.CancelF
 				return
 			case <-ticker.C:
 				if os.Getppid() == 1 {
-					logrus.Info("parent process exited, shutting down machine")
+					reason := fmt.Errorf("parent process exited, shutting down machine")
+					logrus.Info(reason.Error())
+					vm.emit(EventStopping, reason.Error())
 					_ = vm.svc.StopVirtualMachine()
 					cancel()
 					return
@@ -328,43 +333,19 @@ func (vm *VM) WaitAndShutdownMachine(ctx context.Context, cancel context.CancelF
 		case <-ctx.Done():
 			return
 		case <-sigCh:
-			logrus.Info("received signal, shutting down")
+			reason := fmt.Errorf("received signal, shutting down")
+			logrus.Info(reason.Error())
+			vm.emit(EventStopping, reason.Error())
 			_ = vm.svc.StopVirtualMachine()
 			cancel()
 		}
 	}()
 }
 
-// execIgnoreErr runs a command in the VM via SSH, logging but not returning errors.
-func (vm *VM) execIgnoreErr(ctx context.Context, cmdline ...string) {
-	client, err := sshsvc.MakeSSHClient(ctx, vm.machine)
-	if err != nil {
-		logrus.Warnf("ssh connect for %v: %v", cmdline, err)
+// emit sending events with option msg
+func (vm *VM) emit(kind EventKind, msg string) {
+	if vm == nil || vm.cfg == nil {
 		return
 	}
-	defer client.Close()
-
-	if err := client.Run(ctx, shellescape.QuoteCommand(cmdline)); err != nil {
-		logrus.Warnf("exec %v: %v", cmdline, err)
-	}
-}
-
-func GenerateVMConfig(ctx context.Context, cfg *Config, path string) error {
-	vm := &VM{
-		cfg: cfg,
-	}
-
-	if reporter := newEventReporter(cfg.ReportURL); reporter != nil {
-		vm.eventDispatcher.addReporter(reporter)
-	}
-	defer vm.emit(EventExit, "")
-
-	if err := cfg.WriteCfg(path); err != nil {
-		vm.emit(EventError, err.Error())
-		return err
-	}
-
-	vm.emit(EventSuccess, "")
-
-	return nil
+	vm.eventDispatcher.emit(vm.cfg.SessionID, vm.cfg.RunMode, kind, msg, vm.seq.Add(1))
 }

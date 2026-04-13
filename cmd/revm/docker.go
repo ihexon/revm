@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/librevm"
+	"linuxvm/pkg/revm"
 
 	"github.com/urfave/cli/v3"
 )
@@ -60,7 +60,7 @@ var startDocker = cli.Command{
 		&cli.StringFlag{
 			Name:  define.FlagSessionID,
 			Usage: "session name; used to derive the workspace directory (/tmp/<session_id>); sessions with the same name are mutually exclusive via flock",
-			Value: librevm.RandomString(),
+			Value: revm.RandomString(),
 		},
 		&cli.StringFlag{
 			Name:  define.FlagContainerDisk,
@@ -88,23 +88,23 @@ func dockerLifeCycle(_ context.Context, command *cli.Command) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	rawDiskSpecs, err := librevm.ParseRawDiskSpecs(command.StringSlice(define.FlagRawDisk))
+	rawDiskSpecs, err := revm.ParseRawDiskSpecs(command.StringSlice(define.FlagRawDisk))
 	if err != nil {
 		return err
 	}
 
-	var containerDiskSpec *librevm.ContainerDiskSpec
+	var containerDiskSpec *revm.ContainerDiskSpec
 	if value := command.String(define.FlagContainerDisk); value != "" {
-		spec, err := librevm.ParseContainerDiskSpec(value)
+		spec, err := revm.ParseContainerDiskSpec(value)
 		if err != nil {
 			return err
 		}
 		containerDiskSpec = &spec
 	}
 
-	cfg := librevm.DefaultConfig(command.String(define.FlagSessionID)).
+	cfg := revm.DefaultConfig(command.String(define.FlagSessionID)).
 		WithLogSetup(command.String(define.FlagLogLevel), command.String(define.FlagLogTo)).
-		WithMode(librevm.ModeContainer).
+		WithMode(revm.ModeContainer).
 		WithCPUs(int(command.Int8(define.FlagCPUS))).
 		WithMemory(command.Uint64(define.FlagMemoryInMB)).
 		WithNetwork(command.String(define.FlagVNetworkType)).
@@ -120,7 +120,7 @@ func dockerLifeCycle(_ context.Context, command *cli.Command) error {
 		cfg.WithEventReporter(u)
 	}
 
-	vm, err := librevm.New(cfg)
+	vm, err := revm.New(cfg)
 	if err != nil {
 		return err
 	}
