@@ -53,7 +53,7 @@ func newProvider(mc *define.Machine) (interfaces.VMMProvider, error) {
 	return p, nil
 }
 
-// Close 释放所有资源（文件锁、workspace 目录、event eventDispatcher）。
+// Close 释放运行时资源（文件锁、event eventDispatcher）。
 // 必须始终调用，即使 Run() 从未被调用。幂等。
 func (vm *VM) Close() error {
 	if vm.cleanup != nil {
