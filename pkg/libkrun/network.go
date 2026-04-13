@@ -19,7 +19,7 @@ import (
 var guestMAC = [6]byte{0x5a, 0x94, 0xef, 0xe4, 0x0c, 0xee}
 
 // setupNetwork configures the network backend.
-func (v *VM) setupNetwork() error {
+func (v *Libkrun) setupNetwork() error {
 	switch v.cfg.VirtualNetworkMode {
 	case define.GVISOR:
 		return v.setupGVisor()
@@ -31,7 +31,7 @@ func (v *VM) setupNetwork() error {
 	}
 }
 
-func (v *VM) setupGVisor() error {
+func (v *Libkrun) setupGVisor() error {
 	logrus.Info("configuring gvisor-tap-vsock network")
 
 	addr, err := network.ParseUnixAddr(v.cfg.GVPVNetAddr)

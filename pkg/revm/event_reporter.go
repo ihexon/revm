@@ -1,6 +1,6 @@
 //go:build (darwin && arm64) || (linux && (arm64 || amd64))
 
-package librevm
+package revm
 
 import (
 	"context"
@@ -60,7 +60,7 @@ func (r *v1EventReporter) Report(evt Event) {
 		Query("time", evt.Time.Format(time.RFC3339Nano))
 	resp, err := req.Do(context.Background()) //nolint:bodyclose
 	if err != nil {
-		logrus.Warnf("v1 event sink: publish %s failed: %v", evt.Kind, err)
+		logrus.Warnf("v1 event sink: emit %s failed: %v", evt.Kind, err)
 		return
 	}
 	network.CloseResponse(resp)

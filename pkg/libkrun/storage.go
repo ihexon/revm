@@ -18,7 +18,7 @@ import (
 const virtiofsMemWindow = 512 << 20 // 512MB
 
 // setupStorage configures block devices and virtiofs mounts.
-func (v *VM) setupStorage() error {
+func (v *Libkrun) setupStorage() error {
 	for _, disk := range v.cfg.BlkDevs {
 		if err := v.addDisk(disk.Path); err != nil {
 			return err
@@ -34,7 +34,7 @@ func (v *VM) setupStorage() error {
 	return nil
 }
 
-func (v *VM) addDisk(path string) error {
+func (v *Libkrun) addDisk(path string) error {
 	stat, err := os.Stat(path)
 	if err != nil {
 		return err
@@ -62,7 +62,7 @@ func (v *VM) addDisk(path string) error {
 	return nil
 }
 
-func (v *VM) addVirtioFS(tag, hostPath string) error {
+func (v *Libkrun) addVirtioFS(tag, hostPath string) error {
 	absPath, err := filepath.Abs(hostPath)
 	if err != nil {
 		return err

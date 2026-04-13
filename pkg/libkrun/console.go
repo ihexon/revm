@@ -18,7 +18,7 @@ import (
 )
 
 // setupConsole configures all console ports.
-func (v *VM) setupConsole() error {
+func (v *Libkrun) setupConsole() error {
 	must(C.krun_disable_implicit_console(C.uint32_t(v.ctxID)))
 
 	consoleID := C.krun_add_virtio_console_multiport(C.uint32_t(v.ctxID))
@@ -44,7 +44,7 @@ func (v *VM) setupConsole() error {
 }
 
 // addMainConsole adds the primary console (hvc0 → /dev/console).
-func (v *VM) addMainConsole(consoleID C.int32_t) error {
+func (v *Libkrun) addMainConsole(consoleID C.int32_t) error {
 	var fd int
 
 	if v.cfg.TTY {
@@ -84,7 +84,7 @@ func (v *VM) addMainConsole(consoleID C.int32_t) error {
 }
 
 // addStdioRedirect adds stdin/stdout/stderr ports for non-TTY mode.
-func (v *VM) addStdioRedirect(consoleID C.int32_t) error {
+func (v *Libkrun) addStdioRedirect(consoleID C.int32_t) error {
 	stdinR, stdinW := pipe()
 	go func() {
 		io.Copy(stdinW, os.Stdin)
@@ -129,7 +129,7 @@ func (v *VM) addStdioRedirect(consoleID C.int32_t) error {
 }
 
 // addGuestLogPort attaches a dedicated guest-log port.
-func (v *VM) addGuestLogPort(consoleID C.int32_t) error {
+func (v *Libkrun) addGuestLogPort(consoleID C.int32_t) error {
 	logFile, err := os.OpenFile(v.cfg.LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		return err
@@ -155,7 +155,7 @@ func (v *VM) addGuestLogPort(consoleID C.int32_t) error {
 }
 
 // addGuestSignalPort attaches a dedicated guest-signal port.
-func (v *VM) addGuestSignalPort(consoleID C.int32_t) error {
+func (v *Libkrun) addGuestSignalPort(consoleID C.int32_t) error {
 	sigR, sigW := pipe()
 
 	name := cstr(define.GuestSignalConsolePort)

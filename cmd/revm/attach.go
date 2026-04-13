@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/librevm"
+	"linuxvm/pkg/revm"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -52,7 +52,7 @@ func attachConsole(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("no session name specified, please provide the session name")
 	}
 
-	attached, err := librevm.Attach(ctx, name)
+	attached, err := revm.Attach(ctx, name)
 	if err != nil {
 		return err
 	}

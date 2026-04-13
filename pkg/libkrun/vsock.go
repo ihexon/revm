@@ -16,7 +16,7 @@ import (
 )
 
 // setupVSock configures the VSock device and port mappings.
-func (v *VM) setupVSock() error {
+func (v *Libkrun) setupVSock() error {
 	must(C.krun_disable_implicit_vsock(C.uint32_t(v.ctxID)))
 
 	var features C.uint32_t
