@@ -12,7 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.12"
+const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.14"
 
 // run executes a command, inheriting stdout/stderr. If env is non-nil,
 // those vars are appended to the current environment.
