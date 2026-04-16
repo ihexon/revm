@@ -1,6 +1,7 @@
 package define
 
 var (
-	Version  string
-	CommitID string
+	Version   string
+	CommitID  string
+	BuildDate string
 )
