@@ -18,7 +18,7 @@ func SyncRTCTime(ctx context.Context) error {
 		Stderr:     StderrWriter(),
 		Stdout:     StderrWriter(),
 		Restart:    true,
-		RetryDelay: 1 * time.Minute,
+		RetryDelay: 60 * time.Minute,
 	})
 	sv.Run(ctx)
 	return nil
