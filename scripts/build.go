@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -193,9 +194,15 @@ func (b *builder) fetchDeps() {
 func (b *builder) buildTarget() {
 	version := runQuiet("unknown", "git", "-C", b.workspace, "describe", "--tags", "--abbrev=0")
 	commit := runQuiet("unknown", "git", "-C", b.workspace, "rev-parse", "--short", "HEAD")
-	logrus.Infof("building revm (%s-%s)", version, commit)
+	buildDate := time.Now().UTC().Format("20060102T150405Z")
+	logrus.Infof("building revm (%s-%s-%s)", version, commit, buildDate)
 
-	ldflags := fmt.Sprintf("-X linuxvm/pkg/define.Version=%s -X linuxvm/pkg/define.CommitID=%s", version, commit)
+	ldflags := fmt.Sprintf(
+		"-X linuxvm/pkg/define.Version=%s -X linuxvm/pkg/define.CommitID=%s -X linuxvm/pkg/define.BuildDate=%s",
+		version,
+		commit,
+		buildDate,
+	)
 	out := filepath.Join(b.binDir, "revm")
 	src := filepath.Join(b.workspace, "cmd", "revm")
 

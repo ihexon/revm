@@ -61,10 +61,29 @@ func (vm *VM) Close() error {
 	return nil
 }
 
+func buildTimeInfo() string {
+	version := define.Version
+	if version == "" {
+		version = "unknown"
+	}
+	commit := define.CommitID
+	if commit == "" {
+		commit = "unknown"
+	}
+	buildDate := define.BuildDate
+	if buildDate == "" {
+		buildDate = "unknown"
+	}
+
+	return fmt.Sprintf("%s-%s-%s", version, commit, buildDate)
+}
+
 func New(cfg *Config) (*VM, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
 	}
+
+	logrus.Infof("revm build info: %s", buildTimeInfo())
 
 	normalizedCfg, err := NormalizeConfig(*cfg)
 	if err != nil {
