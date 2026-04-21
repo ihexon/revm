@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/moby/sys/mountinfo"
 	"github.com/sirupsen/logrus"
 )
 
@@ -32,7 +33,7 @@ func ExecOutput(ctx context.Context, stdout, stderr io.Writer, args ...string) e
 
 // Mount runs busybox mount command.
 func Mount(ctx context.Context, args ...string) error {
-	return ExecNoOutput(ctx, append([]string{"mount"}, args...)...)
+	return ExecOutput(ctx, StderrWriter(), StderrWriter(), append([]string{"mount"}, args...)...)
 }
 
 // Umount runs busybox umount command.
@@ -42,8 +43,10 @@ func Umount(ctx context.Context, target string) error {
 
 // IsMounted checks if a path is a mount point.
 func IsMounted(target string) bool {
-	if err := ExecNoOutput(context.Background(), "mountpoint", "-q", target); err != nil {
+	mounted, err := mountinfo.Mounted(target)
+	if err != nil {
+		logrus.Debugf("mountinfo: %s: %v", target, err)
 		return false
 	}
-	return true
+	return mounted
 }

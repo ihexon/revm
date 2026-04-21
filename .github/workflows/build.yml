@@ -50,7 +50,15 @@ jobs:
           overwrite: true
 
   build-linux:
-    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            artifact_name: revm-linux-x86_64
+          - runner: ubuntu-24.04-arm
+            artifact_name: revm-linux-aarch64
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: 'actions/checkout@v5'
@@ -74,7 +82,7 @@ jobs:
       - name: Upload artifact
         uses: 'actions/upload-artifact@v4'
         with:
-          name: revm-linux
+          name: ${{ matrix.artifact_name }}
           path: |
             revm-*.tar.zst
           if-no-files-found: error
