@@ -13,7 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.15"
+const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.16"
 
 // run executes a command, inheriting stdout/stderr. If env is non-nil,
 // those vars are appended to the current environment.
@@ -73,18 +73,91 @@ func removeAll(path string) {
 }
 
 type builder struct {
-	dirty     bool
-	goos      string // runtime.GOOS
-	goarch    string // uname -m (arm64, aarch64, x86_64)
-	workspace string
-	outDir    string
-	binDir    string
-	libDir    string
-	helperDir string
-	depsDir   string
-	staticDir string
-	pkgCfgDir string // Darwin only
-	homebrew  string
+	dirty      bool
+	goos       string // runtime.GOOS
+	goarch     string // uname -m (arm64, aarch64, x86_64)
+	workspace  string
+	outDir     string
+	binDir     string
+	libDir     string
+	helperDir  string
+	depsDir    string
+	staticDir  string
+	serviceDir string
+	pkgCfgDir  string // Darwin only
+	homebrew   string
+}
+
+func (b *builder) isArm64() bool {
+	return b.goarch == "aarch64" || b.goarch == "arm64"
+}
+
+func (b *builder) isX8664() bool {
+	return b.goarch == "x86_64" || b.goarch == "amd64"
+}
+
+func (b *builder) guestGoArch() string {
+	switch {
+	case b.isArm64():
+		return "arm64"
+	case b.isX8664():
+		return "amd64"
+	default:
+		logrus.Fatalf("unsupported host arch: %s", b.goarch)
+		return ""
+	}
+}
+
+func (b *builder) linuxAssetArch() string {
+	switch {
+	case b.isArm64():
+		return "aarch64"
+	case b.isX8664():
+		return "x86_64"
+	default:
+		logrus.Fatalf("unsupported linux arch: %s", b.goarch)
+		return ""
+	}
+}
+
+func (b *builder) depLibDir(name string) string {
+	for _, dir := range []string{"lib64", "lib"} {
+		path := filepath.Join(b.depsDir, name, dir)
+		if exists(path) {
+			return path
+		}
+	}
+	logrus.Fatalf("missing shared library directory for %s", name)
+	return ""
+}
+
+func (b *builder) linuxDynLinkerPath() string {
+	var candidates []string
+	switch {
+	case b.isArm64():
+		candidates = []string{
+			"/lib/ld-linux-aarch64.so.1",
+			"/lib64/ld-linux-aarch64.so.1",
+			"/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
+		}
+	case b.isX8664():
+		candidates = []string{
+			"/lib64/ld-linux-x86-64.so.2",
+			"/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+			"/lib/ld-linux-x86-64.so.2",
+		}
+	default:
+		logrus.Fatalf("unsupported linux arch: %s", b.goarch)
+	}
+
+	for _, path := range candidates {
+		if exists(path) {
+			return path
+		}
+	}
+
+	logrus.Fatalf("failed to find dynamic linker for linux/%s (tried: %s)", b.goarch, strings.Join(candidates, ", "))
+	return ""
 }
 
 func newBuilder(dirty bool) *builder {
@@ -100,14 +173,15 @@ func newBuilder(dirty bool) *builder {
 	}
 
 	b := &builder{
-		dirty:     dirty,
-		goos:      runtime.GOOS,
-		goarch:    arch,
-		workspace: workspace,
-		outDir:    filepath.Join(workspace, "out"),
-		depsDir:   "/tmp/.deps",
-		staticDir: filepath.Join(workspace, "pkg", "static_resources"),
-		homebrew:  homebrew,
+		dirty:      dirty,
+		goos:       runtime.GOOS,
+		goarch:     arch,
+		workspace:  workspace,
+		outDir:     filepath.Join(workspace, "out"),
+		depsDir:    "/tmp/.deps",
+		staticDir:  filepath.Join(workspace, "pkg", "static_resources"),
+		serviceDir: filepath.Join(workspace, "cmd", "guest-agent", "pkg", "service"),
+		homebrew:   homebrew,
 	}
 	b.binDir = filepath.Join(b.outDir, "bin")
 	b.libDir = filepath.Join(b.outDir, "lib")
@@ -133,8 +207,9 @@ func (b *builder) initEnv() {
 
 func (b *builder) buildGuestAgent() {
 	logrus.Info("building guest-agent")
+	guestArch := b.guestGoArch()
 	runIn(filepath.Join(b.workspace, "cmd", "guest-agent"),
-		[]string{"CGO_ENABLED=0", "GOOS=linux", "GOARCH=arm64"},
+		[]string{"CGO_ENABLED=0", "GOOS=linux", "GOARCH=" + guestArch},
 		"go", "build", "-ldflags=-s -w",
 		"-o", filepath.Join(b.helperDir, "guest-agent"), "main.go")
 }
@@ -145,8 +220,50 @@ func (b *builder) fetchAsset(name, url, dest string) {
 	run(nil, "sh", "-c", fmt.Sprintf("wget -qO- '%s' | bsdtar --zstd -x -f - -C '%s'", url, dest))
 }
 
+func (b *builder) fetchGuestEmbeddedBinaries() {
+	assetArch := b.linuxAssetArch()
+	type guestBinaryAsset struct {
+		name       string
+		archiveURL string
+		sourceRel  string
+		destFile   string
+	}
+
+	assets := []guestBinaryAsset{
+		{
+			name:       "busybox",
+			archiveURL: fmt.Sprintf("%s/busybox-Linux-%s.tar.zst", assetsBase, assetArch),
+			sourceRel:  filepath.Join("usr", "bin", "busybox"),
+			destFile:   filepath.Join(b.serviceDir, "busybox.static"),
+		},
+		{
+			name:       "dropbear",
+			archiveURL: fmt.Sprintf("%s/dropbear-Linux-%s.tar.zst", assetsBase, assetArch),
+			sourceRel:  filepath.Join("bin", "dropbearmulti"),
+			destFile:   filepath.Join(b.serviceDir, "dropbearmulti"),
+		},
+	}
+
+	for _, asset := range assets {
+		cacheDir := filepath.Join(b.depsDir, asset.name)
+		cacheFile := filepath.Join(cacheDir, asset.sourceRel)
+		if b.dirty && exists(cacheFile) {
+			logrus.Infof("dirty mode: reusing cached %s in %s", asset.name, cacheFile)
+		} else {
+			if b.dirty {
+				logrus.Infof("dirty mode: %s not found, downloading anyway", cacheFile)
+			}
+			removeAll(cacheDir)
+			mkdirAll(cacheDir)
+			b.fetchAsset(asset.name, asset.archiveURL, cacheDir)
+		}
+
+		run(nil, "cp", "-av", cacheFile, asset.destFile)
+	}
+}
+
 func (b *builder) fetchDeps() {
-	assetOS, assetArch := "Linux", "aarch64"
+	assetOS, assetArch := "Linux", b.linuxAssetArch()
 	if b.goos == "darwin" {
 		assetOS, assetArch = "Darwin", "arm64"
 	}
@@ -185,7 +302,7 @@ func (b *builder) fetchDeps() {
 		logrus.Info("fetching rootfs")
 		mkdirAll(filepath.Dir(rootfsCache))
 		run(nil, "wget", "-qO", rootfsCache,
-			fmt.Sprintf("%s/alpine-rootfs-Linux-aarch64.tar.zst", assetsBase))
+			fmt.Sprintf("%s/alpine-rootfs-Linux-%s.tar.zst", assetsBase, b.linuxAssetArch()))
 	}
 	rootfsDest := filepath.Join(b.staticDir, "rootfs", "rootfs.tar.zst")
 	run(nil, "cp", "-av", rootfsCache, rootfsDest)
@@ -275,18 +392,14 @@ func (b *builder) relocateLibsLinux() {
 	bin := filepath.Join(b.binDir, "revm")
 
 	// Copy shared libs
-	run(nil, "sh", "-c", fmt.Sprintf("cp -av %s/libkrun/lib64/*.so* '%s/'", b.depsDir, lib))
-	run(nil, "sh", "-c", fmt.Sprintf("cp -av %s/libkrunfw/lib64/*.so* '%s/'", b.depsDir, lib))
+	run(nil, "sh", "-c", fmt.Sprintf("cp -av %s/*.so* '%s/'", b.depLibDir("libkrun"), lib))
+	run(nil, "sh", "-c", fmt.Sprintf("cp -av %s/*.so* '%s/'", b.depLibDir("libkrunfw"), lib))
 
 	// Collect .so deps from target binary
 	b.collectSoDeps(bin)
 
 	// Copy dynamic linker
-	if b.goarch == "aarch64" || b.goarch == "arm64" {
-		run(nil, "cp", "-Lv", "/lib/ld-linux-aarch64.so.1", lib+"/")
-	} else {
-		run(nil, "cp", "-Lv", "/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2", lib+"/")
-	}
+	run(nil, "cp", "-Lv", b.linuxDynLinkerPath(), lib+"/")
 
 	// Patch rpath
 	run(nil, "patchelf", "--set-rpath", "$ORIGIN/../lib", bin)
@@ -322,12 +435,7 @@ func (b *builder) collectSoDeps(binary string) {
 func (b *builder) writeLinuxLauncher() {
 	logrus.Info("writing revm.sh launcher")
 
-	var ldName string
-	if b.goarch == "aarch64" || b.goarch == "arm64" {
-		ldName = "ld-linux-aarch64.so.1"
-	} else {
-		ldName = "ld-linux-x86-64.so.2"
-	}
+	ldName := filepath.Base(b.linuxDynLinkerPath())
 
 	script := fmt.Sprintf(`#!/bin/sh
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -365,11 +473,22 @@ func (b *builder) packageTar() {
 	tarPath := filepath.Join(b.workspace, tarName)
 	run(nil, "bsdtar", "--zstd", "-cf", tarPath, "-C", b.outDir, ".")
 
-	// Restore placeholder
-	placeholder := filepath.Join(b.staticDir, "rootfs", "rootfs.tar.zst")
-	os.WriteFile(placeholder, nil, 0644)
+	b.restorePlaceholders()
 
 	logrus.Infof("build complete: %s", tarPath)
+}
+
+func (b *builder) restorePlaceholders() {
+	placeholders := []string{
+		filepath.Join(b.staticDir, "rootfs", "rootfs.tar.zst"),
+		filepath.Join(b.serviceDir, "busybox.static"),
+		filepath.Join(b.serviceDir, "dropbearmulti"),
+	}
+	for _, placeholder := range placeholders {
+		if err := os.WriteFile(placeholder, nil, 0644); err != nil {
+			logrus.Fatalf("restore placeholder %s: %v", placeholder, err)
+		}
+	}
 }
 
 func main() {
@@ -387,6 +506,7 @@ func main() {
 
 	b := newBuilder(*dirty)
 	b.initEnv()
+	b.fetchGuestEmbeddedBinaries()
 	b.buildGuestAgent()
 	b.fetchDeps()
 	b.buildTarget()

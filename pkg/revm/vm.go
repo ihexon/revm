@@ -44,6 +44,9 @@ func newProvider(mc *define.Machine) (interfaces.VMMProvider, error) {
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
+	if err := libkrun.CheckHostSupport(); err != nil {
+		return nil, err
+	}
 	p := libkrun.NewProvider(mc)
 	if err := p.Create(context.Background()); err != nil {
 		return nil, fmt.Errorf("create libkrun libkrun: %w", err)

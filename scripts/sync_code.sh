@@ -1,6 +1,6 @@
-export SSH_PORT=10024
+export SSH_PORT=8523
 export LOCAL_SRC_DIR="$(pwd)/"
-export SSH_REMOTE_ADDR="ihexon@192.168.1.210:/home/ihexon/revm/"
+export SSH_REMOTE_ADDR="ihexon@192.168.1.251:/home/ihexon/revm/"
 
 pullcode ()
 {

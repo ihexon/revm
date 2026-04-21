@@ -5,6 +5,7 @@ go 1.25.5
 require (
 	al.essio.dev/pkg/shellescape v1.6.1-0.20250626071713-b09271781b1a
 	github.com/charmbracelet/keygen v0.5.4
+	github.com/creack/pty v1.1.24
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/gofrs/flock v0.13.0
 	github.com/google/uuid v1.6.0
@@ -22,7 +23,6 @@ require (
 )
 
 require (
-	github.com/creack/pty v1.1.24 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/ebitengine/purego v0.9.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
@@ -47,7 +47,7 @@ require (
 	github.com/insomniacslk/dhcp v0.0.0-20251020182700-175e84fbb167 // indirect
 	github.com/linuxkit/virtsock v0.0.0-20241009230534-cb6a20cc0422 // indirect
 	github.com/mdlayher/socket v0.5.1 // indirect
-	github.com/mdlayher/vsock v1.2.1 // indirect
+	github.com/mdlayher/vsock v1.2.1
 	github.com/miekg/dns v1.1.70 // indirect
 	github.com/pierrec/lz4/v4 v4.1.23 // indirect; indirecte
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
