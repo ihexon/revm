@@ -98,6 +98,11 @@ func (mnt *Mnt) Mount(ctx context.Context, action MountActionType) error {
 func MountAllPseudoMnt(ctx context.Context) error {
 	var pseudoMnts = []Mnt{
 		{
+			Target: "/proc",
+			Opts:   "rw,nosuid,nodev,noexec,relatime",
+			Type:   procType,
+		},
+		{
 			Target: "/mnt",
 			Type:   tmpfsType,
 		},
@@ -128,11 +133,6 @@ func MountAllPseudoMnt(ctx context.Context) error {
 			Type:   tmpfsType,
 		},
 		{
-			Target: "/proc",
-			Opts:   "rw,nosuid,nodev,noexec,relatime",
-			Type:   procType,
-		},
-		{
 			Target: "/proc/sys/fs/binfmt_misc",
 			Type:   binfmtMiscFsType,
 		},
@@ -156,11 +156,11 @@ func MountAllPseudoMnt(ctx context.Context) error {
 			Opts:   "rw,nosuid,nodev,noexec,relatime,mode=700",
 			Type:   bpfFsType,
 		},
-		{
-			Target: "/sys/kernel/config",
-			Opts:   "rw,nosuid,nodev,noexec,relatime",
-			Type:   configfsType,
-		},
+		//{
+		//	Target: "/sys/kernel/config",
+		//	Opts:   "rw,nosuid,nodev,noexec,relatime",
+		//	Type:   configfsType,
+		//},
 	}
 
 	for _, mnt := range pseudoMnts {
