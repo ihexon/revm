@@ -121,26 +121,16 @@ func (vm *VM) Shell(ctx context.Context) error {
 	return client.Shell(ctx)
 }
 
-// SSHEndpoint blocks until the guest SSH server is ready and returns the
-// SSH address (host:port) suitable for direct connections.
+// SSHEndpoint returns the configured guest SSH address (host:port).
+// It does not wait for SSH readiness; callers should retry the connection.
 func (vm *VM) SSHEndpoint(ctx context.Context) (string, error) {
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case <-vm.machine.Readiness.SSHReady:
-		return vm.machine.SSHInfo.GuestSSHServerListenAddr, nil
-	}
+	return vm.machine.SSHInfo.GuestSSHServerListenAddr, nil
 }
 
-// PodmanEndpoint blocks until the guest Podman API proxy is ready and
-// returns the host-side unix socket address.
+// PodmanEndpoint returns the configured host-side Podman unix socket address.
+// It does not wait for Podman readiness; callers should retry the connection.
 func (vm *VM) PodmanEndpoint(ctx context.Context) (string, error) {
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case <-vm.machine.Readiness.PodmanReady:
-		return vm.machine.PodmanInfo.HostPodmanProxyAddr, nil
-	}
+	return vm.machine.PodmanInfo.HostPodmanProxyAddr, nil
 }
 
 // ExecOutput is a convenience that runs Exec and returns stdout as a string,

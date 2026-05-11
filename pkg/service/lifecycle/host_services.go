@@ -18,7 +18,7 @@ import (
 
 type HostServices interface {
 	StartPodmanProxy(ctx context.Context) error
-	StartHostNetworkStack(ctx context.Context) error
+	StartHostNetworkStack(ctx context.Context, onReady func()) error
 	StartIgnitionService(ctx context.Context) error
 	StartMachineManagementAPI(ctx context.Context) error
 	StartVirtualMachine(ctx context.Context) error
@@ -67,14 +67,15 @@ func (s *Service) StartPodmanProxy(ctx context.Context) error {
 	}
 }
 
-func (s *Service) StartHostNetworkStack(ctx context.Context) error {
+func (s *Service) StartHostNetworkStack(ctx context.Context, onReady func()) error {
 	vmc := s.vmp.GetVMConfig()
 	if vmc.VirtualNetworkMode == define.TSI {
+		onReady()
 		return nil
 	}
 
 	logrus.Info("starting gvisor-tap-vsock network stack")
-	return gvproxy.Run(ctx, vmc)
+	return gvproxy.Run(ctx, vmc, onReady)
 }
 
 func (s *Service) StartIgnitionService(ctx context.Context) error {

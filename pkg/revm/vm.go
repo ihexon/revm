@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -173,6 +174,14 @@ func (vm *VM) RunChroot(ctx context.Context) error {
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
+	networkReady := make(chan struct{})
+	var networkReadyOnce sync.Once
+	signalNetworkReady := func() {
+		networkReadyOnce.Do(func() {
+			close(networkReady)
+			vm.emit(EventNetworkReady, "host network ready")
+		})
+	}
 
 	// Start ignition server
 	g.Go(func() error {
@@ -183,7 +192,7 @@ func (vm *VM) RunChroot(ctx context.Context) error {
 	// Start network stack
 	g.Go(func() error {
 		vm.emit(EventHostNetworkStack, "starting host network stack")
-		return vm.svc.StartHostNetworkStack(ctx)
+		return vm.svc.StartHostNetworkStack(ctx, signalNetworkReady)
 	})
 
 	// Start management API
@@ -191,9 +200,6 @@ func (vm *VM) RunChroot(ctx context.Context) error {
 		vm.emit(EventManagementAPIStarting, "starting vm management api")
 		return vm.svc.StartMachineManagementAPI(ctx)
 	})
-
-	// Monitor readiness events
-	go vm.monitorReadinessEvents(ctx, false)
 
 	// Monitor for shutdown signals
 	go func() {
@@ -211,7 +217,7 @@ func (vm *VM) RunChroot(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return <-svcErrCh
-	case <-vm.machine.Readiness.VNetHostReady: // Start libkrun when network is ready
+	case <-networkReady:
 		reason := fmt.Errorf("boot virtual machine")
 		logrus.Info(reason.Error())
 		vm.emit(EventVirtualMachineBooting, reason.Error())
@@ -229,6 +235,14 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
+	networkReady := make(chan struct{})
+	var networkReadyOnce sync.Once
+	signalNetworkReady := func() {
+		networkReadyOnce.Do(func() {
+			close(networkReady)
+			vm.emit(EventNetworkReady, "host network ready")
+		})
+	}
 
 	// Start ignition server
 	g.Go(func() error {
@@ -239,7 +253,7 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 	// Start network stack
 	g.Go(func() error {
 		vm.emit(EventHostNetworkStack, "starting host network stack")
-		return vm.svc.StartHostNetworkStack(ctx)
+		return vm.svc.StartHostNetworkStack(ctx, signalNetworkReady)
 	})
 
 	// Start management API
@@ -253,13 +267,10 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-vm.machine.Readiness.VNetHostReady:
+		case <-networkReady:
 			return vm.svc.StartPodmanProxy(ctx)
 		}
 	})
-
-	// Monitor readiness events
-	go vm.monitorReadinessEvents(ctx, true)
 
 	// Monitor for shutdown signals
 	go func() {
@@ -276,7 +287,7 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return <-svcErrCh
-	case <-vm.machine.Readiness.VNetHostReady: // Start libkrun when network is ready
+	case <-networkReady:
 		reason := fmt.Errorf("boot virtual machine")
 		logrus.Info(reason.Error())
 		vm.emit(EventVirtualMachineBooting, reason.Error())
@@ -284,41 +295,6 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 		vm.Cancel()
 		<-svcErrCh
 		return err
-	}
-}
-
-// monitorReadinessEvents monitors readiness channels and emits events.
-// It runs until all expected events are received or context is cancelled.
-func (vm *VM) monitorReadinessEvents(ctx context.Context, expectPodman bool) {
-	podmanReady := !expectPodman // If not expecting, mark as already done
-	sshReady := false
-	networkReady := false
-
-	for {
-		if podmanReady && sshReady && networkReady {
-			return
-		}
-
-		select {
-		case <-ctx.Done():
-			return
-		case <-vm.machine.Readiness.PodmanReady:
-			if expectPodman && !podmanReady {
-				podmanReady = true
-				vm.emit(EventPodmanReady, fmt.Sprintf("podman API proxy listening on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr))
-				logrus.Infof("podman API proxy ready on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr)
-			}
-		case <-vm.machine.Readiness.SSHReady:
-			if !sshReady {
-				sshReady = true
-				vm.emit(EventSSHReady, "ssh ready")
-			}
-		case <-vm.machine.Readiness.VNetHostReady:
-			if !networkReady {
-				networkReady = true
-				vm.emit(EventNetworkReady, "host network ready")
-			}
-		}
 	}
 }
 

@@ -102,7 +102,7 @@ func NewConfig(vmc *define.Machine) (*Config, error) {
 	}, nil
 }
 
-func Run(ctx context.Context, vmc *define.Machine) error {
+func Run(ctx context.Context, vmc *define.Machine, onReady func()) error {
 	config, err := NewConfig(vmc)
 	if err != nil {
 		return fmt.Errorf("init gvproxy config: %w", err)
@@ -115,7 +115,7 @@ func Run(ctx context.Context, vmc *define.Machine) error {
 		return fmt.Errorf("create virtual network: %w", err)
 	}
 
-	if err := startNotificationListener(ctx, g, config.NotifyAddr, vmc); err != nil {
+	if err := startNotificationListener(ctx, g, config.NotifyAddr, onReady); err != nil {
 		return err
 	}
 	if err := startControlAPI(ctx, g, config.ControlAddr, vn); err != nil {
@@ -194,8 +194,8 @@ func startUnixgramNet(ctx context.Context, g *errgroup.Group, addr string, vn *v
 	g.Go(func() error {
 		vfkitConn, err := transport.AcceptVfkit(conn)
 		if err != nil {
-			if ctx.Err() != nil {
-				return nil
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
 			}
 			return fmt.Errorf("unixgram accept error: %w", err)
 		}
@@ -205,7 +205,7 @@ func startUnixgramNet(ctx context.Context, g *errgroup.Group, addr string, vn *v
 	return nil
 }
 
-func startNotificationListener(ctx context.Context, g *errgroup.Group, addr string, vmc *define.Machine) error {
+func startNotificationListener(ctx context.Context, g *errgroup.Group, addr string, onReady func()) error {
 	path, err := unixSocketPath(addr)
 	if err != nil {
 		return fmt.Errorf("notification address: %w", err)
@@ -237,7 +237,7 @@ func startNotificationListener(ctx context.Context, g *errgroup.Group, addr stri
 				return fmt.Errorf("notification accept error: %w", err)
 			}
 			g.Go(func() error {
-				handleNotification(conn, vmc)
+				handleNotification(conn, onReady)
 				return nil
 			})
 		}
@@ -245,7 +245,7 @@ func startNotificationListener(ctx context.Context, g *errgroup.Group, addr stri
 	return nil
 }
 
-func handleNotification(conn net.Conn, vmc *define.Machine) {
+func handleNotification(conn net.Conn, onReady func()) {
 	defer conn.Close()
 
 	var msg types.NotificationMessage
@@ -256,9 +256,8 @@ func handleNotification(conn net.Conn, vmc *define.Machine) {
 
 	switch msg.NotificationType {
 	case types.Ready:
-		if vmc.Readiness.SignalVNetHostReady() {
-			logrus.Infof("gvproxy network stack ready")
-		}
+		onReady()
+		logrus.Infof("gvproxy network stack ready")
 	case types.ConnectionEstablished:
 		logrus.Infof("gvproxy network connection established: %s", msg.MacAddress)
 	case types.ConnectionClosed:

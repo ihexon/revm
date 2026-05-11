@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"guestAgent/pkg/machine"
 	"guestAgent/pkg/service"
 	"io"
 	"linuxvm/pkg/define"
@@ -206,7 +205,7 @@ func run(ctx context.Context, _ *cli.Command) error {
 func userRootfsMode(ctx context.Context, vmc *define.Machine) error {
 	logrus.Info("running in rootfs mode")
 
-	if err := service.ConfigureNetwork(ctx, (*machine.Machine)(vmc).GetVirtualNetworkType()); err != nil {
+	if err := service.ConfigureNetwork(ctx, virtualNetworkType(vmc)); err != nil {
 		return fmt.Errorf("configure network: %w", err)
 	}
 
@@ -226,10 +225,6 @@ func userRootfsMode(ctx context.Context, vmc *define.Machine) error {
 		}
 		return CmdlineExitNormal
 	})
-
-	go func() {
-		_ = machine.WaitGuestServiceReady(ctx, vmc)
-	}()
 
 	errChan := make(chan error, 1)
 	go func() {
@@ -251,7 +246,7 @@ func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
 	// Configure network before starting services — it's a prerequisite,
 	// not a parallel task. If DHCP fails (e.g. eth0 not yet created by VMM),
 	// we don't want to cancel already-running services.
-	if err := service.ConfigureNetwork(ctx, (*machine.Machine)(vmc).GetVirtualNetworkType()); err != nil {
+	if err := service.ConfigureNetwork(ctx, virtualNetworkType(vmc)); err != nil {
 		return fmt.Errorf("configure network: %w", err)
 	}
 
@@ -269,12 +264,6 @@ func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
 		return service.SyncRTCTime(ctx)
 	})
 
-	// Run readiness probes outside the errgroup. Probe failures are logged
-	// internally and do not affect service lifecycle.
-	go func() {
-		_ = machine.WaitGuestServiceReady(ctx, vmc) // short time function
-	}()
-
 	errChan := make(chan error, 1)
 	go func() {
 		errChan <- g.Wait()
@@ -287,4 +276,11 @@ func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
 	case err := <-errChan:
 		return err
 	}
+}
+
+func virtualNetworkType(vmc *define.Machine) define.VNetMode {
+	if vmc.VirtualNetworkMode == define.TSI {
+		return define.TSI
+	}
+	return define.GVISOR
 }

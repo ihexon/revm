@@ -13,8 +13,5 @@ const (
 	EventIgnitionService       EventKind = "ignition_service"
 	EventVirtualMachineBooting EventKind = "virtual_machine_booting"
 
-	// Readiness milestones.
 	EventNetworkReady EventKind = "network_ready"
-	EventSSHReady     EventKind = "ssh_ready"
-	EventPodmanReady  EventKind = "podman_ready"
 )

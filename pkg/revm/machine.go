@@ -36,7 +36,6 @@ func newMachineBuilder(mode define.RunMode) *machineBuilder {
 			MachineSpec: define.MachineSpec{
 				RunMode: mode.String(),
 			},
-			MachineRuntime: define.NewMachineRuntime(),
 		},
 	}
 }

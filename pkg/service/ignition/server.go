@@ -13,7 +13,6 @@ import (
 	"sync"
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
-	"github.com/sirupsen/logrus"
 )
 
 type Server struct {
@@ -35,20 +34,8 @@ func NewServer(vmc *define.Machine) *Server {
 func (s *Server) Start(ctx context.Context) error {
 	s.srv.Mux.HandleFunc("/healthz", s.handleHealth)
 	s.srv.Mux.HandleFunc("/vmconfig", s.handleVMConfig)
-	s.srv.Mux.HandleFunc("/ready/{service}", s.handleReady)
 
 	errChan := make(chan error, 2)
-	go func() {
-		if err := s.waitVirtualNetworkOnline(ctx); err != nil {
-			errChan <- err
-		}
-	}()
-	go func() {
-		<-s.vmc.Readiness.SSHReady
-		<-s.vmc.Readiness.PodmanReady
-		<-s.vmc.Readiness.VNetHostReady
-		<-s.vmc.Readiness.VNetGuestReady
-	}()
 	go func() { errChan <- s.srv.Serve(ctx) }()
 
 	select {
@@ -56,24 +43,6 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("ignition server: %w", err)
 	case <-ctx.Done():
 		return ctx.Err()
-	}
-}
-
-func (s *Server) waitTSINetworkOnline(ctx context.Context) error {
-	if s.vmc.Readiness.SignalVNetHostReady() {
-		logrus.Infof("[ign] TSI network online")
-	}
-	return nil
-}
-
-func (s *Server) waitVirtualNetworkOnline(ctx context.Context) error {
-	switch s.vmc.VirtualNetworkMode {
-	case define.TSI:
-		return s.waitTSINetworkOnline(ctx)
-	case define.GVISOR:
-		return nil
-	default:
-		return fmt.Errorf("unknown virtual network mode: %s", s.vmc.VirtualNetworkMode)
 	}
 }
 
@@ -123,29 +92,4 @@ func (s *Server) handleVMConfig(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, nil)
 	}
-}
-
-func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, nil)
-		return
-	}
-	switch r.PathValue("service") {
-	case define.ServiceNameSSH:
-		if s.vmc.Readiness.SignalSSHReady() {
-			logrus.Debugf("[ign] guest ssh server online")
-		}
-	case define.ServiceNamePodman:
-		if s.vmc.Readiness.SignalPodmanAPIProxyReady() {
-			logrus.Debugf("[ign] guest podman online")
-		}
-	case define.ServiceNameGuestNetwork:
-		if s.vmc.Readiness.SignalVNetGuestReady() {
-			logrus.Debugf("[ign] guest network online")
-		}
-	default:
-		writeJSON(w, http.StatusNotFound, nil)
-		return
-	}
-	writeJSON(w, http.StatusOK, nil)
 }

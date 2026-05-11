@@ -37,30 +37,8 @@ type MachineSpec struct {
 	TTY bool `json:"TTY"`
 }
 
-// MachineRuntime contains non-serializable runtime state.
-type MachineRuntime struct {
-	Readiness *Readiness `json:"-"`
-}
-
-func NewMachineRuntime() *MachineRuntime {
-	return &MachineRuntime{
-		Readiness: NewReadiness(),
-	}
-}
-
-// Machine combines serializable spec and runtime state.
 type Machine struct {
 	MachineSpec
-	*MachineRuntime `json:"-"`
-}
-
-func (m *Machine) EnsureRuntime() {
-	if m == nil {
-		return
-	}
-	if m.MachineRuntime == nil {
-		m.MachineRuntime = NewMachineRuntime()
-	}
 }
 
 func (m *Machine) UnmarshalJSON(data []byte) error {
@@ -71,7 +49,6 @@ func (m *Machine) UnmarshalJSON(data []byte) error {
 	}
 
 	m.MachineSpec = MachineSpec(spec)
-	m.EnsureRuntime()
 	return nil
 }
 

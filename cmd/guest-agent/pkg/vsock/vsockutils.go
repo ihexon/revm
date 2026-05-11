@@ -44,16 +44,3 @@ func (v *Service) GetVMConfig(ctx context.Context) (*define.Machine, error) {
 
 	return vmc, nil
 }
-
-func (v *Service) PostReady(ctx context.Context, serviceName string) error {
-	resp, err := v.client.Post("/ready/" + serviceName).Do(ctx)
-	if err != nil {
-		return err
-	}
-	defer network.CloseResponse(resp)
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("POST /ready/%s returned %d", serviceName, resp.StatusCode)
-	}
-	return nil
-}
