@@ -85,9 +85,7 @@ var startRootfs = cli.Command{
 
 func rootfsLifeCycle(_ context.Context, command *cli.Command) error {
 	// 屏蔽上层 ctx，防止上游 ctx 导致 vm 意外退出
-	// 如果要安全停止虚拟机，应该呼叫 cancel()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := context.Background()
 
 	rawDiskSpecs, err := revm.ParseRawDiskSpecs(command.StringSlice(define.FlagRawDisk))
 	if err != nil {
@@ -121,8 +119,6 @@ func rootfsLifeCycle(_ context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	vm.Cancel = cancel
-
 	defer vm.Close()
 
 	return vm.RunChroot(ctx)

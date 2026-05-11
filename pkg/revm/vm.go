@@ -7,14 +7,18 @@ import (
 	"errors"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/interfaces"
 	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/network"
-	"linuxvm/pkg/service/lifecycle"
+	"linuxvm/pkg/service/ignition"
+	"linuxvm/pkg/service/management"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -29,13 +33,11 @@ import (
 type VM struct {
 	cfg *Config
 
-	machine         *define.Machine
-	provider        interfaces.VMMProvider
-	svc             lifecycle.HostServices
-	sessionDir      string
-	cleanup         func()
-	eventDispatcher eventDispatcher
-	Cancel          context.CancelFunc
+	machine          *define.Machine
+	provider         interfaces.VMMProvider
+	sessionDir       string
+	releaseResources func()
+	eventDispatcher  eventDispatcher
 
 	seq atomic.Uint64
 }
@@ -61,8 +63,9 @@ func newProvider(mc *define.Machine) (interfaces.VMMProvider, error) {
 // Close 释放运行时资源（文件锁、event eventDispatcher）。
 // 必须始终调用，即使 Run() 从未被调用。幂等。
 func (vm *VM) Close() error {
-	if vm.cleanup != nil {
-		vm.cleanup()
+	if vm.releaseResources != nil {
+		vm.releaseResources()
+		vm.releaseResources = nil
 	}
 	vm.eventDispatcher.close()
 	return nil
@@ -110,29 +113,28 @@ func New(cfg *Config) (*VM, error) {
 }
 
 // init acquires all heavyweight resources: workspace dirs, flock, SSH keys,
-// disk images, libkrun provider, and host services. Called once at the
-// start of Run(). On failure it cleans up after itself.
+// disk images, and libkrun provider. Called once at the start of Run().
+// On failure it cleans up after itself.
 func (vm *VM) init(ctx context.Context) error {
-	mc, cleanup, err := buildMachine(ctx, *vm.cfg, vm.sessionDir)
+	mc, releaseResources, err := buildMachine(ctx, *vm.cfg, vm.sessionDir)
 	if err != nil {
 		return fmt.Errorf("build machine: %w", err)
 	}
 
 	if err := vm.createUserSymlinks(); err != nil {
-		cleanup()
+		releaseResources()
 		return fmt.Errorf("create symlinks: %w", err)
 	}
 
 	vmp, err := newProvider(mc)
 	if err != nil {
-		cleanup()
+		releaseResources()
 		return fmt.Errorf("create vm provider: %w", err)
 	}
 
 	vm.machine = mc
 	vm.provider = vmp
-	vm.svc = lifecycle.NewHostServices(vmp)
-	vm.cleanup = cleanup
+	vm.releaseResources = releaseResources
 	return nil
 }
 
@@ -176,59 +178,30 @@ func (vm *VM) RunChroot(ctx context.Context) error {
 		return err
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
-	networkReady := make(chan struct{})
-	var networkReadyOnce sync.Once
-	signalNetworkReady := func() {
-		networkReadyOnce.Do(func() {
-			close(networkReady)
-			vm.emit(EventNetworkReady, "host network ready")
+	ctx, cancelRun := context.WithCancelCause(ctx)
+	defer cancelRun(context.Canceled)
+
+	networkReady, signalNetworkReady := vm.newNetworkReadySignal()
+
+	var g errgroup.Group
+
+	vm.startRunService(&g, ctx, cancelRun, vm.startIgnitionService)
+	vm.startRunService(&g, ctx, cancelRun, func(ctx context.Context) error {
+		return vm.startHostNetworkStack(ctx, signalNetworkReady)
+	})
+	vm.startRunService(&g, ctx, cancelRun, vm.startMachineManagementAPI)
+
+	go func() {
+		vm.WaitAndShutdownMachine(ctx, func() {
+			cancelRun(context.Canceled)
 		})
-	}
-
-	// Start ignition server
-	g.Go(func() error {
-		vm.emit(EventIgnitionService, "starting ignition service")
-		return vm.svc.StartIgnitionService(ctx)
-	})
-
-	// Start network stack
-	g.Go(func() error {
-		vm.emit(EventHostNetworkStack, "starting host network stack")
-		return vm.svc.StartHostNetworkStack(ctx, signalNetworkReady)
-	})
-
-	// Start management API
-	g.Go(func() error {
-		vm.emit(EventManagementAPIStarting, "starting vm management api")
-		return vm.svc.StartMachineManagementAPI(ctx)
-	})
-
-	// Monitor for shutdown signals
-	go func() {
-		vm.WaitAndShutdownMachine(ctx, vm.Cancel)
 	}()
 
-	// Wait for services to start
-	svcErrCh := make(chan error, 1)
-	go func() {
-		svcErrCh <- g.Wait()
-		close(svcErrCh)
-	}()
+	g.Go(func() error {
+		return vm.runVirtualMachine(ctx, cancelRun, networkReady)
+	})
 
-	// Start libkrun when network is ready
-	select {
-	case <-ctx.Done():
-		return <-svcErrCh
-	case <-networkReady:
-		reason := fmt.Errorf("boot virtual machine")
-		logrus.Info(reason.Error())
-		vm.emit(EventVirtualMachineBooting, reason.Error())
-		err := vm.svc.StartVirtualMachine(ctx)
-		vm.Cancel()
-		<-svcErrCh
-		return err
-	}
+	return runError(ctx, g.Wait())
 }
 
 // RunDocker starts the VM in container mode and blocks until it exits.
@@ -237,95 +210,177 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 		return err
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
-	networkReady := make(chan struct{})
-	var networkReadyOnce sync.Once
-	signalNetworkReady := func() {
-		networkReadyOnce.Do(func() {
-			close(networkReady)
-			vm.emit(EventNetworkReady, "host network ready")
-		})
-	}
+	ctx, cancelRun := context.WithCancelCause(ctx)
+	defer cancelRun(context.Canceled)
 
-	// Start ignition server
-	g.Go(func() error {
-		vm.emit(EventIgnitionService, "starting ignition service")
-		return vm.svc.StartIgnitionService(ctx)
+	networkReady, signalNetworkReady := vm.newNetworkReadySignal()
+
+	var g errgroup.Group
+
+	vm.startRunService(&g, ctx, cancelRun, vm.startIgnitionService)
+	vm.startRunService(&g, ctx, cancelRun, func(ctx context.Context) error {
+		return vm.startHostNetworkStack(ctx, signalNetworkReady)
 	})
+	vm.startRunService(&g, ctx, cancelRun, vm.startMachineManagementAPI)
 
-	// Start network stack
-	g.Go(func() error {
-		vm.emit(EventHostNetworkStack, "starting host network stack")
-		return vm.svc.StartHostNetworkStack(ctx, signalNetworkReady)
-	})
-
-	// Start management API
-	g.Go(func() error {
-		vm.emit(EventManagementAPIStarting, "starting vm management api")
-		return vm.svc.StartMachineManagementAPI(ctx)
-	})
-
-	// Start Podman proxy (wait for network first)
-	g.Go(func() error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-networkReady:
-			return vm.svc.StartPodmanProxy(ctx)
+	vm.startRunService(&g, ctx, cancelRun, func(ctx context.Context) error {
+		if err := waitForNetworkReady(ctx, networkReady); err != nil {
+			return err
 		}
+		return vm.startPodmanProxy(ctx)
 	})
 
 	go func() {
-		select {
-		case <-ctx.Done():
+		if err := waitForNetworkReady(ctx, networkReady); err != nil {
 			return
-		case <-networkReady:
 		}
-
 		if err := vm.reportPodmanReady(ctx); err != nil {
 			logrus.Warnf("podman API readiness check failed: %v", err)
 		}
 	}()
 
-	// Monitor for shutdown signals
 	go func() {
-		vm.WaitAndShutdownMachine(ctx, vm.Cancel)
+		vm.WaitAndShutdownMachine(ctx, func() {
+			cancelRun(context.Canceled)
+		})
 	}()
 
-	// Wait for services to start
-	svcErrCh := make(chan error, 1)
-	go func() {
-		svcErrCh <- g.Wait()
-		close(svcErrCh)
-	}()
+	g.Go(func() error {
+		return vm.runVirtualMachine(ctx, cancelRun, networkReady)
+	})
 
+	return runError(ctx, g.Wait())
+}
+
+func (vm *VM) newNetworkReadySignal() (<-chan struct{}, func()) {
+	networkReady := make(chan struct{})
+	var once sync.Once
+
+	return networkReady, func() {
+		once.Do(func() {
+			close(networkReady)
+			vm.emit(EventNetworkReady, "host network ready")
+		})
+	}
+}
+
+// waitForNetworkReady blocks until gvproxy reports the host network is usable,
+// or returns early when the current VM run is cancelled.
+func waitForNetworkReady(ctx context.Context, networkReady <-chan struct{}) error {
 	select {
 	case <-ctx.Done():
-		return <-svcErrCh
+		return ctx.Err()
 	case <-networkReady:
-		reason := fmt.Errorf("boot virtual machine")
-		logrus.Info(reason.Error())
-		vm.emit(EventVirtualMachineBooting, reason.Error())
-		vmErrCh := make(chan error, 1)
-		go func() {
-			vmErrCh <- vm.svc.StartVirtualMachine(ctx)
-		}()
+		return nil
+	}
+}
 
-		var err error
-		select {
-		case err = <-vmErrCh:
-		case err = <-svcErrCh:
-			_ = vm.svc.StopVirtualMachine()
-			vm.Cancel()
-			if errors.Is(err, context.Canceled) {
-				err = nil
-			}
+func (vm *VM) startRunService(g *errgroup.Group, ctx context.Context, cancelRun context.CancelCauseFunc, start func(context.Context) error) {
+	g.Go(func() error {
+		err := start(ctx)
+		if err == nil || errors.Is(err, context.Canceled) {
 			return err
 		}
-		vm.Cancel()
-		<-svcErrCh
+
+		cancelRun(err)
+		_ = vm.stopVirtualMachine()
+		return err
+	})
+}
+
+// runVirtualMachine waits for the host network to be ready, boots the VM, and
+// propagates the VM exit result into the shared run cancellation path.
+func (vm *VM) runVirtualMachine(ctx context.Context, cancelRun context.CancelCauseFunc, networkReady <-chan struct{}) error {
+	if err := waitForNetworkReady(ctx, networkReady); err != nil {
 		return err
 	}
+
+	reason := fmt.Errorf("boot virtual machine")
+	logrus.Info(reason.Error())
+	vm.emit(EventVirtualMachineBooting, reason.Error())
+
+	err := vm.startVirtualMachine(ctx)
+	if err != nil {
+		cancelRun(err)
+	} else {
+		cancelRun(context.Canceled)
+	}
+	return err
+}
+
+func runError(ctx context.Context, err error) error {
+	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
+		return cause
+	}
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
+}
+
+func (vm *VM) startPodmanProxy(ctx context.Context) error {
+	if vm.machine.RunMode != define.ContainerMode.String() {
+		return nil
+	}
+
+	switch vm.machine.VirtualNetworkMode {
+	case define.GVISOR:
+		_, portStr, err := net.SplitHostPort(vm.machine.PodmanInfo.GuestPodmanAPIListenAddr)
+		if err != nil {
+			return fmt.Errorf("invalid guest podman address %q: %w", vm.machine.PodmanInfo.GuestPodmanAPIListenAddr, err)
+		}
+
+		port, err := strconv.ParseUint(portStr, 10, 16)
+		if err != nil {
+			return fmt.Errorf("invalid port in guest podman address %q: %w", portStr, err)
+		}
+
+		logrus.Infof("podman proxy listening in %s, forward to %s", vm.machine.PodmanInfo.HostPodmanProxyAddr, vm.machine.PodmanInfo.GuestPodmanAPIListenAddr)
+		return gvproxy.TunnelHostUnixToGuest(ctx,
+			vm.machine.GVPCtlAddr,
+			vm.machine.PodmanInfo.HostPodmanProxyAddr,
+			define.GuestIP,
+			uint16(port))
+	case define.TSI:
+		forwarder := &network.LocalForwarder{
+			UnixSockAddr: vm.machine.PodmanInfo.HostPodmanProxyAddr,
+			Target:       vm.machine.PodmanInfo.GuestPodmanAPIListenAddr,
+			Timeout:      time.Second,
+		}
+		return forwarder.Run(ctx)
+	default:
+		return fmt.Errorf("unsupported virtual network mode: %s", vm.machine.VirtualNetworkMode)
+	}
+}
+
+func (vm *VM) startHostNetworkStack(ctx context.Context, onReady func()) error {
+	if vm.machine.VirtualNetworkMode == define.TSI {
+		onReady()
+		return nil
+	}
+
+	logrus.Info("starting gvisor-tap-vsock network stack")
+	return gvproxy.Run(ctx, vm.machine, onReady)
+}
+
+func (vm *VM) startIgnitionService(ctx context.Context) error {
+	return ignition.NewServer(vm.machine).Start(ctx)
+}
+
+func (vm *VM) startMachineManagementAPI(ctx context.Context) error {
+	server, err := management.NewServer(vm.provider)
+	if err != nil {
+		return fmt.Errorf("create management server: %w", err)
+	}
+	return server.Start(ctx)
+}
+
+func (vm *VM) startVirtualMachine(ctx context.Context) error {
+	return vm.provider.Start(ctx)
+}
+
+func (vm *VM) stopVirtualMachine() error {
+	return vm.provider.Stop()
 }
 
 func (vm *VM) reportPodmanReady(ctx context.Context) error {
@@ -376,7 +431,7 @@ func pingPodman(ctx context.Context, client *network.Client) bool {
 	return status >= http.StatusOK && status < http.StatusMultipleChoices
 }
 
-func (vm *VM) WaitAndShutdownMachine(ctx context.Context, cancel context.CancelFunc) {
+func (vm *VM) WaitAndShutdownMachine(ctx context.Context, onShutdown func()) {
 	// Monitor parent process exit
 	go func() {
 		ticker := time.NewTicker(100 * time.Millisecond)
@@ -391,8 +446,8 @@ func (vm *VM) WaitAndShutdownMachine(ctx context.Context, cancel context.CancelF
 					reason := fmt.Errorf("parent process exited, shutting down machine")
 					logrus.Info(reason.Error())
 					vm.emit(EventStopping, reason.Error())
-					_ = vm.svc.StopVirtualMachine()
-					cancel()
+					_ = vm.stopVirtualMachine()
+					onShutdown()
 					return
 				}
 			}
@@ -412,8 +467,8 @@ func (vm *VM) WaitAndShutdownMachine(ctx context.Context, cancel context.CancelF
 			reason := fmt.Errorf("received signal, shutting down")
 			logrus.Info(reason.Error())
 			vm.emit(EventStopping, reason.Error())
-			_ = vm.svc.StopVirtualMachine()
-			cancel()
+			_ = vm.stopVirtualMachine()
+			onShutdown()
 		}
 	}()
 }

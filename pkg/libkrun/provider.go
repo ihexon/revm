@@ -27,7 +27,14 @@ func (p *Provider) Start(ctx context.Context) error {
 		runtime.LockOSThread()
 		ch <- p.libkrun.Start(ctx)
 	}()
-	return <-ch
+
+	select {
+	case err := <-ch:
+		return err
+	case <-ctx.Done():
+		_ = p.Stop()
+		return ctx.Err()
+	}
 }
 
 func (p *Provider) Stop() error {
