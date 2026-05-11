@@ -29,6 +29,10 @@ func (p *machinePathManager) GetGVPCtlSocketFile() string {
 	return p.GetSocketFile("gvpctl.sock")
 }
 
+func (p *machinePathManager) GetGVPNotifySocketFile() string {
+	return p.GetSocketFile("gvpnotify.sock")
+}
+
 func (p *machinePathManager) GetVMCtlSocketFile() string {
 	return p.GetSocketFile("vmctl.sock")
 }

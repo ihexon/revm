@@ -22,6 +22,12 @@ func (s *Step) PowerOff() {
 	_ = exec.Command("poweroff", "-f").Run()
 }
 
+// WaitAndShutdown waits for the interrupt signal and shutdown the VM
+// this is the only way to shutdown the VM gracefully
+//
+// the latest libkrun explicitly issue sync+reboot;
+// theoretically, manual sync operations are no longer required.
+// See: https://github.com/containers/libkrun/commit/5cfd94dafd739a880f67da13d1483880c8d86027
 func WaitAndShutdown() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)

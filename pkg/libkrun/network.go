@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
-	"runtime"
 
 	"github.com/sirupsen/logrus"
 )
@@ -47,26 +46,14 @@ func (v *Libkrun) setupGVisor() error {
 		mac[i] = C.uint8_t(b)
 	}
 
-	var ret C.int32_t
-	if runtime.GOOS == "linux" {
-		ret = C.krun_add_net_unixstream(
-			C.uint32_t(v.ctxID),
-			path,
-			-1,
-			&mac[0],
-			C.COMPAT_NET_FEATURES,
-			0,
-		)
-	} else {
-		ret = C.krun_add_net_unixgram(
-			C.uint32_t(v.ctxID),
-			path,
-			-1,
-			&mac[0],
-			C.COMPAT_NET_FEATURES,
-			C.NET_FLAG_VFKIT,
-		)
-	}
+	ret := C.krun_add_net_unixgram(
+		C.uint32_t(v.ctxID),
+		path,
+		-1,
+		&mac[0],
+		C.COMPAT_NET_FEATURES,
+		C.NET_FLAG_VFKIT,
+	)
 
 	if ret != 0 {
 		return errCode(ret)

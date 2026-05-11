@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 
 	"github.com/sirupsen/logrus"
@@ -54,18 +53,13 @@ func (g *gVisorNetworkConfig) Configure(ctx context.Context, vmc *define.Machine
 	}
 
 	vmc.GVPCtlAddr = unixAddr.String()
-
-	// On Linux, use unix:// (stream socket for QemuProtocol).
-	// On macOS, use unixgram:// (datagram socket for VfkitProtocol).
-	if runtime.GOOS == "linux" {
-		vmc.GVPVNetAddr = fmt.Sprintf("unix://%s", pathMgr.GetVNetSocketFile())
-	} else {
-		vmc.GVPVNetAddr = fmt.Sprintf("unixgram://%s", pathMgr.GetVNetSocketFile())
-	}
+	vmc.GVPVNetAddr = fmt.Sprintf("unixgram://%s", pathMgr.GetVNetSocketFile())
+	vmc.GVPNotifyAddr = fmt.Sprintf("unix://%s", pathMgr.GetGVPNotifySocketFile())
 
 	// Clean up any existing sockets
 	_ = os.Remove(pathMgr.GetGVPCtlSocketFile())
 	_ = os.Remove(pathMgr.GetVNetSocketFile())
+	_ = os.Remove(pathMgr.GetGVPNotifySocketFile())
 
 	// Ensure parent directory exists
 	if err := os.MkdirAll(filepath.Dir(unixAddr.Path), 0755); err != nil {

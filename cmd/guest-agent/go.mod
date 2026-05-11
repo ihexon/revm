@@ -8,13 +8,13 @@ require (
 	github.com/sirupsen/logrus v1.9.5-0.20260121091959-524506f8912c
 	github.com/urfave/cli/v3 v3.6.1
 	github.com/vishvananda/netlink v1.3.1
-	golang.org/x/sync v0.19.0
+	golang.org/x/sync v0.20.0
 	linuxvm v0.0.0
 )
 
 require (
 	github.com/charmbracelet/keygen v0.5.4 // indirect
-	github.com/containers/gvisor-tap-vsock v0.8.8-0.20260113072212-36a2ce3f6f7c // indirect
+	github.com/containers/gvisor-tap-vsock v0.8.9-0.20260429081332-4b4ee6f62b87 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/jsimonetti/rtnetlink v1.3.5 // indirect
@@ -26,10 +26,10 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.23 // indirect
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
-	golang.org/x/crypto v0.48.0 // indirect
-	golang.org/x/net v0.50.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/term v0.40.0 // indirect
+	golang.org/x/crypto v0.50.0 // indirect
+	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/term v0.42.0 // indirect
 )
 
 replace linuxvm => ../../

@@ -16,9 +16,10 @@ type MachineSpec struct {
 	BlkDevs []BlkDev `json:"blkDevs,omitempty"`
 	// GVproxy control endpoint
 	GVPCtlAddr string `json:"GVPCtlAddr,omitempty"`
-	// GVPVNetAddr is the network stack backend to use. which provided
-	// by gvproxy
+	// GVPVNetAddr is the unixgram virtio-net backend served by gvproxy.
 	GVPVNetAddr string `json:"GVPVNetAddr,omitempty"`
+	// GVPNotifyAddr receives gvproxy lifecycle notifications.
+	GVPNotifyAddr string `json:"GVPNotifyAddr,omitempty"`
 
 	VirtualNetworkMode VNetMode `json:"virtualNetworkMode,omitempty"`
 

@@ -9,10 +9,8 @@ import (
 	"io"
 	"linuxvm/pkg/define"
 	http2 "linuxvm/pkg/http"
-	"linuxvm/pkg/network"
 	"net/http"
 	"sync"
-	"time"
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/sirupsen/logrus"
@@ -68,43 +66,12 @@ func (s *Server) waitTSINetworkOnline(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) waitGvisorVSockTapOnline(ctx context.Context) error {
-	addr, err := network.ParseUnixAddr(s.vmc.GVPCtlAddr)
-	if err != nil {
-		return fmt.Errorf("parse gvproxy control address: %w", err)
-	}
-	client := network.NewUnixClient(addr.Path, network.WithTimeout(define.DefaultTimeTicker))
-	defer client.Close()
-	ticker := time.NewTicker(define.DefaultTimeTicker)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			resp, err := client.Get("/services/forwarder/all").Do(ctx) //nolint:bodyclose
-			if err != nil {
-				continue
-			}
-			network.CloseResponse(resp)
-			if resp.StatusCode == http.StatusOK {
-				if s.vmc.Readiness.SignalVNetHostReady() {
-					logrus.Debugf("[ign] gvisor virtual-network online")
-				}
-				return nil
-			}
-		}
-	}
-}
-
 func (s *Server) waitVirtualNetworkOnline(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, define.DefaultProbeTimeout)
-	defer cancel()
 	switch s.vmc.VirtualNetworkMode {
 	case define.TSI:
 		return s.waitTSINetworkOnline(ctx)
 	case define.GVISOR:
-		return s.waitGvisorVSockTapOnline(ctx)
+		return nil
 	default:
 		return fmt.Errorf("unknown virtual network mode: %s", s.vmc.VirtualNetworkMode)
 	}
