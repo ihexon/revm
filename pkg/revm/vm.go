@@ -275,15 +275,17 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 		}
 	})
 
-	// Report Podman readiness when the proxied API actually responds.
-	g.Go(func() error {
+	go func() {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return
 		case <-networkReady:
-			return vm.reportPodmanReady(ctx)
 		}
-	})
+
+		if err := vm.reportPodmanReady(ctx); err != nil {
+			logrus.Warnf("podman API readiness check failed: %v", err)
+		}
+	}()
 
 	// Monitor for shutdown signals
 	go func() {
