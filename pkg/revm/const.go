@@ -14,4 +14,5 @@ const (
 	EventVirtualMachineBooting EventKind = "virtual_machine_booting"
 
 	EventNetworkReady EventKind = "network_ready"
+	EventPodmanReady  EventKind = "podman_ready"
 )

@@ -4,11 +4,14 @@ package revm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/interfaces"
 	"linuxvm/pkg/libkrun"
+	"linuxvm/pkg/network"
 	"linuxvm/pkg/service/lifecycle"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -272,6 +275,16 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 		}
 	})
 
+	// Report Podman readiness when the proxied API actually responds.
+	g.Go(func() error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-networkReady:
+			return vm.reportPodmanReady(ctx)
+		}
+	})
+
 	// Monitor for shutdown signals
 	go func() {
 		vm.WaitAndShutdownMachine(ctx, vm.Cancel)
@@ -291,11 +304,74 @@ func (vm *VM) RunDocker(ctx context.Context) error {
 		reason := fmt.Errorf("boot virtual machine")
 		logrus.Info(reason.Error())
 		vm.emit(EventVirtualMachineBooting, reason.Error())
-		err := vm.svc.StartVirtualMachine(ctx)
+		vmErrCh := make(chan error, 1)
+		go func() {
+			vmErrCh <- vm.svc.StartVirtualMachine(ctx)
+		}()
+
+		var err error
+		select {
+		case err = <-vmErrCh:
+		case err = <-svcErrCh:
+			_ = vm.svc.StopVirtualMachine()
+			vm.Cancel()
+			if errors.Is(err, context.Canceled) {
+				err = nil
+			}
+			return err
+		}
 		vm.Cancel()
 		<-svcErrCh
 		return err
 	}
+}
+
+func (vm *VM) reportPodmanReady(ctx context.Context) error {
+	if err := vm.waitPodmanReady(ctx); err != nil {
+		return err
+	}
+
+	msg := fmt.Sprintf("podman API proxy ready on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr)
+	logrus.Info(msg)
+	vm.emit(EventPodmanReady, msg)
+	return nil
+}
+
+func (vm *VM) waitPodmanReady(ctx context.Context) error {
+	addr, err := network.ParseUnixAddr(vm.machine.PodmanInfo.HostPodmanProxyAddr)
+	if err != nil {
+		return fmt.Errorf("parse podman proxy address: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, define.DefaultProbeTimeout)
+	defer cancel()
+
+	client := network.NewUnixClient(addr.Path, network.WithTimeout(define.DefaultTimeTicker))
+	defer client.Close()
+
+	ticker := time.NewTicker(define.DefaultTimeTicker)
+	defer ticker.Stop()
+
+	for {
+		if pingPodman(ctx, client) {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("podman API not ready: %w", ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
+func pingPodman(ctx context.Context, client *network.Client) bool {
+	_, status, err := client.Get("/_ping").DoAndRead(ctx)
+	if err != nil {
+		return false
+	}
+
+	return status >= http.StatusOK && status < http.StatusMultipleChoices
 }
 
 func (vm *VM) WaitAndShutdownMachine(ctx context.Context, cancel context.CancelFunc) {
