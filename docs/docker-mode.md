@@ -76,7 +76,6 @@ dockerd [flags]
 | `--envs`           | Pass environment variables (format: `KEY=VALUE`; repeatable)                                        | —                     |
 | `--mount`          | Share a host directory via VirtIO-FS (format: `/host:/guest[,ro]`; repeatable)                      | —                     |
 | `--raw-disk`       | Attach an ext4 disk image (format: `<path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>]`); path-only works; new disks auto-create, default to a random UUID, and mount at `/mnt/<UUID>` (repeatable) | — |
-| `--network`        | Network stack: `gvisor` (full virtual NIC, supports port mapping) or `tsi` (transparent intercept)  | `gvisor`              |
 | `--system-proxy`   | Read macOS system proxy and inject into containers; rewrites `127.0.0.1` to `host.containers.internal` | `false`            |
 | `--container-disk` | Container storage disk spec (format: `<path>[,version=<string>]`); path-only works; defaults to a session-local disk with the built-in container disk version; if the stored version xattr is missing or mismatched, the disk is recreated | session-local + built-in version |
 | `--podman-api` | Custom Unix socket path for the Podman API proxy; defaults to `<session_dir>/socks/podman-api.sock` | —                  |
@@ -86,7 +85,7 @@ dockerd [flags]
 | `--log-to`         | Custom log file path on host; defaults to `<session_dir>/logs/vm.log`                               | session-local         |
 | `--report-events` | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock` or `tcp://host:port`) | —                  |
 
-docker mode and chroot mode share most flags and can be configured as needed.
+docker mode and chroot mode share most flags and can be configured as needed, but dockerd always uses `gvisor` networking.
 
 ## See Also
 

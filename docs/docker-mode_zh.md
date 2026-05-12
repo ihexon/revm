@@ -74,7 +74,6 @@ dockerd [flags]
 | `--envs`           | 传入环境变量（格式：`KEY=VALUE`，可重复）                                              | —                     |
 | `--mount`          | 通过 VirtIO-FS 挂载宿主机目录（格式：`/host:/guest[,ro]`，可重复）                 | —                     |
 | `--raw-disk`       | 挂载 ext4 裸盘镜像（格式：`<path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>]`）；只传路径即可；新磁盘会自动创建，默认随机 UUID，并挂载到 `/mnt/<UUID>`（可重复） | — |
-| `--network`        | 网络栈：`gvisor`（完整虚拟网卡，支持端口映射）或 `tsi`（透明转发）                         | `gvisor`              |
 | `--system-proxy`   | 读取 macOS 系统代理并注入容器内，自动将 127.0.0.1 重写为 `host.containers.internal` | `false`               |
 | `--container-disk` | 容器存储磁盘规格（格式：`<path>[,version=<string>]`）；只传路径即可；默认使用会话目录内的磁盘和内置 version；如果已有磁盘的 version xattr 缺失或不匹配，会直接重建 | 会话目录内默认磁盘 + 内置 version |
 | `--podman-api` | Podman API socket 的自定义 Unix socket 路径；默认为 `<会话目录>/socks/podman-api.sock` | —                     |
@@ -84,7 +83,7 @@ dockerd [flags]
 | `--log-to`         | 自定义日志文件路径；默认为 `<会话目录>/logs/vm.log`                                | 会话目录内                 |
 | `--report-events` | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock` 或 `tcp://host:port`） | —                     |
 
-docker 模式与 chroot 模式共用大部分参数，可按需灵活配置。
+docker 模式与 chroot 模式共用大部分参数，可按需灵活配置，但 dockerd 固定使用 `gvisor` 网络。
 
 ## 另请参阅
 

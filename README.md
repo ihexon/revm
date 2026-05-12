@@ -61,7 +61,7 @@ podman run --rm alpine uname -a
 |-------------------------------------------|---------------------------------------------------------------------------------|
 | [chroot mode](docs/chroot-mode.md)        | Linux chroot alternative on macOS — run any rootfs with near-native performance |
 | [docker mode](docs/docker-mode.md)        | Full container engine without Docker Desktop — Podman/Docker CLI compatible     |
-| [workspace & networking](docs/insider.md) | Session directory layout, reuse/cleanup, and network backends (gvisor / tsi)    |
+| [workspace & networking](docs/insider.md) | Session directory layout, reuse/cleanup, and network backends (gvisor / tsi for chroot only)    |
 | [management API](docs/management-api.md)  | VM management API via Unix socket                                               |
 
 ## Bug Reports
