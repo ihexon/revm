@@ -68,4 +68,4 @@ chroot [flags] <command> [args...]
 
 ## See Also
 
-- [Session workspace & networking](insider.md) — session directory structure, reuse/cleanup, and network backends (gvisor / tsi)
+- [README_chroot.md](../README_chroot.md) — current top-level chroot guide

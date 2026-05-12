@@ -89,4 +89,4 @@ docker mode and chroot mode share most flags and can be configured as needed, bu
 
 ## See Also
 
-- [Session workspace & networking](insider.md) — session directory structure, reuse/cleanup, and network backends (gvisor / tsi)
+- [README_dockerd.md](../README_dockerd.md) — current top-level dockerd guide

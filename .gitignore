@@ -4,6 +4,7 @@ out/**
 CLAUDE.md
 .claude/
 .deps/
+*.tar.xz
 *.tar.zst
 task.md
 ANALYSIS.md

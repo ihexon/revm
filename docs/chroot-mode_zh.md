@@ -67,4 +67,4 @@ chroot [flags] <command> [args...]
 
 ## 另请参阅
 
-- [会话工作区与网络](insider_zh.md) — 会话目录结构、复用/清理，以及网络模式（gvisor / tsi）
+- [README_chroot.md](../README_chroot.md) — 当前顶层 chroot 主文档
