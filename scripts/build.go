@@ -302,7 +302,7 @@ func (b *builder) prepareRuntimeLibsLinux(target string, layout targetLayout) {
 
 	b.collectSharedLibDeps(filepath.Join(layout.binDir, target), layout.libDir)
 
-	copyWithCP(b.linuxDynLinkerPath(), layout.libDir+"/", nil)
+	copyResolvedFileWithCP(b.linuxDynLinkerPath(), layout.libDir+"/")
 
 	command(nil, "patchelf", "--set-rpath", "$ORIGIN/../lib", filepath.Join(layout.binDir, target))
 
@@ -337,7 +337,7 @@ func (b *builder) collectSharedLibDeps(binary, libDir string) {
 		if exists(dst) {
 			continue
 		}
-		copyWithCP(path, dst, nil)
+		copyResolvedFileWithCP(path, dst)
 	}
 }
 
@@ -645,6 +645,11 @@ func copyWithCP(src, dst string, match func(name string) bool) {
 		}
 		command(nil, "cp", "-av", filepath.Join(srcPath, entry.Name()), dst)
 	}
+}
+
+func copyResolvedFileWithCP(src, dst string) {
+	logrus.Debugf("cp -avL %s %s", src, dst)
+	command(nil, "cp", "-avL", src, dst)
 }
 
 func readDir(path string) []os.DirEntry {

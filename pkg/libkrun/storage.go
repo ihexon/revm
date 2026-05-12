@@ -26,7 +26,7 @@ func (v *Libkrun) setupStorage() error {
 	}
 
 	for _, mount := range v.cfg.Mounts {
-		if err := v.addVirtioFS(mount.Tag, mount.Source); err != nil {
+		if err := v.addVirtioFS(mount.Tag, mount.Source, mount.ReadOnly); err != nil {
 			return err
 		}
 	}
@@ -62,7 +62,7 @@ func (v *Libkrun) addDisk(path string) error {
 	return nil
 }
 
-func (v *Libkrun) addVirtioFS(tag, hostPath string) error {
+func (v *Libkrun) addVirtioFS(tag, hostPath string, readOnly bool) error {
 	absPath, err := filepath.Abs(hostPath)
 	if err != nil {
 		return err
@@ -87,11 +87,12 @@ func (v *Libkrun) addVirtioFS(tag, hostPath string) error {
 	pathC := cstr(resolved)
 	defer free(pathC)
 
-	ret := C.krun_add_virtiofs2(
+	ret := C.krun_add_virtiofs3(
 		C.uint32_t(v.ctxID),
 		tagC,
 		pathC,
 		C.uint64_t(virtiofsMemWindow),
+		C.bool(readOnly),
 	)
 	if ret != 0 {
 		return errCode(ret)
