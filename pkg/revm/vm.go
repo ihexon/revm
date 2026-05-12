@@ -6,17 +6,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"linuxvm/pkg/backend"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/gvproxy"
-	"linuxvm/pkg/interfaces"
 	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/network"
+	"linuxvm/pkg/runtimecfg"
 	"linuxvm/pkg/service/ignition"
 	"linuxvm/pkg/service/management"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"sync"
@@ -28,22 +31,24 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// VM represents a running (or ready-to-run) virtual machine.
+// VM represents a fully prepared virtual machine.
 // Close must always be called to release resources.
 type VM struct {
 	cfg *Config
 
 	machine          *define.Machine
-	provider         interfaces.VMMProvider
+	provider         backend.Backend
 	sessionDir       string
 	releaseResources func()
 	eventDispatcher  eventDispatcher
+	serviceSpecs     runtimecfg.ServiceSpecs
+	logFile          *os.File
 
 	seq atomic.Uint64
 }
 
 // newProvider creates a libkrun Provider for the current platform.
-func newProvider(mc *define.Machine) (interfaces.VMMProvider, error) {
+func newProvider(mc *define.Machine) (backend.Backend, error) {
 	switch {
 	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
 	case runtime.GOOS == "linux" && (runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64"):
@@ -63,6 +68,10 @@ func newProvider(mc *define.Machine) (interfaces.VMMProvider, error) {
 // Close 释放运行时资源（文件锁、event eventDispatcher）。
 // 必须始终调用，即使 Run() 从未被调用。幂等。
 func (vm *VM) Close() error {
+	if vm.logFile != nil {
+		_ = vm.logFile.Close()
+		vm.logFile = nil
+	}
 	if vm.releaseResources != nil {
 		vm.releaseResources()
 		vm.releaseResources = nil
@@ -88,34 +97,88 @@ func buildTimeInfo() string {
 	return fmt.Sprintf("%s-%s-%s", version, commit, buildDate)
 }
 
-func New(cfg *Config) (*VM, error) {
+// Build resolves configuration defaults and acquires the heavyweight resources
+// needed to run the VM: workspace lock, SSH keys, rootfs, disks, and provider.
+func Build(ctx context.Context, cfg *Config) (*VM, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
 	}
-
-	logrus.Infof("revm build info: %s", buildTimeInfo())
 
 	normalizedCfg, err := NormalizeConfig(*cfg)
 	if err != nil {
 		return nil, fmt.Errorf("resolve defaults: %w", err)
 	}
 
+	logFile, err := setupLogging(normalizedCfg)
+	if err != nil {
+		return nil, fmt.Errorf("setup logging: %w", err)
+	}
+
 	vm := &VM{
 		cfg:        &normalizedCfg,
 		sessionDir: getSessionDir(normalizedCfg.SessionID),
+		logFile:    logFile,
 	}
 
 	if reporter := newEventReporter(normalizedCfg.ReportURL); reporter != nil {
 		vm.eventDispatcher.addReporter(reporter)
 	}
 
+	if err := vm.build(ctx); err != nil {
+		_ = vm.Close()
+		return nil, err
+	}
+
 	return vm, nil
 }
 
-// init acquires all heavyweight resources: workspace dirs, flock, SSH keys,
-// disk images, and libkrun provider. Called once at the start of Run().
-// On failure it cleans up after itself.
-func (vm *VM) init(ctx context.Context) error {
+func setupLogging(cfg Config) (*os.File, error) {
+	level := cfg.LogLevel
+	if level == "" {
+		level = logrus.InfoLevel.String()
+	}
+
+	l, err := logrus.ParseLevel(level)
+	if err != nil {
+		l = logrus.InfoLevel
+		logrus.Warnf("failed to parse log level: %v, using default log level %s", err, l.String())
+	}
+
+	logrus.SetLevel(l)
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp:   true,
+		TimestampFormat: "2006-01-02 15:04:05.000",
+		ForceColors:     true,
+	})
+
+	logFilePath := cfg.LogTo
+	if logFilePath == "" {
+		logFilePath = filepath.Join(getSessionDir(cfg.SessionID), "logs", "revm.log")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(logFilePath), 0755); err != nil {
+		return nil, fmt.Errorf("create log directory: %w", err)
+	}
+
+	if info, err := os.Stat(logFilePath); err == nil && info.Size() > maxLogFileSize {
+		if err := os.Truncate(logFilePath, 0); err != nil {
+			return nil, fmt.Errorf("truncate log file: %w", err)
+		}
+	}
+
+	f, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("open log file: %w", err)
+	}
+
+	logrus.SetOutput(io.MultiWriter(os.Stderr, f))
+	logrus.Infof("revm build info: %s", buildTimeInfo())
+	logrus.Infof("start virtualMachine, full cmdline: %q", os.Args)
+	return f, nil
+}
+
+// build acquires all heavyweight resources. On failure it cleans up after itself.
+func (vm *VM) build(ctx context.Context) error {
 	mc, releaseResources, err := buildMachine(ctx, *vm.cfg, vm.sessionDir)
 	if err != nil {
 		return fmt.Errorf("build machine: %w", err)
@@ -135,6 +198,7 @@ func (vm *VM) init(ctx context.Context) error {
 	vm.machine = mc
 	vm.provider = vmp
 	vm.releaseResources = releaseResources
+	vm.serviceSpecs = runtimecfg.NewServiceSpecs(mc)
 	return nil
 }
 
@@ -172,12 +236,8 @@ func (vm *VM) createUserSymlinks() error {
 	return nil
 }
 
-// RunChroot starts the VM in rootfs mode and blocks until it exits.
-func (vm *VM) RunChroot(ctx context.Context) error {
-	if err := vm.init(ctx); err != nil {
-		return err
-	}
-
+// Run starts the prepared VM and blocks until it exits.
+func (vm *VM) Run(ctx context.Context) error {
 	ctx, cancelRun := context.WithCancelCause(ctx)
 	defer cancelRun(context.Canceled)
 
@@ -190,6 +250,10 @@ func (vm *VM) RunChroot(ctx context.Context) error {
 		return vm.startHostNetworkStack(ctx, signalNetworkReady)
 	})
 	vm.startRunService(&g, ctx, cancelRun, vm.startMachineManagementAPI)
+
+	if err := vm.startModeServices(&g, ctx, cancelRun, networkReady); err != nil {
+		return err
+	}
 
 	go func() {
 		vm.WaitAndShutdownMachine(ctx, func() {
@@ -204,52 +268,31 @@ func (vm *VM) RunChroot(ctx context.Context) error {
 	return runError(ctx, g.Wait())
 }
 
-// RunDocker starts the VM in container mode and blocks until it exits.
-func (vm *VM) RunDocker(ctx context.Context) error {
-	if err := vm.init(ctx); err != nil {
-		return err
-	}
-
-	ctx, cancelRun := context.WithCancelCause(ctx)
-	defer cancelRun(context.Canceled)
-
-	networkReady, signalNetworkReady := vm.newNetworkReadySignal()
-
-	var g errgroup.Group
-
-	vm.startRunService(&g, ctx, cancelRun, vm.startIgnitionService)
-	vm.startRunService(&g, ctx, cancelRun, func(ctx context.Context) error {
-		return vm.startHostNetworkStack(ctx, signalNetworkReady)
-	})
-	vm.startRunService(&g, ctx, cancelRun, vm.startMachineManagementAPI)
-
-	vm.startRunService(&g, ctx, cancelRun, func(ctx context.Context) error {
-		if err := waitForNetworkReady(ctx, networkReady); err != nil {
-			return err
-		}
-		return vm.startPodmanProxy(ctx)
-	})
-
-	go func() {
-		if err := waitForNetworkReady(ctx, networkReady); err != nil {
-			return
-		}
-		if err := vm.reportPodmanReady(ctx); err != nil {
-			logrus.Warnf("podman API readiness check failed: %v", err)
-		}
-	}()
-
-	go func() {
-		vm.WaitAndShutdownMachine(ctx, func() {
-			cancelRun(context.Canceled)
+func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, cancelRun context.CancelCauseFunc, networkReady <-chan struct{}) error {
+	switch vm.machine.RunMode {
+	case define.RootFsMode.String():
+		return nil
+	case define.ContainerMode.String():
+		vm.startRunService(g, ctx, cancelRun, func(ctx context.Context) error {
+			if err := waitForNetworkReady(ctx, networkReady); err != nil {
+				return err
+			}
+			return vm.startPodmanProxy(ctx)
 		})
-	}()
 
-	g.Go(func() error {
-		return vm.runVirtualMachine(ctx, cancelRun, networkReady)
-	})
+		go func() {
+			if err := waitForNetworkReady(ctx, networkReady); err != nil {
+				return
+			}
+			if err := vm.reportPodmanReady(ctx); err != nil {
+				logrus.Warnf("podman API readiness check failed: %v", err)
+			}
+		}()
 
-	return runError(ctx, g.Wait())
+		return nil
+	default:
+		return fmt.Errorf("unsupported run mode: %s", vm.machine.RunMode)
+	}
 }
 
 func (vm *VM) newNetworkReadySignal() (<-chan struct{}, func()) {
@@ -360,15 +403,19 @@ func (vm *VM) startHostNetworkStack(ctx context.Context, onReady func()) error {
 	}
 
 	logrus.Info("starting gvisor-tap-vsock network stack")
-	return gvproxy.Run(ctx, vm.machine, onReady)
+	return gvproxy.Run(ctx, vm.serviceSpecs.GVProxy, onReady)
 }
 
 func (vm *VM) startIgnitionService(ctx context.Context) error {
-	return ignition.NewServer(vm.machine).Start(ctx)
+	return ignition.NewServer(vm.machine.IgnitionServerCfg.ListenSockAddr, vm.serviceSpecs.Guest).Start(ctx)
 }
 
 func (vm *VM) startMachineManagementAPI(ctx context.Context) error {
-	server, err := management.NewServer(vm.provider)
+	server, err := management.NewServer(
+		vm.serviceSpecs.Management,
+		vm.serviceSpecs.SSH,
+		vm.provider,
+	)
 	if err != nil {
 		return fmt.Errorf("create management server: %w", err)
 	}

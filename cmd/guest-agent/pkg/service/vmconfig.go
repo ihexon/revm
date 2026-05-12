@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"guestAgent/pkg/vsock"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/protocol"
 	"os"
 	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
-func getVMConfig(ctx context.Context) (*define.Machine, error) {
+func getVMConfig(ctx context.Context) (*protocol.GuestSpec, error) {
 	ctx, cancel := context.WithTimeout(ctx, define.DefaultProbeTimeout)
 	defer cancel()
 
@@ -39,7 +40,7 @@ func getVMConfig(ctx context.Context) (*define.Machine, error) {
 	}
 }
 
-func GetVMConfig(ctx context.Context) (*define.Machine, error) {
+func GetVMConfig(ctx context.Context) (*protocol.GuestSpec, error) {
 	vmc, err := getVMConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -48,7 +49,7 @@ func GetVMConfig(ctx context.Context) (*define.Machine, error) {
 	return vmc, WriteToJsonFile(vmc, define.VMConfigFilePathInGuest)
 }
 
-func WriteToJsonFile(vmc *define.Machine, file string) error {
+func WriteToJsonFile(vmc *protocol.GuestSpec, file string) error {
 	b, err := json.Marshal(vmc)
 	if err != nil {
 		return fmt.Errorf("failed to marshal vmconfig: %w", err)

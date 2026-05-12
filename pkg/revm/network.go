@@ -71,6 +71,12 @@ func (g *gVisorNetworkConfig) Configure(ctx context.Context, vmc *define.Machine
 		return err
 	}
 	vmc.SSHInfo.GuestSSHServerListenAddr = net.JoinHostPort(define.UnspecifiedAddress, strconv.FormatUint(port, 10))
+
+	forwardPort, err := network.GetAvailablePort(define.SSHLocalForwardListenPort)
+	if err != nil {
+		return fmt.Errorf("get available port for ssh forwarding: %w", err)
+	}
+	vmc.SSHInfo.HostSSHProxyListenAddr = net.JoinHostPort(define.LocalHost, strconv.FormatUint(forwardPort, 10))
 	return nil
 }
 

@@ -6,7 +6,6 @@ import (
 	"linuxvm/pkg/define"
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 //go:embed busybox.static
@@ -35,7 +34,7 @@ func InitBinDir() error {
 		return fmt.Errorf("create bin dir: %w", err)
 	}
 
-	if err := syscall.Mount("tmpfs", binDir, "tmpfs", 0, "mode=0755"); err != nil {
+	if err := mountTmpfs(binDir, "mode=0755"); err != nil {
 		return fmt.Errorf("mount tmpfs to %s: %w", binDir, err)
 	}
 

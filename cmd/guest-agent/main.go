@@ -9,6 +9,7 @@ import (
 	"guestAgent/pkg/service"
 	"io"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/protocol"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -94,7 +95,7 @@ func setupGuestSignalPort() {
 				continue
 			}
 
-			// Forward signal to all child processes
+			// Forward signal to all child processes.
 			if err := syscall.Kill(-1, sig); err != nil {
 				logrus.Errorf("failed to send %s to children: %v", msg.SignalName, err)
 			}
@@ -202,7 +203,7 @@ func run(ctx context.Context, _ *cli.Command) error {
 	}
 }
 
-func userRootfsMode(ctx context.Context, vmc *define.Machine) error {
+func userRootfsMode(ctx context.Context, vmc *protocol.GuestSpec) error {
 	logrus.Info("running in rootfs mode")
 
 	if err := service.ConfigureNetwork(ctx, virtualNetworkType(vmc)); err != nil {
@@ -240,7 +241,7 @@ func userRootfsMode(ctx context.Context, vmc *define.Machine) error {
 	}
 }
 
-func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
+func dockerEngineMode(ctx context.Context, vmc *protocol.GuestSpec) error {
 	logrus.Info("starting container engine")
 
 	// Configure network before starting services — it's a prerequisite,
@@ -278,8 +279,8 @@ func dockerEngineMode(ctx context.Context, vmc *define.Machine) error {
 	}
 }
 
-func virtualNetworkType(vmc *define.Machine) define.VNetMode {
-	if vmc.VirtualNetworkMode == define.TSI {
+func virtualNetworkType(vmc *protocol.GuestSpec) define.VNetMode {
+	if vmc.NetworkMode == string(define.TSI) {
 		return define.TSI
 	}
 	return define.GVISOR

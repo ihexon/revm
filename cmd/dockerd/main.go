@@ -53,7 +53,7 @@ func main() {
 			}
 
 			cfg := revm.DefaultConfig(command.String(define.FlagSessionID)).
-				WithLogSetup(command.String(define.FlagLogLevel), command.String(define.FlagLogTo)).
+				WithLogging(command.String(define.FlagLogLevel), command.String(define.FlagLogTo)).
 				WithMode(revm.ModeContainer).
 				WithCPUs(int(command.Int8(define.FlagCPUS))).
 				WithMemory(command.Uint64(define.FlagMemoryInMB)).
@@ -71,13 +71,13 @@ func main() {
 				cfg.WithEventReporter(u)
 			}
 
-			vm, err := revm.New(cfg)
+			vm, err := revm.Build(ctx, cfg)
 			if err != nil {
 				return err
 			}
 			defer vm.Close()
 
-			return vm.RunDocker(ctx)
+			return vm.Run(ctx)
 		},
 	}
 

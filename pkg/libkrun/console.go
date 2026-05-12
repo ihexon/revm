@@ -19,7 +19,9 @@ import (
 
 // setupConsole configures all console ports.
 func (v *Libkrun) setupConsole() error {
-	must(C.krun_disable_implicit_console(C.uint32_t(v.ctxID)))
+	if ret := C.krun_disable_implicit_console(C.uint32_t(v.ctxID)); ret != 0 {
+		return errCode(ret)
+	}
 
 	consoleID := C.krun_add_virtio_console_multiport(C.uint32_t(v.ctxID))
 	if consoleID < 0 {

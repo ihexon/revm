@@ -405,6 +405,28 @@ func (v *machineBuilder) applySystemProxy() error {
 // lock), but intentionally keeps the session workspace on disk. Caller must
 // always invoke it.
 func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *define.Machine, cleanup func(), retErr error) {
+	plan, err := newMachineBuildPlan(cfg, workspacePath)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer plan.cleanupCallbacks.CleanIfErr(&retErr)
+
+	if err := plan.build(ctx); err != nil {
+		return nil, nil, err
+	}
+
+	return &plan.builder.Machine, plan.cleanupCallbacks.DoClean, nil
+}
+
+type machineBuildPlan struct {
+	cfg              Config
+	workspacePath    string
+	runMode          define.RunMode
+	builder          *machineBuilder
+	cleanupCallbacks *system.CleanupCallback
+}
+
+func newMachineBuildPlan(cfg Config, workspacePath string) (*machineBuildPlan, error) {
 	var runMode define.RunMode
 	switch cfg.RunMode {
 	case ModeRootfs:
@@ -412,108 +434,167 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 	case ModeContainer:
 		runMode = define.ContainerMode
 	default:
-		return nil, nil, fmt.Errorf("unsupported run mode %q", cfg.RunMode)
+		return nil, fmt.Errorf("unsupported run mode %q", cfg.RunMode)
 	}
 
-	mBuilder := newMachineBuilder(runMode)
+	return &machineBuildPlan{
+		cfg:              cfg,
+		workspacePath:    workspacePath,
+		runMode:          runMode,
+		builder:          newMachineBuilder(runMode),
+		cleanupCallbacks: system.NewCleanUp(),
+	}, nil
+}
 
-	cleanupCallbacks := system.NewCleanUp()
-	cleanup = cleanupCallbacks.DoClean
-	defer cleanupCallbacks.CleanIfErr(&retErr)
-
-	if err := mBuilder.setupWorkspace(workspacePath); err != nil {
-		return nil, nil, fmt.Errorf("setup workspace: %w", err)
-	}
-	cleanupCallbacks.AddFunc(func() { _ = mBuilder.fileLock.Unlock(); _ = os.Remove(workspacePath + ".lock") })
-
-	// cfg.LogTo is set by WithLogSetup; fall back to workspace-relative path.
-	if cfg.LogTo != "" {
-		mBuilder.LogFile = cfg.LogTo
-	} else {
-		mBuilder.LogFile = filepath.Join(mBuilder.WorkspaceDir, "logs", "vm.log")
-	}
-
-	if err := mBuilder.configureSSH(); err != nil {
-		return nil, nil, fmt.Errorf("generate ssh config: %w", err)
-	}
-
-	if err := mBuilder.withResources(cfg.MemoryMB, uint8(cfg.CPUs)); err != nil {
-		return nil, nil, fmt.Errorf("set resources: %w", err)
-	}
-
-	if err := mBuilder.configureNetwork(ctx, define.VNetMode(cfg.Network)); err != nil {
-		return nil, nil, fmt.Errorf("configure network: %w", err)
+func (p *machineBuildPlan) build(ctx context.Context) error {
+	steps := []struct {
+		name string
+		run  func(context.Context) error
+	}{
+		{"workspace", p.setupWorkspace},
+		{"logging", p.configureLogFile},
+		{"ssh", p.configureSSH},
+		{"resources", p.configureResources},
+		{"network", p.configureNetwork},
+		{"proxy", p.configureProxy},
+		{"rootfs", p.prepareRootfs},
+		{"mode", p.configureMode},
+		{"storage", p.attachStorage},
+		{"guest agent", p.configureGuestAgent},
+		{"management API", p.configureManagementAPI},
+		{"tty", p.detectTTY},
 	}
 
-	if cfg.Proxy {
-		if err := mBuilder.applySystemProxy(); err != nil {
-			return nil, nil, fmt.Errorf("apply system proxy: %w", err)
+	for _, step := range steps {
+		if err := step.run(ctx); err != nil {
+			return fmt.Errorf("%s: %w", step.name, err)
 		}
 	}
+	return nil
+}
 
+func (p *machineBuildPlan) setupWorkspace(ctx context.Context) error {
+	if err := p.builder.setupWorkspace(p.workspacePath); err != nil {
+		return err
+	}
+	p.cleanupCallbacks.AddFunc(func() {
+		_ = p.builder.fileLock.Unlock()
+		_ = os.Remove(p.workspacePath + ".lock")
+	})
+	return nil
+}
+
+func (p *machineBuildPlan) configureLogFile(ctx context.Context) error {
+	// cfg.LogTo is set by WithLogging; fall back to workspace-relative path.
+	if p.cfg.LogTo != "" {
+		p.builder.LogFile = p.cfg.LogTo
+	} else {
+		p.builder.LogFile = filepath.Join(p.builder.WorkspaceDir, "logs", "vm.log")
+	}
+	return nil
+}
+
+func (p *machineBuildPlan) configureSSH(ctx context.Context) error {
+	return p.builder.configureSSH()
+}
+
+func (p *machineBuildPlan) configureResources(ctx context.Context) error {
+	return p.builder.withResources(p.cfg.MemoryMB, uint8(p.cfg.CPUs))
+}
+
+func (p *machineBuildPlan) configureNetwork(ctx context.Context) error {
+	return p.builder.configureNetwork(ctx, define.VNetMode(p.cfg.Network))
+}
+
+func (p *machineBuildPlan) configureProxy(ctx context.Context) error {
+	if !p.cfg.Proxy {
+		return nil
+	}
+	return p.builder.applySystemProxy()
+}
+
+func (p *machineBuildPlan) prepareRootfs(ctx context.Context) error {
 	logrus.Info("preparing rootfs...")
-	if cfg.Rootfs != "" {
-		if err := mBuilder.withUserProvidedRootfs(ctx, cfg.Rootfs); err != nil {
-			return nil, nil, err
+	if p.cfg.Rootfs != "" {
+		if err := p.builder.withUserProvidedRootfs(ctx, p.cfg.Rootfs); err != nil {
+			return err
 		}
 	} else {
-		if err := mBuilder.withBuiltInAlpineRootfs(ctx); err != nil {
-			return nil, nil, err
+		if err := p.builder.withBuiltInAlpineRootfs(ctx); err != nil {
+			return err
 		}
 	}
 	logrus.Info("preparing rootfs completed")
+	return nil
+}
 
-	switch runMode {
+func (p *machineBuildPlan) configureMode(ctx context.Context) error {
+	switch p.runMode {
 	case define.RootFsMode:
-		workDir := cfg.WorkDir
-		if workDir == "" {
-			workDir = "/"
-		}
-		bin := cfg.Command[0]
-		var args []string
-		if len(cfg.Command) > 1 {
-			args = cfg.Command[1:]
-		}
-		if err := mBuilder.setupCmdLine(workDir, bin, args, cfg.Env); err != nil {
-			return nil, nil, fmt.Errorf("setup cmdline: %w", err)
-		}
+		return p.configureRootfsMode(ctx)
 	case define.ContainerMode:
-		if err := mBuilder.withMountUserHome(ctx); err != nil {
-			return nil, nil, fmt.Errorf("mount user home: %w", err)
-		}
-		if err := mBuilder.configurePodman(ctx, cfg.Env); err != nil {
-			return nil, nil, fmt.Errorf("configure podman: %w", err)
-		}
+		return p.configureContainerMode(ctx)
+	default:
+		return fmt.Errorf("unsupported run mode %q", p.runMode)
+	}
+}
 
-		logrus.Info("Preparing container storage disk...")
-		if err := mBuilder.configureContainerRAWDisk(ctx, cfg.ContainerDisk, mBuilder.pathMgr.GetBuiltInContainerStorageDiskFile()); err != nil {
-			return nil, nil, fmt.Errorf("setup container disk: %w", err)
-		}
+func (p *machineBuildPlan) configureRootfsMode(ctx context.Context) error {
+	workDir := p.cfg.WorkDir
+	if workDir == "" {
+		workDir = "/"
 	}
 
-	if len(cfg.Disks) > 0 {
-		if err := mBuilder.withUserProvidedStorageRAWDisk(ctx, cfg.Disks); err != nil {
-			return nil, nil, fmt.Errorf("attach raw disks: %w", err)
+	bin := p.cfg.Command[0]
+	var args []string
+	if len(p.cfg.Command) > 1 {
+		args = p.cfg.Command[1:]
+	}
+	return p.builder.setupCmdLine(workDir, bin, args, p.cfg.Env)
+}
+
+func (p *machineBuildPlan) configureContainerMode(ctx context.Context) error {
+	if err := p.builder.withMountUserHome(ctx); err != nil {
+		return fmt.Errorf("mount user home: %w", err)
+	}
+
+	if err := p.builder.configurePodman(ctx, p.cfg.Env); err != nil {
+		return fmt.Errorf("configure podman: %w", err)
+	}
+
+	logrus.Info("Preparing container storage disk...")
+	if err := p.builder.configureContainerRAWDisk(ctx, p.cfg.ContainerDisk, p.builder.pathMgr.GetBuiltInContainerStorageDiskFile()); err != nil {
+		return fmt.Errorf("setup container disk: %w", err)
+	}
+
+	return nil
+}
+
+func (p *machineBuildPlan) attachStorage(ctx context.Context) error {
+	if len(p.cfg.Disks) > 0 {
+		if err := p.builder.withUserProvidedStorageRAWDisk(ctx, p.cfg.Disks); err != nil {
+			return fmt.Errorf("attach raw disks: %w", err)
 		}
 	}
-	if len(cfg.Mounts) > 0 {
-		if err := mBuilder.withUserProvidedMounts(cfg.Mounts); err != nil {
-			return nil, nil, fmt.Errorf("setup mounts: %w", err)
+	if len(p.cfg.Mounts) > 0 {
+		if err := p.builder.withUserProvidedMounts(p.cfg.Mounts); err != nil {
+			return fmt.Errorf("setup mounts: %w", err)
 		}
 	}
+	return nil
+}
 
-	if err := mBuilder.configureGuestAgent(ctx); err != nil {
-		return nil, nil, fmt.Errorf("configure guest agent: %w", err)
-	}
+func (p *machineBuildPlan) configureGuestAgent(ctx context.Context) error {
+	return p.builder.configureGuestAgent(ctx)
+}
 
-	if err := mBuilder.configureVMCtlAPI(); err != nil {
-		return nil, nil, fmt.Errorf("configure vmctl API: %w", err)
-	}
+func (p *machineBuildPlan) configureManagementAPI(ctx context.Context) error {
+	return p.builder.configureVMCtlAPI()
+}
 
-	// Detect TTY mode early so management API returns correct value
-	mBuilder.detectTTY()
-
-	return &mBuilder.Machine, cleanup, nil
+func (p *machineBuildPlan) detectTTY(ctx context.Context) error {
+	p.builder.detectTTY()
+	return nil
 }
 
 func (v *machineBuilder) detectTTY() {

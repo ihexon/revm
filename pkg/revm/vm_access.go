@@ -15,7 +15,7 @@ import (
 // Exec runs a command inside the guest VM and returns its combined stdout
 // output. It blocks until the command completes.
 func (vm *VM) Exec(ctx context.Context, name string, args ...string) ([]byte, error) {
-	client, err := sshsvc.MakeSSHClient(ctx, vm.machine)
+	client, err := sshsvc.MakeSSHClient(ctx, vm.serviceSpecs.SSH)
 	if err != nil {
 		return nil, fmt.Errorf("ssh connect: %w", err)
 	}
@@ -28,7 +28,7 @@ func (vm *VM) Exec(ctx context.Context, name string, args ...string) ([]byte, er
 // It blocks until the command completes.
 func (vm *VM) ExecWith(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer,
 	name string, args ...string) error {
-	client, err := sshsvc.MakeSSHClient(ctx, vm.machine)
+	client, err := sshsvc.MakeSSHClient(ctx, vm.serviceSpecs.SSH)
 	if err != nil {
 		return fmt.Errorf("ssh connect: %w", err)
 	}
@@ -42,7 +42,7 @@ func (vm *VM) ExecWith(ctx context.Context, stdin io.Reader, stdout, stderr io.W
 // Shell opens an interactive shell session to the guest VM.
 // It requires a TTY on the host side.
 func (vm *VM) Shell(ctx context.Context) error {
-	client, err := sshsvc.MakeSSHClient(ctx, vm.machine)
+	client, err := sshsvc.MakeSSHClient(ctx, vm.serviceSpecs.SSH)
 	if err != nil {
 		return fmt.Errorf("ssh connect: %w", err)
 	}

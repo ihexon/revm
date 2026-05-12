@@ -41,7 +41,3 @@ func (p *Provider) Stop() error {
 	p.libkrun.SendSignal(define.GuestSignalTerminated)
 	return nil
 }
-
-func (p *Provider) GetVMConfig() *define.Machine {
-	return p.mc
-}

@@ -17,10 +17,7 @@ import (
 	"linuxvm/pkg/define"
 	"os"
 	"runtime"
-	"runtime/debug"
 	"unsafe"
-
-	"github.com/sirupsen/logrus"
 )
 
 // Libkrun wraps Libkrun context and manages Libkrun lifecycle.
@@ -49,8 +46,12 @@ func (v *Libkrun) Create(ctx context.Context) error {
 		return err
 	}
 
-	v.setResources()
-	v.setRootFS()
+	if err := v.setResources(); err != nil {
+		return err
+	}
+	if err := v.setRootFS(); err != nil {
+		return err
+	}
 
 	if err := v.setupConsole(); err != nil {
 		return err
@@ -67,7 +68,9 @@ func (v *Libkrun) Create(ctx context.Context) error {
 
 	v.setupGPU()
 	v.setupNestedVirt()
-	v.setGuestAgent()
+	if err := v.setGuestAgent(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -143,30 +146,40 @@ func (v *Libkrun) init() error {
 }
 
 // setResources configures CPU, memory, and limits.
-func (v *Libkrun) setResources() {
-	must(C.krun_set_vm_config(
+func (v *Libkrun) setResources() error {
+	if ret := C.krun_set_vm_config(
 		C.uint32_t(v.ctxID),
 		C.uint8_t(v.cfg.Cpus),
 		C.uint32_t(v.cfg.MemoryInMB),
-	))
+	); ret != 0 {
+		return errCode(ret)
+	}
 
 	rlimits := cstrings("6=4096:8192") // RLIMIT_NPROC
 	defer rlimits.free()
-	must(C.krun_set_rlimits(C.uint32_t(v.ctxID), rlimits.ptr()))
+	if ret := C.krun_set_rlimits(C.uint32_t(v.ctxID), rlimits.ptr()); ret != 0 {
+		return errCode(ret)
+	}
+	return nil
 }
 
 // setRootFS sets the root filesystem path.
-func (v *Libkrun) setRootFS() {
+func (v *Libkrun) setRootFS() error {
 	rootfs := cstr(v.cfg.RootFS)
 	defer free(rootfs)
-	must(C.krun_set_root(C.uint32_t(v.ctxID), rootfs))
+	if ret := C.krun_set_root(C.uint32_t(v.ctxID), rootfs); ret != 0 {
+		return errCode(ret)
+	}
+	return nil
 }
 
 // setGuestAgent configures the guest agent executable.
-func (v *Libkrun) setGuestAgent() {
+func (v *Libkrun) setGuestAgent() error {
 	workdir := cstr(v.cfg.GuestAgentCfg.Workdir)
 	defer free(workdir)
-	must(C.krun_set_workdir(C.uint32_t(v.ctxID), workdir))
+	if ret := C.krun_set_workdir(C.uint32_t(v.ctxID), workdir); ret != 0 {
+		return errCode(ret)
+	}
 
 	exec := cstr(define.GuestAgentPathInGuest)
 	defer free(exec)
@@ -177,7 +190,10 @@ func (v *Libkrun) setGuestAgent() {
 	envs := cstrings(v.cfg.GuestAgentCfg.Env...)
 	defer envs.free()
 
-	must(C.krun_set_exec(C.uint32_t(v.ctxID), exec, args.ptr(), envs.ptr()))
+	if ret := C.krun_set_exec(C.uint32_t(v.ctxID), exec, args.ptr(), envs.ptr()); ret != 0 {
+		return errCode(ret)
+	}
+	return nil
 }
 
 // setupGPU enables GPU passthrough on macOS.
@@ -231,16 +247,6 @@ func (a *cstringArray) free() {
 			C.free(unsafe.Pointer(p))
 			a.ptrs[i] = nil
 		}
-	}
-}
-
-func must(ret C.int32_t) {
-	if ret != 0 {
-		err := errCode(ret)
-		logrus.Errorf("Libkrun fatal error: %v", err)
-		// Log stack trace for debugging
-		logrus.Errorf("stack trace: %s", debug.Stack())
-		panic(err)
 	}
 }
 

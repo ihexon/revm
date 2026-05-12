@@ -17,7 +17,9 @@ import (
 
 // setupVSock configures the VSock device and port mappings.
 func (v *Libkrun) setupVSock() error {
-	must(C.krun_disable_implicit_vsock(C.uint32_t(v.ctxID)))
+	if ret := C.krun_disable_implicit_vsock(C.uint32_t(v.ctxID)); ret != 0 {
+		return errCode(ret)
+	}
 
 	var features C.uint32_t
 	if v.cfg.VirtualNetworkMode == define.TSI {
@@ -28,7 +30,9 @@ func (v *Libkrun) setupVSock() error {
 		}
 	}
 
-	must(C.krun_add_vsock(C.uint32_t(v.ctxID), features))
+	if ret := C.krun_add_vsock(C.uint32_t(v.ctxID), features); ret != 0 {
+		return errCode(ret)
+	}
 
 	// Map ignition server port
 	addr, err := network.ParseUnixAddr(v.cfg.IgnitionServerCfg.ListenSockAddr)

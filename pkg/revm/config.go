@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -178,55 +177,18 @@ func (c *Config) WithProxy(enable bool) *Config {
 
 const maxLogFileSize = 10 * 1024 * 1024
 
-func (c *Config) WithLogSetup(level string, logFilePath string) *Config {
+func (c *Config) WithLogging(level string, logFilePath string) *Config {
 	if level == "" {
 		level = logrus.InfoLevel.String()
-		logrus.Infof("default log level: %q", level)
 	}
-
-	// setup logrus
-	l, err := logrus.ParseLevel(level)
-	if err != nil {
-		l = logrus.InfoLevel
-		logrus.Warnf("failed to parse log level: %v, using default log level %s", err, l.String())
-	}
-
-	logrus.SetLevel(l)
-	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp:   true,
-		TimestampFormat: "2006-01-02 15:04:05.000",
-		ForceColors:     true,
-	})
 
 	c.LogLevel = level
 
 	if logFilePath == "" {
 		logFilePath = filepath.Join(getSessionDir(c.SessionID), "logs", "revm.log")
-		logrus.Infof("default log file path: %q", logFilePath)
-	} else {
-		logrus.Infof("custom log file path: %q", logFilePath)
 	}
-
-	if err := os.MkdirAll(filepath.Dir(logFilePath), 0755); err != nil {
-		logrus.Warnf("Config.WithLogSetup failed to create log directory: %v", err)
-		return c
-	}
-
-	if info, err := os.Stat(logFilePath); err == nil && info.Size() > maxLogFileSize {
-		_ = os.Truncate(logFilePath, 0)
-	}
-
-	f, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		logrus.Warnf("Config.WithLogSetup failed to open log file: %v", err)
-		return c
-	}
-
-	logrus.SetOutput(io.MultiWriter(os.Stderr, f))
-
 	c.LogTo = logFilePath
 
-	logrus.Infof("start virtualMachine, full cmdline: %q", os.Args)
 	return c
 }
 

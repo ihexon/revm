@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
+	"linuxvm/pkg/protocol"
 	"net/http"
 	"time"
 )
@@ -28,7 +29,7 @@ func NewVSockService() *Service {
 	}
 }
 
-func (v *Service) GetVMConfig(ctx context.Context) (*define.Machine, error) {
+func (v *Service) GetVMConfig(ctx context.Context) (*protocol.GuestSpec, error) {
 	body, status, err := v.client.Get(define.RestAPIVMConfigURL).DoAndRead(ctx)
 	if err != nil {
 		return nil, err
@@ -37,9 +38,12 @@ func (v *Service) GetVMConfig(ctx context.Context) (*define.Machine, error) {
 		return nil, fmt.Errorf("GET vmconfig returned %d", status)
 	}
 
-	vmc := &define.Machine{}
+	vmc := &protocol.GuestSpec{}
 	if err = json.Unmarshal(body, vmc); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal vmconfig: %w", err)
+	}
+	if vmc.SchemaVersion != protocol.GuestSpecVersion {
+		return nil, fmt.Errorf("unsupported guest spec schema version: %d", vmc.SchemaVersion)
 	}
 
 	return vmc, nil

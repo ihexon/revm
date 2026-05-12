@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/protocol"
 	"os"
 
 	"github.com/sirupsen/logrus"
@@ -177,7 +178,7 @@ func MountAllPseudoMnt(ctx context.Context) error {
 	return nil
 }
 
-func MountVirtiofs(ctx context.Context, vmc *define.Machine) error {
+func MountVirtiofs(ctx context.Context, vmc *protocol.GuestSpec) error {
 	if len(vmc.Mounts) == 0 {
 		logrus.Debug("no virtiofs mounts configured")
 		return nil
@@ -205,7 +206,7 @@ func MountVirtiofs(ctx context.Context, vmc *define.Machine) error {
 	return nil
 }
 
-func MountBlockDevices(ctx context.Context, vmc *define.Machine) error {
+func MountBlockDevices(ctx context.Context, vmc *protocol.GuestSpec) error {
 	if len(vmc.BlkDevs) == 0 {
 		logrus.Debug("no block devices will be mounted, skip")
 		return nil

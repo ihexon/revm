@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"linuxvm/pkg/define"
-	"linuxvm/pkg/network"
 	"net"
 	"net/http"
 	"net/url"
@@ -36,50 +34,65 @@ type Config struct {
 	Stack       types.Configuration
 }
 
-func NewConfig(vmc *define.Machine) (*Config, error) {
-	if vmc.GVPCtlAddr == "" {
+type Spec struct {
+	ControlAddr         string
+	NetAddr             string
+	NotifyAddr          string
+	HostSSHForwardAddr  string
+	GuestSSHListenAddr  string
+	GuestIP             string
+	HostLoopbackAddress string
+}
+
+func NewConfig(spec Spec) (*Config, error) {
+	if spec.ControlAddr == "" {
 		return nil, errors.New("gvproxy control address is empty")
 	}
-	if vmc.GVPVNetAddr == "" {
+	if spec.NetAddr == "" {
 		return nil, errors.New("gvproxy network address is empty")
 	}
-	if vmc.GVPNotifyAddr == "" {
+	if spec.NotifyAddr == "" {
 		return nil, errors.New("gvproxy notification address is empty")
 	}
-	if err := validateUnixAddr(vmc.GVPCtlAddr, "unix"); err != nil {
+	if spec.HostSSHForwardAddr == "" {
+		return nil, errors.New("gvproxy ssh forward address is empty")
+	}
+	if spec.GuestSSHListenAddr == "" {
+		return nil, errors.New("gvproxy guest ssh address is empty")
+	}
+	if spec.GuestIP == "" {
+		return nil, errors.New("gvproxy guest IP is empty")
+	}
+	if spec.HostLoopbackAddress == "" {
+		return nil, errors.New("gvproxy host loopback address is empty")
+	}
+	if err := validateUnixAddr(spec.ControlAddr, "unix"); err != nil {
 		return nil, fmt.Errorf("invalid gvproxy control address: %w", err)
 	}
-	if err := validateUnixAddr(vmc.GVPVNetAddr, "unixgram"); err != nil {
+	if err := validateUnixAddr(spec.NetAddr, "unixgram"); err != nil {
 		return nil, fmt.Errorf("invalid gvproxy network address: %w", err)
 	}
-	if err := validateUnixAddr(vmc.GVPNotifyAddr, "unix"); err != nil {
+	if err := validateUnixAddr(spec.NotifyAddr, "unix"); err != nil {
 		return nil, fmt.Errorf("invalid gvproxy notification address: %w", err)
 	}
 
-	port, err := network.GetAvailablePort(define.SSHLocalForwardListenPort)
-	if err != nil {
-		return nil, fmt.Errorf("get available port for ssh forwarding: %w", err)
-	}
-
-	sshLocalForwardAddr := fmt.Sprintf("%s:%d", define.LocalHost, port)
-	_, sshPortStr, err := net.SplitHostPort(vmc.SSHInfo.GuestSSHServerListenAddr)
+	_, sshPortStr, err := net.SplitHostPort(spec.GuestSSHListenAddr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid guest ssh listen address: %w", err)
 	}
-	sshServerGuestAddr := net.JoinHostPort(define.GuestIP, sshPortStr)
+	sshServerGuestAddr := net.JoinHostPort(spec.GuestIP, sshPortStr)
 
-	logrus.Infof("configuring local port forwarding from %s to %s", sshLocalForwardAddr, sshServerGuestAddr)
-	vmc.SSHInfo.HostSSHProxyListenAddr = sshLocalForwardAddr
+	logrus.Infof("configuring local port forwarding from %s to %s", spec.HostSSHForwardAddr, sshServerGuestAddr)
 
 	return &Config{
-		ControlAddr: vmc.GVPCtlAddr,
-		NetAddr:     vmc.GVPVNetAddr,
-		NotifyAddr:  vmc.GVPNotifyAddr,
+		ControlAddr: spec.ControlAddr,
+		NetAddr:     spec.NetAddr,
+		NotifyAddr:  spec.NotifyAddr,
 		Stack: types.Configuration{
 			MTU:               defaultMTU,
 			Subnet:            "192.168.127.0/24",
 			GatewayIP:         gatewayIP,
-			DeviceIP:          define.GuestIP,
+			DeviceIP:          spec.GuestIP,
 			HostIP:            hostIP,
 			GatewayMacAddress: gatewayMACAddress,
 			DNS: []types.Zone{
@@ -88,22 +101,22 @@ func NewConfig(vmc *define.Machine) (*Config, error) {
 				internalZone("revm.internal."),
 			},
 			Forwards: map[string]string{
-				sshLocalForwardAddr: sshServerGuestAddr,
+				spec.HostSSHForwardAddr: sshServerGuestAddr,
 			},
 			NAT: map[string]string{
-				hostIP: define.LocalHost,
+				hostIP: spec.HostLoopbackAddress,
 			},
 			GatewayVirtualIPs: []string{hostIP},
 			DHCPStaticLeases: map[string]string{
-				define.GuestIP: guestMACAddress,
+				spec.GuestIP: guestMACAddress,
 			},
 			Protocol: types.VfkitProtocol,
 		},
 	}, nil
 }
 
-func Run(ctx context.Context, vmc *define.Machine, onReady func()) error {
-	config, err := NewConfig(vmc)
+func Run(ctx context.Context, spec Spec, onReady func()) error {
+	config, err := NewConfig(spec)
 	if err != nil {
 		return fmt.Errorf("init gvproxy config: %w", err)
 	}

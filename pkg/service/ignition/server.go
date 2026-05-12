@@ -6,26 +6,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"linuxvm/pkg/define"
 	http2 "linuxvm/pkg/http"
+	"linuxvm/pkg/protocol"
 	"net/http"
 	"sync"
-
-	jsonpatch "github.com/evanphx/json-patch/v5"
 )
 
 type Server struct {
-	mu  sync.RWMutex
-	vmc *define.Machine
-	srv *http2.Server
+	mu        sync.RWMutex
+	guestSpec protocol.GuestSpec
+	srv       *http2.Server
 
 	Listening chan struct{}
 }
 
-func NewServer(vmc *define.Machine) *Server {
-	s := &Server{vmc: vmc, Listening: make(chan struct{})}
-	srv := http2.NewUnixSockHTTPServer("ignition-httpserver", vmc.IgnitionServerCfg.ListenSockAddr)
+func NewServer(listenSockAddr string, guestSpec protocol.GuestSpec) *Server {
+	s := &Server{guestSpec: guestSpec, Listening: make(chan struct{})}
+	srv := http2.NewUnixSockHTTPServer("ignition-httpserver", listenSockAddr)
 	srv.OnListening = func() { close(s.Listening) }
 	s.srv = srv
 	return s
@@ -61,35 +58,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleVMConfig(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-		writeJSON(w, http.StatusOK, s.vmc)
-	case http.MethodPatch:
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		currentBytes, err := json.Marshal(s.vmc)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		mergedBytes, err := jsonpatch.MergePatch(currentBytes, body)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if err = json.Unmarshal(mergedBytes, s.vmc); err != nil {
-			writeJSON(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, nil)
-	default:
+	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, nil)
+		return
 	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	writeJSON(w, http.StatusOK, s.guestSpec)
 }

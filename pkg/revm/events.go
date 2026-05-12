@@ -5,7 +5,11 @@ package revm
 import (
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
+
+const eventQueueSize = 32
 
 // Event represents a single VM lifecycle event.
 type Event struct {
@@ -27,6 +31,9 @@ type eventDispatcher struct {
 	mu        sync.RWMutex
 	reporters []EventReporter
 	closed    bool
+	events    chan Event
+	once      sync.Once
+	wg        sync.WaitGroup
 }
 
 func (d *eventDispatcher) addReporter(r EventReporter) {
@@ -40,6 +47,7 @@ func (d *eventDispatcher) addReporter(r EventReporter) {
 		r.Close()
 		return
 	}
+	d.startLocked()
 	d.reporters = append(d.reporters, r)
 }
 
@@ -47,13 +55,12 @@ func (d *eventDispatcher) emit(sessionID string, runMode RunMode, kind EventKind
 	if d == nil {
 		return
 	}
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	if d.closed {
-		return
-	}
+	evt := newEvent(sessionID, runMode, kind, msg, seq)
+	d.enqueue(evt)
+}
 
-	evt := Event{
+func newEvent(sessionID string, runMode RunMode, kind EventKind, msg string, seq uint64) Event {
+	return Event{
 		SessionID: sessionID,
 		RunMode:   runMode,
 		Kind:      kind,
@@ -61,8 +68,42 @@ func (d *eventDispatcher) emit(sessionID string, runMode RunMode, kind EventKind
 		Seq:       seq,
 		Time:      time.Now(),
 	}
-	for _, r := range d.reporters {
-		r.Report(evt)
+}
+
+func (d *eventDispatcher) enqueue(evt Event) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	if d.closed || d.events == nil {
+		return
+	}
+
+	select {
+	case d.events <- evt:
+	default:
+		logrus.Warnf("event sink queue full, dropping event %s", evt.Kind)
+	}
+}
+
+func (d *eventDispatcher) startLocked() {
+	d.once.Do(func() {
+		d.events = make(chan Event, eventQueueSize)
+		d.wg.Add(1)
+		go d.run()
+	})
+}
+
+func (d *eventDispatcher) run() {
+	defer d.wg.Done()
+	for evt := range d.events {
+		d.mu.RLock()
+		reporters := make([]EventReporter, len(d.reporters))
+		copy(reporters, d.reporters)
+		d.mu.RUnlock()
+
+		for _, r := range reporters {
+			r.Report(evt)
+		}
 	}
 }
 
@@ -77,10 +118,17 @@ func (d *eventDispatcher) close() {
 		return
 	}
 	d.closed = true
+	events := d.events
+	d.events = nil
 	reporters := make([]EventReporter, len(d.reporters))
 	copy(reporters, d.reporters)
 	d.reporters = nil
 	d.mu.Unlock()
+
+	if events != nil {
+		close(events)
+		d.wg.Wait()
+	}
 
 	for _, r := range reporters {
 		r.Close()

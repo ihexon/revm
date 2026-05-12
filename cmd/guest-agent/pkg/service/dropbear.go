@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"guestAgent/pkg/supervisor"
-	"linuxvm/pkg/define"
+	"linuxvm/pkg/protocol"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -87,12 +87,12 @@ func (d *Dropbear) Start(ctx context.Context) {
 }
 
 // StartGuestSSHServer support TSI/Gvisor network mode
-func StartGuestSSHServer(ctx context.Context, vmc *define.Machine) error {
+func StartGuestSSHServer(ctx context.Context, vmc *protocol.GuestSpec) error {
 	cfg := DropbearConfig{
-		ListenAddr:         vmc.SSHInfo.GuestSSHServerListenAddr,
-		PrivateKeyPath:     vmc.SSHInfo.GuestSSHPrivateKeyFile,
-		AuthorizedKeysFile: vmc.SSHInfo.GuestSSHAuthorizedKeys,
-		PidFile:            vmc.SSHInfo.GuestSSHPidFile,
+		ListenAddr:         vmc.SSH.GuestSSHServerListenAddr,
+		PrivateKeyPath:     vmc.SSH.GuestSSHPrivateKeyFile,
+		AuthorizedKeysFile: vmc.SSH.GuestSSHAuthorizedKeys,
+		PidFile:            vmc.SSH.GuestSSHPidFile,
 	}
 
 	dropbear := NewDropbear(cfg)
@@ -101,7 +101,7 @@ func StartGuestSSHServer(ctx context.Context, vmc *define.Machine) error {
 		return fmt.Errorf("generate host key: %w", err)
 	}
 
-	if err := dropbear.WriteAuthorizedKeys(vmc.SSHInfo.HostSSHPublicKey); err != nil {
+	if err := dropbear.WriteAuthorizedKeys(vmc.SSH.HostSSHPublicKey); err != nil {
 		return fmt.Errorf("write authorized_keys: %w", err)
 	}
 

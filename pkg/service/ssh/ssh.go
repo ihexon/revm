@@ -5,7 +5,6 @@ package ssh
 import (
 	"context"
 	"io"
-	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
 	ssh "linuxvm/pkg/ssh"
 	"net"
@@ -20,8 +19,17 @@ type ProcessOutput struct {
 	ErrChan          chan error
 }
 
-func GuestExec(ctx context.Context, vmc *define.Machine, bin string, args ...string) (*ProcessOutput, error) {
-	sshClient, err := MakeSSHClient(ctx, vmc)
+type Target struct {
+	User                     string
+	PrivateKeyFile           string
+	UseGVProxyTunnel         bool
+	GVPCtlAddr               string
+	GuestSSHServerListenAddr string
+	GuestTunnelHost          string
+}
+
+func GuestExec(ctx context.Context, target Target, bin string, args ...string) (*ProcessOutput, error) {
+	sshClient, err := MakeSSHClient(ctx, target)
 	if err != nil {
 		return nil, err
 	}
@@ -37,19 +45,27 @@ func GuestExec(ctx context.Context, vmc *define.Machine, bin string, args ...str
 	return &ProcessOutput{StdoutPipeReader: stdoutReader, StderrPipeReader: stderrReader, ErrChan: errChan}, nil
 }
 
-func MakeSSHClient(ctx context.Context, vmc *define.Machine) (*ssh.Client, error) {
-	dialOpts := []ssh.Option{ssh.WithUser(define.DefaultGuestUser), ssh.WithPrivateKey(vmc.SSHInfo.HostSSHPrivateKeyFile), ssh.WithTimeout(2 * time.Second), ssh.WithKeepalive(2 * time.Second)}
+func MakeSSHClient(ctx context.Context, target Target) (*ssh.Client, error) {
+	user := target.User
+	if user == "" {
+		user = "root"
+	}
+	dialOpts := []ssh.Option{ssh.WithUser(user), ssh.WithPrivateKey(target.PrivateKeyFile), ssh.WithTimeout(2 * time.Second), ssh.WithKeepalive(2 * time.Second)}
 	var guestAddr string
-	if vmc.VirtualNetworkMode == define.GVISOR {
-		gvCtlAddr, err := network.ParseUnixAddr(vmc.GVPCtlAddr)
+	if target.UseGVProxyTunnel {
+		gvCtlAddr, err := network.ParseUnixAddr(target.GVPCtlAddr)
 		if err != nil {
 			return nil, err
 		}
-		_, portStr, _ := net.SplitHostPort(vmc.SSHInfo.GuestSSHServerListenAddr)
-		guestAddr = net.JoinHostPort(define.GuestIP, portStr)
+		_, portStr, _ := net.SplitHostPort(target.GuestSSHServerListenAddr)
+		guestHost := target.GuestTunnelHost
+		if guestHost == "" {
+			guestHost = "192.168.127.2"
+		}
+		guestAddr = net.JoinHostPort(guestHost, portStr)
 		dialOpts = append(dialOpts, ssh.WithTunnel(gvCtlAddr.Path))
 	} else {
-		guestAddr = vmc.SSHInfo.GuestSSHServerListenAddr
+		guestAddr = target.GuestSSHServerListenAddr
 	}
 	return ssh.Dial(ctx, guestAddr, dialOpts...)
 }

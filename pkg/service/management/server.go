@@ -6,8 +6,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
+	"linuxvm/pkg/backend"
 	httpv2 "linuxvm/pkg/http"
-	"linuxvm/pkg/interfaces"
 	sshsvc "linuxvm/pkg/service/ssh"
 	ssev2 "linuxvm/pkg/sse"
 	"net/http"
@@ -17,9 +18,11 @@ import (
 )
 
 type Server struct {
-	srv *httpv2.Server
-	sse *ssev2.Server
-	vmp interfaces.VMMProvider
+	srv       *httpv2.Server
+	sse       *ssev2.Server
+	backend   backend.Backend
+	config    VMConfigView
+	sshTarget sshsvc.Target
 }
 
 type errResponse struct {
@@ -32,11 +35,19 @@ func writeJSON(w http.ResponseWriter, code int, value interface{}) {
 	_ = json.NewEncoder(w).Encode(value) //nolint:errchkjson
 }
 
-func NewServer(vmp interfaces.VMMProvider) (*Server, error) {
+func NewServer(config VMConfigView, sshTarget sshsvc.Target, vmb backend.Backend) (*Server, error) {
+	if config.Endpoints.ManagementAPI == "" {
+		return nil, fmt.Errorf("management API endpoint is empty")
+	}
+	if vmb == nil {
+		return nil, fmt.Errorf("backend is nil")
+	}
 	return &Server{
-		vmp: vmp,
-		srv: httpv2.NewUnixSockHTTPServer("management-api", vmp.GetVMConfig().VMCtlAddr),
-		sse: ssev2.NewSSEServer(),
+		backend:   vmb,
+		config:    config,
+		sshTarget: sshTarget,
+		srv:       httpv2.NewUnixSockHTTPServer("management-api", config.Endpoints.ManagementAPI),
+		sse:       ssev2.NewSSEServer(),
 	}, nil
 }
 
@@ -70,7 +81,7 @@ func (s *Server) handleVMConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.vmp.GetVMConfig())
+	writeJSON(w, http.StatusOK, s.config)
 }
 
 func (s *Server) handleRequestVMStop(w http.ResponseWriter, r *http.Request) {
@@ -78,7 +89,7 @@ func (s *Server) handleRequestVMStop(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	_ = s.vmp.Stop()
+	_ = s.backend.Stop()
 	writeJSON(w, http.StatusOK, nil)
 }
 
@@ -107,8 +118,7 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) executeCommand(ctx context.Context, cancel context.CancelFunc, topic string, req execRequest) {
 	defer cancel()
-	vmc := s.vmp.GetVMConfig()
-	proc, err := sshsvc.GuestExec(ctx, vmc, req.Bin, req.Args...)
+	proc, err := sshsvc.GuestExec(ctx, s.sshTarget, req.Bin, req.Args...)
 	if err != nil {
 		s.sse.Publish(topic, ssev2.TypeErr, "guest exec failed: "+err.Error())
 		return

@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
-	"linuxvm/pkg/define"
+	"linuxvm/pkg/protocol"
 	"os"
 	"os/exec"
 	"strings"
@@ -50,7 +50,7 @@ func openActiveConsole() (*os.File, error) {
 }
 
 // DoExecCmdLine executes the user command and returns its error.
-func DoExecCmdLine(ctx context.Context, vmc *define.Machine) error {
+func DoExecCmdLine(ctx context.Context, vmc *protocol.GuestSpec) error {
 	logrus.Infof("exec: %s %v", vmc.Cmdline.Bin, vmc.Cmdline.Args)
 
 	if err := os.Chdir(vmc.Cmdline.WorkDir); err != nil {
