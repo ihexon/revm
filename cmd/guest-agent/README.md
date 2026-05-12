@@ -1,7 +1,7 @@
 # Guest Agent
 
-`cmd/guest-agent` runs inside every `revm` VM as the in-guest bootstrap companion. It is not the normal user entry
-point; the host-side `cmd/revm` process creates the VM, injects configuration, and this agent finishes guest
+`cmd/guest-agent` runs inside every VM as the in-guest bootstrap companion. It is not the normal user entry
+point; the host-side `chroot` or `dockerd` process creates the VM, injects configuration, and this agent finishes guest
 initialization.
 
 ## Responsibilities

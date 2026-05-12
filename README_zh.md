@@ -21,22 +21,23 @@ macOS Sonoma 或更高版本
 ## 安装
 
 ```bash
-wget https://github.com/ihexon/revm/releases/download/<TAG>/revm-Darwin-arm64.tar.zst
+wget https://github.com/ihexon/revm/releases/download/<TAG>/chroot-Darwin-arm64.tar.xz
 
-xattr -d com.apple.quarantine revm-Darwin-arm64.tar.zst
+xattr -d com.apple.quarantine chroot-Darwin-arm64.tar.xz
 
-tar -xvf revm-Darwin-arm64.tar.zst
+tar -xvf chroot-Darwin-arm64.tar.xz
 ```
+
+容器引擎对应的是 `dockerd-Darwin-arm64.tar.xz`。
 
 ## 命令概览
 
-`cmd/revm` 对外暴露三个用户命令：
+发布包提供两个独立可执行文件：
 
-| 命令 | 别名 | 作用 |
-|------|------|------|
-| `revm chroot` | `run` | 用自定义或内置 rootfs 启动 Linux microVM，并在其中执行命令 |
-| `revm dockerd` | `start` | 启动内置容器虚拟机，并在宿主机暴露兼容 Podman 的 API socket |
-| `revm attach` | — | 通过 SSH 重新连接已有会话，可进入交互 shell（`--pty`）或执行一次性命令 |
+| 命令 | 作用 |
+|------|------|
+| `chroot` | 用自定义或内置 rootfs 启动 Linux microVM，并在其中执行命令 |
+| `dockerd` | 启动内置容器虚拟机，并在宿主机暴露兼容 Podman 的 API socket |
 
 虚拟机内部实际运行的是 `cmd/guest-agent`：它负责挂载伪文件系统和共享磁盘、配置网络（`gvisor` 或
 `tsi`）、启动 SSH 和可选的 Podman 服务、在 `chroot` 模式中执行用户命令，并把就绪状态回报给宿主机。
@@ -45,20 +46,17 @@ tar -xvf revm-Darwin-arm64.tar.zst
 
 ```bash
 # 在 rootfs 虚拟机里执行命令
-revm chroot --id build --rootfs ~/ubuntu-rootfs -- bash -lc 'uname -a'
-
-# 在另一终端重新进入同一个会话
-revm attach --pty build
+chroot --id build --rootfs ~/ubuntu-rootfs -- bash -lc 'uname -a'
 
 # 启动内置容器引擎
-revm dockerd --id engine
+dockerd --id engine
 export CONTAINER_HOST=unix:///tmp/engine/socks/podman-api.sock
 podman run --rm alpine uname -a
 ```
 
 ## 关键参数
 
-这些参数定义在 `cmd/revm/flags.go` 中，除特别说明外由 `chroot` / `dockerd` 共用。
+这些参数定义在 `pkg/define/flags.go` 中，除特别说明外由 `chroot` / `dockerd` 共用。
 
 | 参数 | 适用命令 | 说明 |
 |------|----------|------|
@@ -83,7 +81,6 @@ podman run --rm alpine uname -a
 |------|------|
 | [chroot 模式](docs/chroot-mode_zh.md) | macOS 上的 Linux chroot 替代方案——以近乎原生的性能运行任意 rootfs |
 | [docker 模式](docs/docker-mode_zh.md) | 无需 Docker Desktop 的完整容器引擎——兼容 Podman/Docker CLI |
-| [attach](docs/attach_zh.md) | 连接到运行中的 VM 实例 |
 | [工作区与网络](docs/insider_zh.md) | 会话目录结构、复用/清理，以及网络模式（gvisor / tsi） |
 | [管理 API](docs/management-api.md) | 通过 Unix socket 访问的 VM 管理 API |
 

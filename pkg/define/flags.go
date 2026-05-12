@@ -1,10 +1,6 @@
 package define
 
 const (
-	FlagDockerMode = "dockerd"
-	FlagChroot     = "chroot"
-	FlagAttachMode = "attach"
-
 	FlagLogLevel                = "log-level"
 	FlagLogTo                   = "log-to"
 	FlagCPUS                    = "cpus"

@@ -8,7 +8,7 @@ or Podman Desktop required — spin up a full, lightweight container stack insta
 **Start the container engine**
 
 ```bash
-revm docker --id my-engine
+dockerd --id my-engine
 ```
 
 After startup, the Podman API socket is available at `/tmp/my-engine/socks/podman-api.sock`.
@@ -56,7 +56,7 @@ In environments that require a proxy, add `--system-proxy` to automatically read
 into containers:
 
 ```bash
-revm docker --id my-engine --system-proxy
+dockerd --id my-engine --system-proxy
 
 # apt/curl inside containers automatically use the proxy
 podman run --rm ubuntu:latest apt-get update
@@ -65,7 +65,7 @@ podman run --rm ubuntu:latest apt-get update
 ## Flags
 
 ```bash
-revm docker [flags]
+dockerd [flags]
 ```
 
 | Flag               | Description                                                                                         | Default               |
@@ -79,14 +79,12 @@ revm docker [flags]
 | `--network`        | Network stack: `gvisor` (full virtual NIC, supports port mapping) or `tsi` (transparent intercept)  | `gvisor`              |
 | `--system-proxy`   | Read macOS system proxy and inject into containers; rewrites `127.0.0.1` to `host.containers.internal` | `false`            |
 | `--container-disk` | Container storage disk spec (format: `<path>[,version=<string>]`); path-only works; defaults to a session-local disk with the built-in container disk version; if the stored version xattr is missing or mismatched, the disk is recreated | session-local + built-in version |
-| `--podman-proxy-api-file` | Custom Unix socket path for the Podman API proxy; defaults to `<session_dir>/socks/podman-api.sock` | —                  |
-| `--manage-api-file` | Custom Unix socket path for the VM management API; defaults to `<session_dir>/socks/vmctl.sock` | —                  |
-| `--ssh-key-dir`    | Directory to symlink the generated SSH key pair (`key` and `key.pub`) into; keys are always created inside the session directory | — |
-| `--export-ssh-private-key` | File path to symlink the generated SSH private key to                        | —                     |
-| `--export-ssh-public-key`  | File path to symlink the generated SSH public key to                         | —                     |
+| `--podman-api` | Custom Unix socket path for the Podman API proxy; defaults to `<session_dir>/socks/podman-api.sock` | —                  |
+| `--manage-api` | Custom Unix socket path for the VM management API; defaults to `<session_dir>/socks/vmctl.sock` | —                  |
+| `--ssh-key` | File path to symlink the generated SSH private key to; the public key is linked to `<path>.pub` | — |
 | `--log-level`      | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`                          | `info`                |
 | `--log-to`         | Custom log file path on host; defaults to `<session_dir>/logs/vm.log`                               | session-local         |
-| `--report-events-to` | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock` or `tcp://host:port`) | —                  |
+| `--report-events` | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock` or `tcp://host:port`) | —                  |
 
 docker mode and chroot mode share most flags and can be configured as needed.
 

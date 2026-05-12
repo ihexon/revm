@@ -7,7 +7,7 @@ revm 内建完整的容器引擎，并通过 Unix socket 暴露给 podman-cli/do
 **启动容器引擎**
 
 ```bash
-revm docker --id my-engine
+dockerd --id my-engine
 ```
 
 启动后 Podman API socket 暴露在 `/tmp/my-engine/socks/podman-api.sock`。
@@ -54,7 +54,7 @@ podman run --rm -v /Users/me/data:/data ubuntu:latest ls /data
 在需要代理访问网络的环境下，加上 `--system-proxy` 自动读取 macOS 系统代理并注入到容器内：
 
 ```bash
-revm docker --id my-engine --system-proxy
+dockerd --id my-engine --system-proxy
 
 # 容器内 apt/curl 自动走代理
 podman run --rm ubuntu:latest apt-get update
@@ -63,7 +63,7 @@ podman run --rm ubuntu:latest apt-get update
 ## 参数列表
 
 ```bash
-revm docker [flags]
+dockerd [flags]
 ```
 
 | 参数                 | 说明                                                               | 默认值                   |
@@ -77,14 +77,12 @@ revm docker [flags]
 | `--network`        | 网络栈：`gvisor`（完整虚拟网卡，支持端口映射）或 `tsi`（透明转发）                         | `gvisor`              |
 | `--system-proxy`   | 读取 macOS 系统代理并注入容器内，自动将 127.0.0.1 重写为 `host.containers.internal` | `false`               |
 | `--container-disk` | 容器存储磁盘规格（格式：`<path>[,version=<string>]`）；只传路径即可；默认使用会话目录内的磁盘和内置 version；如果已有磁盘的 version xattr 缺失或不匹配，会直接重建 | 会话目录内默认磁盘 + 内置 version |
-| `--podman-proxy-api-file` | Podman API socket 的自定义 Unix socket 路径；默认为 `<会话目录>/socks/podman-api.sock` | —                     |
-| `--manage-api-file` | VM 管理 API socket 的自定义 Unix socket 路径；默认为 `<会话目录>/socks/vmctl.sock` | —                     |
-| `--ssh-key-dir`    | SSH 密钥对（`key` 和 `key.pub`）的符号链接目录；密钥始终在会话目录内生成                   | —                     |
-| `--export-ssh-private-key` | SSH 私钥的符号链接文件路径                                                 | —                     |
-| `--export-ssh-public-key`  | SSH 公钥的符号链接文件路径                                                 | —                     |
+| `--podman-api` | Podman API socket 的自定义 Unix socket 路径；默认为 `<会话目录>/socks/podman-api.sock` | —                     |
+| `--manage-api` | VM 管理 API socket 的自定义 Unix socket 路径；默认为 `<会话目录>/socks/vmctl.sock` | —                     |
+| `--ssh-key` | SSH 私钥的符号链接文件路径；公钥会链接到 `<path>.pub` | — |
 | `--log-level`      | 日志级别：`trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic`      | `info`                |
 | `--log-to`         | 自定义日志文件路径；默认为 `<会话目录>/logs/vm.log`                                | 会话目录内                 |
-| `--report-events-to` | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock` 或 `tcp://host:port`） | —                     |
+| `--report-events` | 接收 VM 生命周期事件的 HTTP 端点（如 `unix:///var/run/events.sock` 或 `tcp://host:port`） | —                     |
 
 docker 模式与 chroot 模式共用大部分参数，可按需灵活配置。
 

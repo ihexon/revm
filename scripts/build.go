@@ -15,6 +15,8 @@ import (
 
 const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.17"
 
+var targetBinaries = []string{"chroot", "dockerd"}
+
 // run executes a command, inheriting stdout/stderr. If env is non-nil,
 // those vars are appended to the current environment.
 func run(env []string, args ...string) {
@@ -190,7 +192,7 @@ func newBuilder(dirty bool) *builder {
 }
 
 func (b *builder) initEnv() {
-	logrus.Infof("target=revm os=%s arch=%s workspace=%s", b.goos, b.goarch, b.workspace)
+	logrus.Infof("targets=%s os=%s arch=%s workspace=%s", strings.Join(targetBinaries, ","), b.goos, b.goarch, b.workspace)
 
 	removeAll(b.outDir)
 	mkdirAll(b.binDir)
@@ -312,7 +314,7 @@ func (b *builder) buildTarget() {
 	version := runQuiet("unknown", "git", "-C", b.workspace, "describe", "--tags", "--abbrev=0")
 	commit := runQuiet("unknown", "git", "-C", b.workspace, "rev-parse", "--short", "HEAD")
 	buildDate := time.Now().UTC().Format("20060102T150405Z")
-	logrus.Infof("building revm (%s-%s-%s)", version, commit, buildDate)
+	logrus.Infof("building targets (%s-%s-%s)", version, commit, buildDate)
 
 	ldflags := fmt.Sprintf(
 		"-X linuxvm/pkg/define.Version=%s -X linuxvm/pkg/define.CommitID=%s -X linuxvm/pkg/define.BuildDate=%s",
@@ -320,15 +322,17 @@ func (b *builder) buildTarget() {
 		commit,
 		buildDate,
 	)
-	out := filepath.Join(b.binDir, "revm")
-	src := filepath.Join(b.workspace, "cmd", "revm")
 
-	if b.goos == "darwin" {
-		run([]string{"PKG_CONFIG_PATH=" + b.pkgCfgDir},
-			"go", "build", "-ldflags="+ldflags, "-o", out, src)
-	} else {
-		run([]string{"CGO_ENABLED=1"},
-			"go", "build", "-ldflags="+ldflags, "-o", out, src)
+	for _, target := range targetBinaries {
+		out := filepath.Join(b.binDir, target)
+		src := filepath.Join(b.workspace, "cmd", target)
+		if b.goos == "darwin" {
+			run([]string{"PKG_CONFIG_PATH=" + b.pkgCfgDir},
+				"go", "build", "-ldflags="+ldflags, "-o", out, src)
+		} else {
+			run([]string{"CGO_ENABLED=1"},
+				"go", "build", "-ldflags="+ldflags, "-o", out, src)
+		}
 	}
 }
 
@@ -377,32 +381,33 @@ func (b *builder) relocateLibsDarwin() {
 		run(nil, "codesign", "--force", "-s", "-", p)
 	}
 
-	// Fix revm libkrun references (must happen before codesign)
-	revm := filepath.Join(b.binDir, "revm")
-	run(nil, "install_name_tool", "-change", "libkrun.1.dylib", "@loader_path/../lib/libkrun.1.dylib", revm)
-	run(nil, "install_name_tool", "-change", "libkrunfw.5.dylib", "@loader_path/../lib/libkrunfw.5.dylib", revm)
-
-	// Sign target binary
 	ent := filepath.Join(b.workspace, "revm.entitlements")
-	run(nil, "codesign", "--entitlements", ent, "--force", "-s", "-", revm)
+	for _, target := range targetBinaries {
+		bin := filepath.Join(b.binDir, target)
+		run(nil, "install_name_tool", "-change", "libkrun.1.dylib", "@loader_path/../lib/libkrun.1.dylib", bin)
+		run(nil, "install_name_tool", "-change", "libkrunfw.5.dylib", "@loader_path/../lib/libkrunfw.5.dylib", bin)
+		run(nil, "codesign", "--entitlements", ent, "--force", "-s", "-", bin)
+	}
 }
 
 func (b *builder) relocateLibsLinux() {
 	lib := b.libDir
-	bin := filepath.Join(b.binDir, "revm")
 
 	// Copy shared libs
 	run(nil, "sh", "-c", fmt.Sprintf("cp -av %s/*.so* '%s/'", b.depLibDir("libkrun"), lib))
 	run(nil, "sh", "-c", fmt.Sprintf("cp -av %s/*.so* '%s/'", b.depLibDir("libkrunfw"), lib))
 
-	// Collect .so deps from target binary
-	b.collectSoDeps(bin)
+	for _, target := range targetBinaries {
+		b.collectSoDeps(filepath.Join(b.binDir, target))
+	}
 
 	// Copy dynamic linker
 	run(nil, "cp", "-Lv", b.linuxDynLinkerPath(), lib+"/")
 
 	// Patch rpath
-	run(nil, "patchelf", "--set-rpath", "$ORIGIN/../lib", bin)
+	for _, target := range targetBinaries {
+		run(nil, "patchelf", "--set-rpath", "$ORIGIN/../lib", filepath.Join(b.binDir, target))
+	}
 	sofiles, _ := filepath.Glob(filepath.Join(lib, "libkrun*.so.*.*"))
 	for _, sf := range sofiles {
 		run(nil, "patchelf", "--set-rpath", "$ORIGIN", sf)
@@ -432,20 +437,27 @@ func (b *builder) collectSoDeps(binary string) {
 	}
 }
 
-func (b *builder) writeLinuxLauncher() {
-	logrus.Info("writing revm.sh launcher")
-
-	ldName := filepath.Base(b.linuxDynLinkerPath())
+func (b *builder) writeLauncher(target string) {
+	logrus.Infof("writing launcher for %s", target)
 
 	script := fmt.Sprintf(`#!/bin/sh
 DIR="$(cd "$(dirname "$0")" && pwd)"
-exec "$DIR/lib/%s" --library-path "$DIR/lib" "$DIR/bin/revm" "$@"
-`, ldName)
+%s
+`, b.launcherCommand(target))
 
-	path := filepath.Join(b.outDir, "revm.sh")
+	path := filepath.Join(b.outDir, target+".sh")
 	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
-		logrus.Fatalf("write revm.sh: %v", err)
+		logrus.Fatalf("write %s: %v", filepath.Base(path), err)
 	}
+}
+
+func (b *builder) launcherCommand(target string) string {
+	if b.goos == "darwin" {
+		return fmt.Sprintf(`exec "$DIR/bin/%s" "$@"`, target)
+	}
+
+	ldName := filepath.Base(b.linuxDynLinkerPath())
+	return fmt.Sprintf(`exec "$DIR/lib/%s" --library-path "$DIR/lib" "$DIR/bin/%s" "$@"`, ldName, target)
 }
 
 func (b *builder) relocateLibs() {
@@ -454,7 +466,9 @@ func (b *builder) relocateLibs() {
 		b.relocateLibsDarwin()
 	} else {
 		b.relocateLibsLinux()
-		b.writeLinuxLauncher()
+		for _, target := range targetBinaries {
+			b.writeLauncher(target)
+		}
 	}
 }
 
@@ -467,15 +481,37 @@ func (b *builder) lint() {
 	run(env, "golangci-lint", "run")
 }
 
+func (b *builder) packageTarget(target string) {
+	stageDir := filepath.Join(b.outDir, "pkg", target)
+	removeAll(stageDir)
+	mkdirAll(filepath.Join(stageDir, "bin"))
+	mkdirAll(filepath.Join(stageDir, "helper"))
+	mkdirAll(filepath.Join(stageDir, "lib"))
+
+	run(nil, "cp", "-av", filepath.Join(b.binDir, target), filepath.Join(stageDir, "bin"))
+	run(nil, "cp", "-av", filepath.Join(b.helperDir, "guest-agent"), filepath.Join(stageDir, "helper"))
+	run(nil, "sh", "-c", fmt.Sprintf("cp -av %s/. '%s/lib/'", b.libDir, stageDir))
+	if b.goos == "darwin" {
+		b.writeLauncher(target)
+	}
+
+	run(nil, "cp", "-av", filepath.Join(b.outDir, target+".sh"), filepath.Join(stageDir, target))
+
+	tarName := fmt.Sprintf("%s-%s-%s.tar.xz", target, b.goos, b.goarch)
+	tarPath := filepath.Join(b.workspace, tarName)
+	run(nil, "bsdtar", "--xz", "-cf", tarPath, "-C", stageDir, ".")
+
+	removeAll(stageDir)
+	logrus.Infof("build complete: %s", tarPath)
+}
+
 func (b *builder) packageTar() {
 	logrus.Info("packaging")
-	tarName := fmt.Sprintf("revm-%s-%s.tar.zst", b.goos, b.goarch)
-	tarPath := filepath.Join(b.workspace, tarName)
-	run(nil, "bsdtar", "--zstd", "-cf", tarPath, "-C", b.outDir, ".")
+	for _, target := range targetBinaries {
+		b.packageTarget(target)
+	}
 
 	b.restorePlaceholders()
-
-	logrus.Infof("build complete: %s", tarPath)
 }
 
 func (b *builder) restorePlaceholders() {

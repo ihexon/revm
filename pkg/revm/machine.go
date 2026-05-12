@@ -269,8 +269,8 @@ func (v *machineBuilder) configureGuestAgent(ctx context.Context) error {
 	return nil
 }
 
-func (v *machineBuilder) configurePodman(ctx context.Context) error {
-	var envs []string
+func (v *machineBuilder) configurePodman(ctx context.Context, userEnv []string) error {
+	envs := append([]string{}, userEnv...)
 
 	if v.ProxySetting.Use {
 		envs = append(envs, "http_proxy="+v.ProxySetting.HTTPProxy)
@@ -481,7 +481,7 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 		if err := mBuilder.withMountUserHome(ctx); err != nil {
 			return nil, nil, fmt.Errorf("mount user home: %w", err)
 		}
-		if err := mBuilder.configurePodman(ctx); err != nil {
+		if err := mBuilder.configurePodman(ctx, cfg.Env); err != nil {
 			return nil, nil, fmt.Errorf("configure podman: %w", err)
 		}
 

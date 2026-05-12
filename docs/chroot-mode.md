@@ -10,49 +10,42 @@ any Linux rootfs directly from macOS.
 
 ```bash
 # Integration test with your own Ubuntu rootfs
-revm chroot --id build --rootfs ~/ubuntu-jammy -- bash -c 'apt-get install -y libssl-dev && make test'
+chroot --id build --rootfs ~/ubuntu-jammy -- bash -c 'apt-get install -y libssl-dev && make test'
 
 # Just need a quick Linux shell — use the built-in Alpine rootfs
-revm chroot --id quick -- sh -c 'uname -r'
+chroot --id quick -- sh -c 'uname -r'
 ```
 
 **Mount a host source directory for compilation**
 
 ```bash
-revm chroot --id compile \
+chroot --id compile \
   --rootfs ~/ubuntu-rootfs \
   --mount /Users/me/myproject:/workspace \
   --workdir /workspace \
   bash -c 'make && ./run_tests.sh'
 ```
 
-**Keep the VM alive and attach interactively when needed**
+**Keep the VM alive for a long-running task**
 
 ```bash
-# Terminal 1: keep the VM alive
-revm chroot --id dev-env --rootfs ~/ubuntu-rootfs sleep 86400
-
-# Terminal 2: open an interactive shell
-revm attach --pty dev-env
-
-# Terminal 3: run a one-off command
-revm attach dev-env -- df -h
+chroot --id dev-env --rootfs ~/ubuntu-rootfs sleep 86400
 ```
 
 **Attach a persistent data disk**
 
 ```bash
 # First run: auto-creates an ext4 image, mounted at /mnt/<UUID> inside the guest
-revm chroot --id disktest --raw-disk ~/data.ext4 sh -c 'mount'
+chroot --id disktest --raw-disk ~/data.ext4 sh -c 'mount'
 
 # Subsequent runs: reuse the same disk, data persists
-revm chroot --id disktest --raw-disk ~/data.ext4 sh -c 'ls /mnt'
+chroot --id disktest --raw-disk ~/data.ext4 sh -c 'ls /mnt'
 ```
 
 ## Flags
 
 ```bash
-revm chroot [flags] <command> [args...]
+chroot [flags] <command> [args...]
 ```
 
 | Flag               | Description                                                                         | Default               |
@@ -67,13 +60,11 @@ revm chroot [flags] <command> [args...]
 | `--envs`           | Pass environment variables (format: `KEY=VALUE`; repeatable)                        | —                     |
 | `--network`        | Network stack: `gvisor` (full virtual NIC) or `tsi` (transparent socket intercept)  | `gvisor`              |
 | `--system-proxy`   | Read macOS system proxy and inject as `http_proxy`/`https_proxy` into the VM        | `false`               |
-| `--manage-api-file` | Custom Unix socket path for the VM management API; defaults to `<session_dir>/socks/vmctl.sock` | — |
-| `--ssh-key-dir`    | Directory to symlink the generated SSH key pair (`key` and `key.pub`) into; keys are always created inside the session directory | — |
-| `--export-ssh-private-key` | File path to symlink the generated SSH private key to                         | —                     |
-| `--export-ssh-public-key`  | File path to symlink the generated SSH public key to                          | —                     |
+| `--manage-api` | Custom Unix socket path for the VM management API; defaults to `<session_dir>/socks/vmctl.sock` | — |
+| `--ssh-key` | File path to symlink the generated SSH private key to; the public key is linked to `<path>.pub` | — |
 | `--log-level`      | Log verbosity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`          | `info`                |
 | `--log-to`         | Custom log file path on host; defaults to `<session_dir>/logs/vm.log`               | session-local         |
-| `--report-events-to` | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock` or `tcp://host:port`) | — |
+| `--report-events` | HTTP endpoint to receive VM lifecycle events (e.g. `unix:///var/run/events.sock` or `tcp://host:port`) | — |
 
 ## See Also
 

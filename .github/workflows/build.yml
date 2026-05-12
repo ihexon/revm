@@ -37,15 +37,29 @@ jobs:
       - name: Install dependencies
         run: brew tap slp/krun && brew install golangci-lint libarchive e2fsprogs virglrenderer libepoxy molten-vk bzip2 zlib
 
-      - name: Build
+      - name: Build release archive
         run: go run scripts/build.go
+
+      - name: Verify packaged binaries
+        run: |
+          tar -tf chroot-*.tar.xz | grep -E '(^|/)(chroot)$'
+          tar -tf dockerd-*.tar.xz | grep -E '(^|/)(dockerd)$'
 
       - name: Upload artifact
         uses: 'actions/upload-artifact@v4'
         with:
-          name: revm-darwin
+          name: chroot-darwin
           path: |
-            revm-*.tar.zst
+            chroot-*.tar.xz
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Upload artifact
+        uses: 'actions/upload-artifact@v4'
+        with:
+          name: dockerd-darwin
+          path: |
+            dockerd-*.tar.xz
           if-no-files-found: error
           overwrite: true
 
@@ -55,9 +69,11 @@ jobs:
       matrix:
         include:
           - runner: ubuntu-24.04
-            artifact_name: revm-linux-x86_64
+            chroot_artifact_name: chroot-linux-x86_64
+            dockerd_artifact_name: dockerd-linux-x86_64
           - runner: ubuntu-24.04-arm
-            artifact_name: revm-linux-aarch64
+            chroot_artifact_name: chroot-linux-aarch64
+            dockerd_artifact_name: dockerd-linux-aarch64
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
@@ -76,15 +92,29 @@ jobs:
           sudo apt-get install -y wget patchelf libarchive-tools libarchive-dev libext2fs-dev libblkid-dev uuid-dev zstd
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sudo sh -s -- -b /usr/local/bin
 
-      - name: Build
+      - name: Build release archive
         run: go run scripts/build.go
 
-      - name: Upload artifact
+      - name: Verify packaged binaries
+        run: |
+          tar -tf chroot-*.tar.xz | grep -E '(^|/)(chroot)$'
+          tar -tf dockerd-*.tar.xz | grep -E '(^|/)(dockerd)$'
+
+      - name: Upload chroot artifact
         uses: 'actions/upload-artifact@v4'
         with:
-          name: ${{ matrix.artifact_name }}
+          name: ${{ matrix.chroot_artifact_name }}
           path: |
-            revm-*.tar.zst
+            chroot-*.tar.xz
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Upload dockerd artifact
+        uses: 'actions/upload-artifact@v4'
+        with:
+          name: ${{ matrix.dockerd_artifact_name }}
+          path: |
+            dockerd-*.tar.xz
           if-no-files-found: error
           overwrite: true
 
@@ -96,14 +126,16 @@ jobs:
       - name: Download all artifacts
         uses: 'actions/download-artifact@v4'
         with:
-          pattern: revm-*
+          pattern: '*'
           merge-multiple: true
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: revm-*.tar.zst
+          files: |
+            chroot-*.tar.xz
+            dockerd-*.tar.xz
           append_body: true
           draft: false
           prerelease: false

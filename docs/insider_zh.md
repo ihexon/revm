@@ -27,26 +27,23 @@
 
 | 参数               | 链接目标                                            |
 |--------------------|-------------------------------------------------|
-| `--podman-proxy-api-file` | `<会话目录>/socks/podman-api.sock`          |
-| `--manage-api-file` | `<会话目录>/socks/vmctl.sock`                    |
-| `--ssh-key-dir`    | `<会话目录>/ssh/key` 和 `<会话目录>/ssh/key.pub`     |
-| `--export-ssh-private-key` | `<会话目录>/ssh/key`                       |
-| `--export-ssh-public-key`  | `<会话目录>/ssh/key.pub`                   |
+| `--podman-api` | `<会话目录>/socks/podman-api.sock`          |
+| `--manage-api` | `<会话目录>/socks/vmctl.sock`                    |
+| `--ssh-key` | `<会话目录>/ssh/key` 和 `<会话目录>/ssh/key.pub` |
 
 ### 会话生命周期
 
 会话目录是**临时的** — VM 退出后，`/tmp/<id>/` 会在清理阶段自动删除。每次启动都从全新目录开始。
 
-**互斥**：同 ID 会话通过 flock 互斥——同一时间只有一个 VM 可以使用给定的 ID。因此 `--id` 适用于 `revm attach` 连接到正在运行的会话。
-
+**互斥**：同 ID 会话通过 flock 互斥——同一时间只有一个 VM 可以使用给定的 ID。
 **持久化数据**：如需跨会话保留数据，请使用指向会话目录外部路径的显式参数：
 
 ```bash
 # 容器镜像跨会话保留
-revm docker --id my-engine --container-disk ~/container-storage.ext4
+dockerd --id my-engine --container-disk ~/container-storage.ext4
 
 # 任意数据也可持久化
-revm chroot --id myenv --raw-disk ~/data.ext4 -- sh
+chroot --id myenv --raw-disk ~/data.ext4 -- sh
 ```
 
 **清理**：如果进程被强制杀死（例如 `kill -9`），手动移除残留会话目录：

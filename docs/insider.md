@@ -28,11 +28,9 @@ a well-known path without breaking session directory integrity:
 
 | Flag               | Symlink target                                  |
 |--------------------|-------------------------------------------------|
-| `--podman-proxy-api-file` | `<session_dir>/socks/podman-api.sock`    |
-| `--manage-api-file` | `<session_dir>/socks/vmctl.sock`                |
-| `--ssh-key-dir`    | `<session_dir>/ssh/key` and `<session_dir>/ssh/key.pub` |
-| `--export-ssh-private-key` | `<session_dir>/ssh/key`                 |
-| `--export-ssh-public-key`  | `<session_dir>/ssh/key.pub`             |
+| `--podman-api` | `<session_dir>/socks/podman-api.sock`    |
+| `--manage-api` | `<session_dir>/socks/vmctl.sock`                |
+| `--ssh-key` | `<session_dir>/ssh/key` and `<session_dir>/ssh/key.pub` |
 
 ### Session Lifecycle
 
@@ -40,16 +38,15 @@ The session directory is **ephemeral** — after the VM exits, `/tmp/<id>/` is a
 Each launch starts with a fresh directory.
 
 **Mutual exclusion**: sessions with the same `--id` are mutually exclusive via flock — only one VM can use a given
-ID at a time. This makes `--id` useful for `revm attach` to connect to a running session.
-
+ID at a time.
 **Persistent data**: to keep data across sessions, use explicit flags that point outside the session directory:
 
 ```bash
 # Container images survive across sessions
-revm docker --id my-engine --container-disk ~/container-storage.ext4
+dockerd --id my-engine --container-disk ~/container-storage.ext4
 
 # Arbitrary data persists too
-revm chroot --id myenv --raw-disk ~/data.ext4 -- sh
+chroot --id myenv --raw-disk ~/data.ext4 -- sh
 ```
 
 **Cleanup**: if the process was forcefully killed (e.g. `kill -9`), manually remove the stale session directory:

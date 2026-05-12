@@ -22,35 +22,33 @@ macOS Sonoma or later
 ## Installation
 
 ```bash
-wget https://github.com/ihexon/revm/releases/download/<TAG>/revm-Darwin-arm64.tar.zst
+wget https://github.com/ihexon/revm/releases/download/<TAG>/chroot-Darwin-arm64.tar.xz
 
-xattr -d com.apple.quarantine revm-Darwin-arm64.tar.zst
+xattr -d com.apple.quarantine chroot-Darwin-arm64.tar.xz
 
-tar -xvf revm-Darwin-arm64.tar.zst
+tar -xvf chroot-Darwin-arm64.tar.xz
 ```
+
+Use `dockerd-Darwin-arm64.tar.xz` for the container engine.
 
 ## Command Overview
 
-`cmd/revm` exposes three user-facing subcommands:
+The release archive ships independent executables for each mode:
 
-| Command        | Alias | What it does                                                                                             |
-|----------------|-------|----------------------------------------------------------------------------------------------------------|
-| `revm chroot`  | _     | Boot a Linux microVM from a custom or built-in rootfs, then run a command inside it                      |
-| `revm dockerd` | _     | Boot the built-in container VM and expose a Podman-compatible API socket on the host                     |
-| `revm attach`  | _     | Reconnect to an existing session over SSH, either as an interactive shell (`--pty`) or a one-off command |
+| Command   | What it does                                                                            |
+|-----------|-----------------------------------------------------------------------------------------|
+| `chroot`  | Boot a Linux microVM from a custom or built-in rootfs, then run a command inside it     |
+| `dockerd` | Boot the built-in container VM and expose a Podman-compatible API socket on the host    |
 
 
 ## Quick Start
 
 ```bash
 # Run a command inside a rootfs-backed VM
-revm chroot --id build --rootfs ~/ubuntu-rootfs -- bash -lc 'uname -a'
-
-# Re-enter the same VM from another terminal
-revm attach --pty build
+chroot --id build --rootfs ~/ubuntu-rootfs -- bash -lc 'uname -a'
 
 # Start the built-in container engine
-revm dockerd --id engine
+dockerd --id engine
 export CONTAINER_HOST=unix:///tmp/engine/socks/podman-api.sock
 podman run --rm alpine uname -a
 ```
@@ -63,7 +61,6 @@ podman run --rm alpine uname -a
 |-------------------------------------------|---------------------------------------------------------------------------------|
 | [chroot mode](docs/chroot-mode.md)        | Linux chroot alternative on macOS — run any rootfs with near-native performance |
 | [docker mode](docs/docker-mode.md)        | Full container engine without Docker Desktop — Podman/Docker CLI compatible     |
-| [attach](docs/attach.md)                  | Connect to a running VM instance                                                |
 | [workspace & networking](docs/insider.md) | Session directory layout, reuse/cleanup, and network backends (gvisor / tsi)    |
 | [management API](docs/management-api.md)  | VM management API via Unix socket                                               |
 
