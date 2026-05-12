@@ -175,6 +175,14 @@ func (b *builder) prepareDeps() {
 		b.extractArchive(asset, extractDir)
 	}
 
+	for _, name := range []string{"libkrun", "libkrunfw"} {
+		alias := filepath.Join(b.depsDir, name)
+		if !exists(alias) {
+			platform, arch := b.depAssetPlatform()
+			symlink(fmt.Sprintf("%s-%s-%s", name, platform, arch), alias)
+		}
+	}
+
 	if b.goos == "linux" {
 		for _, name := range []string{"libkrun", "libkrunfw"} {
 			lib64 := filepath.Join(b.depsDir, name, "lib64")
@@ -351,9 +359,9 @@ func (b *builder) packageTargets() {
 
 func (b *builder) packageTarget(target string) {
 	layout := b.layout(target)
-	tarName := fmt.Sprintf("%s-%s-%s.tar.xz", target, b.goos, b.goarch)
+	tarName := fmt.Sprintf("%s-%s-%s.tar.zst", target, b.goos, b.goarch)
 	tarPath := filepath.Join(b.workspace, tarName)
-	command(nil, "bsdtar", "--xz", "-cf", tarPath, "-C", layout.root, ".")
+	command(nil, "bsdtar", "--zstd", "-cf", tarPath, "-C", layout.root, ".")
 	logrus.Infof("build complete: %s", tarPath)
 }
 

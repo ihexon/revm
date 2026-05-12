@@ -98,7 +98,16 @@ int32_t krun_free_ctx(uint32_t ctx_id);
 int32_t krun_set_vm_config(uint32_t ctx_id, uint8_t num_vcpus, uint32_t ram_mib);
 
 /**
+ * The virtiofs tag used for the root filesystem. Can be used with krun_add_virtiofs*
+ * for more control over root filesystem parameters (e.g. read-only, DAX window size).
+ */
+#define KRUN_FS_ROOT_TAG "/dev/root"
+
+/**
  * Sets the path to be use as root for the microVM. Not available in libkrun-SEV.
+ *
+ * For more control over the root filesystem (e.g. read-only, DAX window size),
+ * use krun_add_virtiofs3() with KRUN_FS_ROOT_TAG instead.
  *
  * Arguments:
  *  "ctx_id"    - the configuration context ID.
@@ -323,9 +332,30 @@ int32_t krun_add_virtiofs2(uint32_t ctx_id,
                            const char *c_path,
                            uint64_t shm_size);
 
+/**
+ * Adds an independent virtio-fs device pointing to a host's directory with a tag. This
+ * variant allows specifying the size of the DAX window and a read-only flag.
+ *
+ * Arguments:
+ *  "ctx_id"         - the configuration context ID.
+ *  "c_tag"          - tag to identify the filesystem in the guest.
+ *  "c_path"         - full path to the directory in the host to be exposed to the guest.
+ *  "shm_size"       - size of the DAX SHM window in bytes.
+ *  "read_only"      - if true, the filesystem will be exposed as read-only to the guest.
+ *
+ * Returns:
+ *  Zero on success or a negative error number on failure.
+ */
+int32_t krun_add_virtiofs3(uint32_t ctx_id,
+                           const char *c_tag,
+                           const char *c_path,
+                           uint64_t shm_size,
+                           bool read_only);
+
 /* Send the VFKIT magic after establishing the connection,
    as required by gvproxy in vfkit mode. */
-#define NET_FLAG_VFKIT 1 << 0
+#define NET_FLAG_VFKIT (1 << 0)
+#define NET_FLAG_DHCP_CLIENT (1 << 1)
 
 /* TSI (Transparent Socket Impersonation) feature flags for vsock */
 #define KRUN_TSI_HIJACK_INET  (1 << 0)
@@ -718,6 +748,123 @@ int krun_add_input_device_fd(uint32_t ctx_id, int input_fd);
 int32_t krun_set_snd_device(uint32_t ctx_id, bool enable);
 
 /**
+ * Vhost-user device types.
+ * These correspond to virtio device type IDs for devices.
+ */
+#define KRUN_VIRTIO_DEVICE_CONSOLE 3
+#define KRUN_VIRTIO_DEVICE_RNG 4
+#define KRUN_VIRTIO_DEVICE_RTC 17
+#define KRUN_VIRTIO_DEVICE_INPUT 18
+#define KRUN_VIRTIO_DEVICE_VSOCK 19
+#define KRUN_VIRTIO_DEVICE_SND 25
+#define KRUN_VIRTIO_DEVICE_CAN 36
+
+/**
+ * Vhost-user console device default queue configuration.
+ * Console device uses 4 queues for multiport support:
+ * receiveq (idx 0), transmitq (idx 1), control receiveq (idx 2), control transmitq (idx 3).
+ */
+#define KRUN_VHOST_USER_CONSOLE_NUM_QUEUES 4
+#define KRUN_VHOST_USER_CONSOLE_QUEUE_SIZES ((uint16_t[]){128, 128, 64, 64})
+
+/**
+ * Vhost-user RNG device default queue configuration.
+ * Use these when you want explicit defaults instead of auto-detection.
+ */
+#define KRUN_VHOST_USER_RNG_NUM_QUEUES 1
+#define KRUN_VHOST_USER_RNG_QUEUE_SIZES ((uint16_t[]){256})
+
+/**
+ * Vhost-user RTC device default queue configuration.
+ * RTC device uses 2 queues: requestq (idx 0), alarmq (idx 1).
+ */
+#define KRUN_VHOST_USER_RTC_NUM_QUEUES 2
+#define KRUN_VHOST_USER_RTC_QUEUE_SIZES ((uint16_t[]){1024, 1024})
+
+/**
+ * Vhost-user input device default queue configuration.
+ * Input device uses 2 queues: eventq (idx 0), statusq (idx 1).
+ */
+#define KRUN_VHOST_USER_INPUT_NUM_QUEUES 2
+#define KRUN_VHOST_USER_INPUT_QUEUE_SIZES ((uint16_t[]){1024, 1024})
+
+/**
+ * Vhost-user sound device default queue configuration.
+ * Sound device uses 4 queues: control (idx 0), event (idx 1), TX/playback (idx 2), RX/capture (idx 3).
+ */
+#define KRUN_VHOST_USER_SND_NUM_QUEUES 4
+#define KRUN_VHOST_USER_SND_QUEUE_SIZES ((uint16_t[]){64, 64, 64, 64})
+
+/**
+ * Vhost-user vsock device default queue configuration.
+ * Vsock device uses 3 queues: RX (idx 0), TX (idx 1), event (idx 2).
+ */
+#define KRUN_VHOST_USER_VSOCK_NUM_QUEUES 3
+#define KRUN_VHOST_USER_VSOCK_QUEUE_SIZES ((uint16_t[]){128, 128, 128})
+
+/**
+ * Vhost-user CAN device default queue configuration.
+ * CAN device uses 3 queues: TX (idx 0), RX (idx 1), control (idx 2).
+ */
+#define KRUN_VHOST_USER_CAN_NUM_QUEUES 3
+#define KRUN_VHOST_USER_CAN_QUEUE_SIZES ((uint16_t[]){64, 64, 64})
+
+/**
+ * Add a vhost-user device to the VM.
+ *
+ * This function adds a vhost-user device by connecting to an external
+ * backend process (e.g., vhost-device-rng, vhost-device-snd). The backend
+ * must be running and listening on the specified socket before starting the VM.
+ *
+ * This API is designed for devices like RNG, sound, and CAN.
+ *
+ * Arguments:
+ *  "ctx_id"       - the configuration context ID.
+ *  "device_type"  - type of vhost-user device (e.g., KRUN_VHOST_USER_DEVICE_RNG).
+ *  "socket_path"  - path to the vhost-user Unix domain socket (e.g., "/tmp/vhost-rng.sock").
+ *  "name"         - device name for logging/debugging (e.g., "vhost-rng", "vhost-snd").
+ *                   NULL = auto-generate from device_type ("vhost-user-4", "vhost-user-25", etc.)
+ *  "num_queues"   - number of virtqueues.
+ *                   0 = auto-detect from backend (requires backend MQ support).
+ *                   >0 = explicit queue count.
+ *                   Or use device-specific constants like KRUN_VHOST_USER_RNG_NUM_QUEUES.
+ *  "queue_sizes"  - array of queue sizes for each queue.
+ *                   NULL = use default size (256) for all queues.
+ *                   When num_queues=0 (auto-detect): array must be 0-terminated (sentinel).
+ *                   When num_queues>0 (explicit): array must have exactly num_queues elements.
+ *                   Use device-specific constants like KRUN_VHOST_USER_RNG_QUEUE_SIZES for defaults.
+ *
+ * Examples:
+ *  // Auto-detect queue count, use default size (256)
+ *  krun_add_vhost_user_device(ctx, KRUN_VHOST_USER_DEVICE_RNG, "/tmp/rng.sock", NULL, 0, NULL);
+ *
+ *  // Auto-detect queue count, use custom size (512) for all queues
+ *  uint16_t custom_size[] = {512, 0};  // 0 = sentinel terminator
+ *  krun_add_vhost_user_device(ctx, KRUN_VHOST_USER_DEVICE_RNG, "/tmp/rng.sock", NULL, 0, custom_size);
+ *
+ *  // Explicit defaults using #define constants
+ *  krun_add_vhost_user_device(ctx, KRUN_VHOST_USER_DEVICE_RNG, "/tmp/rng.sock", "vhost-rng",
+ *                             KRUN_VHOST_USER_RNG_NUM_QUEUES,
+ *                             KRUN_VHOST_USER_RNG_QUEUE_SIZES);
+ *
+ *  // Explicit queue count with custom sizes
+ *  uint16_t sizes[] = {256, 512};
+ *  krun_add_vhost_user_device(ctx, KRUN_VHOST_USER_DEVICE_SND, "/tmp/snd.sock", "vhost-snd", 2, sizes);
+ *
+ * Returns:
+ *  Zero on success or a negative error number on failure.
+ *  -EINVAL  - Invalid parameters (device_type, socket_path, etc.)
+ *  -ENOENT  - Context doesn't exist
+ *  -ENOTSUP - vhost-user support not compiled in
+ */
+int32_t krun_add_vhost_user_device(uint32_t ctx_id,
+                                   uint32_t device_type,
+                                   const char *socket_path,
+                                   const char *name,
+                                   uint16_t num_queues,
+                                   const uint16_t *queue_sizes);
+
+/**
  * Configures a map of rlimits to be set in the guest before starting the isolated binary.
  *
  * Arguments:
@@ -889,7 +1036,7 @@ int32_t krun_add_vsock(uint32_t ctx_id, uint32_t tsi_features);
 
 /**
  * Returns the eventfd file descriptor to signal the guest to shut down orderly. This must be
- * called before starting the microVM with "krun_start_event". Only available in libkrun-efi.
+ * called before starting the microVM with "krun_start_event".
  *
  * Arguments:
  *  "ctx_id"    - the configuration context ID.
@@ -954,9 +1101,6 @@ int32_t krun_setgid(uint32_t ctx_id, gid_t gid);
  *  "ctx_id"  - the configuration context ID.
  *  "enabled" - true to enable Nested Virtualization in the microVM.
  *
- * Notes:
- *  This feature is only supported on macOS.
- *
  * Returns:
  *  Zero on success or a negative error number on failure. Success doesn't imply that
  *  Nested Virtualization is supported on the system, only that it's going to be requested
@@ -967,15 +1111,40 @@ int32_t krun_set_nested_virt(uint32_t ctx_id, bool enabled);
 /**
  * Check the system if Nested Virtualization is supported
  *
- * Notes:
- *  This feature is only supported on macOS.
- *
  * Returns:
  *  - 1 : Success and Nested Virtualization is supported
  *  - 0 : Success and Nested Virtualization is not supported
  *  - <0: Failure
  */
 int32_t krun_check_nested_virt(void);
+
+/* Feature constants for krun_has_feature() */
+#define KRUN_FEATURE_NET 0
+#define KRUN_FEATURE_BLK 1
+#define KRUN_FEATURE_GPU 2
+#define KRUN_FEATURE_SND 3
+#define KRUN_FEATURE_INPUT 4
+#define KRUN_FEATURE_TEE 6
+#define KRUN_FEATURE_AMD_SEV 7
+#define KRUN_FEATURE_INTEL_TDX 8
+#define KRUN_FEATURE_AWS_NITRO 9
+#define KRUN_FEATURE_VIRGL_RESOURCE_MAP2 10
+
+/**
+ * Checks if a specific feature was enabled at build time.
+ *
+ * Arguments:
+ *  "feature" - one of the KRUN_FEATURE_* constants.
+ *
+ * Returns:
+ *  1 if the feature is supported, 0 if not supported, or a negative error
+ *  number on failure (e.g., -EINVAL for invalid/unknown feature constant).
+ *
+ * Notes:
+ *  When linking against an older version of libkrun, this function may
+ *  return -EINVAL for feature constants that were added in newer versions.
+ */
+int32_t krun_has_feature(uint64_t feature);
 
 /**
  * Get the maximum number of vCPUs supported by the hypervisor.

@@ -42,15 +42,15 @@ jobs:
 
       - name: Verify packaged binaries
         run: |
-          tar -tf chroot-*.tar.xz | grep -E '(^|/)(chroot)$'
-          tar -tf dockerd-*.tar.xz | grep -E '(^|/)(dockerd)$'
+          tar -tf chroot-*.tar.zst | grep -E '(^|/)(chroot)$'
+          tar -tf dockerd-*.tar.zst | grep -E '(^|/)(dockerd)$'
 
       - name: Upload artifact
         uses: 'actions/upload-artifact@v4'
         with:
           name: chroot-darwin
           path: |
-            chroot-*.tar.xz
+            chroot-*.tar.zst
           if-no-files-found: error
           overwrite: true
 
@@ -59,7 +59,7 @@ jobs:
         with:
           name: dockerd-darwin
           path: |
-            dockerd-*.tar.xz
+            dockerd-*.tar.zst
           if-no-files-found: error
           overwrite: true
 
@@ -97,15 +97,15 @@ jobs:
 
       - name: Verify packaged binaries
         run: |
-          tar -tf chroot-*.tar.xz | grep -E '(^|/)(chroot)$'
-          tar -tf dockerd-*.tar.xz | grep -E '(^|/)(dockerd)$'
+          tar -tf chroot-*.tar.zst | grep -E '(^|/)(chroot)$'
+          tar -tf dockerd-*.tar.zst | grep -E '(^|/)(dockerd)$'
 
       - name: Upload chroot artifact
         uses: 'actions/upload-artifact@v4'
         with:
           name: ${{ matrix.chroot_artifact_name }}
           path: |
-            chroot-*.tar.xz
+            chroot-*.tar.zst
           if-no-files-found: error
           overwrite: true
 
@@ -114,7 +114,7 @@ jobs:
         with:
           name: ${{ matrix.dockerd_artifact_name }}
           path: |
-            dockerd-*.tar.xz
+            dockerd-*.tar.zst
           if-no-files-found: error
           overwrite: true
 
@@ -134,8 +134,8 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            chroot-*.tar.xz
-            dockerd-*.tar.xz
+            chroot-*.tar.zst
+            dockerd-*.tar.zst
           append_body: true
           draft: false
           prerelease: false
