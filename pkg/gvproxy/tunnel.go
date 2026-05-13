@@ -141,12 +141,13 @@ func copyDataTunnelToClient(wg *sync.WaitGroup, clientConn, tunnelConn net.Conn)
 	_ = closeWrite(clientConn)
 }
 
-// copyDataClientToTunnel copies client input into the tunnel.
-// EOF stays local so read-only attach flows do not get closed prematurely.
+// copyDataClientToTunnel copies client input into the tunnel and propagates
+// stdin EOF without closing the tunnel read side, so stdout/stderr can continue.
 func copyDataClientToTunnel(wg *sync.WaitGroup, clientConn, tunnelConn net.Conn) {
 	defer wg.Done()
 
 	_, _ = io.Copy(tunnelConn, clientConn)
+	_ = closeWrite(tunnelConn)
 }
 
 func closeWrite(conn net.Conn) error {

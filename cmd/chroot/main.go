@@ -32,7 +32,7 @@ func main() {
 			&cli.StringFlag{Name: define.FlagReportEvents, Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888)"},
 			&cli.StringFlag{Name: define.FlagLogLevel, Usage: "log verbosity level (trace, debug, info, warn, error, fatal, panic)", Value: "info"},
 			&cli.StringFlag{Name: define.FlagLogTo, Usage: "custom log file path on host; defaults to /tmp/<session_id>/logs/vm.log when unset"},
-			&cli.StringFlag{Name: define.FlagSessionID, Usage: "session name; used to derive the workspace directory (/tmp/<session_id>); sessions with the same name are mutually exclusive via flock", Value: revm.RandomString()},
+			&cli.StringFlag{Name: define.FlagSessionID, Usage: "required session name; used to derive the workspace directory; sessions with the same name are mutually exclusive via flock", Required: true},
 			&cli.StringFlag{Name: define.FlagManageAPIFile, Usage: "custom Unix socket path for the host-side VM management API; defaults to /tmp/<session_id>/socks/vmctl.sock"},
 			&cli.StringFlag{Name: define.FlagExportSSHKeyPrivateFile, Usage: "file path to symlink the generated SSH key to"},
 		},

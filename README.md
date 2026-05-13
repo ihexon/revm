@@ -1,101 +1,13 @@
 # revm
 
-revm runs lightweight Linux VMs with libkrun. It provides two command line tools:
+`revm` 是一个复合项目，主要作为 `chroot` 和 `dockerd` 的共享代码库与运行时基础
 
-- `chroot`: run a command inside a Linux rootfs.
-- `dockerd`: start a VM with a Podman-compatible container engine.
+- `chroot`: 用于运行隔离的 Linux 命令环境。
+- `dockerd`: 用于运行隔离的 Linux 容器环境，并兼容 Docker CLI / Podman CLI。
 
-This repository is a composite project:
+每个入口命令尽可能保持 KISS 原则。
 
-- host CLIs in `cmd/chroot` and `cmd/dockerd`;
-- a guest init/agent in `cmd/guest-agent`;
-- Go bindings and orchestration code around libkrun in `pkg/`;
-- build and packaging logic in `scripts/`;
-- embedded runtime assets in `pkg/static_resources` and `cmd/guest-agent/pkg/service`.
+## Guides
 
-## Run chroot
-
-Use the built-in Alpine rootfs:
-
-```bash
-./chroot --id quick -- sh -c 'uname -a'
-```
-
-Use your own rootfs:
-
-```bash
-./chroot --id ubuntu --rootfs ~/ubuntu-rootfs -- bash
-```
-
-Mount a host directory:
-
-```bash
-./chroot --id build \
-  --mount "$PWD:/work" \
-  --workdir /work \
-  -- make test
-```
-
-Mount it read-only:
-
-```bash
-./chroot --id inspect --mount "$PWD:/src,ro" -- ls /src
-```
-
-Attach a persistent raw disk:
-
-```bash
-./chroot --id data --raw-disk ~/.cache/revm-data.ext4 -- sh
-```
-
-## Run dockerd
-
-Start the container engine:
-
-```bash
-./dockerd --id dev
-```
-
-In another terminal, point `podman` or `docker` at the socket:
-
-```bash
-export CONTAINER_HOST=unix://$HOME/.cache/revm/dev/socks/podman-api.sock
-podman run --rm alpine uname -a
-```
-
-Docker CLI works too:
-
-```bash
-export DOCKER_HOST=unix://$HOME/.cache/revm/dev/socks/podman-api.sock
-docker run --rm hello-world
-```
-
-Publish ports as usual:
-
-```bash
-podman run --rm -p 8080:80 nginx
-curl http://127.0.0.1:8080
-```
-
-Use a persistent container storage disk:
-
-```bash
-./dockerd --id dev --container-disk ~/.cache/revm-container.ext4
-```
-
-## Common Flags
-
-- `--id NAME`: session name. Runtime files live under `~/.cache/revm/NAME`.
-- `--cpus N`: number of vCPUs.
-- `--memory MB`: VM memory in MiB.
-- `--mount /host:/guest[,ro]`: share a host directory with the VM.
-- `--raw-disk PATH[,mnt=/guest/path]`: attach or create an ext4 raw disk.
-- `--system-proxy`: pass the system HTTP proxy into the guest.
-- `--log-level LEVEL`: `trace`, `debug`, `info`, `warn`, or `error`.
-
-## Help
-
-```bash
-./chroot --help
-./dockerd --help
-```
+- [chroot mode](docs/chroot.md): 使用隔离的 Linux 环境运行命令、构建、测试和脚本。
+- [dockerd mode](docs/dockerd.md): 使用 Docker CLI 或 Podman CLI 运行隔离的容器环境。
