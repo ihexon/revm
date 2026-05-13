@@ -1,13 +1,13 @@
 # revm
 
-`revm` 是一个复合项目，主要作为 `chroot` 和 `dockerd` 的共享代码库与运行时基础
+`revm` is a composite project that serves as the shared codebase and runtime foundation for `chroot` and `dockerd`.
 
-- `chroot`: 用于运行隔离的 Linux 命令环境。
-- `dockerd`: 用于运行隔离的 Linux 容器环境，并兼容 Docker CLI / Podman CLI。
+- `chroot`: runs isolated Linux command environments.
+- `dockerd`: runs isolated Linux container environments with Docker CLI / Podman CLI compatibility.
 
-每个入口命令尽可能保持 KISS 原则。
+Each entry command keeps the design as simple as possible and follows the KISS principle.
 
 ## Guides
 
-- [chroot mode](docs/chroot.md): 使用隔离的 Linux 环境运行命令、构建、测试和脚本。
-- [dockerd mode](docs/dockerd.md): 使用 Docker CLI 或 Podman CLI 运行隔离的容器环境。
+- [chroot mode](docs/chroot.en.md): run commands, builds, tests, and scripts in an isolated Linux environment.
+- [dockerd mode](docs/dockerd.en.md): run an isolated container environment with Docker CLI or Podman CLI.

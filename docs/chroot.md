@@ -1,5 +1,7 @@
 # chroot mode
 
+[English](./chroot.en.md)
+
 `chroot` 模式用于快速运行一个隔离的 Linux 命令环境。你可以把它理解成“更适合开发工作的 chroot”：使用方式像本地命令，运行环境更干净，也更适合自动化。
 
 ## 适合谁

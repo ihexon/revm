@@ -243,21 +243,7 @@ func (v *machineBuilder) configureGuestAgent(ctx context.Context) error {
 
 	guestAgentFilePath := filepath.Join(v.RootFS, ".bin", "guest-agent")
 
-	if err := os.MkdirAll(filepath.Dir(guestAgentFilePath), 0755); err != nil {
-		return err
-	}
-
-	execPath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("failed to get executable path: %w", err)
-	}
-	helperGuestAgent := filepath.Join(filepath.Dir(execPath), "..", "helper", "guest-agent")
-	guestAgentBytes, err := os.ReadFile(helperGuestAgent)
-	if err != nil {
-		return fmt.Errorf("failed to read guest-agent from %q: %w", helperGuestAgent, err)
-	}
-
-	if err := os.WriteFile(guestAgentFilePath, guestAgentBytes, 0755); err != nil {
+	if err := static_resources.WriteEmbeddedGuestAgent(guestAgentFilePath); err != nil {
 		return fmt.Errorf("failed to write guest-agent file to %q: %w", guestAgentFilePath, err)
 	}
 

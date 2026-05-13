@@ -44,6 +44,8 @@ jobs:
         run: |
           tar -tf chroot-*.tar.zst | grep -E '(^|/)(chroot)$'
           tar -tf dockerd-*.tar.zst | grep -E '(^|/)(dockerd)$'
+          if tar -tf chroot-*.tar.zst | grep -E '(^|/)helper/guest-agent$'; then exit 1; fi
+          if tar -tf dockerd-*.tar.zst | grep -E '(^|/)helper/guest-agent$'; then exit 1; fi
 
       - name: Upload artifact
         uses: 'actions/upload-artifact@v4'
@@ -99,6 +101,8 @@ jobs:
         run: |
           tar -tf chroot-*.tar.zst | grep -E '(^|/)(chroot)$'
           tar -tf dockerd-*.tar.zst | grep -E '(^|/)(dockerd)$'
+          if tar -tf chroot-*.tar.zst | grep -E '(^|/)helper/guest-agent$'; then exit 1; fi
+          if tar -tf dockerd-*.tar.zst | grep -E '(^|/)helper/guest-agent$'; then exit 1; fi
 
       - name: Upload chroot artifact
         uses: 'actions/upload-artifact@v4'

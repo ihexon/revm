@@ -1,5 +1,7 @@
 # dockerd mode
 
+[English](./dockerd.en.md)
+
 `dockerd` 模式用于在本机启动一个轻量的 Linux 容器运行环境。你可以继续使用熟悉的 Docker CLI 或 Podman CLI，但容器运行在独立的 Linux 环境中。
 
 它适合希望保留容器开发体验，同时减少对重型桌面容器产品依赖的团队。
