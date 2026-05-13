@@ -554,6 +554,10 @@ func (p *machineBuildPlan) configureRootfsMode(ctx context.Context) error {
 }
 
 func (p *machineBuildPlan) configureContainerMode(ctx context.Context) error {
+	if p.builder.VirtualNetworkMode != define.GVISOR {
+		return fmt.Errorf("container mode only supports %s network, got %s", define.GVISOR, p.builder.VirtualNetworkMode)
+	}
+
 	if err := p.builder.withMountUserHome(ctx); err != nil {
 		return fmt.Errorf("mount user home: %w", err)
 	}

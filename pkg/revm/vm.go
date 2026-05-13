@@ -384,15 +384,8 @@ func (vm *VM) startPodmanProxy(ctx context.Context) error {
 			vm.machine.PodmanInfo.HostPodmanProxyAddr,
 			define.GuestIP,
 			uint16(port))
-	case define.TSI:
-		forwarder := &network.LocalForwarder{
-			UnixSockAddr: vm.machine.PodmanInfo.HostPodmanProxyAddr,
-			Target:       vm.machine.PodmanInfo.GuestPodmanAPIListenAddr,
-			Timeout:      time.Second,
-		}
-		return forwarder.Run(ctx)
 	default:
-		return fmt.Errorf("unsupported virtual network mode: %s", vm.machine.VirtualNetworkMode)
+		return fmt.Errorf("podman proxy requires %s network, got %s", define.GVISOR, vm.machine.VirtualNetworkMode)
 	}
 }
 
