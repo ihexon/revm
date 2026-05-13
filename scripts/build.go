@@ -85,13 +85,16 @@ func (b *builder) run() error {
 	if err := b.prepareWorkspace(); err != nil {
 		return err
 	}
+	if err := b.runLint(); err != nil {
+		return err
+	}
+	if err := b.removePlaceholders(); err != nil {
+		return err
+	}
 	if err := b.prepareGuestAssets(); err != nil {
 		return err
 	}
 	if err := b.prepareDeps(); err != nil {
-		return err
-	}
-	if err := b.runLint(); err != nil {
 		return err
 	}
 	if err := b.buildBundles(); err != nil {
@@ -207,11 +210,7 @@ func (b *builder) prepareDeps() error {
 	for _, name := range []string{"libkrun", "libkrunfw"} {
 		alias := filepath.Join(b.depsDir, name)
 		if !exists(alias) {
-			platform, arch, err := b.depAssetPlatform()
-			if err != nil {
-				return err
-			}
-			if err := symlink(fmt.Sprintf("%s-%s-%s", name, platform, arch), alias); err != nil {
+			if err := symlink(fmt.Sprintf("%s-%s-%s", name, assetOS, assetArch), alias); err != nil {
 				return err
 			}
 		}
@@ -430,18 +429,19 @@ func (b *builder) prepareRuntimeLibsLinux(target string) error {
 }
 
 func (b *builder) collectSharedLibDeps(binary, libDir string) error {
-	out, err := exec.Command("sh", "-c", fmt.Sprintf("LD_LIBRARY_PATH='%s' ldd '%s' | grep -o '/.* '", libDir, binary)).Output()
+	cmd := exec.Command("ldd", binary)
+	cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+libDir)
+	out, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("collect shared library dependencies for %s: %w", binary, err)
 	}
 
-	for _, line := range strings.Split(string(out), "\n") {
-		path := strings.TrimSpace(line)
-		if path == "" {
-			continue
-		}
+	for _, path := range parseLDDLibraryPaths(string(out)) {
 		base := filepath.Base(path)
 		if strings.HasPrefix(base, "ld-linux") {
+			continue
+		}
+		if !filepath.IsAbs(path) {
 			continue
 		}
 		dst := filepath.Join(libDir, base)
@@ -453,6 +453,33 @@ func (b *builder) collectSharedLibDeps(binary, libDir string) error {
 		}
 	}
 	return nil
+}
+
+func parseLDDLibraryPaths(output string) []string {
+	var paths []string
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.Contains(line, "not found") {
+			continue
+		}
+
+		if beforeAddr, _, ok := strings.Cut(line, " ("); ok {
+			line = strings.TrimSpace(beforeAddr)
+		}
+
+		if _, afterArrow, ok := strings.Cut(line, "=>"); ok {
+			line = strings.TrimSpace(afterArrow)
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		if path := fields[0]; filepath.IsAbs(path) {
+			paths = append(paths, path)
+		}
+	}
+	return paths
 }
 
 func (b *builder) runLint() error {
@@ -520,14 +547,27 @@ func (b *builder) launcherPath(target string) string {
 	return filepath.Join(b.targetRoot(target), target)
 }
 
-func (b *builder) restorePlaceholders() error {
-	var restoreErr error
-	for _, path := range []string{
+func (b *builder) placeholderPaths() []string {
+	return []string{
 		filepath.Join(b.staticDir, "rootfs", "rootfs.tar.zst"),
 		b.agentPath,
 		filepath.Join(b.serviceDir, "busybox.static"),
 		filepath.Join(b.serviceDir, "dropbearmulti"),
-	} {
+	}
+}
+
+func (b *builder) removePlaceholders() error {
+	for _, path := range b.placeholderPaths() {
+		if err := removeExistingFile(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *builder) restorePlaceholders() error {
+	var restoreErr error
+	for _, path := range b.placeholderPaths() {
 		data := []byte(nil)
 		if path == b.agentPath {
 			data = []byte("placeholder\n")
@@ -668,27 +708,24 @@ func (b *builder) extractArchive(name, dest string) error {
 }
 
 func command(env []string, args ...string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("empty command")
-	}
-	logrus.Debugf("exec: %s", strings.Join(args, " "))
-	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if len(env) > 0 {
-		cmd.Env = append(os.Environ(), env...)
-	}
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("command failed: %s\n  %w", strings.Join(args, " "), err)
-	}
-	return nil
+	return runCommand("", env, args...)
 }
 
 func commandIn(dir string, env []string, args ...string) error {
+	return runCommand(dir, env, args...)
+}
+
+func runCommand(dir string, env []string, args ...string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("empty command")
 	}
-	logrus.Debugf("exec (in %s): %s", dir, strings.Join(args, " "))
+	cmdline := strings.Join(args, " ")
+	if dir == "" {
+		logrus.Debugf("exec: %s", cmdline)
+	} else {
+		logrus.Debugf("exec (in %s): %s", dir, cmdline)
+	}
+
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
@@ -697,7 +734,10 @@ func commandIn(dir string, env []string, args ...string) error {
 		cmd.Env = append(os.Environ(), env...)
 	}
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("command failed (in %s): %s\n  %w", dir, strings.Join(args, " "), err)
+		if dir == "" {
+			return fmt.Errorf("command failed: %s\n  %w", cmdline, err)
+		}
+		return fmt.Errorf("command failed (in %s): %s\n  %w", dir, cmdline, err)
 	}
 	return nil
 }
@@ -770,6 +810,14 @@ func removeAll(path string) error {
 		return fmt.Errorf("rm -rf %s: %w", path, err)
 	}
 	return nil
+}
+
+func removeExistingFile(path string) error {
+	if err := os.Remove(path); err == nil || os.IsNotExist(err) {
+		return nil
+	} else {
+		return fmt.Errorf("remove existing file %s: %w", path, err)
+	}
 }
 
 func copyWithCP(src, dst string, match func(name string) bool) error {
