@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/revm"
 	"os"
@@ -16,14 +17,15 @@ func main() {
 	app := &cli.Command{
 		Name:                      "chroot",
 		Usage:                     "boot a Linux VM with a custom rootfs",
-		UsageText:                 "chroot [flags] <command> [args...]",
-		Description:               "boot a Linux microVM using libkrun and execute commands inside it, similar to chroot but with full kernel isolation",
+		UsageText:                 "chroot [flags] <command> [args...]\n   chroot --attach --id <session-id> [--pty] [-- <command> [args...]]",
+		Description:               "boot a Linux microVM using libkrun and execute commands inside it, similar to chroot but with full kernel isolation; use --attach to connect to an existing session",
 		DisableSliceFlagSeparator: true,
-		Commands:                  []*cli.Command{attachCommand},
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: define.FlagRootfs, Usage: "path to a rootfs directory to use as the VM root filesystem; must contain /bin/sh; takes priority over the built-in rootfs"},
 			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to host CPU count if unset or less than 1"},
 			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to host available memory if unset or less than 512"},
+			&cli.BoolFlag{Name: define.FlagAttachMode, Usage: "attach to an existing VM session instead of booting a new VM; requires --id"},
+			&cli.BoolFlag{Name: define.FlagPTY, Usage: "allocate a pseudo-terminal when attaching and launch an interactive shell"},
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagRawDisk, Usage: "attach an ext4 raw disk image to the VM (format: <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>]); auto-created if the file does not exist; new disks default to a random UUID and mount at /mnt/<UUID>; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagMount, Usage: "share a host directory into the guest via VirtIO-FS (format: /host/path:/guest/path[,ro]); can be specified multiple times"},
@@ -40,20 +42,29 @@ func main() {
 		Action: func(_ context.Context, command *cli.Command) error {
 			ctx := context.Background()
 
+			cfg := revm.DefaultConfig().
+				WithSessionID(command.String(define.FlagSessionID)).
+				WithLogging(command.String(define.FlagLogLevel), command.String(define.FlagLogTo)).
+				WithPTY(command.Bool(define.FlagPTY))
+
+			if command.Bool(define.FlagAttachMode) {
+				cfg.WithAttach(command.Args().Slice()...)
+			} else {
+				cfg.WithMode(revm.ModeRootfs).
+					WithCommandLine(command.Args().Slice()...)
+			}
+
 			rawDiskSpecs, err := revm.ParseRawDiskSpecs(command.StringSlice(define.FlagRawDisk))
 			if err != nil {
 				return err
 			}
 
-			cfg := revm.DefaultConfig(command.String(define.FlagSessionID)).
-				WithLogging(command.String(define.FlagLogLevel), command.String(define.FlagLogTo)).
-				WithMode(revm.ModeRootfs).
+			cfg.
 				WithCPUs(int(command.Int8(define.FlagCPUS))).
 				WithMemory(command.Uint64(define.FlagMemoryInMB)).
 				WithNetwork(command.String(define.FlagVNetworkType)).
 				WithProxy(command.Bool(define.FlagUsingSystemProxy)).
 				WithRootfs(command.String(define.FlagRootfs)).
-				WithCommand(command.Args().First(), command.Args().Tail()...).
 				WithWorkDir(command.String(define.FlagWorkDir)).
 				WithEnv(command.StringSlice(define.FlagEnvs)...).
 				WithManageAPIFile(command.String(define.FlagManageAPIFile)).
@@ -65,13 +76,24 @@ func main() {
 				cfg.WithEventReporter(u)
 			}
 
-			vm, err := revm.Build(ctx, cfg)
-			if err != nil {
-				return err
+			switch cfg.RunMode {
+			case revm.ModeAttach:
+				vm, err := revm.New(cfg)
+				if err != nil {
+					return err
+				}
+				defer vm.Close()
+				return vm.Attach(ctx)
+			case revm.ModeRootfs, revm.ModeContainer:
+				vm, err := revm.Build(ctx, cfg)
+				if err != nil {
+					return err
+				}
+				defer vm.Close()
+				return vm.Run(ctx)
+			default:
+				return fmt.Errorf("unsupported run mode %q", cfg.RunMode)
 			}
-			defer vm.Close()
-
-			return vm.Run(ctx)
 		},
 	}
 

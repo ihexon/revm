@@ -22,11 +22,13 @@ const (
 	ModeRootfs RunMode = "rootfs"
 	// ModeContainer boots the VM with the built-in container runtime (Podman).
 	ModeContainer RunMode = "docker"
+	// ModeAttach connects to an existing VM session without building a VM.
+	ModeAttach RunMode = "attach"
 )
 
 func (m RunMode) IsValid() bool {
 	switch m {
-	case ModeRootfs, ModeContainer:
+	case ModeRootfs, ModeContainer, ModeAttach:
 		return true
 	default:
 		return false
@@ -40,10 +42,12 @@ type Config struct {
 	MemoryMB  uint64  `json:"memoryMB,omitempty"`  // 0 → host total RAM
 	Rootfs    string  `json:"rootfs,omitempty"`    // empty → built-in Alpine
 
-	// Command specifies the program to run inside the VM (rootfs mode only).
+	// Command specifies the program to run inside the VM.
+	// It is required by rootfs mode and optional in attach mode.
 	Command []string `json:"command,omitempty"`
 	WorkDir string   `json:"workdir,omitempty"`
 	Env     []string `json:"env,omitempty"`
+	PTY     bool     `json:"pty,omitempty"`
 
 	Network              string             `json:"network,omitempty"` // "gvisor" | "tsi"
 	Mounts               []string           `json:"mounts,omitempty"`  // "/host:/guest[,ro]"
@@ -60,17 +64,12 @@ type Config struct {
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.
 // Zero-value resource fields (CPUs, MemoryMB) are resolved at VM creation time.
-func DefaultConfig(sessionID string) *Config {
-	if sessionID == "" {
-		sessionID = RandomString()
-	}
-
+// Session identity must be supplied explicitly with WithSessionID.
+func DefaultConfig() *Config {
 	return &Config{
-		Network:   "gvisor",
-		LogLevel:  "info",
-		LogTo:     filepath.Join(getSessionDir(sessionID), "logs", "revm.log"),
-		WorkDir:   "/",
-		SessionID: sessionID,
+		Network:  "gvisor",
+		LogLevel: "info",
+		WorkDir:  "/",
 	}
 }
 
@@ -82,6 +81,17 @@ func (c *Config) WithMode(m RunMode) *Config {
 	}
 	c.RunMode = m
 	return c
+}
+
+func (c *Config) WithSessionID(sessionID string) *Config {
+	c.SessionID = sessionID
+	return c
+}
+
+func (c *Config) WithAttach(cmdline ...string) *Config {
+	c.RunMode = ModeAttach
+	c.Command = nil
+	return c.WithCommandLine(cmdline...)
 }
 
 func (c *Config) WithCPUs(n int) *Config {
@@ -196,7 +206,19 @@ func (c *Config) WithCommand(bin string, args ...string) *Config {
 	if bin == "" {
 		return c
 	}
-	c.Command = append([]string{bin}, args...)
+	return c.WithCommandLine(append([]string{bin}, args...)...)
+}
+
+func (c *Config) WithCommandLine(cmdline ...string) *Config {
+	if len(cmdline) == 0 || cmdline[0] == "" {
+		return c
+	}
+	c.Command = append([]string(nil), cmdline...)
+	return c
+}
+
+func (c *Config) WithPTY(enable bool) *Config {
+	c.PTY = enable
 	return c
 }
 
@@ -260,18 +282,6 @@ func (c *Config) WriteCfg(path string) error {
 
 // NormalizeConfig returns a copy of cfg with defaults resolved.
 func NormalizeConfig(cfg Config) (Config, error) {
-	if cfg.CPUs <= 0 {
-		cfg.CPUs = runtime.NumCPU()
-	}
-
-	if cfg.MemoryMB == 0 {
-		m, err := mem.VirtualMemory()
-		if err != nil {
-			return Config{}, fmt.Errorf("detect host memory: %w", err)
-		}
-		cfg.MemoryMB = m.Total / 1024 / 1024
-	}
-
 	if cfg.Network == "" {
 		cfg.Network = "gvisor"
 	}
@@ -282,6 +292,20 @@ func NormalizeConfig(cfg Config) (Config, error) {
 
 	if cfg.WorkDir == "" {
 		cfg.WorkDir = "/"
+	}
+
+	if cfg.RunMode != ModeAttach {
+		if cfg.CPUs <= 0 {
+			cfg.CPUs = runtime.NumCPU()
+		}
+
+		if cfg.MemoryMB == 0 {
+			m, err := mem.VirtualMemory()
+			if err != nil {
+				return Config{}, fmt.Errorf("detect host memory: %w", err)
+			}
+			cfg.MemoryMB = m.Total / 1024 / 1024
+		}
 	}
 
 	if err := validateConfig(cfg); err != nil {
@@ -298,6 +322,10 @@ func validateConfig(cfg Config) error {
 
 	if !cfg.RunMode.IsValid() {
 		return fmt.Errorf("invalid run mode %q", cfg.RunMode)
+	}
+
+	if cfg.RunMode == ModeAttach {
+		return nil
 	}
 
 	if cfg.RunMode == ModeRootfs {

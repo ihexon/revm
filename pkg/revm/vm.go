@@ -31,7 +31,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// VM represents a fully prepared virtual machine.
+// VM represents a virtual machine session.
 // Close must always be called to release resources.
 type VM struct {
 	cfg *Config
@@ -95,9 +95,9 @@ func buildTimeInfo() string {
 	return fmt.Sprintf("%s-%s-%s", version, commit, buildDate)
 }
 
-// Build resolves configuration defaults and acquires the heavyweight resources
-// needed to run the VM: workspace lock, SSH keys, rootfs, disks, and provider.
-func Build(ctx context.Context, cfg *Config) (*VM, error) {
+// New resolves configuration defaults and prepares a lightweight VM session
+// handle. It does not acquire machine resources or create a VM provider.
+func New(cfg *Config) (*VM, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
 	}
@@ -107,9 +107,18 @@ func Build(ctx context.Context, cfg *Config) (*VM, error) {
 		return nil, fmt.Errorf("resolve defaults: %w", err)
 	}
 
-	logFile, err := setupLogging(normalizedCfg)
-	if err != nil {
-		return nil, fmt.Errorf("setup logging: %w", err)
+	setupLogrus(normalizedCfg.LogLevel)
+
+	var logFile *os.File
+	if normalizedCfg.RunMode != ModeAttach {
+		logFile, err = setupLogFile(normalizedCfg)
+		if err != nil {
+			return nil, fmt.Errorf("setup logging: %w", err)
+		}
+
+		logrus.SetOutput(io.MultiWriter(os.Stderr, logFile))
+		logrus.Infof("revm build info: %s", buildTimeInfo())
+		logrus.Infof("start virtualMachine, full cmdline: %q", os.Args)
 	}
 
 	vm := &VM{
@@ -122,6 +131,21 @@ func Build(ctx context.Context, cfg *Config) (*VM, error) {
 		vm.eventDispatcher.addReporter(reporter)
 	}
 
+	return vm, nil
+}
+
+// Build resolves configuration defaults and acquires the heavyweight resources
+// needed to run the VM: workspace lock, SSH keys, rootfs, disks, and provider.
+func Build(ctx context.Context, cfg *Config) (*VM, error) {
+	vm, err := New(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if vm.cfg.RunMode == ModeAttach {
+		_ = vm.Close()
+		return nil, fmt.Errorf("attach mode does not build a VM; use VM.Attach")
+	}
+
 	if err := vm.build(ctx); err != nil {
 		_ = vm.Close()
 		return nil, err
@@ -130,8 +154,7 @@ func Build(ctx context.Context, cfg *Config) (*VM, error) {
 	return vm, nil
 }
 
-func setupLogging(cfg Config) (*os.File, error) {
-	level := cfg.LogLevel
+func setupLogrus(level string) {
 	if level == "" {
 		level = logrus.InfoLevel.String()
 	}
@@ -148,7 +171,10 @@ func setupLogging(cfg Config) (*os.File, error) {
 		TimestampFormat: "2006-01-02 15:04:05.000",
 		ForceColors:     true,
 	})
+	logrus.SetOutput(os.Stderr)
+}
 
+func setupLogFile(cfg Config) (*os.File, error) {
 	logFilePath := cfg.LogTo
 	if logFilePath == "" {
 		logFilePath = filepath.Join(getSessionDir(cfg.SessionID), "logs", "revm.log")
@@ -168,10 +194,6 @@ func setupLogging(cfg Config) (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open log file: %w", err)
 	}
-
-	logrus.SetOutput(io.MultiWriter(os.Stderr, f))
-	logrus.Infof("revm build info: %s", buildTimeInfo())
-	logrus.Infof("start virtualMachine, full cmdline: %q", os.Args)
 	return f, nil
 }
 

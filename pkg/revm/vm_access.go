@@ -17,26 +17,38 @@ import (
 	"al.essio.dev/pkg/shellescape"
 )
 
-// AttachedVM represents a running VM session that can be attached over SSH.
-type AttachedVM struct {
+type attachedVM struct {
 	sshTarget sshsvc.Target
 }
 
-// Attach resolves a running VM session by name and returns an attach handle.
-func Attach(ctx context.Context, sessionName string) (*AttachedVM, error) {
-	if sessionName == "" {
-		return nil, fmt.Errorf("session name must not be empty")
-	}
-	return AttachWorkspaceDir(ctx, getSessionDir(sessionName))
-}
-
-func AttachWorkspaceDir(ctx context.Context, workspaceDirPath string) (*AttachedVM, error) {
+func attachWorkspaceDir(ctx context.Context, workspaceDirPath string) (*attachedVM, error) {
 	attachSpec, err := fetchAttachSpec(ctx, workspaceDirPath)
 	if err != nil {
 		return nil, err
 	}
 
-	return &AttachedVM{sshTarget: sshTargetFromAttachSpec(attachSpec)}, nil
+	return &attachedVM{sshTarget: sshTargetFromAttachSpec(attachSpec)}, nil
+}
+
+// Attach connects to the existing VM session represented by vm.
+// It does not build or start a virtual machine.
+func (vm *VM) Attach(ctx context.Context) error {
+	if vm == nil || vm.cfg == nil {
+		return fmt.Errorf("vm must not be nil")
+	}
+	if vm.sessionDir == "" {
+		return fmt.Errorf("session directory must not be empty")
+	}
+
+	attached, err := attachWorkspaceDir(ctx, vm.sessionDir)
+	if err != nil {
+		return err
+	}
+
+	if vm.cfg.PTY {
+		return attached.shell(ctx)
+	}
+	return attached.run(ctx, vm.cfg.Command...)
 }
 
 func fetchAttachSpec(ctx context.Context, workspaceDirPath string) (protocol.AttachSpec, error) {
@@ -75,7 +87,7 @@ func sshTargetFromAttachSpec(spec protocol.AttachSpec) sshsvc.Target {
 
 // Run executes a command in the attached VM session over SSH.
 // If cmdline is empty, it runs /bin/sh.
-func (a *AttachedVM) Run(ctx context.Context, cmdline ...string) error {
+func (a *attachedVM) run(ctx context.Context, cmdline ...string) error {
 	if len(cmdline) == 0 {
 		cmdline = []string{filepath.Join("/", "bin", "sh")}
 	}
@@ -90,7 +102,7 @@ func (a *AttachedVM) Run(ctx context.Context, cmdline ...string) error {
 }
 
 // Shell starts an interactive shell in the attached VM session over SSH.
-func (a *AttachedVM) Shell(ctx context.Context) error {
+func (a *attachedVM) shell(ctx context.Context) error {
 	client, err := sshsvc.MakeSSHClient(ctx, a.sshTarget)
 	if err != nil {
 		return fmt.Errorf("ssh connect: %w", err)
