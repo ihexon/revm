@@ -7,12 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	runtimemachine "linuxvm/internal/machine"
 	"linuxvm/pkg/backend"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/network"
-	"linuxvm/pkg/runtimecfg"
 	"linuxvm/pkg/service/ignition"
 	"linuxvm/pkg/service/management"
 	"net"
@@ -36,19 +36,17 @@ import (
 type VM struct {
 	cfg *Config
 
-	machine          *define.Machine
-	provider         backend.Backend
+	machine          *runtimemachine.Machine
 	sessionDir       string
 	releaseResources func()
 	eventDispatcher  eventDispatcher
-	serviceSpecs     runtimecfg.ServiceSpecs
 	logFile          *os.File
 
 	seq atomic.Uint64
 }
 
 // newProvider creates a libkrun Provider for the current platform.
-func newProvider(mc *define.Machine) (backend.Backend, error) {
+func newProvider(mc *define.MachineSpec) (backend.Backend, error) {
 	switch {
 	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
 	case runtime.GOOS == "linux" && (runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64"):
@@ -195,10 +193,14 @@ func (vm *VM) build(ctx context.Context) error {
 		return fmt.Errorf("create vm provider: %w", err)
 	}
 
-	vm.machine = mc
-	vm.provider = vmp
+	machine, err := runtimemachine.New(mc, vmp)
+	if err != nil {
+		releaseResources()
+		return fmt.Errorf("create runtime machine: %w", err)
+	}
+
+	vm.machine = machine
 	vm.releaseResources = releaseResources
-	vm.serviceSpecs = runtimecfg.NewServiceSpecs(mc)
 	return nil
 }
 
@@ -269,7 +271,7 @@ func (vm *VM) Run(ctx context.Context) error {
 }
 
 func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, cancelRun context.CancelCauseFunc, networkReady <-chan struct{}) error {
-	switch vm.machine.RunMode {
+	switch vm.machine.RunMode() {
 	case define.RootFsMode.String():
 		return nil
 	case define.ContainerMode.String():
@@ -291,7 +293,7 @@ func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, cancelRu
 
 		return nil
 	default:
-		return fmt.Errorf("unsupported run mode: %s", vm.machine.RunMode)
+		return fmt.Errorf("unsupported run mode: %s", vm.machine.RunMode())
 	}
 }
 
@@ -362,15 +364,16 @@ func runError(ctx context.Context, err error) error {
 }
 
 func (vm *VM) startPodmanProxy(ctx context.Context) error {
-	if vm.machine.RunMode != define.ContainerMode.String() {
+	if vm.machine.RunMode() != define.ContainerMode.String() {
 		return nil
 	}
 
-	switch vm.machine.VirtualNetworkMode {
+	switch vm.machine.VirtualNetworkMode() {
 	case define.GVISOR:
-		_, portStr, err := net.SplitHostPort(vm.machine.PodmanInfo.GuestPodmanAPIListenAddr)
+		guestAPIAddr := vm.machine.PodmanGuestAPIListenAddr()
+		_, portStr, err := net.SplitHostPort(guestAPIAddr)
 		if err != nil {
-			return fmt.Errorf("invalid guest podman address %q: %w", vm.machine.PodmanInfo.GuestPodmanAPIListenAddr, err)
+			return fmt.Errorf("invalid guest podman address %q: %w", guestAPIAddr, err)
 		}
 
 		port, err := strconv.ParseUint(portStr, 10, 16)
@@ -378,37 +381,37 @@ func (vm *VM) startPodmanProxy(ctx context.Context) error {
 			return fmt.Errorf("invalid port in guest podman address %q: %w", portStr, err)
 		}
 
-		logrus.Infof("podman proxy listening in %s, forward to %s", vm.machine.PodmanInfo.HostPodmanProxyAddr, vm.machine.PodmanInfo.GuestPodmanAPIListenAddr)
+		logrus.Infof("podman proxy listening in %s, forward to %s", vm.machine.PodmanHostProxyAddr(), guestAPIAddr)
 		return gvproxy.TunnelHostUnixToGuest(ctx,
-			vm.machine.GVPCtlAddr,
-			vm.machine.PodmanInfo.HostPodmanProxyAddr,
+			vm.machine.GVPCtlAddr(),
+			vm.machine.PodmanHostProxyAddr(),
 			define.GuestIP,
 			uint16(port))
 	default:
-		return fmt.Errorf("podman proxy requires %s network, got %s", define.GVISOR, vm.machine.VirtualNetworkMode)
+		return fmt.Errorf("podman proxy requires %s network, got %s", define.GVISOR, vm.machine.VirtualNetworkMode())
 	}
 }
 
 func (vm *VM) startHostNetworkStack(ctx context.Context, onReady func()) error {
-	if vm.machine.VirtualNetworkMode == define.TSI {
+	if vm.machine.VirtualNetworkMode() == define.TSI {
 		onReady()
 		return nil
 	}
 
 	logrus.Info("starting gvisor-tap-vsock network stack")
-	return gvproxy.Run(ctx, vm.serviceSpecs.GVProxy, onReady)
+	return gvproxy.Run(ctx, vm.machine.GVProxySpec(), onReady)
 }
 
 func (vm *VM) startIgnitionService(ctx context.Context) error {
-	return ignition.NewServer(vm.machine.IgnitionServerCfg.ListenSockAddr, vm.serviceSpecs.Guest).Start(ctx)
+	server, err := ignition.NewServer(vm.machine)
+	if err != nil {
+		return fmt.Errorf("create ignition server: %w", err)
+	}
+	return server.Start(ctx)
 }
 
 func (vm *VM) startMachineManagementAPI(ctx context.Context) error {
-	server, err := management.NewServer(
-		vm.serviceSpecs.Management,
-		vm.serviceSpecs.SSH,
-		vm.provider,
-	)
+	server, err := management.NewServer(vm.machine)
 	if err != nil {
 		return fmt.Errorf("create management server: %w", err)
 	}
@@ -416,11 +419,11 @@ func (vm *VM) startMachineManagementAPI(ctx context.Context) error {
 }
 
 func (vm *VM) startVirtualMachine(ctx context.Context) error {
-	return vm.provider.Start(ctx)
+	return vm.machine.Start(ctx)
 }
 
 func (vm *VM) stopVirtualMachine() error {
-	return vm.provider.Stop()
+	return vm.machine.Stop()
 }
 
 func (vm *VM) reportPodmanReady(ctx context.Context) error {
@@ -428,14 +431,14 @@ func (vm *VM) reportPodmanReady(ctx context.Context) error {
 		return err
 	}
 
-	msg := fmt.Sprintf("podman API proxy ready on %s", vm.machine.PodmanInfo.HostPodmanProxyAddr)
+	msg := fmt.Sprintf("podman API proxy ready on %s", vm.machine.PodmanHostProxyAddr())
 	logrus.Info(msg)
 	vm.emit(EventPodmanReady, msg)
 	return nil
 }
 
 func (vm *VM) waitPodmanReady(ctx context.Context) error {
-	addr, err := network.ParseUnixAddr(vm.machine.PodmanInfo.HostPodmanProxyAddr)
+	addr, err := network.ParseUnixAddr(vm.machine.PodmanHostProxyAddr())
 	if err != nil {
 		return fmt.Errorf("parse podman proxy address: %w", err)
 	}

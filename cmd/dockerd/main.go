@@ -19,6 +19,7 @@ func main() {
 		UsageText:                 "dockerd [flags]",
 		Description:               "boot a Linux microVM using libkrun with the built-in rootfs and podman container runtime; exposes a Podman-compatible API socket on the host",
 		DisableSliceFlagSeparator: true,
+		Commands:                  []*cli.Command{attachCommand},
 		Flags: []cli.Flag{
 			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to host CPU count if unset or less than 1"},
 			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to host available memory if unset or less than 512"},

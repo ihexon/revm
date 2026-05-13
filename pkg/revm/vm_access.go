@@ -5,17 +5,105 @@ package revm
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"linuxvm/pkg/network"
+	"linuxvm/pkg/protocol"
 	sshsvc "linuxvm/pkg/service/ssh"
+	"net/http"
+	"path/filepath"
 
 	"al.essio.dev/pkg/shellescape"
 )
 
+// AttachedVM represents a running VM session that can be attached over SSH.
+type AttachedVM struct {
+	sshTarget sshsvc.Target
+}
+
+// Attach resolves a running VM session by name and returns an attach handle.
+func Attach(ctx context.Context, sessionName string) (*AttachedVM, error) {
+	if sessionName == "" {
+		return nil, fmt.Errorf("session name must not be empty")
+	}
+	return AttachWorkspaceDir(ctx, getSessionDir(sessionName))
+}
+
+func AttachWorkspaceDir(ctx context.Context, workspaceDirPath string) (*AttachedVM, error) {
+	attachSpec, err := fetchAttachSpec(ctx, workspaceDirPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return &AttachedVM{sshTarget: sshTargetFromAttachSpec(attachSpec)}, nil
+}
+
+func fetchAttachSpec(ctx context.Context, workspaceDirPath string) (protocol.AttachSpec, error) {
+	vmctlAddr := newMachinePathManager(workspaceDirPath).GetVMCtlSocketFile()
+	client := network.NewUnixClient(vmctlAddr)
+	defer client.Close()
+
+	body, status, err := client.Get("/v2/attach").DoAndRead(ctx)
+	if err != nil {
+		return protocol.AttachSpec{}, fmt.Errorf("fetch attach spec: %w", err)
+	}
+	if status != http.StatusOK {
+		return protocol.AttachSpec{}, fmt.Errorf("management API returned status %d", status)
+	}
+
+	var spec protocol.AttachSpec
+	if err := json.Unmarshal(body, &spec); err != nil {
+		return protocol.AttachSpec{}, fmt.Errorf("decode attach spec: %w", err)
+	}
+	if spec.SchemaVersion != protocol.AttachSpecVersion {
+		return protocol.AttachSpec{}, fmt.Errorf("unsupported attach spec version: %d", spec.SchemaVersion)
+	}
+	return spec, nil
+}
+
+func sshTargetFromAttachSpec(spec protocol.AttachSpec) sshsvc.Target {
+	return sshsvc.Target{
+		User:                     spec.User,
+		PrivateKeyFile:           spec.PrivateKeyFile,
+		UseGVProxyTunnel:         spec.UseGVProxyTunnel,
+		GVPCtlAddr:               spec.GVPCtlAddr,
+		GuestSSHServerListenAddr: spec.GuestSSHServerListenAddr,
+		GuestTunnelHost:          spec.GuestTunnelHost,
+	}
+}
+
+// Run executes a command in the attached VM session over SSH.
+// If cmdline is empty, it runs /bin/sh.
+func (a *AttachedVM) Run(ctx context.Context, cmdline ...string) error {
+	if len(cmdline) == 0 {
+		cmdline = []string{filepath.Join("/", "bin", "sh")}
+	}
+
+	client, err := sshsvc.MakeSSHClient(ctx, a.sshTarget)
+	if err != nil {
+		return fmt.Errorf("ssh connect: %w", err)
+	}
+	defer client.Close()
+
+	return client.Run(ctx, shellescape.QuoteCommand(cmdline))
+}
+
+// Shell starts an interactive shell in the attached VM session over SSH.
+func (a *AttachedVM) Shell(ctx context.Context) error {
+	client, err := sshsvc.MakeSSHClient(ctx, a.sshTarget)
+	if err != nil {
+		return fmt.Errorf("ssh connect: %w", err)
+	}
+	defer client.Close()
+
+	return client.Shell(ctx)
+}
+
 // Exec runs a command inside the guest VM and returns its combined stdout
 // output. It blocks until the command completes.
 func (vm *VM) Exec(ctx context.Context, name string, args ...string) ([]byte, error) {
-	client, err := sshsvc.MakeSSHClient(ctx, vm.serviceSpecs.SSH)
+	client, err := sshsvc.MakeSSHClient(ctx, vm.machine.SSHTarget())
 	if err != nil {
 		return nil, fmt.Errorf("ssh connect: %w", err)
 	}
@@ -28,7 +116,7 @@ func (vm *VM) Exec(ctx context.Context, name string, args ...string) ([]byte, er
 // It blocks until the command completes.
 func (vm *VM) ExecWith(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer,
 	name string, args ...string) error {
-	client, err := sshsvc.MakeSSHClient(ctx, vm.serviceSpecs.SSH)
+	client, err := sshsvc.MakeSSHClient(ctx, vm.machine.SSHTarget())
 	if err != nil {
 		return fmt.Errorf("ssh connect: %w", err)
 	}
@@ -42,7 +130,7 @@ func (vm *VM) ExecWith(ctx context.Context, stdin io.Reader, stdout, stderr io.W
 // Shell opens an interactive shell session to the guest VM.
 // It requires a TTY on the host side.
 func (vm *VM) Shell(ctx context.Context) error {
-	client, err := sshsvc.MakeSSHClient(ctx, vm.serviceSpecs.SSH)
+	client, err := sshsvc.MakeSSHClient(ctx, vm.machine.SSHTarget())
 	if err != nil {
 		return fmt.Errorf("ssh connect: %w", err)
 	}
@@ -54,13 +142,13 @@ func (vm *VM) Shell(ctx context.Context) error {
 // SSHEndpoint returns the configured guest SSH address (host:port).
 // It does not wait for SSH readiness; callers should retry the connection.
 func (vm *VM) SSHEndpoint(ctx context.Context) (string, error) {
-	return vm.machine.SSHInfo.GuestSSHServerListenAddr, nil
+	return vm.machine.SSHTarget().GuestSSHServerListenAddr, nil
 }
 
 // PodmanEndpoint returns the configured host-side Podman unix socket address.
 // It does not wait for Podman readiness; callers should retry the connection.
 func (vm *VM) PodmanEndpoint(ctx context.Context) (string, error) {
-	return vm.machine.PodmanInfo.HostPodmanProxyAddr, nil
+	return vm.machine.PodmanHostProxyAddr(), nil
 }
 
 // ExecOutput is a convenience that runs Exec and returns stdout as a string,

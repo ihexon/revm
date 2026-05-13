@@ -22,7 +22,7 @@ import (
 
 // Libkrun wraps Libkrun context and manages Libkrun lifecycle.
 type Libkrun struct {
-	cfg   *define.Machine
+	cfg   *define.MachineSpec
 	ctxID uint32
 
 	// Keep file references to prevent GC
@@ -36,7 +36,7 @@ type Libkrun struct {
 }
 
 // New creates a new Libkrun instance.
-func New(cfg *define.Machine) *Libkrun {
+func New(cfg *define.MachineSpec) *Libkrun {
 	return &Libkrun{cfg: cfg}
 }
 

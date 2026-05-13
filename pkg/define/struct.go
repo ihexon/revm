@@ -1,9 +1,5 @@
 package define
 
-import (
-	"encoding/json"
-)
-
 // MachineSpec contains serializable VM specification data.
 type MachineSpec struct {
 	WorkspaceDir string `json:"workspaceDir,omitempty"`
@@ -35,26 +31,6 @@ type MachineSpec struct {
 	ProxySetting      ProxySetting      `json:"systemProxy,omitempty"`
 
 	TTY bool `json:"TTY"`
-}
-
-type Machine struct {
-	MachineSpec
-}
-
-func (m *Machine) UnmarshalJSON(data []byte) error {
-	type machineAlias MachineSpec
-	var spec machineAlias
-	if err := json.Unmarshal(data, &spec); err != nil {
-		return err
-	}
-
-	m.MachineSpec = MachineSpec(spec)
-	return nil
-}
-
-func (m Machine) MarshalJSON() ([]byte, error) {
-	type machineAlias MachineSpec
-	return json.Marshal(machineAlias(m.MachineSpec))
 }
 
 const (

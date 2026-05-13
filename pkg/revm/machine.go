@@ -25,17 +25,15 @@ import (
 )
 
 type machineBuilder struct {
-	define.Machine
+	define.MachineSpec
 	fileLock *flock.Flock
 	pathMgr  *machinePathManager
 }
 
 func newMachineBuilder(mode define.RunMode) *machineBuilder {
 	return &machineBuilder{
-		Machine: define.Machine{
-			MachineSpec: define.MachineSpec{
-				RunMode: mode.String(),
-			},
+		MachineSpec: define.MachineSpec{
+			RunMode: mode.String(),
 		},
 	}
 }
@@ -386,11 +384,11 @@ func (v *machineBuilder) applySystemProxy() error {
 
 // --- Machine assembly (from Config) ----------------------------------------
 
-// buildMachine converts Config directly into define.Machine.
+// buildMachine converts Config directly into define.MachineSpec.
 // The returned cleanup func releases runtime resources (such as the session
 // lock), but intentionally keeps the session workspace on disk. Caller must
 // always invoke it.
-func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *define.Machine, cleanup func(), retErr error) {
+func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *define.MachineSpec, cleanup func(), retErr error) {
 	plan, err := newMachineBuildPlan(cfg, workspacePath)
 	if err != nil {
 		return nil, nil, err
@@ -401,7 +399,7 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 		return nil, nil, err
 	}
 
-	return &plan.builder.Machine, plan.cleanupCallbacks.DoClean, nil
+	return &plan.builder.MachineSpec, plan.cleanupCallbacks.DoClean, nil
 }
 
 type machineBuildPlan struct {

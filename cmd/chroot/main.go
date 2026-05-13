@@ -19,6 +19,7 @@ func main() {
 		UsageText:                 "chroot [flags] <command> [args...]",
 		Description:               "boot a Linux microVM using libkrun and execute commands inside it, similar to chroot but with full kernel isolation",
 		DisableSliceFlagSeparator: true,
+		Commands:                  []*cli.Command{attachCommand},
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: define.FlagRootfs, Usage: "path to a rootfs directory to use as the VM root filesystem; must contain /bin/sh; takes priority over the built-in rootfs"},
 			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to host CPU count if unset or less than 1"},

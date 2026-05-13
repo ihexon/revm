@@ -21,7 +21,7 @@ import (
 // the VM's network stack in their specific way.
 type networkConfigStrategy interface {
 	// Configure sets up network configuration on the given VM.
-	Configure(ctx context.Context, vmc *define.Machine, pathMgr *machinePathManager) error
+	Configure(ctx context.Context, vmc *define.MachineSpec, pathMgr *machinePathManager) error
 }
 
 // getNetworkStrategy returns the appropriate network strategy for the given network mode.
@@ -43,7 +43,7 @@ type gVisorNetworkConfig struct{}
 
 // Configure sets up the gvisor-tap-vsock network configuration.
 // It creates Unix socket paths for GVProxy control and virtual network communication.
-func (g *gVisorNetworkConfig) Configure(ctx context.Context, vmc *define.Machine, pathMgr *machinePathManager) error {
+func (g *gVisorNetworkConfig) Configure(ctx context.Context, vmc *define.MachineSpec, pathMgr *machinePathManager) error {
 	logrus.Infof("Configuring gvisor-tap-vsock network mode")
 
 	unixAddr := &url.URL{
@@ -87,7 +87,7 @@ type tsiNetworkConfig struct{}
 // Configure sets up TSI network mode.
 // TSI mode doesn't require gvisor network setup, but we record the host-accessible
 // SSH address since guest ports are directly reachable via libkrun.
-func (t *tsiNetworkConfig) Configure(ctx context.Context, vmc *define.Machine, pathMgr *machinePathManager) error {
+func (t *tsiNetworkConfig) Configure(ctx context.Context, vmc *define.MachineSpec, pathMgr *machinePathManager) error {
 	logrus.Infof("Using TSI network mode (libkrun built-in networking)")
 	// TSI: guest port is directly accessible on host via libkrun
 	port, err := network.GetAvailablePort(0)
@@ -105,5 +105,5 @@ func (v *machineBuilder) configureNetwork(ctx context.Context, mode define.VNetM
 		return fmt.Errorf("invalid network mode: %s", mode)
 	}
 	v.VirtualNetworkMode = mode
-	return strategy.Configure(ctx, &v.Machine, v.pathMgr)
+	return strategy.Configure(ctx, &v.MachineSpec, v.pathMgr)
 }

@@ -9,11 +9,11 @@ import (
 )
 
 type Provider struct {
-	mc      *define.Machine
+	mc      *define.MachineSpec
 	libkrun *Libkrun
 }
 
-func NewProvider(mc *define.Machine) *Provider {
+func NewProvider(mc *define.MachineSpec) *Provider {
 	return &Provider{mc: mc, libkrun: New(mc)}
 }
 

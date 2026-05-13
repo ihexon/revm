@@ -9,23 +9,33 @@ import (
 	http2 "linuxvm/pkg/http"
 	"linuxvm/pkg/protocol"
 	"net/http"
-	"sync"
 )
 
 type Server struct {
-	mu        sync.RWMutex
-	guestSpec protocol.GuestSpec
-	srv       *http2.Server
+	machine Machine
+	srv     *http2.Server
 
 	Listening chan struct{}
 }
 
-func NewServer(listenSockAddr string, guestSpec protocol.GuestSpec) *Server {
-	s := &Server{guestSpec: guestSpec, Listening: make(chan struct{})}
-	srv := http2.NewUnixSockHTTPServer("ignition-httpserver", listenSockAddr)
+type Machine interface {
+	IgnitionListenAddr() string
+	GuestSpec() protocol.GuestSpec
+}
+
+func NewServer(machine Machine) (*Server, error) {
+	if machine == nil {
+		return nil, fmt.Errorf("machine is nil")
+	}
+	if machine.IgnitionListenAddr() == "" {
+		return nil, fmt.Errorf("ignition endpoint is empty")
+	}
+
+	s := &Server{machine: machine, Listening: make(chan struct{})}
+	srv := http2.NewUnixSockHTTPServer("ignition-httpserver", machine.IgnitionListenAddr())
 	srv.OnListening = func() { close(s.Listening) }
 	s.srv = srv
-	return s
+	return s, nil
 }
 
 func (s *Server) Start(ctx context.Context) error {
@@ -63,7 +73,5 @@ func (s *Server) handleVMConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	writeJSON(w, http.StatusOK, s.guestSpec)
+	writeJSON(w, http.StatusOK, s.machine.GuestSpec())
 }

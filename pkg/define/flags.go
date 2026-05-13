@@ -1,6 +1,7 @@
 package define
 
 const (
+	FlagAttachMode              = "attach"
 	FlagLogLevel                = "log-level"
 	FlagLogTo                   = "log-to"
 	FlagCPUS                    = "cpus"

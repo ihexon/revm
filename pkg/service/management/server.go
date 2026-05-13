@@ -7,8 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"linuxvm/pkg/backend"
 	httpv2 "linuxvm/pkg/http"
+	"linuxvm/pkg/protocol"
 	sshsvc "linuxvm/pkg/service/ssh"
 	ssev2 "linuxvm/pkg/sse"
 	"net/http"
@@ -18,15 +18,20 @@ import (
 )
 
 type Server struct {
-	srv       *httpv2.Server
-	sse       *ssev2.Server
-	backend   backend.Backend
-	config    VMConfigView
-	sshTarget sshsvc.Target
+	srv     *httpv2.Server
+	sse     *ssev2.Server
+	machine Machine
 }
 
 type errResponse struct {
 	Error string `json:"error"`
+}
+
+type Machine interface {
+	Stop() error
+	ManagementView() VMConfigView
+	AttachSpec() protocol.AttachSpec
+	SSHTarget() sshsvc.Target
 }
 
 func writeJSON(w http.ResponseWriter, code int, value interface{}) {
@@ -35,19 +40,18 @@ func writeJSON(w http.ResponseWriter, code int, value interface{}) {
 	_ = json.NewEncoder(w).Encode(value) //nolint:errchkjson
 }
 
-func NewServer(config VMConfigView, sshTarget sshsvc.Target, vmb backend.Backend) (*Server, error) {
+func NewServer(machine Machine) (*Server, error) {
+	if machine == nil {
+		return nil, fmt.Errorf("machine is nil")
+	}
+	config := machine.ManagementView()
 	if config.Endpoints.ManagementAPI == "" {
 		return nil, fmt.Errorf("management API endpoint is empty")
 	}
-	if vmb == nil {
-		return nil, fmt.Errorf("backend is nil")
-	}
 	return &Server{
-		backend:   vmb,
-		config:    config,
-		sshTarget: sshTarget,
-		srv:       httpv2.NewUnixSockHTTPServer("management-api", config.Endpoints.ManagementAPI),
-		sse:       ssev2.NewSSEServer(),
+		machine: machine,
+		srv:     httpv2.NewUnixSockHTTPServer("management-api", config.Endpoints.ManagementAPI),
+		sse:     ssev2.NewSSEServer(),
 	}, nil
 }
 
@@ -55,6 +59,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// new management api
 	s.srv.Mux.HandleFunc("/v2/healthz", s.handleHealth)
 	s.srv.Mux.HandleFunc("/v2/vmconfig", s.handleVMConfig)
+	s.srv.Mux.HandleFunc("/v2/attach", s.handleAttach)
 	s.srv.Mux.HandleFunc("/v2/exec", s.handleExec)
 	s.srv.Mux.HandleFunc("/v2/stop", s.handleRequestVMStop)
 
@@ -81,7 +86,15 @@ func (s *Server) handleVMConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.config)
+	writeJSON(w, http.StatusOK, s.machine.ManagementView())
+}
+
+func (s *Server) handleAttach(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.machine.AttachSpec())
 }
 
 func (s *Server) handleRequestVMStop(w http.ResponseWriter, r *http.Request) {
@@ -89,7 +102,7 @@ func (s *Server) handleRequestVMStop(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	_ = s.backend.Stop()
+	_ = s.machine.Stop()
 	writeJSON(w, http.StatusOK, nil)
 }
 
@@ -118,7 +131,7 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) executeCommand(ctx context.Context, cancel context.CancelFunc, topic string, req execRequest) {
 	defer cancel()
-	proc, err := sshsvc.GuestExec(ctx, s.sshTarget, req.Bin, req.Args...)
+	proc, err := sshsvc.GuestExec(ctx, s.machine.SSHTarget(), req.Bin, req.Args...)
 	if err != nil {
 		s.sse.Publish(topic, ssev2.TypeErr, "guest exec failed: "+err.Error())
 		return
