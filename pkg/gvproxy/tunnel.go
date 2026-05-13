@@ -90,17 +90,21 @@ func acceptLoop(ctx context.Context, ln net.Listener, gvproxyPath, targetIP stri
 	}
 }
 
-func handleTunnelConn(ctx context.Context, hostConn net.Conn, gvproxyPath, targetIP string, targetPort uint16) {
-	defer hostConn.Close()
+func handleTunnelConn(ctx context.Context, clientConn net.Conn, gvproxyPath, targetIP string, targetPort uint16) {
+	defer clientConn.Close()
 
-	guestConn, err := net.Dial("unix", gvproxyPath)
+	// Dial gvproxy first; transport.Tunnel below turns this control connection
+	// into a stream for the guest target.
+	tunnelConn, err := net.Dial("unix", gvproxyPath)
 	if err != nil {
 		logrus.Errorf("dial gvproxy %s: %v", gvproxyPath, err)
 		return
 	}
-	defer guestConn.Close()
+	defer tunnelConn.Close()
 
-	if err := transport.Tunnel(guestConn, targetIP, int(targetPort)); err != nil {
+	// After this handshake, reads and writes on tunnelConn are forwarded to
+	// targetIP:targetPort inside the guest VM.
+	if err := transport.Tunnel(tunnelConn, targetIP, int(targetPort)); err != nil {
 		logrus.Errorf("tunnel setup to %s:%d failed: %v", targetIP, targetPort, err)
 		return
 	}
@@ -108,37 +112,41 @@ func handleTunnelConn(ctx context.Context, hostConn net.Conn, gvproxyPath, targe
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	// done lets the cancellation goroutine exit after the copy loops finish.
 	done := make(chan struct{})
+	// Close both sides on run cancellation so blocked copies can return.
 	go func() {
 		select {
 		case <-ctx.Done():
-			_ = hostConn.Close()
-			_ = guestConn.Close()
+			_ = clientConn.Close()
+			_ = tunnelConn.Close()
 		case <-done:
 		}
 	}()
 
-	go copyDataGuestToHost(&wg, hostConn, guestConn)
-	go copyDataHostToGuest(&wg, hostConn, guestConn)
+	// Bridge the accepted client socket and the gvproxy tunnel until either side
+	// closes or the VM run context is cancelled.
+	go copyDataTunnelToClient(&wg, clientConn, tunnelConn)
+	go copyDataClientToTunnel(&wg, clientConn, tunnelConn)
 
 	wg.Wait()
 	close(done)
 }
 
-// copyDataGuestToHost copies guest output back to the host and propagates EOF.
-func copyDataGuestToHost(wg *sync.WaitGroup, hostConn, guestConn net.Conn) {
+// copyDataTunnelToClient copies tunneled guest output back to the client and propagates EOF.
+func copyDataTunnelToClient(wg *sync.WaitGroup, clientConn, tunnelConn net.Conn) {
 	defer wg.Done()
 
-	_, _ = io.Copy(hostConn, guestConn)
-	_ = closeWrite(hostConn)
+	_, _ = io.Copy(clientConn, tunnelConn)
+	_ = closeWrite(clientConn)
 }
 
-// copyDataHostToGuest copies host input into the guest.
+// copyDataClientToTunnel copies client input into the tunnel.
 // EOF stays local so read-only attach flows do not get closed prematurely.
-func copyDataHostToGuest(wg *sync.WaitGroup, hostConn, guestConn net.Conn) {
+func copyDataClientToTunnel(wg *sync.WaitGroup, clientConn, tunnelConn net.Conn) {
 	defer wg.Done()
 
-	_, _ = io.Copy(guestConn, hostConn)
+	_, _ = io.Copy(tunnelConn, clientConn)
 }
 
 func closeWrite(conn net.Conn) error {
