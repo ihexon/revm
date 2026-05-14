@@ -4,7 +4,6 @@ package libkrun
 
 /*
 #cgo CFLAGS: -I ../../include
-#cgo LDFLAGS: -L /tmp/.deps/libkrun/lib/ -L/tmp/.deps/libkrunfw/lib -lkrun -lkrunfw
 #include <libkrun.h>
 #include <stdlib.h>
 */

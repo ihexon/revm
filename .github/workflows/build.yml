@@ -70,10 +70,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-24.04
+          - runner: ubuntu-22.04
             chroot_artifact_name: chroot-linux-x86_64
             dockerd_artifact_name: dockerd-linux-x86_64
-          - runner: ubuntu-24.04-arm
+          - runner: ubuntu-22.04-arm
             chroot_artifact_name: chroot-linux-aarch64
             dockerd_artifact_name: dockerd-linux-aarch64
     runs-on: ${{ matrix.runner }}
@@ -91,7 +91,10 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget patchelf libarchive-tools libarchive-dev libext2fs-dev libblkid-dev uuid-dev zstd
+          sudo apt-get install -y wget g++ libarchive-tools zstd \
+            libarchive-dev libxml2-dev nettle-dev libacl1-dev \
+            libzstd-dev liblz4-dev libbz2-dev zlib1g-dev liblzma-dev \
+            libxxhash-dev libicu-dev libext2fs-dev libblkid-dev uuid-dev
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sudo sh -s -- -b /usr/local/bin
 
       - name: Build release archive

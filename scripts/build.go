@@ -16,24 +16,24 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.17"
+const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.18"
 
 var buildTargets = []string{"chroot", "dockerd"}
 
 // Edit this table when revm-assets changes.
 var assetSHA256 = map[string]string{
-	"alpine-rootfs-Linux-aarch64.tar.zst": "3c7dd4013ea827c63744a4da014c6b78bded60ccac51bb9519812e8a33e5e162",
-	"alpine-rootfs-Linux-x86_64.tar.zst":  "74af5c8ed3806aff04d07c6b9fce84116f3b41abe80451368a9c9c1a6077b91d",
-	"busybox-Linux-aarch64.tar.zst":       "27b52e5236a41b924dfe7c830ee624ac4e986605d5de1658f70132e0419cafb4",
-	"busybox-Linux-x86_64.tar.zst":        "0ae53e8df8fac38beee6e575a74927d0d4b4a5a6cafe035151a75eaef818e85c",
-	"dropbear-Linux-aarch64.tar.zst":      "5036f4b78a275000d8941b78f7dbf7e7bb76f76e5f4a10e85d41e28a6d06380f",
-	"dropbear-Linux-x86_64.tar.zst":       "85cfe7ba283203944873bcd66459f7675f8da5e847131e0cf09930abbfac3f6e",
-	"libkrun-Darwin-arm64.tar.zst":        "1a0768853800e0c0e45f1f09f90200429a63b4ed0a2cfb8abe43ebb8884a66fa",
-	"libkrun-Linux-aarch64.tar.zst":       "f94aab875b5ea5727f1ac9e64b1addba86fd4b99395d533c257aa85cdb1c27a9",
-	"libkrun-Linux-x86_64.tar.zst":        "ab445bebfcca7e90535f053b68097a6b7f7aa7b6198fc487c9a588241c0fa48d",
-	"libkrunfw-Darwin-arm64.tar.zst":      "8e164c13f83c3549133795e6796d5530beacfbf634d8692cc751ad119020ad4a",
-	"libkrunfw-Linux-aarch64.tar.zst":     "96881a57e8b5391bc6e9ff19ddb7a245fc5c0c323dadbc6b3040a8535e331a3d",
-	"libkrunfw-Linux-x86_64.tar.zst":      "54ed3c7fdf24e99350c3623bae188b4eb7e7f6c3622502e8e20a0adcdb83baca",
+	"alpine-rootfs-Linux-aarch64.tar.zst": "1ebff68a52ba2c2aec8b0c3f7f01b49db25a22cb3a2669ad625a47db42852a21",
+	"alpine-rootfs-Linux-x86_64.tar.zst":  "a18de338efe58b78af4db27cb22fceac227e5fbe790f6ccfdc75cb833d0734f6",
+	"busybox-Linux-aarch64.tar.zst":       "6c03d148216dd379e8c6d9d8b867dfe6ec95da40e9866640582b9548f04a39f9",
+	"busybox-Linux-x86_64.tar.zst":        "db1de5c606cfa6e5d1a5517d7c796ec406d6da8de2fe59ef3f18378f82be689c",
+	"dropbear-Linux-aarch64.tar.zst":      "5cd94210f9e4aa84ef03847f36abeb81fd6c06fdc0c5b17561e4f7922bd16f8e",
+	"dropbear-Linux-x86_64.tar.zst":       "9456b2c29394b3381ce8189614af15c9e488902081609e503fd3379b437d4355",
+	"libkrun-Darwin-arm64.tar.zst":        "5d18a6e55809a4bab6c1d614c1ce7ce5506f5736363ca4c5389b015a02f9546d",
+	"libkrun-Linux-aarch64.tar.zst":       "aa082cc28086c5c0cd7c70ec571341e868c9d3d5302d5aa2e1f5e8df56d7a8d4",
+	"libkrun-Linux-x86_64.tar.zst":        "88a4da48fed459040df7ef89ae6068b3e6308fd838c1db74b2f9632bf565b883",
+	"libkrunfw-Darwin-arm64.tar.zst":      "cdae9109f1315c6cdeec071986204ff76c9cbc55876c50845c469284ebbc6233",
+	"libkrunfw-Linux-aarch64.tar.zst":     "4e149f35c5c4083bc80067d6a9a2513ae0aa8ead0b0f7ce8bce5a9718b92d352",
+	"libkrunfw-Linux-x86_64.tar.zst":      "d8e39e49f57450c45833e637d58963c1f180a1a2d8ac1751b38e5928bb7eaf74",
 }
 
 type builder struct {
@@ -256,6 +256,9 @@ func (b *builder) buildBundles() error {
 		"-X linuxvm/pkg/define.Version=%s -X linuxvm/pkg/define.CommitID=%s -X linuxvm/pkg/define.BuildDate=%s",
 		version, commit, buildDate,
 	)
+	if b.goos == "linux" {
+		ldflags += " -linkmode=external -extldflags=-static-libgcc -extldflags=-static-libstdc++"
+	}
 
 	logrus.Infof("building targets (%s-%s-%s)", version, commit, buildDate)
 	if err := b.buildGuestAgent(); err != nil {
@@ -276,7 +279,7 @@ func (b *builder) buildBundles() error {
 		if err := b.prepareRuntimeLibsFor(target); err != nil {
 			return err
 		}
-		if err := b.writeLauncher(b.launcherPath(target), target); err != nil {
+		if err := b.writeLauncher(filepath.Join(b.binDir(target), target+".sh"), target); err != nil {
 			return err
 		}
 	}
@@ -372,20 +375,10 @@ func (b *builder) prepareRuntimeLibsDarwin(target string) error {
 }
 
 func (b *builder) prepareRuntimeLibsLinux(target string) error {
-	bin := filepath.Join(b.binDir(target), target)
 	libDir := b.libDir(target)
 
-	libkrunDir, err := b.depLibDir("libkrun")
-	if err != nil {
-		return err
-	}
 	libkrunfwDir, err := b.depLibDir("libkrunfw")
 	if err != nil {
-		return err
-	}
-	if err := copyWithCP(libkrunDir, libDir+"/", func(name string) bool {
-		return strings.Contains(name, ".so")
-	}); err != nil {
 		return err
 	}
 	if err := copyWithCP(libkrunfwDir, libDir+"/", func(name string) bool {
@@ -393,93 +386,33 @@ func (b *builder) prepareRuntimeLibsLinux(target string) error {
 	}); err != nil {
 		return err
 	}
-
-	if err := b.collectSharedLibDeps(bin, libDir); err != nil {
-		return err
-	}
-
-	dynLinker, err := b.linuxDynLinkerPath()
+	libs, err := b.linuxRuntimeLibs()
 	if err != nil {
 		return err
 	}
-	if err := copyResolvedFileWithCP(dynLinker, libDir+"/"); err != nil {
-		return err
-	}
-
-	if err := command(nil, "patchelf", "--set-rpath", "$ORIGIN/../lib", bin); err != nil {
-		return err
-	}
-
-	entries, err := readDir(libDir)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if strings.HasPrefix(name, "libkrun") && strings.Contains(name, ".so.") {
-			if err := command(nil, "patchelf", "--set-rpath", "$ORIGIN", filepath.Join(libDir, name)); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (b *builder) collectSharedLibDeps(binary, libDir string) error {
-	cmd := exec.Command("ldd", binary)
-	cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+libDir)
-	out, err := cmd.Output()
-	if err != nil {
-		return fmt.Errorf("collect shared library dependencies for %s: %w", binary, err)
-	}
-
-	for _, path := range parseLDDLibraryPaths(string(out)) {
-		base := filepath.Base(path)
-		if strings.HasPrefix(base, "ld-linux") {
-			continue
-		}
-		if !filepath.IsAbs(path) {
-			continue
-		}
-		dst := filepath.Join(libDir, base)
-		if exists(dst) {
-			continue
-		}
-		if err := copyResolvedFileWithCP(path, dst); err != nil {
+	for _, path := range libs {
+		if err := copyResolvedFileWithCP(path, libDir+"/"); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func parseLDDLibraryPaths(output string) []string {
-	var paths []string
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.Contains(line, "not found") {
-			continue
-		}
-
-		if beforeAddr, _, ok := strings.Cut(line, " ("); ok {
-			line = strings.TrimSpace(beforeAddr)
-		}
-
-		if _, afterArrow, ok := strings.Cut(line, "=>"); ok {
-			line = strings.TrimSpace(afterArrow)
-		}
-
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		if path := fields[0]; filepath.IsAbs(path) {
-			paths = append(paths, path)
-		}
+func (b *builder) linuxRuntimeLibs() ([]string, error) {
+	switch b.goarch {
+	case "arm64", "aarch64":
+		return []string{
+			"/lib/aarch64-linux-gnu/libc.so.6",
+			"/lib/ld-linux-aarch64.so.1",
+		}, nil
+	case "amd64", "x86_64":
+		return []string{
+			"/lib/x86_64-linux-gnu/libc.so.6",
+			"/lib64/ld-linux-x86-64.so.2",
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported linux arch: %s", b.goarch)
 	}
-	return paths
 }
 
 func (b *builder) runLint() error {
@@ -512,23 +445,26 @@ func (b *builder) packageTarget(target string) error {
 }
 
 func (b *builder) writeLauncher(path, target string) error {
-	script := fmt.Sprintf("#!/bin/sh\nDIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\n%s\n", b.launcherCommand(target))
+	command := fmt.Sprintf("exec \"$DIR/%s\" \"$@\"", target)
+	if b.goos == "linux" {
+		command = fmt.Sprintf("exec \"$DIR/../lib/%s\" --library-path \"$DIR/../lib\" \"$DIR/%s\" \"$@\"", b.linuxDynLinkerName(), target)
+	}
+	script := fmt.Sprintf("#!/bin/sh\nDIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\n%s\n", command)
 	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
 }
 
-func (b *builder) launcherCommand(target string) string {
-	if b.goos == "darwin" {
-		return fmt.Sprintf("exec \"$DIR/bin/%s\" \"$@\"", target)
+func (b *builder) linuxDynLinkerName() string {
+	switch b.goarch {
+	case "arm64", "aarch64":
+		return "ld-linux-aarch64.so.1"
+	case "amd64", "x86_64":
+		return "ld-linux-x86-64.so.2"
+	default:
+		return "ld-linux.so"
 	}
-	dynLinker, err := b.linuxDynLinkerPath()
-	if err != nil {
-		return fmt.Sprintf("echo %q >&2\nexit 1", err.Error())
-	}
-	ldName := filepath.Base(dynLinker)
-	return fmt.Sprintf("exec \"$DIR/lib/%s\" --library-path \"$DIR/lib\" \"$DIR/bin/%s\" \"$@\"", ldName, target)
 }
 
 func (b *builder) targetRoot(target string) string {
@@ -541,10 +477,6 @@ func (b *builder) binDir(target string) string {
 
 func (b *builder) libDir(target string) string {
 	return filepath.Join(b.targetRoot(target), "lib")
-}
-
-func (b *builder) launcherPath(target string) string {
-	return filepath.Join(b.targetRoot(target), target)
 }
 
 func (b *builder) placeholderPaths() []string {
@@ -621,34 +553,6 @@ func (b *builder) depLibDir(name string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("missing shared library directory for %s", name)
-}
-
-func (b *builder) linuxDynLinkerPath() (string, error) {
-	var candidates []string
-	switch b.goarch {
-	case "arm64", "aarch64":
-		candidates = []string{
-			"/lib/ld-linux-aarch64.so.1",
-			"/lib64/ld-linux-aarch64.so.1",
-			"/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
-		}
-	case "amd64", "x86_64":
-		candidates = []string{
-			"/lib64/ld-linux-x86-64.so.2",
-			"/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
-			"/lib/ld-linux-x86-64.so.2",
-		}
-	default:
-		return "", fmt.Errorf("unsupported host arch: %s", b.goarch)
-	}
-
-	for _, path := range candidates {
-		if exists(path) {
-			return path, nil
-		}
-	}
-
-	return "", fmt.Errorf("failed to find dynamic linker for linux/%s (tried: %s)", b.goarch, strings.Join(candidates, ", "))
 }
 
 func (b *builder) archivePath(name string) (string, error) {
