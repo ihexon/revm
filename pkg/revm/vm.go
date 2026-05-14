@@ -67,6 +67,7 @@ func newProvider(mc *define.MachineSpec) (backend.Backend, error) {
 // 必须始终调用，即使 Run() 从未被调用。幂等。
 func (vm *VM) Close() error {
 	if vm.logFile != nil {
+		logrus.SetOutput(os.Stderr)
 		_ = vm.logFile.Close()
 		vm.logFile = nil
 	}
