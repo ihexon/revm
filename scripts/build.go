@@ -18,7 +18,7 @@ import (
 
 const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.18"
 
-var buildTargets = []string{"chroot", "dockerd"}
+var defaultBuildTargets = []string{"chroot", "dockerd"}
 
 // Edit this table when revm-assets changes.
 var assetSHA256 = map[string]string{
@@ -37,8 +37,10 @@ var assetSHA256 = map[string]string{
 }
 
 type builder struct {
-	goos   string
-	goarch string
+	goos    string
+	goarch  string
+	targets []string
+	lint    bool
 
 	workspace  string
 	outDir     string
@@ -54,8 +56,10 @@ type builder struct {
 
 func main() {
 	verbose := flag.Bool("v", false, "enable debug logging")
+	runLint := flag.Bool("lint", false, "run golangci-lint before building")
+	buildTarget := flag.String("build", "all", "target to build: all, chroot, or dockerd")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: go run build.go [-v]\n")
+		fmt.Fprintf(os.Stderr, "Usage: go run build.go [-v] [--lint] [--build all|chroot|dockerd]\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -64,7 +68,12 @@ func main() {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
-	b, err := newBuilder()
+	targets, err := parseBuildTargets(*buildTarget)
+	if err != nil {
+		logrus.Fatal(err)
+	}
+
+	b, err := newBuilder(targets, *runLint)
 	if err != nil {
 		logrus.Fatal(err)
 	}
@@ -85,8 +94,10 @@ func (b *builder) run() error {
 	if err := b.prepareWorkspace(); err != nil {
 		return err
 	}
-	if err := b.runLint(); err != nil {
-		return err
+	if b.lint {
+		if err := b.runLint(); err != nil {
+			return err
+		}
 	}
 	if err := b.removePlaceholders(); err != nil {
 		return err
@@ -103,7 +114,7 @@ func (b *builder) run() error {
 	return b.packageTargets()
 }
 
-func newBuilder() (*builder, error) {
+func newBuilder(targets []string, lint bool) (*builder, error) {
 	workspace, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("getwd: %w", err)
@@ -118,6 +129,8 @@ func newBuilder() (*builder, error) {
 	b := &builder{
 		goos:       runtime.GOOS,
 		goarch:     arch,
+		targets:    append([]string(nil), targets...),
+		lint:       lint,
 		workspace:  workspace,
 		outDir:     filepath.Join(workspace, "out"),
 		depsDir:    "/tmp/.deps",
@@ -138,12 +151,23 @@ func newBuilder() (*builder, error) {
 	return b, nil
 }
 
+func parseBuildTargets(target string) ([]string, error) {
+	switch strings.TrimSpace(target) {
+	case "", "all":
+		return append([]string(nil), defaultBuildTargets...), nil
+	case "chroot", "dockerd":
+		return []string{target}, nil
+	default:
+		return nil, fmt.Errorf("unsupported build target %q: use all, chroot, or dockerd", target)
+	}
+}
+
 func (b *builder) prepareWorkspace() error {
-	logrus.Infof("targets=%s os=%s arch=%s workspace=%s", strings.Join(buildTargets, ","), b.goos, b.goarch, b.workspace)
+	logrus.Infof("targets=%s lint=%t os=%s arch=%s workspace=%s", strings.Join(b.targets, ","), b.lint, b.goos, b.goarch, b.workspace)
 	if err := removeAll(b.outDir); err != nil {
 		return err
 	}
-	for _, target := range buildTargets {
+	for _, target := range b.targets {
 		if err := mkdirAll(b.binDir(target)); err != nil {
 			return err
 		}
@@ -257,14 +281,14 @@ func (b *builder) buildBundles() error {
 		version, commit, buildDate,
 	)
 	if b.goos == "linux" {
-		ldflags += " -linkmode=external -extldflags=-static-libgcc -extldflags=-static-libstdc++"
+		ldflags += ` -linkmode=external -extldflags "-static-libgcc -static-libstdc++"`
 	}
 
 	logrus.Infof("building targets (%s-%s-%s)", version, commit, buildDate)
 	if err := b.buildGuestAgent(); err != nil {
 		return err
 	}
-	for _, target := range buildTargets {
+	for _, target := range b.targets {
 		logrus.Infof("building bundle for %s in %s", target, b.targetRoot(target))
 
 		env := []string{}
@@ -426,7 +450,7 @@ func (b *builder) runLint() error {
 
 func (b *builder) packageTargets() error {
 	logrus.Info("packaging")
-	for _, target := range buildTargets {
+	for _, target := range b.targets {
 		if err := b.packageTarget(target); err != nil {
 			return err
 		}
