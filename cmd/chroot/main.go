@@ -78,12 +78,7 @@ func main() {
 
 			switch cfg.RunMode {
 			case revm.ModeAttach:
-				vm, err := revm.New(cfg)
-				if err != nil {
-					return err
-				}
-				defer vm.Close()
-				return vm.Attach(ctx)
+				return revm.Attach(ctx, cfg)
 			case revm.ModeRootfs, revm.ModeContainer:
 				vm, err := revm.Build(ctx, cfg)
 				if err != nil {

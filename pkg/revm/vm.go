@@ -95,9 +95,9 @@ func buildTimeInfo() string {
 	return fmt.Sprintf("%s-%s-%s", version, commit, buildDate)
 }
 
-// New resolves configuration defaults and prepares a lightweight VM session
-// handle. It does not acquire machine resources or create a VM provider.
-func New(cfg *Config) (*VM, error) {
+// Build resolves configuration defaults and acquires the heavyweight resources
+// needed to run the VM: workspace lock, SSH keys, rootfs, disks, and provider.
+func Build(ctx context.Context, cfg *Config) (*VM, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
 	}
@@ -106,20 +106,20 @@ func New(cfg *Config) (*VM, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve defaults: %w", err)
 	}
+	if normalizedCfg.RunMode == ModeAttach {
+		return nil, fmt.Errorf("attach mode does not build a VM; use Attach")
+	}
 
 	setupLogrus(normalizedCfg.LogLevel)
 
-	var logFile *os.File
-	if normalizedCfg.RunMode != ModeAttach {
-		logFile, err = setupLogFile(normalizedCfg)
-		if err != nil {
-			return nil, fmt.Errorf("setup logging: %w", err)
-		}
-
-		logrus.SetOutput(io.MultiWriter(os.Stderr, logFile))
-		logrus.Infof("revm build info: %s", buildTimeInfo())
-		logrus.Infof("start virtualMachine, full cmdline: %q", os.Args)
+	logFile, err := setupLogFile(normalizedCfg)
+	if err != nil {
+		return nil, fmt.Errorf("setup logging: %w", err)
 	}
+
+	logrus.SetOutput(io.MultiWriter(os.Stderr, logFile))
+	logrus.Infof("revm build info: %s", buildTimeInfo())
+	logrus.Infof("start virtualMachine, full cmdline: %q", os.Args)
 
 	vm := &VM{
 		cfg:        &normalizedCfg,
@@ -129,21 +129,6 @@ func New(cfg *Config) (*VM, error) {
 
 	if reporter := newEventReporter(normalizedCfg.ReportURL); reporter != nil {
 		vm.eventDispatcher.addReporter(reporter)
-	}
-
-	return vm, nil
-}
-
-// Build resolves configuration defaults and acquires the heavyweight resources
-// needed to run the VM: workspace lock, SSH keys, rootfs, disks, and provider.
-func Build(ctx context.Context, cfg *Config) (*VM, error) {
-	vm, err := New(cfg)
-	if err != nil {
-		return nil, err
-	}
-	if vm.cfg.RunMode == ModeAttach {
-		_ = vm.Close()
-		return nil, fmt.Errorf("attach mode does not build a VM; use VM.Attach")
 	}
 
 	if err := vm.build(ctx); err != nil {

@@ -17,38 +17,47 @@ import (
 	"al.essio.dev/pkg/shellescape"
 )
 
-type attachedVM struct {
-	sshTarget sshsvc.Target
-}
-
-func attachWorkspaceDir(ctx context.Context, workspaceDirPath string) (*attachedVM, error) {
-	attachSpec, err := fetchAttachSpec(ctx, workspaceDirPath)
-	if err != nil {
-		return nil, err
-	}
-
-	return &attachedVM{sshTarget: sshTargetFromAttachSpec(attachSpec)}, nil
+// Attach resolves the attach configuration and connects to an existing VM
+// session without building or starting a virtual machine.
+func Attach(ctx context.Context, cfg *Config) error {
+	return (&VM{cfg: cfg}).Attach(ctx)
 }
 
 // Attach connects to the existing VM session represented by vm.
 // It does not build or start a virtual machine.
 func (vm *VM) Attach(ctx context.Context) error {
-	if vm == nil || vm.cfg == nil {
+	if vm == nil {
 		return fmt.Errorf("vm must not be nil")
 	}
-	if vm.sessionDir == "" {
-		return fmt.Errorf("session directory must not be empty")
+	if vm.cfg == nil {
+		return fmt.Errorf("config must not be nil")
 	}
 
-	attached, err := attachWorkspaceDir(ctx, vm.sessionDir)
+	normalizedCfg, err := NormalizeConfig(*vm.cfg)
+	if err != nil {
+		return fmt.Errorf("resolve defaults: %w", err)
+	}
+	if normalizedCfg.RunMode != ModeAttach {
+		return fmt.Errorf("attach requires run mode %q, got %q", ModeAttach, normalizedCfg.RunMode)
+	}
+
+	setupLogrus(normalizedCfg.LogLevel)
+	vm.cfg = &normalizedCfg
+
+	if vm.sessionDir == "" {
+		vm.sessionDir = getSessionDir(normalizedCfg.SessionID)
+	}
+
+	attachSpec, err := fetchAttachSpec(ctx, vm.sessionDir)
 	if err != nil {
 		return err
 	}
+	sshTarget := sshTargetFromAttachSpec(attachSpec)
 
 	if vm.cfg.PTY {
-		return attached.shell(ctx)
+		return attachShell(ctx, sshTarget)
 	}
-	return attached.run(ctx, vm.cfg.Command...)
+	return attachRun(ctx, sshTarget, vm.cfg.Command...)
 }
 
 func fetchAttachSpec(ctx context.Context, workspaceDirPath string) (protocol.AttachSpec, error) {
@@ -85,14 +94,14 @@ func sshTargetFromAttachSpec(spec protocol.AttachSpec) sshsvc.Target {
 	}
 }
 
-// Run executes a command in the attached VM session over SSH.
+// attachRun executes a command in the attached VM session over SSH.
 // If cmdline is empty, it runs /bin/sh.
-func (a *attachedVM) run(ctx context.Context, cmdline ...string) error {
+func attachRun(ctx context.Context, sshTarget sshsvc.Target, cmdline ...string) error {
 	if len(cmdline) == 0 {
 		cmdline = []string{filepath.Join("/", "bin", "sh")}
 	}
 
-	client, err := sshsvc.MakeSSHClient(ctx, a.sshTarget)
+	client, err := sshsvc.MakeSSHClient(ctx, sshTarget)
 	if err != nil {
 		return fmt.Errorf("ssh connect: %w", err)
 	}
@@ -101,9 +110,9 @@ func (a *attachedVM) run(ctx context.Context, cmdline ...string) error {
 	return client.Run(ctx, shellescape.QuoteCommand(cmdline))
 }
 
-// Shell starts an interactive shell in the attached VM session over SSH.
-func (a *attachedVM) shell(ctx context.Context) error {
-	client, err := sshsvc.MakeSSHClient(ctx, a.sshTarget)
+// attachShell starts an interactive shell in the attached VM session over SSH.
+func attachShell(ctx context.Context, sshTarget sshsvc.Target) error {
+	client, err := sshsvc.MakeSSHClient(ctx, sshTarget)
 	if err != nil {
 		return fmt.Errorf("ssh connect: %w", err)
 	}
