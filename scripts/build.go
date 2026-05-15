@@ -16,24 +16,24 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.18"
+const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.19"
 
 var defaultBuildTargets = []string{"chroot", "dockerd"}
 
 // Edit this table when revm-assets changes.
 var assetSHA256 = map[string]string{
-	"alpine-rootfs-Linux-aarch64.tar.zst": "68eb2f79f8c2f122d04a1ea406a20011c7042cec30600f92379e5d39ab8da785",
-	"alpine-rootfs-Linux-x86_64.tar.zst":  "e318506e85dda1d9fa489464a0bc2c7c82546e9c27122bcbadfa5cc7677569f8",
-	"busybox-Linux-aarch64.tar.zst":       "e988f51a2f9d033659e6f297680a0c4452189d21d59464dae632ae77fb683176",
-	"busybox-Linux-x86_64.tar.zst":        "2a1470f30b91107d8aadcf3db86e03c72677659cd28dfbddd881c56c497edf11",
-	"dropbear-Linux-aarch64.tar.zst":      "6163f13f0cba8d7567a38cee015f3bea2dfdff53105eed39a10e1a2b1710d573",
-	"dropbear-Linux-x86_64.tar.zst":       "2f01c83a9053292628c8bbad8fc16f2d3b67a520e067b83c7c8dd3d5037635a2",
-	"libkrun-Darwin-arm64.tar.zst":        "44657fa01cea78627529208456c584f309a3ad9c83d853c6e9ad1a667571eaff",
-	"libkrun-Linux-aarch64.tar.zst":       "c7972ae359577d4f95bcadf15161b2ec9759197ba81661ae07a9269b0c8b6048",
-	"libkrun-Linux-x86_64.tar.zst":        "111b0ad5825721f4959017ed2c061553bbe6b06cbe93e75b75e933952d487477",
-	"libkrunfw-Darwin-arm64.tar.zst":      "2082d1b6c9548771b358af74f1abab5970d2837ebe45bf503e2733402269b3d4",
-	"libkrunfw-Linux-aarch64.tar.zst":     "ffe0a68eac06af263abb877316cd71f6a646ac85d61126f1cb3520d046be582c",
-	"libkrunfw-Linux-x86_64.tar.zst":      "f5a3b5960df8bb0a76b23db9e3123a1fcea42e1a9bc04a8efda1bfa2a51ecdf0",
+	"alpine-rootfs-Linux-aarch64.tar.zst": "1268f3b26fe2afc1d69ec9c3f27468ba4677323835968017e05e5be87ca84e34",
+	"alpine-rootfs-Linux-x86_64.tar.zst":  "f65e6b378ed9e26033acaf7740b77b994df697bed423140d4ba6e57821363c13",
+	"busybox-Linux-aarch64.tar.zst":       "f56b0eae352431653e717e0a5ae94d777bd5d946070d14dcad76ba60384cbf95",
+	"busybox-Linux-x86_64.tar.zst":        "5e42c418f6033420638cf3b2393773270f06564400cda0fafe4c69df765d9193",
+	"dropbear-Linux-aarch64.tar.zst":      "e93119670142ffa543e0fc2909a640feb781459ec023dd3bfaba6bdc3e1c18fd",
+	"dropbear-Linux-x86_64.tar.zst":       "4037a51af8aa1120d0617f429aadeacb105e606a30e1a55a2125e42df065a584",
+	"libkrun-Darwin-arm64.tar.zst":        "66c95baf481be530dbf1279840389e8610a55c84e1bf1b9ccc6117d31b79a0ed",
+	"libkrun-Linux-aarch64.tar.zst":       "acae68534655fc6d125aa340cdaa3c78ebf2168a3d3f78f44bfa4116f27914a4",
+	"libkrun-Linux-x86_64.tar.zst":        "036e17b397bb72fcd6cce140ba84924b34ebca84a6c38387b35e80e2b330d648",
+	"libkrunfw-Darwin-arm64.tar.zst":      "196c2c3916a67f375c0587092dcfd90e2bd40a575f88b30addf1564d0be21074",
+	"libkrunfw-Linux-aarch64.tar.zst":     "d4b8709f73f7a049e5207d9c6612183a3926c61b7a16455cc45547662e101059",
+	"libkrunfw-Linux-x86_64.tar.zst":      "49883377978294822a2403a7b8b881b3dd6bbffc4791ef65e9479eb881f3735e",
 }
 
 type builder struct {
@@ -333,65 +333,16 @@ func (b *builder) prepareRuntimeLibsFor(target string) error {
 
 func (b *builder) prepareRuntimeLibsDarwin(target string) error {
 	libDir := b.libDir(target)
-	libkrunLibDir := filepath.Join(b.depsDir, "libkrun", "lib")
 	libkrunfwLibDir := filepath.Join(b.depsDir, "libkrunfw", "lib")
 
-	if err := copyWithCP(libkrunLibDir, libDir+"/", func(name string) bool {
-		return strings.HasSuffix(name, ".dylib")
-	}); err != nil {
-		return err
-	}
 	if err := copyWithCP(libkrunfwLibDir, libDir+"/", func(name string) bool {
 		return strings.HasSuffix(name, ".dylib")
 	}); err != nil {
 		return err
 	}
 
-	for _, extra := range []string{
-		filepath.Join(b.homebrew, "opt", "libepoxy", "lib", "libepoxy.0.dylib"),
-		filepath.Join(b.homebrew, "opt", "virglrenderer", "lib", "libvirglrenderer.1.dylib"),
-		filepath.Join(b.homebrew, "opt", "molten-vk", "lib", "libMoltenVK.dylib"),
-	} {
-		if err := copyWithCP(extra, libDir+"/", nil); err != nil {
-			return err
-		}
-	}
-
-	type rewrite struct{ dylib, old, new string }
-	for _, r := range []rewrite{
-		{"libkrun.1.dylib", filepath.Join(b.homebrew, "opt", "libepoxy", "lib", "libepoxy.0.dylib"), "@loader_path/libepoxy.0.dylib"},
-		{"libkrun.1.dylib", filepath.Join(b.homebrew, "opt", "virglrenderer", "lib", "libvirglrenderer.1.dylib"), "@loader_path/libvirglrenderer.1.dylib"},
-		{"libkrun.1.dylib", filepath.Join(b.homebrew, "opt", "molten-vk", "lib", "libMoltenVK.dylib"), "@loader_path/libMoltenVK.dylib"},
-		{"libkrunfw.5.dylib", filepath.Join(b.homebrew, "opt", "libepoxy", "lib", "libepoxy.0.dylib"), "@loader_path/libepoxy.0.dylib"},
-		{"libkrunfw.5.dylib", filepath.Join(b.homebrew, "opt", "virglrenderer", "lib", "libvirglrenderer.1.dylib"), "@loader_path/libvirglrenderer.1.dylib"},
-		{"libkrunfw.5.dylib", filepath.Join(b.homebrew, "opt", "molten-vk", "lib", "libMoltenVK.dylib"), "@loader_path/libMoltenVK.dylib"},
-		{"libvirglrenderer.1.dylib", filepath.Join(b.homebrew, "opt", "libepoxy", "lib", "libepoxy.0.dylib"), "@loader_path/libepoxy.0.dylib"},
-		{"libvirglrenderer.1.dylib", filepath.Join(b.homebrew, "opt", "molten-vk", "lib", "libMoltenVK.dylib"), "@loader_path/libMoltenVK.dylib"},
-	} {
-		if err := command(nil, "install_name_tool", "-change", r.old, r.new, filepath.Join(libDir, r.dylib)); err != nil {
-			return err
-		}
-	}
-
-	for _, item := range []struct{ dylib, id string }{
-		{"libepoxy.0.dylib", "@loader_path/libepoxy.0.dylib"},
-		{"libvirglrenderer.1.dylib", "@loader_path/libvirglrenderer.1.dylib"},
-		{"libMoltenVK.dylib", "@loader_path/libMoltenVK.dylib"},
-	} {
-		p := filepath.Join(libDir, item.dylib)
-		if err := command(nil, "install_name_tool", "-id", item.id, p); err != nil {
-			return err
-		}
-		if err := command(nil, "codesign", "--force", "-s", "-", p); err != nil {
-			return err
-		}
-	}
-
 	entitlements := filepath.Join(b.workspace, "revm.entitlements")
 	bin := filepath.Join(b.binDir(target), target)
-	if err := command(nil, "install_name_tool", "-change", "libkrun.1.dylib", "@loader_path/../lib/libkrun.1.dylib", bin); err != nil {
-		return err
-	}
 	if err := command(nil, "install_name_tool", "-change", "libkrunfw.5.dylib", "@loader_path/../lib/libkrunfw.5.dylib", bin); err != nil {
 		return err
 	}
