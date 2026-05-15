@@ -297,7 +297,7 @@ func (b *builder) buildBundles() error {
 		} else {
 			env = append(env, "CGO_ENABLED=1")
 		}
-		if err := command(env, "go", "build", "-x", "-v", "-ldflags="+ldflags, "-o", filepath.Join(b.binDir(target), target), filepath.Join(b.workspace, "cmd", target)); err != nil {
+		if err := command(env, "go", "build", "-x", "-ldflags="+ldflags, "-o", filepath.Join(b.binDir(target), target), filepath.Join(b.workspace, "cmd", target)); err != nil {
 			return err
 		}
 		if err := b.prepareRuntimeLibsFor(target); err != nil {
