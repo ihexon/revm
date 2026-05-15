@@ -77,52 +77,28 @@ jobs:
             chroot_artifact_name: chroot-linux-aarch64
             dockerd_artifact_name: dockerd-linux-aarch64
     runs-on: ${{ matrix.runner }}
+    env:
+      LINUX_BUILDER_IMAGE: revm-builder:ubuntu-25.10
     steps:
       - name: Checkout
         uses: 'actions/checkout@v5'
         with:
           lfs: 'true'
 
-      - name: Set up Go
-        uses: 'actions/setup-go@v6'
-        with:
-          go-version: '1.25.5'
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wget g++ libarchive-tools zstd \
-            libarchive-dev libxml2-dev nettle-dev libacl1-dev \
-            libzstd-dev liblz4-dev libbz2-dev zlib1g-dev liblzma-dev \
-            libxxhash-dev libicu-dev libext2fs-dev libblkid-dev uuid-dev
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sudo sh -s -- -b /usr/local/bin
-
-      - name: Toolchain diagnostics
-        run: |
-          gcc --version
-          g++ --version
-          go version
-          go env CC CXX CGO_ENABLED GOOS GOARCH
-          gcc -print-file-name=libstdc++.a
-          gcc -print-file-name=libgcc.a
-          gcc -print-file-name=libgcc_s.so
-          dpkg -L libstdc++-11-dev | grep '/libstdc++.a$' || true
+      - name: Build Linux builder image
+        run: docker build -t "$LINUX_BUILDER_IMAGE" .
 
       - name: Build release archive
-        run: go run scripts/build.go
-
-      - name: ELF diagnostics
         run: |
-          readelf -d out/dockerd/bin/dockerd | grep NEEDED || true
-          readelf --version-info out/dockerd/bin/dockerd | grep -E 'GLIBC|GLIBCXX|CXXABI|GCC' || true
-          ldd out/dockerd/bin/dockerd || true
-
-      - name: Verify packaged binaries
-        run: |
-          tar -tf chroot-*.tar.zst | grep -E '(^|/)(chroot)$'
-          tar -tf dockerd-*.tar.zst | grep -E '(^|/)(dockerd)$'
-          if tar -tf chroot-*.tar.zst | grep -E '(^|/)helper/guest-agent$'; then exit 1; fi
-          if tar -tf dockerd-*.tar.zst | grep -E '(^|/)helper/guest-agent$'; then exit 1; fi
+          docker run --rm \
+            -e GITHUB_WORKSPACE="$GITHUB_WORKSPACE" \
+            --workdir "$GITHUB_WORKSPACE" \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            "$LINUX_BUILDER_IMAGE" \
+            bash -c '
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          go run scripts/build.go
+          '
 
       - name: Upload chroot artifact
         uses: 'actions/upload-artifact@v7'

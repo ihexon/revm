@@ -1,0 +1,12 @@
+.git
+.github
+.idea
+.claude
+bin
+out
+.deps
+*.tar.xz
+*.tar.zst
+task.md
+ANALYSIS.md
+test_20runs.sh
