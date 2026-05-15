@@ -13,7 +13,7 @@ initialization.
 - Start long-lived services such as SSH, Podman API, and NTP sync.
 - Run the user command in `chroot` mode, or keep the container engine alive in `dockerd` mode.
 - Probe readiness and report SSH / Podman / network status back to the host.
-- Sync disks and power off the VM on shutdown signals.
+- Sync disks and reboot the VM on shutdown signals.
 
 ## Boot Flow
 
@@ -24,7 +24,7 @@ initialization.
    - `chroot`: configure network, start SSH and time sync, then execute the requested command.
    - `dockerd`: configure network, start Podman API, SSH, and time sync.
 5. Run readiness probes and send ready events back to the host.
-6. Wait for shutdown, sync disks, and force power off the VM.
+6. Wait for shutdown, sync disks, and force reboot the VM.
 
 ## File Map
 
@@ -38,5 +38,5 @@ initialization.
 | `pkg/service/podman.go` | Podman system service bootstrap |
 | `pkg/service/runcmdline.go` | Execute the user command, including TTY-aware console handling |
 | `pkg/service/readiness.go` | SSH / Podman / interface readiness probes |
-| `pkg/service/shutdown.go` | Shutdown coordination: sync then `poweroff -f` |
+| `pkg/service/shutdown.go` | Shutdown coordination: sync then `reboot -f` |
 | `pkg/supervisor/supervisor.go` | Minimal restart-capable process supervisor used by guest services |

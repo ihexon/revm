@@ -18,8 +18,8 @@ func (s *Step) SyncDisk() {
 	close(s.diskSync)
 }
 
-func (s *Step) PowerOff() {
-	_ = exec.Command("poweroff", "-f").Run()
+func (s *Step) Reboot() {
+	_ = exec.Command(BusyboxPath(), "reboot", "-f").Run()
 }
 
 // WaitAndShutdown waits for the interrupt signal and shutdown the VM
@@ -44,6 +44,6 @@ func WaitAndShutdown() {
 	logrus.Infof("[shutdown] waiting for disk to sync...")
 	<-stepS.diskSync
 
-	logrus.Infof("[shutdown] poweroff virtual machine...")
-	stepS.PowerOff()
+	logrus.Infof("[shutdown] reboot virtual machine...")
+	stepS.Reboot()
 }
