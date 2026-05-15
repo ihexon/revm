@@ -22,7 +22,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxxhash-dev \
     libzstd-dev \
     nettle-dev \
-    patchelf \
     uuid-dev \
     wget \
     zlib1g-dev \

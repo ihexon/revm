@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -297,11 +298,16 @@ func (b *builder) buildBundles() error {
 		} else {
 			env = append(env, "CGO_ENABLED=1")
 		}
-		if err := command(env, "go", "build", "-ldflags="+ldflags, "-o", filepath.Join(b.binDir(target), target), filepath.Join(b.workspace, "cmd", target)); err != nil {
+		if err := command(env, "go", "build", "-ldflags="+ldflags, "-o", b.executablePath(target), filepath.Join(b.workspace, "cmd", target)); err != nil {
 			return err
 		}
 		if err := b.prepareRuntimeLibsFor(target); err != nil {
 			return err
+		}
+		if b.goos == "linux" {
+			if err := b.writeLinuxLauncher(filepath.Join(b.binDir(target), target), target); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -339,7 +345,7 @@ func (b *builder) prepareRuntimeLibsDarwin(target string) error {
 	}
 
 	entitlements := filepath.Join(b.workspace, "revm.entitlements")
-	bin := filepath.Join(b.binDir(target), target)
+	bin := b.executablePath(target)
 	if err := command(nil, "install_name_tool", "-change", "libkrunfw.5.dylib", "@loader_path/../lib/libkrunfw.5.dylib", bin); err != nil {
 		return err
 	}
@@ -359,8 +365,83 @@ func (b *builder) prepareRuntimeLibsLinux(target string) error {
 		return err
 	}
 
-	bin := filepath.Join(b.binDir(target), target)
-	return command(nil, "patchelf", "--set-rpath", "$ORIGIN/../lib", bin)
+	deps, err := linuxRuntimeLibs(append([]string{b.executablePath(target)}, linuxSharedLibraries(libDir)...)...)
+	if err != nil {
+		return err
+	}
+	for _, path := range deps {
+		if strings.HasPrefix(path, libDir+string(os.PathSeparator)) {
+			continue
+		}
+		if err := copyResolvedFileWithCP(path, libDir+"/"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func linuxSharedLibraries(dir string) []string {
+	entries, err := readDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	var paths []string
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.Contains(entry.Name(), ".so") {
+			continue
+		}
+		paths = append(paths, filepath.Join(dir, entry.Name()))
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func linuxRuntimeLibs(paths ...string) ([]string, error) {
+	seen := map[string]bool{}
+	for _, path := range paths {
+		out, err := exec.Command("ldd", path).CombinedOutput()
+		text := string(out)
+		if err != nil {
+			return nil, fmt.Errorf("ldd %s: %w\n%s", path, err, text)
+		}
+		for _, line := range strings.Split(text, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "linux-vdso") {
+				continue
+			}
+			if strings.Contains(line, "not found") {
+				return nil, fmt.Errorf("ldd %s: unresolved dependency: %s", path, line)
+			}
+			libPath := lddLibraryPath(line)
+			if libPath != "" {
+				seen[libPath] = true
+			}
+		}
+	}
+
+	libs := make([]string, 0, len(seen))
+	for path := range seen {
+		libs = append(libs, path)
+	}
+	sort.Strings(libs)
+	return libs, nil
+}
+
+func lddLibraryPath(line string) string {
+	if idx := strings.Index(line, "=>"); idx >= 0 {
+		fields := strings.Fields(strings.TrimSpace(line[idx+len("=>"):]))
+		if len(fields) > 0 && strings.HasPrefix(fields[0], string(os.PathSeparator)) {
+			return fields[0]
+		}
+		return ""
+	}
+
+	fields := strings.Fields(line)
+	if len(fields) > 0 && strings.HasPrefix(fields[0], string(os.PathSeparator)) {
+		return fields[0]
+	}
+	return ""
 }
 
 func (b *builder) runLint() error {
@@ -390,6 +471,35 @@ func (b *builder) packageTarget(target string) error {
 	}
 	logrus.Infof("build complete: %s", tarPath)
 	return nil
+}
+
+func (b *builder) writeLinuxLauncher(path, target string) error {
+	realName := target + ".real"
+	command := fmt.Sprintf("exec \"$DIR/../lib/%s\" --library-path \"$DIR/../lib\" \"$DIR/%s\" \"$@\"", b.linuxDynLinkerName(), realName)
+	script := fmt.Sprintf("#!/bin/sh\nDIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\n%s\n", command)
+	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
+func (b *builder) linuxDynLinkerName() string {
+	switch b.goarch {
+	case "arm64", "aarch64":
+		return "ld-linux-aarch64.so.1"
+	case "amd64", "x86_64":
+		return "ld-linux-x86-64.so.2"
+	default:
+		return "ld-linux.so"
+	}
+}
+
+func (b *builder) executablePath(target string) string {
+	name := target
+	if b.goos == "linux" {
+		name += ".real"
+	}
+	return filepath.Join(b.binDir(target), name)
 }
 
 func (b *builder) targetRoot(target string) string {
