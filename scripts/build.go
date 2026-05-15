@@ -361,35 +361,9 @@ func (b *builder) prepareRuntimeLibsLinux(target string) error {
 	}); err != nil {
 		return err
 	}
-	libs, err := b.linuxRuntimeLibs()
-	if err != nil {
-		return err
-	}
-	for _, path := range libs {
-		if err := copyResolvedFileWithCP(path, libDir+"/"); err != nil {
-			return err
-		}
-	}
 
 	bin := filepath.Join(b.binDir(target), target)
 	return command(nil, "patchelf", "--set-rpath", "$ORIGIN/../lib", bin)
-}
-
-func (b *builder) linuxRuntimeLibs() ([]string, error) {
-	switch b.goarch {
-	case "arm64", "aarch64":
-		return []string{
-			"/lib/aarch64-linux-gnu/libc.so.6",
-			"/lib/ld-linux-aarch64.so.1",
-		}, nil
-	case "amd64", "x86_64":
-		return []string{
-			"/lib/x86_64-linux-gnu/libc.so.6",
-			"/lib64/ld-linux-x86-64.so.2",
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported linux arch: %s", b.goarch)
-	}
 }
 
 func (b *builder) runLint() error {
@@ -423,25 +397,11 @@ func (b *builder) packageTarget(target string) error {
 
 func (b *builder) writeLauncher(path, target string) error {
 	command := fmt.Sprintf("exec \"$DIR/%s\" \"$@\"", target)
-	if b.goos == "linux" {
-		command = fmt.Sprintf("exec \"$DIR/../lib/%s\" --library-path \"$DIR/../lib\" \"$DIR/%s\" \"$@\"", b.linuxDynLinkerName(), target)
-	}
 	script := fmt.Sprintf("#!/bin/sh\nDIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\n%s\n", command)
 	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
-}
-
-func (b *builder) linuxDynLinkerName() string {
-	switch b.goarch {
-	case "arm64", "aarch64":
-		return "ld-linux-aarch64.so.1"
-	case "amd64", "x86_64":
-		return "ld-linux-x86-64.so.2"
-	default:
-		return "ld-linux.so"
-	}
 }
 
 func (b *builder) targetRoot(target string) string {
