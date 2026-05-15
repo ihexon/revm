@@ -370,7 +370,9 @@ func (b *builder) prepareRuntimeLibsLinux(target string) error {
 			return err
 		}
 	}
-	return nil
+
+	bin := filepath.Join(b.binDir(target), target)
+	return command(nil, "patchelf", "--set-rpath", "$ORIGIN/../lib", bin)
 }
 
 func (b *builder) linuxRuntimeLibs() ([]string, error) {
