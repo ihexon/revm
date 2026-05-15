@@ -303,9 +303,6 @@ func (b *builder) buildBundles() error {
 		if err := b.prepareRuntimeLibsFor(target); err != nil {
 			return err
 		}
-		if err := b.writeLauncher(filepath.Join(b.binDir(target), target+".sh"), target); err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -392,15 +389,6 @@ func (b *builder) packageTarget(target string) error {
 		return err
 	}
 	logrus.Infof("build complete: %s", tarPath)
-	return nil
-}
-
-func (b *builder) writeLauncher(path, target string) error {
-	command := fmt.Sprintf("exec \"$DIR/%s\" \"$@\"", target)
-	script := fmt.Sprintf("#!/bin/sh\nDIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\n%s\n", command)
-	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
 	return nil
 }
 
