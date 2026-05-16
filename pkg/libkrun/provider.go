@@ -21,19 +21,19 @@ func (p *Provider) Create(ctx context.Context) error {
 	return p.libkrun.Create(ctx)
 }
 
-func (p *Provider) Start(ctx context.Context) error {
+func (p *Provider) Start(vmCtx context.Context) error {
 	ch := make(chan error, 1)
 	go func() {
 		runtime.LockOSThread()
-		ch <- p.libkrun.Start(ctx)
+		ch <- p.libkrun.Start(vmCtx)
 	}()
 
 	select {
 	case err := <-ch:
 		return err
-	case <-ctx.Done():
+	case <-vmCtx.Done():
 		_ = p.Stop()
-		return ctx.Err()
+		return vmCtx.Err()
 	}
 }
 

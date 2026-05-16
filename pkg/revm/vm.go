@@ -248,42 +248,51 @@ func (vm *VM) createUserSymlinks() error {
 
 // Run starts the prepared VM and blocks until it exits.
 func (vm *VM) Run(ctx context.Context) error {
-	ctx, cancelRun := context.WithCancelCause(ctx)
+	runCtx, cancelRun := context.WithCancelCause(ctx)
 	defer cancelRun(context.Canceled)
+
+	vmCtx, cancelVM := context.WithCancelCause(ctx)
+	defer cancelVM(context.Canceled)
 
 	networkReady, signalNetworkReady := vm.newNetworkReadySignal()
 
 	var g errgroup.Group
 
-	vm.startRunService(&g, ctx, cancelRun, vm.startIgnitionService)
-	vm.startRunService(&g, ctx, cancelRun, func(ctx context.Context) error {
+	vm.startRunService(&g, runCtx, cancelRun, cancelVM, vm.startIgnitionService)
+	vm.startRunService(&g, runCtx, cancelRun, cancelVM, func(ctx context.Context) error {
 		return vm.startHostNetworkStack(ctx, signalNetworkReady)
 	})
-	vm.startRunService(&g, ctx, cancelRun, vm.startMachineManagementAPI)
+	vm.startRunService(&g, runCtx, cancelRun, cancelVM, vm.startMachineManagementAPI)
 
-	if err := vm.startModeServices(&g, ctx, cancelRun, networkReady); err != nil {
+	if err := vm.startModeServices(&g, runCtx, cancelRun, cancelVM, networkReady); err != nil {
 		return err
 	}
 
+	requestGuestShutdown := func() {
+		_ = vm.stopVirtualMachine()
+	}
+	forceHostShutdown := func() {
+		cancelVM(context.Canceled)
+		cancelRun(context.Canceled)
+	}
+
 	go func() {
-		vm.WaitAndShutdownMachine(ctx, func() {
-			cancelRun(context.Canceled)
-		})
+		vm.WaitAndShutdownMachine(runCtx, requestGuestShutdown, forceHostShutdown)
 	}()
 
 	g.Go(func() error {
-		return vm.runVirtualMachine(ctx, cancelRun, networkReady)
+		return vm.runVirtualMachine(runCtx, vmCtx, cancelRun, networkReady)
 	})
 
-	return runError(ctx, g.Wait())
+	return runError(runCtx, g.Wait())
 }
 
-func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, cancelRun context.CancelCauseFunc, networkReady <-chan struct{}) error {
+func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, cancelRun, cancelVM context.CancelCauseFunc, networkReady <-chan struct{}) error {
 	switch vm.machine.RunMode() {
 	case define.RootFsMode.String():
 		return nil
 	case define.ContainerMode.String():
-		vm.startRunService(g, ctx, cancelRun, func(ctx context.Context) error {
+		vm.startRunService(g, ctx, cancelRun, cancelVM, func(ctx context.Context) error {
 			if err := waitForNetworkReady(ctx, networkReady); err != nil {
 				return err
 			}
@@ -328,7 +337,7 @@ func waitForNetworkReady(ctx context.Context, networkReady <-chan struct{}) erro
 	}
 }
 
-func (vm *VM) startRunService(g *errgroup.Group, ctx context.Context, cancelRun context.CancelCauseFunc, start func(context.Context) error) {
+func (vm *VM) startRunService(g *errgroup.Group, ctx context.Context, cancelRun, cancelVM context.CancelCauseFunc, start func(context.Context) error) {
 	g.Go(func() error {
 		err := start(ctx)
 		if err == nil || errors.Is(err, context.Canceled) {
@@ -337,14 +346,15 @@ func (vm *VM) startRunService(g *errgroup.Group, ctx context.Context, cancelRun 
 
 		cancelRun(err)
 		_ = vm.stopVirtualMachine()
+		cancelVM(err)
 		return err
 	})
 }
 
 // runVirtualMachine waits for the host network to be ready, boots the VM, and
 // propagates the VM exit result into the shared run cancellation path.
-func (vm *VM) runVirtualMachine(ctx context.Context, cancelRun context.CancelCauseFunc, networkReady <-chan struct{}) error {
-	if err := waitForNetworkReady(ctx, networkReady); err != nil {
+func (vm *VM) runVirtualMachine(runCtx, vmCtx context.Context, cancelRun context.CancelCauseFunc, networkReady <-chan struct{}) error {
+	if err := waitForNetworkReady(runCtx, networkReady); err != nil {
 		return err
 	}
 
@@ -352,7 +362,9 @@ func (vm *VM) runVirtualMachine(ctx context.Context, cancelRun context.CancelCau
 	logrus.Info(reason.Error())
 	vm.emit(EventVirtualMachineBooting, reason.Error())
 
-	err := vm.startVirtualMachine(ctx)
+	err := vm.startVirtualMachine(vmCtx)
+	// A nil error means the guest exited by itself; a non-nil error preserves
+	// the VM failure or forced-cancel cause while stopping host-side services.
 	if err != nil {
 		cancelRun(err)
 	} else {
@@ -482,9 +494,18 @@ func pingPodman(ctx context.Context, client *network.Client) bool {
 	return status >= http.StatusOK && status < http.StatusMultipleChoices
 }
 
-func (vm *VM) WaitAndShutdownMachine(ctx context.Context, onShutdown func()) {
-	// Monitor parent process exit
-	go func() {
+func (vm *VM) WaitAndShutdownMachine(ctx context.Context, requestShutdown, forceShutdown func()) {
+	emitStopping := func(reason string) {
+		logrus.Info(reason)
+		vm.emit(EventStopping, reason)
+	}
+
+	requestGuestShutdown := func(reason string) {
+		emitStopping(reason)
+		requestShutdown()
+	}
+
+	monitorParentExit := func() {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -494,16 +515,16 @@ func (vm *VM) WaitAndShutdownMachine(ctx context.Context, onShutdown func()) {
 				return
 			case <-ticker.C:
 				if os.Getppid() == 1 {
-					reason := fmt.Errorf("parent process exited, shutting down machine")
-					logrus.Info(reason.Error())
-					vm.emit(EventStopping, reason.Error())
-					_ = vm.stopVirtualMachine()
-					onShutdown()
+					emitStopping("parent process exited, shutting down machine")
+					forceShutdown()
 					return
 				}
 			}
 		}
-	}()
+	}
+
+	// Force shutdown if the launcher disappears and can no longer own cleanup.
+	go monitorParentExit()
 
 	// Monitor shutdown signals
 	go func() {
@@ -514,12 +535,17 @@ func (vm *VM) WaitAndShutdownMachine(ctx context.Context, onShutdown func()) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-sigCh:
-			reason := fmt.Errorf("received signal, shutting down")
-			logrus.Info(reason.Error())
-			vm.emit(EventStopping, reason.Error())
-			_ = vm.stopVirtualMachine()
-			onShutdown()
+		case sig := <-sigCh:
+			requestGuestShutdown("received signal, shutting down")
+			logrus.Warnf("waiting for guest shutdown after %s; press Ctrl-C again to force shutdown", sig)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case sig := <-sigCh:
+			logrus.Warnf("received %s again, forcing shutdown", sig)
+			forceShutdown()
 		}
 	}()
 }
