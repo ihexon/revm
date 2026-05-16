@@ -21,19 +21,23 @@ func (p *Provider) Create(ctx context.Context) error {
 	return p.libkrun.Create(ctx)
 }
 
-func (p *Provider) Start(vmCtx context.Context) error {
+func (p *Provider) Start(vmWaitAbortCtx context.Context) error {
 	ch := make(chan error, 1)
 	go func() {
 		runtime.LockOSThread()
-		ch <- p.libkrun.Start(vmCtx)
+		// vmWaitAbortCtx follows the blocking libkrun Start call. Graceful shutdown is
+		// requested separately through Stop/SendSignal, not by cancelling this ctx.
+		ch <- p.libkrun.Start(vmWaitAbortCtx)
 	}()
 
 	select {
 	case err := <-ch:
 		return err
-	case <-vmCtx.Done():
+	case <-vmWaitAbortCtx.Done():
+		// Cancelling vmWaitAbortCtx means force shutdown: stop waiting for libkrun to
+		// exit by itself and send the backend stop signal.
 		_ = p.Stop()
-		return vmCtx.Err()
+		return vmWaitAbortCtx.Err()
 	}
 }
 

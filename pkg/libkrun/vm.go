@@ -74,8 +74,9 @@ func (v *Libkrun) Create(ctx context.Context) error {
 	return nil
 }
 
-// Start launches the Libkrun and blocks until it exits.
-func (v *Libkrun) Start(ctx context.Context) error {
+// Start launches Libkrun and blocks until it exits. vmWaitAbortCtx names the caller's
+// wait-abort context; graceful guest shutdown is requested outside this method.
+func (v *Libkrun) Start(vmWaitAbortCtx context.Context) error {
 	// krun_start_enter 后的代码在 https://github.com/containers/libkrun/issues/561 得到修复前，
 	// 永远没有机会执行，因为 Libkrun 会使用 exit 退出程序
 	//

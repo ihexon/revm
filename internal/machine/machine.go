@@ -32,8 +32,10 @@ func New(spec *define.MachineSpec, backend backend.Backend) (*Machine, error) {
 	return &Machine{spec: spec, backend: backend}, nil
 }
 
-func (m *Machine) Start(ctx context.Context) error {
-	return m.backend.Start(ctx)
+func (m *Machine) Start(vmWaitAbortCtx context.Context) error {
+	// Preserve the vmWaitAbortCtx name while forwarding it so callers can distinguish
+	// aborting the host-side VM wait from requesting guest shutdown.
+	return m.backend.Start(vmWaitAbortCtx)
 }
 
 func (m *Machine) Stop() error {

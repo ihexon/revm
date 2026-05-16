@@ -248,51 +248,77 @@ func (vm *VM) createUserSymlinks() error {
 
 // Run starts the prepared VM and blocks until it exits.
 func (vm *VM) Run(ctx context.Context) error {
-	runCtx, cancelRun := context.WithCancelCause(ctx)
-	defer cancelRun(context.Canceled)
+	// Host services and the blocking VM wait have separate cancellation paths:
+	// the first Ctrl-C asks the guest to shut down without aborting the VM wait.
+	hostServicesCtx, stopHostServices := context.WithCancelCause(ctx)
+	defer stopHostServices(context.Canceled)
 
-	vmCtx, cancelVM := context.WithCancelCause(ctx)
-	defer cancelVM(context.Canceled)
+	// vmWaitAbortCtx only controls the host-side wait in startVirtualMachine. The
+	// first Ctrl-C must not cancel it; it only asks the guest to run its shutdown
+	// path. The second Ctrl-C cancels it to stop waiting for the guest to exit.
+	vmWaitAbortCtx, abortVMWait := context.WithCancelCause(ctx)
+	defer abortVMWait(context.Canceled)
+
+	shutdown := vmRunShutdown{
+		stopHostServices: stopHostServices,
+		abortVMWait:      abortVMWait,
+	}
 
 	networkReady, signalNetworkReady := vm.newNetworkReadySignal()
 
 	var g errgroup.Group
 
-	vm.startRunService(&g, runCtx, cancelRun, cancelVM, vm.startIgnitionService)
-	vm.startRunService(&g, runCtx, cancelRun, cancelVM, func(ctx context.Context) error {
+	vm.startHostService(&g, hostServicesCtx, shutdown, vm.startIgnitionService)
+	vm.startHostService(&g, hostServicesCtx, shutdown, func(ctx context.Context) error {
 		return vm.startHostNetworkStack(ctx, signalNetworkReady)
 	})
-	vm.startRunService(&g, runCtx, cancelRun, cancelVM, vm.startMachineManagementAPI)
+	vm.startHostService(&g, hostServicesCtx, shutdown, vm.startMachineManagementAPI)
 
-	if err := vm.startModeServices(&g, runCtx, cancelRun, cancelVM, networkReady); err != nil {
+	if err := vm.startModeServices(&g, hostServicesCtx, shutdown, networkReady); err != nil {
 		return err
 	}
 
-	requestGuestShutdown := func() {
-		_ = vm.stopVirtualMachine()
-	}
 	forceHostShutdown := func() {
-		cancelVM(context.Canceled)
-		cancelRun(context.Canceled)
+		shutdown.forceVMRun(context.Canceled)
 	}
 
-	go func() {
-		vm.WaitAndShutdownMachine(runCtx, requestGuestShutdown, forceHostShutdown)
-	}()
+	vm.startShutdownMonitors(hostServicesCtx, vm.requestGuestShutdown, forceHostShutdown)
 
 	g.Go(func() error {
-		return vm.runVirtualMachine(runCtx, vmCtx, cancelRun, networkReady)
+		// vmWaitAbortCtx reaches the backend Start path and only lets force shutdown
+		// stop waiting for the VM; first Ctrl-C leaves it active.
+		return vm.runVirtualMachine(hostServicesCtx, vmWaitAbortCtx, shutdown, networkReady)
 	})
 
-	return runError(runCtx, g.Wait())
+	return runError(hostServicesCtx, g.Wait())
 }
 
-func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, cancelRun, cancelVM context.CancelCauseFunc, networkReady <-chan struct{}) error {
+type vmRunShutdown struct {
+	stopHostServices context.CancelCauseFunc
+	abortVMWait      context.CancelCauseFunc
+}
+
+func (s vmRunShutdown) finishVMRun(cause error) {
+	s.stopHostServices(cause)
+}
+
+// forceVMRun is the second Ctrl-C path: stop waiting for the guest to exit and
+// tear down host-side services so Run can return quickly.
+func (s vmRunShutdown) forceVMRun(cause error) {
+	s.abortVMWait(cause)
+	s.stopHostServices(cause)
+}
+
+func (vm *VM) requestGuestShutdown() {
+	_ = vm.stopVirtualMachine()
+}
+
+func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, shutdown vmRunShutdown, networkReady <-chan struct{}) error {
 	switch vm.machine.RunMode() {
 	case define.RootFsMode.String():
 		return nil
 	case define.ContainerMode.String():
-		vm.startRunService(g, ctx, cancelRun, cancelVM, func(ctx context.Context) error {
+		vm.startHostService(g, ctx, shutdown, func(ctx context.Context) error {
 			if err := waitForNetworkReady(ctx, networkReady); err != nil {
 				return err
 			}
@@ -337,24 +363,23 @@ func waitForNetworkReady(ctx context.Context, networkReady <-chan struct{}) erro
 	}
 }
 
-func (vm *VM) startRunService(g *errgroup.Group, ctx context.Context, cancelRun, cancelVM context.CancelCauseFunc, start func(context.Context) error) {
+func (vm *VM) startHostService(g *errgroup.Group, ctx context.Context, shutdown vmRunShutdown, start func(context.Context) error) {
 	g.Go(func() error {
 		err := start(ctx)
 		if err == nil || errors.Is(err, context.Canceled) {
 			return err
 		}
 
-		cancelRun(err)
 		_ = vm.stopVirtualMachine()
-		cancelVM(err)
+		shutdown.forceVMRun(err)
 		return err
 	})
 }
 
 // runVirtualMachine waits for the host network to be ready, boots the VM, and
 // propagates the VM exit result into the shared run cancellation path.
-func (vm *VM) runVirtualMachine(runCtx, vmCtx context.Context, cancelRun context.CancelCauseFunc, networkReady <-chan struct{}) error {
-	if err := waitForNetworkReady(runCtx, networkReady); err != nil {
+func (vm *VM) runVirtualMachine(hostServicesCtx, vmWaitAbortCtx context.Context, shutdown vmRunShutdown, networkReady <-chan struct{}) error {
+	if err := waitForNetworkReady(hostServicesCtx, networkReady); err != nil {
 		return err
 	}
 
@@ -362,13 +387,15 @@ func (vm *VM) runVirtualMachine(runCtx, vmCtx context.Context, cancelRun context
 	logrus.Info(reason.Error())
 	vm.emit(EventVirtualMachineBooting, reason.Error())
 
-	err := vm.startVirtualMachine(vmCtx)
+	// vmWaitAbortCtx is intentionally not cancelled by the first Ctrl-C. That path
+	// requests guest shutdown and waits here until the VM exits by itself.
+	err := vm.startVirtualMachine(vmWaitAbortCtx)
 	// A nil error means the guest exited by itself; a non-nil error preserves
 	// the VM failure or forced-cancel cause while stopping host-side services.
 	if err != nil {
-		cancelRun(err)
+		shutdown.finishVMRun(err)
 	} else {
-		cancelRun(context.Canceled)
+		shutdown.finishVMRun(context.Canceled)
 	}
 	return err
 }
@@ -438,8 +465,10 @@ func (vm *VM) startMachineManagementAPI(ctx context.Context) error {
 	return server.Start(ctx)
 }
 
-func (vm *VM) startVirtualMachine(ctx context.Context) error {
-	return vm.machine.Start(ctx)
+func (vm *VM) startVirtualMachine(vmWaitAbortCtx context.Context) error {
+	// Keep forwarding vmWaitAbortCtx as the VM wait abort signal, separate from the
+	// guest shutdown request sent through stopVirtualMachine.
+	return vm.machine.Start(vmWaitAbortCtx)
 }
 
 func (vm *VM) stopVirtualMachine() error {
@@ -494,60 +523,64 @@ func pingPodman(ctx context.Context, client *network.Client) bool {
 	return status >= http.StatusOK && status < http.StatusMultipleChoices
 }
 
-func (vm *VM) WaitAndShutdownMachine(ctx context.Context, requestShutdown, forceShutdown func()) {
-	emitStopping := func(reason string) {
-		logrus.Info(reason)
-		vm.emit(EventStopping, reason)
-	}
+func (vm *VM) startShutdownMonitors(ctx context.Context, requestGuestShutdown, forceHostShutdown func()) {
+	// Force shutdown if the launcher disappears and can no longer own cleanup.
+	go vm.monitorLauncherExit(ctx, forceHostShutdown)
 
-	requestGuestShutdown := func(reason string) {
-		emitStopping(reason)
-		requestShutdown()
-	}
+	go vm.monitorInterrupts(ctx, requestGuestShutdown, forceHostShutdown)
+}
 
-	monitorParentExit := func() {
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
+func (vm *VM) monitorLauncherExit(ctx context.Context, forceHostShutdown func()) {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
 
-		for {
-			select {
-			case <-ctx.Done():
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if os.Getppid() == 1 {
+				vm.emitStopping("parent process exited, shutting down machine")
+				forceHostShutdown()
 				return
-			case <-ticker.C:
-				if os.Getppid() == 1 {
-					emitStopping("parent process exited, shutting down machine")
-					forceShutdown()
-					return
-				}
 			}
 		}
 	}
+}
 
-	// Force shutdown if the launcher disappears and can no longer own cleanup.
-	go monitorParentExit()
+func (vm *VM) monitorInterrupts(ctx context.Context, requestGuestShutdown, forceHostShutdown func()) {
+	sigCh := make(chan os.Signal, 2)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
 
-	// Monitor shutdown signals
-	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		defer signal.Stop(sigCh)
+	firstSignal, ok := waitForShutdownSignal(ctx, sigCh)
+	if !ok {
+		return
+	}
+	vm.emitStopping("received signal, shutting down")
+	requestGuestShutdown()
+	logrus.Warnf("waiting for guest shutdown after %s; press Ctrl-C again to force shutdown", firstSignal)
 
-		select {
-		case <-ctx.Done():
-			return
-		case sig := <-sigCh:
-			requestGuestShutdown("received signal, shutting down")
-			logrus.Warnf("waiting for guest shutdown after %s; press Ctrl-C again to force shutdown", sig)
-		}
+	secondSignal, ok := waitForShutdownSignal(ctx, sigCh)
+	if !ok {
+		return
+	}
+	logrus.Warnf("received %s again, forcing shutdown", secondSignal)
+	forceHostShutdown()
+}
 
-		select {
-		case <-ctx.Done():
-			return
-		case sig := <-sigCh:
-			logrus.Warnf("received %s again, forcing shutdown", sig)
-			forceShutdown()
-		}
-	}()
+func waitForShutdownSignal(ctx context.Context, sigCh <-chan os.Signal) (os.Signal, bool) {
+	select {
+	case <-ctx.Done():
+		return nil, false
+	case sig := <-sigCh:
+		return sig, true
+	}
+}
+
+func (vm *VM) emitStopping(reason string) {
+	logrus.Info(reason)
+	vm.emit(EventStopping, reason)
 }
 
 // emit sending events with option msg
