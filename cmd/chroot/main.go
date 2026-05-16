@@ -84,7 +84,7 @@ func main() {
 				if err != nil {
 					return err
 				}
-				defer vm.Close()
+				defer vm.Release()
 				return vm.Run(ctx)
 			default:
 				return fmt.Errorf("unsupported run mode %q", cfg.RunMode)

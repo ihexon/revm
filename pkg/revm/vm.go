@@ -42,7 +42,7 @@ const defaultForceStopTimeout = 3 * time.Second
 //
 // runtimemachine.Machine is only a view derived from the resolved spec. It does
 // not start, stop, or mutate the VM; backend.Backend owns those operations.
-// Close must always be called to release resources.
+// Release must always be called to release resources.
 type VM struct {
 	cfg *Config
 
@@ -86,9 +86,9 @@ func newProvider(mc *define.MachineSpec) (backend.Backend, error) {
 	return p, nil
 }
 
-// Close 释放运行时资源（文件锁、event eventDispatcher）。
-// 必须始终调用，即使 Run() 从未被调用。幂等。
-func (vm *VM) Close() error {
+// Release frees host-side resources such as file locks, logs, and event reporters.
+// It must always be called, even if Run has not been called. Release is idempotent.
+func (vm *VM) Release() error {
 	if vm.observability.runLog != nil {
 		logrus.SetOutput(os.Stderr)
 		_ = vm.observability.runLog.Close()
@@ -160,7 +160,7 @@ func Build(ctx context.Context, cfg *Config) (*VM, error) {
 	}
 
 	if err := vm.build(ctx); err != nil {
-		_ = vm.Close()
+		_ = vm.Release()
 		return nil, err
 	}
 
