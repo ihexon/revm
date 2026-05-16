@@ -581,6 +581,10 @@ func (p *machineBuildPlan) configureManagementAPI(ctx context.Context) error {
 }
 
 func (p *machineBuildPlan) detectTTY(ctx context.Context) error {
+	if p.runMode == define.ContainerMode {
+		p.builder.TTY = false
+		return nil
+	}
 	p.builder.detectTTY()
 	return nil
 }
