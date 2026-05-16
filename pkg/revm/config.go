@@ -341,8 +341,8 @@ func validateConfig(cfg Config) error {
 	if cfg.CPUs < 1 {
 		return fmt.Errorf("cpus must be at least 1, got %d", cfg.CPUs)
 	}
-	if cfg.CPUs > 255 {
-		return fmt.Errorf("cpus must be at most 255 (libkrun uint8_t limit), got %d", cfg.CPUs)
+	if cfg.CPUs > 32 {
+		return fmt.Errorf("cpus must be at most 32 (libkrun supported limit), got %d", cfg.CPUs)
 	}
 
 	switch cfg.Network {
