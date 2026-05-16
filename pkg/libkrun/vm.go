@@ -117,15 +117,32 @@ func (v *Libkrun) Start(vmWaitAbortCtx context.Context) error {
 }
 
 // SendSignal writes a signal message to the Libkrun's signal pipe.
-func (v *Libkrun) SendSignal(name define.GuestSignalName) {
+func (v *Libkrun) SendSignal(ctx context.Context, name define.GuestSignalName) error {
 	if v.files.signalPipeW == nil {
-		return
+		return nil
 	}
 
 	msg := define.GuestSignal{SignalName: name}
-	if b, err := json.Marshal(msg); err == nil {
-		_, _ = v.files.signalPipeW.Write(b)
-		_, _ = v.files.signalPipeW.Write([]byte("\n"))
+	b, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	return writeSignalMessage(ctx, v.files.signalPipeW, append(b, '\n'))
+}
+
+func writeSignalMessage(ctx context.Context, f *os.File, msg []byte) error {
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := f.Write(msg)
+		errCh <- err
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 

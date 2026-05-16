@@ -3,10 +3,8 @@
 package machine
 
 import (
-	"context"
 	"fmt"
 
-	"linuxvm/pkg/backend"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/protocol"
@@ -18,28 +16,14 @@ import (
 // Public protocols and service views are derived from this type instead of
 // being threaded through service constructors as separate arguments.
 type Machine struct {
-	spec    *define.MachineSpec
-	backend backend.Backend
+	spec *define.MachineSpec
 }
 
-func New(spec *define.MachineSpec, backend backend.Backend) (*Machine, error) {
+func New(spec *define.MachineSpec) (*Machine, error) {
 	if spec == nil {
 		return nil, fmt.Errorf("machine spec is nil")
 	}
-	if backend == nil {
-		return nil, fmt.Errorf("backend is nil")
-	}
-	return &Machine{spec: spec, backend: backend}, nil
-}
-
-func (m *Machine) Start(vmWaitAbortCtx context.Context) error {
-	// Preserve the vmWaitAbortCtx name while forwarding it so callers can distinguish
-	// aborting the host-side VM wait from requesting guest shutdown.
-	return m.backend.Start(vmWaitAbortCtx)
-}
-
-func (m *Machine) Stop() error {
-	return m.backend.Stop()
+	return &Machine{spec: spec}, nil
 }
 
 func (m *Machine) RunMode() string {

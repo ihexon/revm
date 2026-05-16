@@ -20,7 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
+	goruntime "runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -31,27 +31,50 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// VM represents a virtual machine session.
+const defaultForceStopTimeout = 3 * time.Second
+
+// VM owns one prepared virtual machine session.
+//
+// It deliberately separates three concerns:
+//   - runtime: immutable machine view plus backend lifecycle operations.
+//   - workspace: host-side session files and their cleanup.
+//   - observability: logs and event reporting.
+//
+// runtimemachine.Machine is only a view derived from the resolved spec. It does
+// not start, stop, or mutate the VM; backend.Backend owns those operations.
 // Close must always be called to release resources.
 type VM struct {
 	cfg *Config
 
-	machine          *runtimemachine.Machine
-	sessionDir       string
-	releaseResources func()
-	eventDispatcher  eventDispatcher
-	logFile          *os.File
+	runtime       vmRuntime
+	workspace     vmWorkspace
+	observability vmObservability
 
 	seq atomic.Uint64
+}
+
+type vmRuntime struct {
+	view    *runtimemachine.Machine
+	backend backend.Backend
+}
+
+type vmWorkspace struct {
+	dir     string
+	release func()
+}
+
+type vmObservability struct {
+	events eventDispatcher
+	runLog *os.File
 }
 
 // newProvider creates a libkrun Provider for the current platform.
 func newProvider(mc *define.MachineSpec) (backend.Backend, error) {
 	switch {
-	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
-	case runtime.GOOS == "linux" && (runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64"):
+	case goruntime.GOOS == "darwin" && goruntime.GOARCH == "arm64":
+	case goruntime.GOOS == "linux" && (goruntime.GOARCH == "arm64" || goruntime.GOARCH == "amd64"):
 	default:
-		return nil, fmt.Errorf("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
+		return nil, fmt.Errorf("unsupported platform: %s/%s", goruntime.GOOS, goruntime.GOARCH)
 	}
 	if err := libkrun.CheckHostSupport(); err != nil {
 		return nil, err
@@ -66,16 +89,16 @@ func newProvider(mc *define.MachineSpec) (backend.Backend, error) {
 // Close 释放运行时资源（文件锁、event eventDispatcher）。
 // 必须始终调用，即使 Run() 从未被调用。幂等。
 func (vm *VM) Close() error {
-	if vm.logFile != nil {
+	if vm.observability.runLog != nil {
 		logrus.SetOutput(os.Stderr)
-		_ = vm.logFile.Close()
-		vm.logFile = nil
+		_ = vm.observability.runLog.Close()
+		vm.observability.runLog = nil
 	}
-	if vm.releaseResources != nil {
-		vm.releaseResources()
-		vm.releaseResources = nil
+	if vm.workspace.release != nil {
+		vm.workspace.release()
+		vm.workspace.release = nil
 	}
-	vm.eventDispatcher.close()
+	vm.observability.events.close()
 	return nil
 }
 
@@ -123,13 +146,17 @@ func Build(ctx context.Context, cfg *Config) (*VM, error) {
 	logrus.Infof("start virtualMachine, full cmdline: %q", os.Args)
 
 	vm := &VM{
-		cfg:        &normalizedCfg,
-		sessionDir: getSessionDir(normalizedCfg.SessionID),
-		logFile:    logFile,
+		cfg: &normalizedCfg,
+		workspace: vmWorkspace{
+			dir: getSessionDir(normalizedCfg.SessionID),
+		},
+		observability: vmObservability{
+			runLog: logFile,
+		},
 	}
 
 	if reporter := newEventReporter(normalizedCfg.ReportURL); reporter != nil {
-		vm.eventDispatcher.addReporter(reporter)
+		vm.observability.events.addReporter(reporter)
 	}
 
 	if err := vm.build(ctx); err != nil {
@@ -185,39 +212,42 @@ func setupLogFile(cfg Config) (*os.File, error) {
 
 // build acquires all heavyweight resources. On failure it cleans up after itself.
 func (vm *VM) build(ctx context.Context) error {
-	mc, releaseResources, err := buildMachine(ctx, *vm.cfg, vm.sessionDir)
+	mc, releaseWorkspace, err := buildMachine(ctx, *vm.cfg, vm.workspace.dir)
 	if err != nil {
 		return fmt.Errorf("build machine: %w", err)
 	}
 
 	if err := vm.createUserSymlinks(); err != nil {
-		releaseResources()
+		releaseWorkspace()
 		return fmt.Errorf("create symlinks: %w", err)
 	}
 
 	vmp, err := newProvider(mc)
 	if err != nil {
-		releaseResources()
+		releaseWorkspace()
 		return fmt.Errorf("create vm provider: %w", err)
 	}
 
-	machine, err := runtimemachine.New(mc, vmp)
+	machine, err := runtimemachine.New(mc)
 	if err != nil {
-		releaseResources()
+		releaseWorkspace()
 		return fmt.Errorf("create runtime machine: %w", err)
 	}
 
-	vm.machine = machine
-	vm.releaseResources = releaseResources
+	vm.runtime = vmRuntime{
+		view:    machine,
+		backend: vmp,
+	}
+	vm.workspace.release = releaseWorkspace
 	return nil
 }
 
 // createUserSymlinks links session-internal resources to user-specified paths.
-// All actual files remain inside sessionDir; the symlinks are just a convenience
+// All actual files remain inside the workspace; the symlinks are just a convenience
 // bridge so external tools can find them at well-known locations.
 func (vm *VM) createUserSymlinks() error {
 	cfg := vm.cfg
-	p := newMachinePathManager(vm.sessionDir)
+	p := newMachinePathManager(vm.workspace.dir)
 
 	if cfg.PodmanProxyAPIFile != "" {
 		if err := createSymlink(p.GetPodmanSocketFile(), cfg.PodmanProxyAPIFile); err != nil {
@@ -246,79 +276,107 @@ func (vm *VM) createUserSymlinks() error {
 	return nil
 }
 
-// Run starts the prepared VM and blocks until it exits.
+// Run starts the prepared VM, runs all host-side services required by the
+// guest, and blocks until the VM exits or the run is aborted.
+//
+// The run has two cooperating lifetimes:
+//   - hostServicesCtx controls services hosted by this process, such as the
+//     ignition server, management API, gvproxy stack, and Podman proxy.
+//   - vmWaitAbortCtx is passed to backend.Start and only controls whether the
+//     host keeps waiting for the VM exit path to return.
+//
+// Shutdown is intentionally two-phase. A graceful shutdown request, such as the
+// first Ctrl-C or a management API stop request, only asks the guest to exit.
+// Host services stay alive and backend.Start keeps waiting because the guest may
+// still need management, network, proxy, or SSH-side plumbing while it runs its
+// shutdown path. Once the VM exits by itself and backend.Start returns, Run stops
+// host services and returns.
+//
+// A force shutdown request, such as a second Ctrl-C, launcher disappearance, or a
+// host service failure, asks the backend to stop the VM, aborts backend.Start's
+// wait path, and stops host services so Run can return quickly.
+//
+// If a host service fails, Run treats it as fatal for the VM session and forces
+// the VM run to end. If the VM exits or the run is cancelled normally, Run
+// returns nil; otherwise it returns the first meaningful failure cause.
 func (vm *VM) Run(ctx context.Context) error {
-	// Host services and the blocking VM wait have separate cancellation paths:
-	// the first Ctrl-C asks the guest to shut down without aborting the VM wait.
 	hostServicesCtx, stopHostServices := context.WithCancelCause(ctx)
 	defer stopHostServices(context.Canceled)
 
-	// vmWaitAbortCtx only controls the host-side wait in startVirtualMachine. The
-	// first Ctrl-C must not cancel it; it only asks the guest to run its shutdown
-	// path. The second Ctrl-C cancels it to stop waiting for the guest to exit.
 	vmWaitAbortCtx, abortVMWait := context.WithCancelCause(ctx)
 	defer abortVMWait(context.Canceled)
 
-	shutdown := vmRunShutdown{
-		stopHostServices: stopHostServices,
-		abortVMWait:      abortVMWait,
+	finishVMRun := func(cause error) {
+		stopHostServices(cause)
+	}
+	forceVMRun := func(cause error) {
+		abortVMWait(cause)
+		stopHostServices(cause)
 	}
 
 	networkReady, signalNetworkReady := vm.newNetworkReadySignal()
 
 	var g errgroup.Group
 
-	vm.startHostService(&g, hostServicesCtx, shutdown, vm.startIgnitionService)
-	vm.startHostService(&g, hostServicesCtx, shutdown, func(ctx context.Context) error {
+	vm.startHostService(&g, hostServicesCtx, forceVMRun, vm.startIgnitionService)
+	vm.startHostService(&g, hostServicesCtx, forceVMRun, func(ctx context.Context) error {
 		return vm.startHostNetworkStack(ctx, signalNetworkReady)
 	})
-	vm.startHostService(&g, hostServicesCtx, shutdown, vm.startMachineManagementAPI)
+	vm.startHostService(&g, hostServicesCtx, forceVMRun, vm.startMachineManagementAPI)
 
-	if err := vm.startModeServices(&g, hostServicesCtx, shutdown, networkReady); err != nil {
+	if err := vm.startModeServices(&g, hostServicesCtx, forceVMRun, networkReady); err != nil {
 		return err
 	}
 
 	forceHostShutdown := func() {
-		shutdown.forceVMRun(context.Canceled)
+		vm.forceVirtualMachine()
+		forceVMRun(context.Canceled)
 	}
 
 	vm.startShutdownMonitors(hostServicesCtx, vm.requestGuestShutdown, forceHostShutdown)
 
 	g.Go(func() error {
-		// vmWaitAbortCtx reaches the backend Start path and only lets force shutdown
-		// stop waiting for the VM; first Ctrl-C leaves it active.
-		return vm.runVirtualMachine(hostServicesCtx, vmWaitAbortCtx, shutdown, networkReady)
+		if err := waitForNetworkReady(hostServicesCtx, networkReady); err != nil {
+			return err
+		}
+
+		reason := fmt.Errorf("boot virtual machine")
+		logrus.Info(reason.Error())
+		vm.emit(EventVirtualMachineBooting, reason.Error())
+
+		err := vm.runtime.backend.Start(vmWaitAbortCtx)
+		if err != nil {
+			finishVMRun(err)
+		} else {
+			finishVMRun(context.Canceled)
+		}
+		return err
 	})
 
 	return runError(hostServicesCtx, g.Wait())
 }
 
-type vmRunShutdown struct {
-	stopHostServices context.CancelCauseFunc
-	abortVMWait      context.CancelCauseFunc
-}
-
-func (s vmRunShutdown) finishVMRun(cause error) {
-	s.stopHostServices(cause)
-}
-
-// forceVMRun is the second Ctrl-C path: stop waiting for the guest to exit and
-// tear down host-side services so Run can return quickly.
-func (s vmRunShutdown) forceVMRun(cause error) {
-	s.abortVMWait(cause)
-	s.stopHostServices(cause)
-}
-
 func (vm *VM) requestGuestShutdown() {
-	_ = vm.stopVirtualMachine()
+	if err := vm.runtime.backend.RequestShutdown(context.Background()); err != nil {
+		logrus.Warnf("request guest shutdown failed: %v", err)
+	}
 }
 
-func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, shutdown vmRunShutdown, networkReady <-chan struct{}) error {
-	switch vm.machine.RunMode() {
+func (vm *VM) forceVirtualMachine() {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultForceStopTimeout)
+	defer cancel()
+
+	if err := vm.runtime.backend.ForceStop(ctx); err != nil {
+		logrus.Warnf("force stop virtual machine failed: %v", err)
+	}
+}
+
+func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, forceVMRun func(error), networkReady <-chan struct{}) error {
+	switch vm.runtime.view.RunMode() {
 	case define.RootFsMode.String():
 		return nil
 	case define.ContainerMode.String():
-		vm.startHostService(g, ctx, shutdown, func(ctx context.Context) error {
+		vm.startHostService(g, ctx, forceVMRun, func(ctx context.Context) error {
 			if err := waitForNetworkReady(ctx, networkReady); err != nil {
 				return err
 			}
@@ -336,7 +394,7 @@ func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, shutdown
 
 		return nil
 	default:
-		return fmt.Errorf("unsupported run mode: %s", vm.machine.RunMode())
+		return fmt.Errorf("unsupported run mode: %s", vm.runtime.view.RunMode())
 	}
 }
 
@@ -363,41 +421,17 @@ func waitForNetworkReady(ctx context.Context, networkReady <-chan struct{}) erro
 	}
 }
 
-func (vm *VM) startHostService(g *errgroup.Group, ctx context.Context, shutdown vmRunShutdown, start func(context.Context) error) {
+func (vm *VM) startHostService(g *errgroup.Group, ctx context.Context, forceVMRun func(error), start func(context.Context) error) {
 	g.Go(func() error {
 		err := start(ctx)
 		if err == nil || errors.Is(err, context.Canceled) {
 			return err
 		}
 
-		_ = vm.stopVirtualMachine()
-		shutdown.forceVMRun(err)
+		vm.forceVirtualMachine()
+		forceVMRun(err)
 		return err
 	})
-}
-
-// runVirtualMachine waits for the host network to be ready, boots the VM, and
-// propagates the VM exit result into the shared run cancellation path.
-func (vm *VM) runVirtualMachine(hostServicesCtx, vmWaitAbortCtx context.Context, shutdown vmRunShutdown, networkReady <-chan struct{}) error {
-	if err := waitForNetworkReady(hostServicesCtx, networkReady); err != nil {
-		return err
-	}
-
-	reason := fmt.Errorf("boot virtual machine")
-	logrus.Info(reason.Error())
-	vm.emit(EventVirtualMachineBooting, reason.Error())
-
-	// vmWaitAbortCtx is intentionally not cancelled by the first Ctrl-C. That path
-	// requests guest shutdown and waits here until the VM exits by itself.
-	err := vm.startVirtualMachine(vmWaitAbortCtx)
-	// A nil error means the guest exited by itself; a non-nil error preserves
-	// the VM failure or forced-cancel cause while stopping host-side services.
-	if err != nil {
-		shutdown.finishVMRun(err)
-	} else {
-		shutdown.finishVMRun(context.Canceled)
-	}
-	return err
 }
 
 func runError(ctx context.Context, err error) error {
@@ -411,13 +445,13 @@ func runError(ctx context.Context, err error) error {
 }
 
 func (vm *VM) startPodmanProxy(ctx context.Context) error {
-	if vm.machine.RunMode() != define.ContainerMode.String() {
+	if vm.runtime.view.RunMode() != define.ContainerMode.String() {
 		return nil
 	}
 
-	switch vm.machine.VirtualNetworkMode() {
+	switch vm.runtime.view.VirtualNetworkMode() {
 	case define.GVISOR:
-		guestAPIAddr := vm.machine.PodmanGuestAPIListenAddr()
+		guestAPIAddr := vm.runtime.view.PodmanGuestAPIListenAddr()
 		_, portStr, err := net.SplitHostPort(guestAPIAddr)
 		if err != nil {
 			return fmt.Errorf("invalid guest podman address %q: %w", guestAPIAddr, err)
@@ -428,29 +462,29 @@ func (vm *VM) startPodmanProxy(ctx context.Context) error {
 			return fmt.Errorf("invalid port in guest podman address %q: %w", portStr, err)
 		}
 
-		logrus.Infof("podman proxy listening in %s, forward to %s", vm.machine.PodmanHostProxyAddr(), guestAPIAddr)
+		logrus.Infof("podman proxy listening in %s, forward to %s", vm.runtime.view.PodmanHostProxyAddr(), guestAPIAddr)
 		return gvproxy.TunnelHostUnixToGuest(ctx,
-			vm.machine.GVPCtlAddr(),
-			vm.machine.PodmanHostProxyAddr(),
+			vm.runtime.view.GVPCtlAddr(),
+			vm.runtime.view.PodmanHostProxyAddr(),
 			define.GuestIP,
 			uint16(port))
 	default:
-		return fmt.Errorf("podman proxy requires %s network, got %s", define.GVISOR, vm.machine.VirtualNetworkMode())
+		return fmt.Errorf("podman proxy requires %s network, got %s", define.GVISOR, vm.runtime.view.VirtualNetworkMode())
 	}
 }
 
 func (vm *VM) startHostNetworkStack(ctx context.Context, onReady func()) error {
-	if vm.machine.VirtualNetworkMode() == define.TSI {
+	if vm.runtime.view.VirtualNetworkMode() == define.TSI {
 		onReady()
 		return nil
 	}
 
 	logrus.Info("starting gvisor-tap-vsock network stack")
-	return gvproxy.Run(ctx, vm.machine.GVProxySpec(), onReady)
+	return gvproxy.Run(ctx, vm.runtime.view.GVProxySpec(), onReady)
 }
 
 func (vm *VM) startIgnitionService(ctx context.Context) error {
-	server, err := ignition.NewServer(vm.machine)
+	server, err := ignition.NewServer(vm.runtime.view)
 	if err != nil {
 		return fmt.Errorf("create ignition server: %w", err)
 	}
@@ -458,21 +492,23 @@ func (vm *VM) startIgnitionService(ctx context.Context) error {
 }
 
 func (vm *VM) startMachineManagementAPI(ctx context.Context) error {
-	server, err := management.NewServer(vm.machine)
+	server, err := management.NewServer(managementMachine{
+		Machine: vm.runtime.view,
+		backend: vm.runtime.backend,
+	})
 	if err != nil {
 		return fmt.Errorf("create management server: %w", err)
 	}
 	return server.Start(ctx)
 }
 
-func (vm *VM) startVirtualMachine(vmWaitAbortCtx context.Context) error {
-	// Keep forwarding vmWaitAbortCtx as the VM wait abort signal, separate from the
-	// guest shutdown request sent through stopVirtualMachine.
-	return vm.machine.Start(vmWaitAbortCtx)
+type managementMachine struct {
+	*runtimemachine.Machine
+	backend backend.Backend
 }
 
-func (vm *VM) stopVirtualMachine() error {
-	return vm.machine.Stop()
+func (m managementMachine) RequestShutdown(ctx context.Context) error {
+	return m.backend.RequestShutdown(ctx)
 }
 
 func (vm *VM) reportPodmanReady(ctx context.Context) error {
@@ -480,14 +516,14 @@ func (vm *VM) reportPodmanReady(ctx context.Context) error {
 		return err
 	}
 
-	msg := fmt.Sprintf("podman API proxy ready on %s", vm.machine.PodmanHostProxyAddr())
+	msg := fmt.Sprintf("podman API proxy ready on %s", vm.runtime.view.PodmanHostProxyAddr())
 	logrus.Info(msg)
 	vm.emit(EventPodmanReady, msg)
 	return nil
 }
 
 func (vm *VM) waitPodmanReady(ctx context.Context) error {
-	addr, err := network.ParseUnixAddr(vm.machine.PodmanHostProxyAddr())
+	addr, err := network.ParseUnixAddr(vm.runtime.view.PodmanHostProxyAddr())
 	if err != nil {
 		return fmt.Errorf("parse podman proxy address: %w", err)
 	}
@@ -588,5 +624,5 @@ func (vm *VM) emit(kind EventKind, msg string) {
 	if vm == nil || vm.cfg == nil {
 		return
 	}
-	vm.eventDispatcher.emit(vm.cfg.SessionID, vm.cfg.RunMode, kind, msg, vm.seq.Add(1))
+	vm.observability.events.emit(vm.cfg.SessionID, vm.cfg.RunMode, kind, msg, vm.seq.Add(1))
 }

@@ -44,11 +44,11 @@ func (vm *VM) Attach(ctx context.Context) error {
 	setupLogrus(normalizedCfg.LogLevel)
 	vm.cfg = &normalizedCfg
 
-	if vm.sessionDir == "" {
-		vm.sessionDir = getSessionDir(normalizedCfg.SessionID)
+	if vm.workspace.dir == "" {
+		vm.workspace.dir = getSessionDir(normalizedCfg.SessionID)
 	}
 
-	attachSpec, err := fetchAttachSpec(ctx, vm.sessionDir)
+	attachSpec, err := fetchAttachSpec(ctx, vm.workspace.dir)
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func attachShell(ctx context.Context, sshTarget sshsvc.Target) error {
 // Exec runs a command inside the guest VM and returns its combined stdout
 // output. It blocks until the command completes.
 func (vm *VM) Exec(ctx context.Context, name string, args ...string) ([]byte, error) {
-	client, err := sshsvc.MakeSSHClient(ctx, vm.machine.SSHTarget())
+	client, err := sshsvc.MakeSSHClient(ctx, vm.runtime.view.SSHTarget())
 	if err != nil {
 		return nil, fmt.Errorf("ssh connect: %w", err)
 	}
@@ -137,7 +137,7 @@ func (vm *VM) Exec(ctx context.Context, name string, args ...string) ([]byte, er
 // It blocks until the command completes.
 func (vm *VM) ExecWith(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer,
 	name string, args ...string) error {
-	client, err := sshsvc.MakeSSHClient(ctx, vm.machine.SSHTarget())
+	client, err := sshsvc.MakeSSHClient(ctx, vm.runtime.view.SSHTarget())
 	if err != nil {
 		return fmt.Errorf("ssh connect: %w", err)
 	}
@@ -151,7 +151,7 @@ func (vm *VM) ExecWith(ctx context.Context, stdin io.Reader, stdout, stderr io.W
 // Shell opens an interactive shell session to the guest VM.
 // It requires a TTY on the host side.
 func (vm *VM) Shell(ctx context.Context) error {
-	client, err := sshsvc.MakeSSHClient(ctx, vm.machine.SSHTarget())
+	client, err := sshsvc.MakeSSHClient(ctx, vm.runtime.view.SSHTarget())
 	if err != nil {
 		return fmt.Errorf("ssh connect: %w", err)
 	}
@@ -163,13 +163,13 @@ func (vm *VM) Shell(ctx context.Context) error {
 // SSHEndpoint returns the configured guest SSH address (host:port).
 // It does not wait for SSH readiness; callers should retry the connection.
 func (vm *VM) SSHEndpoint(ctx context.Context) (string, error) {
-	return vm.machine.SSHTarget().GuestSSHServerListenAddr, nil
+	return vm.runtime.view.SSHTarget().GuestSSHServerListenAddr, nil
 }
 
 // PodmanEndpoint returns the configured host-side Podman unix socket address.
 // It does not wait for Podman readiness; callers should retry the connection.
 func (vm *VM) PodmanEndpoint(ctx context.Context) (string, error) {
-	return vm.machine.PodmanHostProxyAddr(), nil
+	return vm.runtime.view.PodmanHostProxyAddr(), nil
 }
 
 // ExecOutput is a convenience that runs Exec and returns stdout as a string,

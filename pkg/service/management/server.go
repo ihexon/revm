@@ -28,7 +28,7 @@ type errResponse struct {
 }
 
 type Machine interface {
-	Stop() error
+	RequestShutdown(ctx context.Context) error
 	ManagementView() VMConfigView
 	AttachSpec() protocol.AttachSpec
 	SSHTarget() sshsvc.Target
@@ -102,7 +102,7 @@ func (s *Server) handleRequestVMStop(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	_ = s.machine.Stop()
+	_ = s.machine.RequestShutdown(r.Context())
 	writeJSON(w, http.StatusOK, nil)
 }
 
