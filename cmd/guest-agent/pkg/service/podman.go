@@ -6,12 +6,18 @@ import (
 	"fmt"
 	"guestAgent/pkg/supervisor"
 	"linuxvm/pkg/protocol"
+	"os"
 	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
 func StartGuestPodmanService(ctx context.Context, vmc *protocol.GuestSpec) error {
+	// podman need /var/tmp exist, we make sure the directory exist
+	if err := os.MkdirAll("/var/tmp", 0755); err != nil {
+		return fmt.Errorf("failed to create /var/tmp for podman: %w", err)
+	}
+
 	s := supervisor.New(supervisor.Config{
 		Cmd: "podman",
 		Args: []string{
