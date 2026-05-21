@@ -17,24 +17,24 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.21"
+const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.22"
 
 var defaultBuildTargets = []string{"chroot", "dockerd"}
 
 // Edit this table when revm-assets changes.
 var assetSHA256 = map[string]string{
-	"alpine-rootfs-Linux-aarch64.tar.zst": "e2a80cb47f6ec5d7f25a6fc9310f7baa7e658022bc6a666acfa256d80d945bee",
-	"alpine-rootfs-Linux-x86_64.tar.zst":  "cc3ffeb77bb3663ce245c4b0d2df9b6e3f49994015caae299a4583440a0c18b3",
-	"busybox-Linux-aarch64.tar.zst":       "ea19c25217956f8e921a1f35f7d523beba89356f3cbadfcb9a75170d083381ca",
-	"busybox-Linux-x86_64.tar.zst":        "a948a75f404cc7dfbf385ac0abf59b2b90c5ca754a03dd1b4b26efec5fa83d60",
-	"dropbear-Linux-aarch64.tar.zst":      "011bd04d2a5f6272768f4ecbc96008047b46a9ff1685b0111aee095375bf67ac",
-	"dropbear-Linux-x86_64.tar.zst":       "80b899b3d87a6fb960e4444fe22a1d09b7f34a3cd771b767cc600e3a8d09c9d3",
-	"libkrun-Darwin-arm64.tar.zst":        "36646ac714df92b1b4dd1bcce63749b75ff23027281baf3717964d88c7bb63f7",
-	"libkrun-Linux-aarch64.tar.zst":       "1d3af6f11472d9fcb706b517feb6e2003b74dedfd1579a66ab58ae134be190a2",
-	"libkrun-Linux-x86_64.tar.zst":        "3f1cbb427db46f8c5577218b0e7a8c0e501fdcda489f7b0072552eff3c8ad352",
-	"libkrunfw-Darwin-arm64.tar.zst":      "a70a73b71fb9f27b59e2d08bfcb78a29fb2e868631e627798723f7f9559bddf5",
-	"libkrunfw-Linux-aarch64.tar.zst":     "8ec074112b6f764bbdb0e29699cab2cd5cb0b3746e283f5311ca299afa7fbb1e",
-	"libkrunfw-Linux-x86_64.tar.zst":      "a9d3753b566cee6539e3ca95e35f90256f6a9841ca30288ee7ce3f9439dd60c5",
+	"alpine-rootfs-Linux-aarch64.tar.zst": "6c934a14e604282b21c10be29d0b323069fff826f30b4239db311b8e0158ca04",
+	"alpine-rootfs-Linux-x86_64.tar.zst":  "ad4fe98c3ef6b46c1e0ab1901a294959a83016224369b49a5274a7bdd7d67ba2",
+	"busybox-Linux-aarch64.tar.zst":       "895a26a1ad39f4a357124504e5a76a65f445932832b76b18c100b05789b8301b",
+	"busybox-Linux-x86_64.tar.zst":        "d62b7dd2d13f44c7a36128c69e9a36087cefa00c08b0e92b92a89eecced89c4f",
+	"dropbear-Linux-aarch64.tar.zst":      "1dfe249f37660140ec67cf279a8ef3c38e9887cabfaeec42d60bc30fea412a4a",
+	"dropbear-Linux-x86_64.tar.zst":       "56332c0d206f0fc1bf655ede4b42d089e090398c3e5446a7c460d2e8151e5b0b",
+	"libkrun-Darwin-arm64.tar.zst":        "9b0ab238ddb153c6d6853857398fa13379f4f1ca85ec6ab5e85738727195b719",
+	"libkrun-Linux-aarch64.tar.zst":       "4166c930ef1de2674bf88c69b4e80ca8ea6ed860469fb4874eb93bd93ae78632",
+	"libkrun-Linux-x86_64.tar.zst":        "6bed215d25e341225659c749dc2c0748032f681395e641e20d7124fffe742551",
+	"libkrunfw-Darwin-arm64.tar.zst":      "fed1c9c126c15eccfefdf0bbc4b0bbbf44e19ac16009ba72bb12631e9b21e23c",
+	"libkrunfw-Linux-aarch64.tar.zst":     "69f32cc0d85fe07276e08d718aef129ea5938f60e073659536809833399f0c4d",
+	"libkrunfw-Linux-x86_64.tar.zst":      "57f8a15162ad3b40faa7df083fc7554834604fb4fd6cd55d0df7030356c1d134",
 }
 
 type builder struct {
