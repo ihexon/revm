@@ -9,7 +9,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"time"
+
+	"linuxvm/pkg/define"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/notification"
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
@@ -42,6 +45,7 @@ type Spec struct {
 	GuestSSHListenAddr  string
 	GuestIP             string
 	HostLoopbackAddress string
+	PortForwards        []define.PortForward
 }
 
 func NewConfig(spec Spec) (*Config, error) {
@@ -84,6 +88,13 @@ func NewConfig(spec Spec) (*Config, error) {
 
 	logrus.Infof("configuring local port forwarding from %s to %s", spec.HostSSHForwardAddr, sshServerGuestAddr)
 
+	forwards := map[string]string{
+		spec.HostSSHForwardAddr: sshServerGuestAddr,
+	}
+	for _, forward := range spec.PortForwards {
+		forwards[portForwardLocal(forward)] = portForwardRemote(forward)
+	}
+
 	return &Config{
 		ControlAddr: spec.ControlAddr,
 		NetAddr:     spec.NetAddr,
@@ -100,9 +111,7 @@ func NewConfig(spec Spec) (*Config, error) {
 				internalZone("docker.internal."),
 				internalZone("revm.internal."),
 			},
-			Forwards: map[string]string{
-				spec.HostSSHForwardAddr: sshServerGuestAddr,
-			},
+			Forwards: forwards,
 			NAT: map[string]string{
 				hostIP: spec.HostLoopbackAddress,
 			},
@@ -161,6 +170,14 @@ func internalZone(name string) types.Zone {
 			{Name: "host", IP: net.ParseIP(hostIP)},
 		},
 	}
+}
+
+func portForwardLocal(forward define.PortForward) string {
+	return net.JoinHostPort(forward.HostIP, strconv.Itoa(int(forward.HostPort)))
+}
+
+func portForwardRemote(forward define.PortForward) string {
+	return net.JoinHostPort(forward.GuestIP, strconv.Itoa(int(forward.GuestPort)))
 }
 
 func startControlAPI(ctx context.Context, g *errgroup.Group, addr string, vn *virtualnetwork.VirtualNetwork) error {

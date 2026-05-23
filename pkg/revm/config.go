@@ -6,9 +6,12 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io"
+	"linuxvm/pkg/define"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/sirupsen/logrus"
@@ -24,11 +27,13 @@ const (
 	ModeContainer RunMode = "docker"
 	// ModeAttach connects to an existing VM session without building a VM.
 	ModeAttach RunMode = "attach"
+	// ModeControl performs control-plane operations against an existing VM.
+	ModeControl RunMode = "control"
 )
 
 func (m RunMode) IsValid() bool {
 	switch m {
-	case ModeRootfs, ModeContainer, ModeAttach:
+	case ModeRootfs, ModeContainer, ModeAttach, ModeControl:
 		return true
 	default:
 		return false
@@ -49,17 +54,21 @@ type Config struct {
 	Env     []string `json:"env,omitempty"`
 	PTY     bool     `json:"pty,omitempty"`
 
-	Network              string             `json:"network,omitempty"` // "gvisor" | "tsi"
-	Mounts               []string           `json:"mounts,omitempty"`  // "/host:/guest[,ro]"
-	Disks                []RawDiskSpec      `json:"disks,omitempty"`
-	ContainerDisk        *ContainerDiskSpec `json:"containerDisk,omitempty"`
-	PodmanProxyAPIFile   string             `json:"podmanProxyAPIFile,omitempty"`
-	ManageAPIFile        string             `json:"manageAPIFile,omitempty"`
-	SSHKeyFileSymbolPath string             `json:"SSHKeyFileSymbolPath,omitempty"`
-	ReportURL            string             `json:"reportURL,omitempty"`
-	Proxy                bool               `json:"proxy,omitempty"`
-	LogLevel             string             `json:"logLevel,omitempty"` // default "info"
-	LogTo                string             `json:"logTo,omitempty"`
+	Network              string               `json:"network,omitempty"` // "gvisor" | "tsi"
+	Mounts               []string             `json:"mounts,omitempty"`  // "/host:/guest[,ro]"
+	Disks                []RawDiskSpec        `json:"disks,omitempty"`
+	ContainerDisk        *ContainerDiskSpec   `json:"containerDisk,omitempty"`
+	PodmanProxyAPIFile   string               `json:"podmanProxyAPIFile,omitempty"`
+	ManageAPIFile        string               `json:"manageAPIFile,omitempty"`
+	SSHKeyFileSymbolPath string               `json:"SSHKeyFileSymbolPath,omitempty"`
+	ReportURL            string               `json:"reportURL,omitempty"`
+	Proxy                bool                 `json:"proxy,omitempty"`
+	LogLevel             string               `json:"logLevel,omitempty"` // default "info"
+	LogTo                string               `json:"logTo,omitempty"`
+	PortForwards         []define.PortForward `json:"portForwards,omitempty"`
+	PortUnforwards       []define.PortForward `json:"portUnforwards,omitempty"`
+	PortExportSpecs      []string             `json:"portExportSpecs,omitempty"`
+	PortUnexportSpecs    []string             `json:"portUnexportSpecs,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.
@@ -92,6 +101,16 @@ func (c *Config) WithAttach(cmdline ...string) *Config {
 	c.RunMode = ModeAttach
 	c.Command = nil
 	return c.WithCommandLine(cmdline...)
+}
+
+func (c *Config) WithControl(portExportSpecs, portUnexportSpecs []string) *Config {
+	c.RunMode = ModeControl
+	c.Command = nil
+	c.PortForwards = nil
+	c.PortUnforwards = nil
+	c.PortExportSpecs = append([]string(nil), portExportSpecs...)
+	c.PortUnexportSpecs = append([]string(nil), portUnexportSpecs...)
+	return c
 }
 
 func (c *Config) WithCPUs(n int) *Config {
@@ -179,6 +198,22 @@ func (c *Config) WithEventReporter(reportURL string) *Config {
 	return c
 }
 
+func (c *Config) WithPortForwards(forwards ...define.PortForward) *Config {
+	if len(forwards) == 0 {
+		return c
+	}
+	c.PortForwards = append(c.PortForwards, forwards...)
+	return c
+}
+
+func (c *Config) WithPortUnforwards(forwards ...define.PortForward) *Config {
+	if len(forwards) == 0 {
+		return c
+	}
+	c.PortUnforwards = append(c.PortUnforwards, forwards...)
+	return c
+}
+
 func (c *Config) WithProxy(enable bool) *Config {
 	logrus.Infof("get proxy setting from system: %v", enable)
 	c.Proxy = enable
@@ -199,7 +234,53 @@ func (c *Config) WithLogging(level string, logFilePath string) *Config {
 	}
 	c.LogTo = logFilePath
 
+	if err := setupLogrus(level); err != nil {
+		panic(fmt.Sprintf("setup logging: %v", err))
+	}
+	logFile, err := setupLogFile(*c)
+	if err != nil {
+		panic(fmt.Sprintf("setup logging: %v", err))
+	}
+	setCurrentLogFile(logFile)
+
 	return c
+}
+
+var currentRunLog struct {
+	sync.Mutex
+	file *os.File
+}
+
+func currentLogFile() *os.File {
+	currentRunLog.Lock()
+	defer currentRunLog.Unlock()
+	return currentRunLog.file
+}
+
+func setCurrentLogFile(file *os.File) {
+	currentRunLog.Lock()
+	defer currentRunLog.Unlock()
+
+	if currentRunLog.file != nil && currentRunLog.file != file {
+		_ = currentRunLog.file.Close()
+	}
+	currentRunLog.file = file
+	logrus.SetOutput(io.MultiWriter(os.Stderr, file))
+}
+
+func releaseLogFile(file *os.File) {
+	currentRunLog.Lock()
+	defer currentRunLog.Unlock()
+
+	if file != nil && currentRunLog.file == file {
+		logrus.SetOutput(os.Stderr)
+		_ = file.Close()
+		currentRunLog.file = nil
+		return
+	}
+	if file != nil {
+		_ = file.Close()
+	}
 }
 
 func (c *Config) WithCommand(bin string, args ...string) *Config {
@@ -325,7 +406,28 @@ func validateConfig(cfg Config) error {
 	}
 
 	if cfg.RunMode == ModeAttach {
+		if len(cfg.PortUnforwards) > 0 && len(cfg.Command) > 0 {
+			return fmt.Errorf("port unexport cannot be combined with an attach command")
+		}
+		if len(cfg.PortForwards) > 0 && len(cfg.Command) > 0 {
+			return fmt.Errorf("port export cannot be combined with an attach command")
+		}
 		return nil
+	}
+
+	if cfg.RunMode == ModeControl {
+		if len(cfg.Command) > 0 {
+			return fmt.Errorf("control operations cannot be combined with an attach command")
+		}
+		if len(cfg.PortExportSpecs) == 0 && len(cfg.PortUnexportSpecs) == 0 &&
+			len(cfg.PortForwards) == 0 && len(cfg.PortUnforwards) == 0 {
+			return fmt.Errorf("control mode requires a control operation")
+		}
+		return nil
+	}
+
+	if len(cfg.PortUnforwards) > 0 {
+		return fmt.Errorf("port unexport requires attach mode")
 	}
 
 	if cfg.RunMode == ModeRootfs {
@@ -350,6 +452,9 @@ func validateConfig(cfg Config) error {
 		// ok
 	default:
 		return fmt.Errorf("network must be \"gvisor\" or \"tsi\", got %q", cfg.Network)
+	}
+	if len(cfg.PortForwards) > 0 && cfg.Network != string(define.GVISOR) {
+		return fmt.Errorf("port export requires network %q, got %q", define.GVISOR, cfg.Network)
 	}
 
 	return nil

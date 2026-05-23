@@ -19,6 +19,7 @@ type ResourceView struct {
 
 type EndpointView struct {
 	ManagementAPI string `json:"managementAPI,omitempty"`
+	GVProxyAPI    string `json:"gvproxyAPI,omitempty"`
 	PodmanAPI     string `json:"podmanAPI,omitempty"`
 	SSH           string `json:"ssh,omitempty"`
 }

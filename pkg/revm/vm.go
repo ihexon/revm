@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	runtimemachine "linuxvm/internal/machine"
 	"linuxvm/pkg/backend"
 	"linuxvm/pkg/define"
@@ -90,8 +89,7 @@ func newProvider(mc *define.MachineSpec) (backend.Backend, error) {
 // It must always be called, even if Run has not been called. Release is idempotent.
 func (vm *VM) Release() error {
 	if vm.observability.runLog != nil {
-		logrus.SetOutput(os.Stderr)
-		_ = vm.observability.runLog.Close()
+		releaseLogFile(vm.observability.runLog)
 		vm.observability.runLog = nil
 	}
 	if vm.workspace.release != nil {
@@ -125,23 +123,18 @@ func Build(ctx context.Context, cfg *Config) (*VM, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
 	}
+	logFile := currentLogFile()
 
 	normalizedCfg, err := NormalizeConfig(*cfg)
 	if err != nil {
+		releaseLogFile(logFile)
 		return nil, fmt.Errorf("resolve defaults: %w", err)
 	}
-	if normalizedCfg.RunMode == ModeAttach {
-		return nil, fmt.Errorf("attach mode does not build a VM; use Attach")
+	if normalizedCfg.RunMode == ModeAttach || normalizedCfg.RunMode == ModeControl {
+		releaseLogFile(logFile)
+		return nil, fmt.Errorf("%s mode does not build a VM", normalizedCfg.RunMode)
 	}
 
-	setupLogrus(normalizedCfg.LogLevel)
-
-	logFile, err := setupLogFile(normalizedCfg)
-	if err != nil {
-		return nil, fmt.Errorf("setup logging: %w", err)
-	}
-
-	logrus.SetOutput(io.MultiWriter(os.Stderr, logFile))
 	logrus.Infof("revm build info: %s", buildTimeInfo())
 	logrus.Infof("start virtualMachine, full cmdline: %q", os.Args)
 
@@ -167,15 +160,14 @@ func Build(ctx context.Context, cfg *Config) (*VM, error) {
 	return vm, nil
 }
 
-func setupLogrus(level string) {
+func setupLogrus(level string) error {
 	if level == "" {
 		level = logrus.InfoLevel.String()
 	}
 
 	l, err := logrus.ParseLevel(level)
 	if err != nil {
-		l = logrus.InfoLevel
-		logrus.Warnf("failed to parse log level: %v, using default log level %s", err, l.String())
+		return fmt.Errorf("parse log level %q: %w", level, err)
 	}
 
 	logrus.SetLevel(l)
@@ -184,7 +176,7 @@ func setupLogrus(level string) {
 		TimestampFormat: "2006-01-02 15:04:05.000",
 		ForceColors:     true,
 	})
-	logrus.SetOutput(os.Stderr)
+	return nil
 }
 
 func setupLogFile(cfg Config) (*os.File, error) {

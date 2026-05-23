@@ -440,6 +440,7 @@ func (p *machineBuildPlan) build(ctx context.Context) error {
 		{"ssh", p.configureSSH},
 		{"resources", p.configureResources},
 		{"network", p.configureNetwork},
+		{"port forwards", p.configurePortForwards},
 		{"proxy", p.configureProxy},
 		{"rootfs", p.prepareRootfs},
 		{"mode", p.configureMode},
@@ -488,6 +489,20 @@ func (p *machineBuildPlan) configureResources(ctx context.Context) error {
 
 func (p *machineBuildPlan) configureNetwork(ctx context.Context) error {
 	return p.builder.configureNetwork(ctx, define.VNetMode(p.cfg.Network))
+}
+
+func (p *machineBuildPlan) configurePortForwards(ctx context.Context) error {
+	if len(p.cfg.PortForwards) == 0 {
+		return nil
+	}
+	if p.builder.VirtualNetworkMode != define.GVISOR {
+		return fmt.Errorf("port export requires %s network, got %s", define.GVISOR, p.builder.VirtualNetworkMode)
+	}
+	if err := validatePortForwardSet(p.cfg.PortForwards, p.builder.SSHInfo.HostSSHProxyListenAddr); err != nil {
+		return err
+	}
+	p.builder.PortForwards = append([]define.PortForward(nil), p.cfg.PortForwards...)
+	return nil
 }
 
 func (p *machineBuildPlan) configureProxy(ctx context.Context) error {

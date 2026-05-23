@@ -91,6 +91,7 @@ func (m *Machine) ManagementView() management.VMConfigView {
 		},
 		Endpoints: management.EndpointView{
 			ManagementAPI: m.spec.VMCtlAddr,
+			GVProxyAPI:    m.spec.GVPCtlAddr,
 			PodmanAPI:     m.spec.PodmanInfo.HostPodmanProxyAddr,
 			SSH:           m.spec.SSHInfo.HostSSHProxyListenAddr,
 		},
@@ -137,6 +138,7 @@ func (m *Machine) GVProxySpec() gvproxy.Spec {
 		GuestSSHListenAddr:  m.spec.SSHInfo.GuestSSHServerListenAddr,
 		GuestIP:             define.GuestIP,
 		HostLoopbackAddress: define.LocalHost,
+		PortForwards:        append([]define.PortForward(nil), m.spec.PortForwards...),
 	}
 }
 

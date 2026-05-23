@@ -20,6 +20,8 @@ const (
 	FlagManageAPIFile           = "manage-api"
 	FlagExportSSHKeyPrivateFile = "ssh-key"
 	FlagReportEvents            = "report-events"
+	FlagPortExport              = "port-export"
+	FlagPortUnexport            = "port-unexport"
 
 	ContainerDiskUUID = "162cf68f-93c7-49ad-be53-45ed0e9fe42b"
 

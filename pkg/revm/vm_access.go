@@ -8,19 +8,107 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"linuxvm/pkg/define"
+	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/protocol"
+	"linuxvm/pkg/service/management"
 	sshsvc "linuxvm/pkg/service/ssh"
 	"net/http"
+	"os"
 	"path/filepath"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/sirupsen/logrus"
 )
 
 // Attach resolves the attach configuration and connects to an existing VM
 // session without building or starting a virtual machine.
 func Attach(ctx context.Context, cfg *Config) error {
-	return (&VM{cfg: cfg}).Attach(ctx)
+	vm := &VM{
+		cfg: cfg,
+		observability: vmObservability{
+			runLog: currentLogFile(),
+		},
+	}
+	defer vm.Release()
+	return vm.Attach(ctx)
+}
+
+func Control(ctx context.Context, cfg *Config) (retErr error) {
+	logFile := currentLogFile()
+	defer func() {
+		if retErr != nil {
+			logrus.Error(retErr)
+		}
+		releaseLogFile(logFile)
+	}()
+
+	if cfg == nil {
+		return fmt.Errorf("config must not be nil")
+	}
+
+	normalizedCfg, err := NormalizeConfig(*cfg)
+	if err != nil {
+		return fmt.Errorf("resolve defaults: %w", err)
+	}
+	if normalizedCfg.RunMode != ModeControl {
+		return fmt.Errorf("control operations require run mode %q, got %q", ModeControl, normalizedCfg.RunMode)
+	}
+
+	logrus.Infof("revm build info: %s", buildTimeInfo())
+	logrus.Infof("control command, full cmdline: %q", os.Args)
+
+	portExports, err := ParsePortExportSpecs(normalizedCfg.PortExportSpecs)
+	if err != nil {
+		return err
+	}
+	portUnexports, err := ParsePortUnexportSpecs(normalizedCfg.PortUnexportSpecs)
+	if err != nil {
+		return err
+	}
+	normalizedCfg.PortForwards = append(normalizedCfg.PortForwards, portExports...)
+	normalizedCfg.PortUnforwards = append(normalizedCfg.PortUnforwards, portUnexports...)
+
+	if len(normalizedCfg.PortForwards) == 0 && len(normalizedCfg.PortUnforwards) == 0 {
+		return fmt.Errorf("no port updates requested")
+	}
+	if len(normalizedCfg.Command) > 0 {
+		return fmt.Errorf("control port operations cannot be combined with an attach command")
+	}
+
+	return updatePortForwards(ctx, normalizedCfg)
+}
+
+func updatePortForwards(ctx context.Context, normalizedCfg Config) error {
+	view, err := fetchManagementView(ctx, getSessionDir(normalizedCfg.SessionID))
+	if err != nil {
+		return err
+	}
+	if view.NetworkMode != string(define.GVISOR) {
+		return fmt.Errorf("port updates require network %q, got %q", define.GVISOR, view.NetworkMode)
+	}
+	if view.Endpoints.GVProxyAPI == "" {
+		return fmt.Errorf("gvproxy API endpoint is empty")
+	}
+	if err := validatePortUpdateSet(normalizedCfg.PortUnforwards, view.Endpoints.SSH, "unexport"); err != nil {
+		return err
+	}
+	if err := validatePortUpdateSet(normalizedCfg.PortForwards, view.Endpoints.SSH, "export"); err != nil {
+		return err
+	}
+
+	for _, forward := range normalizedCfg.PortUnforwards {
+		if err := gvproxy.UnexposePort(ctx, view.Endpoints.GVProxyAPI, forward); err != nil {
+			return fmt.Errorf("unexport %s: %w", portForwardLocal(forward), err)
+		}
+	}
+	for _, forward := range normalizedCfg.PortForwards {
+		if err := gvproxy.ExposePort(ctx, view.Endpoints.GVProxyAPI, forward); err != nil {
+			return fmt.Errorf("export %s -> %s: %w", portForwardLocal(forward), portForwardRemote(forward), err)
+		}
+	}
+	return nil
 }
 
 // Attach connects to the existing VM session represented by vm.
@@ -41,7 +129,6 @@ func (vm *VM) Attach(ctx context.Context) error {
 		return fmt.Errorf("attach requires run mode %q, got %q", ModeAttach, normalizedCfg.RunMode)
 	}
 
-	setupLogrus(normalizedCfg.LogLevel)
 	vm.cfg = &normalizedCfg
 
 	if vm.workspace.dir == "" {
@@ -81,6 +168,26 @@ func fetchAttachSpec(ctx context.Context, workspaceDirPath string) (protocol.Att
 		return protocol.AttachSpec{}, fmt.Errorf("unsupported attach spec version: %d", spec.SchemaVersion)
 	}
 	return spec, nil
+}
+
+func fetchManagementView(ctx context.Context, workspaceDirPath string) (management.VMConfigView, error) {
+	vmctlAddr := newMachinePathManager(workspaceDirPath).GetVMCtlSocketFile()
+	client := network.NewUnixClient(vmctlAddr)
+	defer client.Close()
+
+	body, status, err := client.Get("/v2/vmconfig").DoAndRead(ctx)
+	if err != nil {
+		return management.VMConfigView{}, fmt.Errorf("fetch vm config: %w", err)
+	}
+	if status != http.StatusOK {
+		return management.VMConfigView{}, fmt.Errorf("management API returned status %d", status)
+	}
+
+	var view management.VMConfigView
+	if err := json.Unmarshal(body, &view); err != nil {
+		return management.VMConfigView{}, fmt.Errorf("decode vm config: %w", err)
+	}
+	return view, nil
 }
 
 func sshTargetFromAttachSpec(spec protocol.AttachSpec) sshsvc.Target {

@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/revm"
 	"os"
@@ -28,6 +27,8 @@ func main() {
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagRawDisk, Usage: "attach an ext4 raw disk image to the VM (format: <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>]); auto-created if the file does not exist; new disks default to a random UUID and mount at /mnt/<UUID>; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagMount, Usage: "share a host directory into the guest via VirtIO-FS (format: /host/path:/guest/path[,ro]); can be specified multiple times"},
+			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "expose a guest TCP port on the host (format: [tcp:]<host-port>:<guest-port> or [tcp:]<host-ip>:<host-port>:<guest-port>); in --attach mode, updates the running VM and exits; can be specified multiple times"},
+			&cli.StringSliceFlag{Name: define.FlagPortUnexport, Usage: "stop exposing a host TCP port for a running VM; requires --attach (format: [tcp:]<host-port> or [tcp:]<host-ip>:<host-port>); can be specified multiple times"},
 			&cli.BoolFlag{Name: define.FlagUsingSystemProxy, Usage: "read the macOS system HTTP/HTTPS proxy and forward it to the guest as http_proxy/https_proxy env vars; in gvisor mode, 127.0.0.1 is automatically rewritten to host.containers.internal"},
 			&cli.StringFlag{Name: define.FlagReportEvents, Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888)"},
 			&cli.StringFlag{Name: define.FlagLogLevel, Usage: "log verbosity level (trace, debug, info, warn, error, fatal, panic)", Value: "info"},
@@ -41,19 +42,17 @@ func main() {
 		Action: func(_ context.Context, command *cli.Command) error {
 			ctx := context.Background()
 
-			cfg := revm.DefaultConfig().
-				WithSessionID(command.String(define.FlagSessionID)).
-				WithLogging(command.String(define.FlagLogLevel), command.String(define.FlagLogTo)).
-				WithPTY(command.Bool(define.FlagPTY))
-
-			if command.Bool(define.FlagAttachMode) {
-				cfg.WithAttach(command.Args().Slice()...)
-			} else {
-				cfg.WithMode(revm.ModeContainer).
-					WithCommandLine(command.Args().Slice()...)
-			}
-
+			portExportSpecs := command.StringSlice(define.FlagPortExport)
+			portUnexportSpecs := command.StringSlice(define.FlagPortUnexport)
 			rawDiskSpecs, err := revm.ParseRawDiskSpecs(command.StringSlice(define.FlagRawDisk))
+			if err != nil {
+				return err
+			}
+			portExports, err := revm.ParsePortExportSpecs(portExportSpecs)
+			if err != nil {
+				return err
+			}
+			portUnexports, err := revm.ParsePortUnexportSpecs(portUnexportSpecs)
 			if err != nil {
 				return err
 			}
@@ -67,7 +66,10 @@ func main() {
 				containerDiskSpec = &spec
 			}
 
-			cfg.
+			cfg := revm.DefaultConfig().
+				WithSessionID(command.String(define.FlagSessionID)).
+				WithLogging(command.String(define.FlagLogLevel), command.String(define.FlagLogTo)).
+				WithPTY(command.Bool(define.FlagPTY)).
 				WithCPUs(int(command.Int8(define.FlagCPUS))).
 				WithMemory(command.Uint64(define.FlagMemoryInMB)).
 				WithNetwork(string(define.GVISOR)).
@@ -78,25 +80,22 @@ func main() {
 				WithPodmanProxyAPIFile(command.String(define.FlagPodmanProxyAPIFile)).
 				WithManageAPIFile(command.String(define.FlagManageAPIFile)).
 				WithExportSSHKeyPrivateFile(command.String(define.FlagExportSSHKeyPrivateFile)).
-				WithRawDiskSpecs(rawDiskSpecs...)
+				WithRawDiskSpecs(rawDiskSpecs...).
+				WithPortForwards(portExports...).
+				WithPortUnforwards(portUnexports...).
+				WithEventReporter(command.String(define.FlagReportEvents))
 
-			if u := command.String(define.FlagReportEvents); u != "" {
-				cfg.WithEventReporter(u)
-			}
-
-			switch cfg.RunMode {
-			case revm.ModeAttach:
-				return revm.Attach(ctx, cfg)
-			case revm.ModeRootfs, revm.ModeContainer:
-				vm, err := revm.Build(ctx, cfg)
-				if err != nil {
-					return err
-				}
-				defer vm.Release()
-				return vm.Run(ctx)
+			switch {
+			case command.Bool(define.FlagAttachMode) && (len(portExportSpecs) > 0 || len(portUnexportSpecs) > 0):
+				cfg.WithControl(portExportSpecs, portUnexportSpecs)
+			case command.Bool(define.FlagAttachMode):
+				cfg.WithAttach(command.Args().Slice()...)
 			default:
-				return fmt.Errorf("unsupported run mode %q", cfg.RunMode)
+				cfg.WithMode(revm.ModeContainer).
+					WithCommandLine(command.Args().Slice()...)
 			}
+
+			return revm.Run(ctx, cfg)
 		},
 	}
 

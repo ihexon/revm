@@ -23,6 +23,7 @@ type MachineSpec struct {
 	Mounts            []Mount           `json:"mounts,omitempty"`
 	SSHInfo           SSHInfo           `json:"sshInfo,omitempty"`
 	PodmanInfo        PodmanInfo        `json:"podmanInfo,omitempty"` // 仅仅在 docker mode 下有意义
+	PortForwards      []PortForward     `json:"portForwards,omitempty"`
 	VMCtlAddr         string            `json:"vmCtlAddr,omitempty"`
 	RunMode           string            `json:"runMode,omitempty"`
 	IgnitionServerCfg IgnitionServerCfg `json:"ignitionServerCfg,omitempty"`
@@ -94,6 +95,14 @@ type PodmanInfo struct {
 	// GUEST
 	GuestPodmanAPIListenAddr string   `json:"guestPodmanAPIListenAddr,omitempty"`
 	GuestPodmanRunWithEnvs   []string `json:"guestPodmanRunWithEnvs,omitempty"`
+}
+
+type PortForward struct {
+	Protocol  string `json:"protocol,omitempty"`
+	HostIP    string `json:"hostIP,omitempty"`
+	HostPort  uint16 `json:"hostPort,omitempty"`
+	GuestIP   string `json:"guestIP,omitempty"`
+	GuestPort uint16 `json:"guestPort,omitempty"`
 }
 
 type GuestAgentCfg struct {
