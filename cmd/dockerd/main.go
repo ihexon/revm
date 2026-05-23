@@ -41,6 +41,18 @@ func main() {
 			&cli.StringFlag{Name: define.FlagExportSSHKeyPrivateFile, Usage: "file path to symlink the generated SSH key to"},
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
+			plan, err := revmcmd.ResolveRunPlan(command, revm.ModeContainer)
+			if err != nil {
+				return err
+			}
+
+			switch plan.Mode {
+			case revm.ModeControl:
+				return revm.Run(ctx, revmcmd.NewControlConfig(command, plan.PortUpdates))
+			case revm.ModeAttach:
+				return revm.Run(ctx, revmcmd.NewAttachConfig(command))
+			}
+
 			common, err := revmcmd.ParseCommon(command)
 			if err != nil {
 				return err
@@ -55,10 +67,7 @@ func main() {
 				containerDiskSpec = &spec
 			}
 
-			cfg := revm.DefaultConfig().
-				WithSessionID(command.String(define.FlagSessionID)).
-				WithLogging(command.String(define.FlagLogLevel), command.String(define.FlagLogTo)).
-				WithPTY(command.Bool(define.FlagPTY)).
+			cfg := revmcmd.NewBootConfig(command, plan.Mode).
 				WithCPUs(int(command.Int8(define.FlagCPUS))).
 				WithMemory(command.Uint64(define.FlagMemoryInMB)).
 				WithNetwork(string(define.GVISOR)).
@@ -70,11 +79,8 @@ func main() {
 				WithManageAPIFile(command.String(define.FlagManageAPIFile)).
 				WithExportSSHKeyPrivateFile(command.String(define.FlagExportSSHKeyPrivateFile)).
 				WithRawDiskSpecs(common.RawDisks...).
-				WithPortForwards(common.PortExports...).
-				WithPortUnforwards(common.PortUnexports...).
 				WithEventReporter(command.String(define.FlagReportEvents))
 
-			revmcmd.ApplyRunMode(command, cfg, revm.ModeContainer, common)
 			return revm.Run(ctx, cfg)
 		},
 	}

@@ -306,7 +306,7 @@ func NormalizeConfig(cfg Config) (Config, error) {
 		cfg.WorkDir = "/"
 	}
 
-	if cfg.RunMode != ModeAttach {
+	if cfg.RunMode != ModeAttach && cfg.RunMode != ModeControl {
 		if cfg.CPUs <= 0 {
 			cfg.CPUs = runtime.NumCPU()
 		}
