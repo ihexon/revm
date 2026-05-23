@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"linuxvm/cmd/internal/revmcmd"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/revm"
 	"os"
@@ -42,17 +43,7 @@ func main() {
 		Action: func(_ context.Context, command *cli.Command) error {
 			ctx := context.Background()
 
-			portExportSpecs := command.StringSlice(define.FlagPortExport)
-			portUnexportSpecs := command.StringSlice(define.FlagPortUnexport)
-			rawDiskSpecs, err := revm.ParseRawDiskSpecs(command.StringSlice(define.FlagRawDisk))
-			if err != nil {
-				return err
-			}
-			portExports, err := revm.ParsePortExportSpecs(portExportSpecs)
-			if err != nil {
-				return err
-			}
-			portUnexports, err := revm.ParsePortUnexportSpecs(portUnexportSpecs)
+			common, err := revmcmd.ParseCommon(command)
 			if err != nil {
 				return err
 			}
@@ -80,21 +71,12 @@ func main() {
 				WithPodmanProxyAPIFile(command.String(define.FlagPodmanProxyAPIFile)).
 				WithManageAPIFile(command.String(define.FlagManageAPIFile)).
 				WithExportSSHKeyPrivateFile(command.String(define.FlagExportSSHKeyPrivateFile)).
-				WithRawDiskSpecs(rawDiskSpecs...).
-				WithPortForwards(portExports...).
-				WithPortUnforwards(portUnexports...).
+				WithRawDiskSpecs(common.RawDisks...).
+				WithPortForwards(common.PortExports...).
+				WithPortUnforwards(common.PortUnexports...).
 				WithEventReporter(command.String(define.FlagReportEvents))
 
-			switch {
-			case command.Bool(define.FlagAttachMode) && (len(portExportSpecs) > 0 || len(portUnexportSpecs) > 0):
-				cfg.WithControl(portExports, portUnexports)
-			case command.Bool(define.FlagAttachMode):
-				cfg.WithAttach(command.Args().Slice()...)
-			default:
-				cfg.WithMode(revm.ModeContainer).
-					WithCommandLine(command.Args().Slice()...)
-			}
-
+			revmcmd.ApplyRunMode(command, cfg, revm.ModeContainer, common)
 			return revm.Run(ctx, cfg)
 		},
 	}
