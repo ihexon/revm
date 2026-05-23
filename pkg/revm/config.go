@@ -336,26 +336,39 @@ func validateConfig(cfg Config) error {
 		return fmt.Errorf("invalid run mode %q", cfg.RunMode)
 	}
 
-	if cfg.RunMode == ModeAttach {
-		if len(cfg.PortUnforwards) > 0 && len(cfg.Command) > 0 {
-			return fmt.Errorf("port unexport cannot be combined with an attach command")
-		}
-		if len(cfg.PortForwards) > 0 && len(cfg.Command) > 0 {
-			return fmt.Errorf("port export cannot be combined with an attach command")
-		}
-		return nil
+	switch cfg.RunMode {
+	case ModeAttach:
+		return validateAttachConfig(cfg)
+	case ModeControl:
+		return validateControlConfig(cfg)
+	case ModeRootfs, ModeContainer:
+		return validateBuildConfig(cfg)
+	default:
+		return fmt.Errorf("invalid run mode %q", cfg.RunMode)
 	}
+}
 
-	if cfg.RunMode == ModeControl {
-		if len(cfg.Command) > 0 {
-			return fmt.Errorf("control operations cannot be combined with an attach command")
-		}
-		if len(cfg.PortForwards) == 0 && len(cfg.PortUnforwards) == 0 {
-			return fmt.Errorf("control mode requires a control operation")
-		}
-		return nil
+func validateAttachConfig(cfg Config) error {
+	if len(cfg.PortUnforwards) > 0 && len(cfg.Command) > 0 {
+		return fmt.Errorf("port unexport cannot be combined with an attach command")
 	}
+	if len(cfg.PortForwards) > 0 && len(cfg.Command) > 0 {
+		return fmt.Errorf("port export cannot be combined with an attach command")
+	}
+	return nil
+}
 
+func validateControlConfig(cfg Config) error {
+	if len(cfg.Command) > 0 {
+		return fmt.Errorf("control operations cannot be combined with an attach command")
+	}
+	if len(cfg.PortForwards) == 0 && len(cfg.PortUnforwards) == 0 {
+		return fmt.Errorf("control mode requires a control operation")
+	}
+	return nil
+}
+
+func validateBuildConfig(cfg Config) error {
 	if len(cfg.PortUnforwards) > 0 {
 		return fmt.Errorf("port unexport requires attach mode")
 	}
