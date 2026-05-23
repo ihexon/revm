@@ -24,10 +24,6 @@ func (c *Config) WithLogging(level string, logFilePath string) *Config {
 		c.LogTo = logFilePath
 	}
 
-	if err := setupLogrus(level); err != nil {
-		panic(fmt.Sprintf("setup logging: %v", err))
-	}
-
 	return c
 }
 
