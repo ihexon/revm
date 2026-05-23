@@ -11,6 +11,7 @@ import (
 	"io"
 	"linuxvm/pkg/define"
 	"os"
+	"sync"
 	"syscall"
 
 	"github.com/creack/pty"
@@ -18,7 +19,7 @@ import (
 )
 
 // setupConsole configures all console ports.
-func (v *Libkrun) setupConsole() error {
+func (v *Libkrun) setupConsole() (retErr error) {
 	if ret := C.krun_disable_implicit_console(C.uint32_t(v.ctxID)); ret != 0 {
 		return errCode(ret)
 	}
@@ -28,37 +29,54 @@ func (v *Libkrun) setupConsole() error {
 		return errCode(consoleID)
 	}
 
-	if err := v.addMainConsole(consoleID); err != nil {
+	files := libkrunFiles{}
+	defer func() {
+		if retErr != nil {
+			files.close()
+		}
+	}()
+
+	if err := v.addMainConsole(consoleID, &files); err != nil {
 		return err
 	}
 
 	if !v.cfg.TTY {
-		if err := v.addStdioRedirect(consoleID); err != nil {
+		if err := v.addStdioRedirect(consoleID, &files); err != nil {
 			return err
 		}
 	}
 
-	if err := v.addGuestLogPort(consoleID); err != nil {
+	if err := v.addGuestLogPort(consoleID, &files); err != nil {
 		return err
 	}
 
-	return v.addGuestSignalPort(consoleID)
+	if err := v.addGuestSignalPort(consoleID, &files); err != nil {
+		return err
+	}
+
+	v.files = files
+	return nil
 }
 
 // addMainConsole adds the primary console (hvc0 → /dev/console).
-func (v *Libkrun) addMainConsole(consoleID C.int32_t) error {
+func (v *Libkrun) addMainConsole(consoleID C.int32_t, files *libkrunFiles) (retErr error) {
 	if v.cfg.TTY {
 		logrus.Info("running in tty mode")
 		fd, err := syscall.Dup(int(os.Stdin.Fd()))
 		if err != nil {
 			return err
 		}
+		consoleTTY := newOwnedFile(os.NewFile(uintptr(fd), "libkrun-console-tty"))
+		defer func() {
+			if retErr != nil {
+				consoleTTY.close()
+			}
+		}()
 
-		if err := v.addConsolePortTTY(consoleID, fd); err != nil {
-			_ = syscall.Close(fd)
+		if err := v.addConsolePortTTY(consoleID, consoleTTY.fd()); err != nil {
 			return err
 		}
-		v.files.consoleTTY = os.NewFile(uintptr(fd), "libkrun-console-tty")
+		files.consoleTTY = consoleTTY
 		return nil
 	}
 
@@ -67,69 +85,86 @@ func (v *Libkrun) addMainConsole(consoleID C.int32_t) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if retErr != nil {
+			consolePTY.close()
+		}
+	}()
 
 	if err := v.addConsolePortTTY(consoleID, consolePTY.fd()); err != nil {
-		consolePTY.close()
 		return err
 	}
 
-	v.files.consolePTY = consolePTY
+	files.consolePTY = consolePTY
 	return nil
 }
 
 // addStdioRedirect adds stdin/stdout/stderr ports for non-TTY mode.
-func (v *Libkrun) addStdioRedirect(consoleID C.int32_t) error {
+func (v *Libkrun) addStdioRedirect(consoleID C.int32_t, files *libkrunFiles) (retErr error) {
 	pipes, err := newStdioPipes()
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if retErr != nil {
+			pipes.close()
+		}
+	}()
 
 	if err := v.addStdioPorts(consoleID, pipes); err != nil {
-		pipes.close()
 		return err
 	}
 
-	v.files.stdio = *pipes
+	files.stdio = *pipes
 	return nil
 }
 
 // addGuestLogPort attaches a dedicated guest-log port.
-func (v *Libkrun) addGuestLogPort(consoleID C.int32_t) error {
+func (v *Libkrun) addGuestLogPort(consoleID C.int32_t, files *libkrunFiles) (retErr error) {
 	logFile, err := os.OpenFile(v.cfg.LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		return err
 	}
+	guestLog := newOwnedFile(logFile)
+	defer func() {
+		if retErr != nil {
+			guestLog.close()
+		}
+	}()
 
 	if err := v.addConsolePortInOut(consoleID, consolePortInOut{
 		name: define.GuestLogConsolePort,
 		in:   -1,
-		out:  int(logFile.Fd()),
+		out:  guestLog.fd(),
 	}); err != nil {
-		_ = logFile.Close()
 		return err
 	}
 
-	v.files.guestLog = logFile
+	files.guestLog = guestLog
 	return nil
 }
 
 // addGuestSignalPort attaches a dedicated guest-signal port.
-func (v *Libkrun) addGuestSignalPort(consoleID C.int32_t) error {
+func (v *Libkrun) addGuestSignalPort(consoleID C.int32_t, files *libkrunFiles) (retErr error) {
 	sig, err := newPipeFiles()
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if retErr != nil {
+			sig.close()
+		}
+	}()
 
 	if err := v.addConsolePortInOut(consoleID, consolePortInOut{
 		name: define.GuestSignalConsolePort,
-		in:   int(sig.read.Fd()),
+		in:   sig.read.fd(),
 		out:  -1,
 	}); err != nil {
-		sig.close()
 		return err
 	}
 
-	v.files.signalPipe = sig
+	files.signalPipe = sig
 	return nil
 }
 
@@ -139,9 +174,14 @@ type consolePortInOut struct {
 	out  int
 }
 
+type ownedFile struct {
+	file *os.File
+	once sync.Once
+}
+
 type pipeFiles struct {
-	read  *os.File
-	write *os.File
+	read  *ownedFile
+	write *ownedFile
 }
 
 type stdioPipes struct {
@@ -151,15 +191,19 @@ type stdioPipes struct {
 }
 
 type consolePTY struct {
-	master *os.File
-	slave  *os.File
+	master *ownedFile
+	slave  *ownedFile
 }
 
 type libkrunFiles struct {
+	// Keep every *os.File whose fd has been passed to libkrun reachable.
+	// libkrun only receives raw fd numbers, so Go's GC cannot see that C code
+	// still depends on them. Closing these files early would invalidate the fds
+	// that libkrun is using.
 	stdio      stdioPipes
-	consoleTTY *os.File
+	consoleTTY *ownedFile
 	consolePTY *consolePTY
-	guestLog   *os.File
+	guestLog   *ownedFile
 
 	// Keep the read end alive for Libkrun and the write end for guest signals.
 	signalPipe pipeFiles
@@ -199,7 +243,7 @@ func newPipeFiles() (pipeFiles, error) {
 	if err != nil {
 		return pipeFiles{}, err
 	}
-	return pipeFiles{read: r, write: w}, nil
+	return pipeFiles{read: newOwnedFile(r), write: newOwnedFile(w)}, nil
 }
 
 func newConsolePTY() (*consolePTY, error) {
@@ -207,14 +251,19 @@ func newConsolePTY() (*consolePTY, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &consolePTY{master: master, slave: slave}, nil
+	return &consolePTY{
+		master: newOwnedFile(master),
+		slave:  newOwnedFile(slave),
+	}, nil
 }
 
 func (v *Libkrun) addStdioPorts(consoleID C.int32_t, pipes *stdioPipes) error {
+	// For pipe-backed stdio, libkrun gets the guest-facing end and Go keeps the
+	// host-facing end for forwarding to/from os.Stdin, os.Stdout and os.Stderr.
 	ports := []consolePortInOut{
-		{name: define.KrunStdinPortName, in: int(pipes.stdin.read.Fd()), out: -1},
-		{name: define.KrunStdoutPortName, in: -1, out: int(pipes.stdout.write.Fd())},
-		{name: define.KrunStderrPortName, in: -1, out: int(pipes.stderr.write.Fd())},
+		{name: define.KrunStdinPortName, in: pipes.stdin.read.fd(), out: -1},
+		{name: define.KrunStdoutPortName, in: -1, out: pipes.stdout.write.fd()},
+		{name: define.KrunStderrPortName, in: -1, out: pipes.stderr.write.fd()},
 	}
 
 	for _, port := range ports {
@@ -263,9 +312,9 @@ func (pipes *stdioPipes) startRedirect() {
 		return
 	}
 
-	go copyAndClose(pipes.stdin.write, os.Stdin, pipes.stdin.write)
-	go copyAndClose(os.Stdout, pipes.stdout.read, pipes.stdout.read)
-	go copyAndClose(os.Stderr, pipes.stderr.read, pipes.stderr.read)
+	go copyAndClose(pipes.stdin.write.file, os.Stdin, pipes.stdin.write)
+	go copyAndClose(os.Stdout, pipes.stdout.read.file, pipes.stdout.read)
+	go copyAndClose(os.Stderr, pipes.stderr.read.file, pipes.stderr.read)
 }
 
 func (files *libkrunFiles) startConsoleIO() {
@@ -277,11 +326,11 @@ func (files *libkrunFiles) startConsoleIO() {
 
 func (files *libkrunFiles) close() {
 	files.stdio.close()
-	closeFile(files.consoleTTY)
+	closeOwnedFile(files.consoleTTY)
 	if files.consolePTY != nil {
 		files.consolePTY.close()
 	}
-	closeFile(files.guestLog)
+	closeOwnedFile(files.guestLog)
 	files.signalPipe.close()
 	*files = libkrunFiles{}
 }
@@ -293,26 +342,40 @@ func (pipes *stdioPipes) close() {
 }
 
 func (p pipeFiles) close() {
-	closeFile(p.read)
-	closeFile(p.write)
+	closeOwnedFile(p.read)
+	closeOwnedFile(p.write)
 }
 
 func (p *consolePTY) fd() int {
-	return int(p.slave.Fd())
+	return p.slave.fd()
 }
 
 func (p *consolePTY) start() {
-	go copyOutput(os.Stderr, p.master)
+	go copyOutput(os.Stderr, p.master.file)
 }
 
 func (p *consolePTY) close() {
-	closeFile(p.master)
-	closeFile(p.slave)
+	closeOwnedFile(p.master)
+	closeOwnedFile(p.slave)
 }
 
-func closeFile(file *os.File) {
+func newOwnedFile(file *os.File) *ownedFile {
+	return &ownedFile{file: file}
+}
+
+func (f *ownedFile) fd() int {
+	return int(f.file.Fd())
+}
+
+func (f *ownedFile) close() {
+	f.once.Do(func() {
+		_ = f.file.Close()
+	})
+}
+
+func closeOwnedFile(file *ownedFile) {
 	if file != nil {
-		_ = file.Close()
+		file.close()
 	}
 }
 
@@ -320,7 +383,7 @@ func copyOutput(dst io.Writer, src io.Reader) {
 	_, _ = io.Copy(dst, src)
 }
 
-func copyAndClose(dst io.Writer, src io.Reader, closer io.Closer) {
+func copyAndClose(dst io.Writer, src io.Reader, closer *ownedFile) {
 	_, _ = io.Copy(dst, src)
-	_ = closer.Close()
+	closer.close()
 }

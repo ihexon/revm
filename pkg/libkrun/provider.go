@@ -13,12 +13,12 @@ type Provider struct {
 	libkrun *Libkrun
 }
 
-func NewProvider(mc *define.MachineSpec) *Provider {
-	return &Provider{mc: mc, libkrun: New(mc)}
-}
-
-func (p *Provider) Create(ctx context.Context) error {
-	return p.libkrun.Create(ctx)
+func NewProvider(ctx context.Context, mc *define.MachineSpec) (*Provider, error) {
+	p := &Provider{mc: mc, libkrun: New(mc)}
+	if err := p.libkrun.Create(ctx); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 func (p *Provider) Start(vmWaitAbortCtx context.Context) error {
@@ -44,4 +44,8 @@ func (p *Provider) RequestShutdown(ctx context.Context) error {
 
 func (p *Provider) ForceStop(ctx context.Context) error {
 	return p.libkrun.SendSignal(ctx, define.GuestSignalTerminated)
+}
+
+func (p *Provider) Close() error {
+	return p.libkrun.Close()
 }

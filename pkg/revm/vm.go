@@ -77,16 +77,23 @@ func newProvider(ctx context.Context, mc *define.MachineSpec) (backend.Backend, 
 	if err := libkrun.CheckHostSupport(); err != nil {
 		return nil, err
 	}
-	p := libkrun.NewProvider(mc)
-	if err := p.Create(ctx); err != nil {
+	p, err := libkrun.NewProvider(ctx, mc)
+	if err != nil {
 		return nil, fmt.Errorf("create libkrun libkrun: %w", err)
 	}
 	return p, nil
 }
 
-// Release frees host-side resources such as file locks, logs, and event reporters.
+// Release frees host-side resources such as the backend, file locks, logs, and event reporters.
 // It must always be called, even if Run has not been called. Release is idempotent.
 func (vm *VM) Release() error {
+	var retErr error
+	if vm.runtime.backend != nil {
+		retErr = errors.Join(retErr, vm.runtime.backend.Close())
+		vm.runtime.backend = nil
+	}
+	vm.runtime.view = nil
+
 	if vm.observability.runLog != nil {
 		releaseRunLog(vm.observability.runLog)
 		vm.observability.runLog = nil
@@ -96,7 +103,7 @@ func (vm *VM) Release() error {
 		vm.workspace.release = nil
 	}
 	vm.observability.events.close()
-	return nil
+	return retErr
 }
 
 func buildTimeInfo() string {
@@ -118,7 +125,7 @@ func buildTimeInfo() string {
 
 // Build resolves configuration defaults and acquires the heavyweight resources
 // needed to run the VM: workspace lock, SSH keys, rootfs, disks, and provider.
-func Build(ctx context.Context, cfg *Config) (*VM, error) {
+func Build(ctx context.Context, cfg *Config) (retVM *VM, retErr error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
 	}
@@ -152,43 +159,44 @@ func Build(ctx context.Context, cfg *Config) (*VM, error) {
 		vm.observability.events.addReporter(reporter)
 	}
 
+	defer func() {
+		if retErr != nil {
+			retErr = errors.Join(retErr, vm.Release())
+		}
+	}()
+
 	if err := vm.build(ctx); err != nil {
-		_ = vm.Release()
 		return nil, err
 	}
 
 	return vm, nil
 }
 
-// build acquires all heavyweight resources. On failure it cleans up after itself.
+// build acquires all heavyweight resources and attaches each one to vm as soon
+// as ownership transfers. Build's deferred Release handles failure rollback.
 func (vm *VM) build(ctx context.Context) error {
 	mc, releaseWorkspace, err := buildMachine(ctx, *vm.cfg, vm.workspace.dir)
 	if err != nil {
 		return fmt.Errorf("build machine: %w", err)
 	}
+	vm.workspace.release = releaseWorkspace
 
 	if err := vm.createUserSymlinks(); err != nil {
-		releaseWorkspace()
 		return fmt.Errorf("create symlinks: %w", err)
 	}
 
 	vmp, err := newProvider(ctx, mc)
 	if err != nil {
-		releaseWorkspace()
 		return fmt.Errorf("create vm provider: %w", err)
 	}
+	vm.runtime.backend = vmp
 
 	machine, err := runtimemachine.New(mc)
 	if err != nil {
-		releaseWorkspace()
 		return fmt.Errorf("create runtime machine: %w", err)
 	}
+	vm.runtime.view = machine
 
-	vm.runtime = vmRuntime{
-		view:    machine,
-		backend: vmp,
-	}
-	vm.workspace.release = releaseWorkspace
 	return nil
 }
 

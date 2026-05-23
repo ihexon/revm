@@ -12,10 +12,12 @@ import "C"
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"linuxvm/pkg/define"
 	"os"
 	"runtime"
+	"sync"
 	"unsafe"
 )
 
@@ -25,6 +27,10 @@ type Libkrun struct {
 	ctxID uint32
 
 	files libkrunFiles
+
+	ctxCreated bool
+	closeOnce  sync.Once
+	closeErr   error
 }
 
 // New creates a new Libkrun instance.
@@ -36,7 +42,7 @@ func New(cfg *define.MachineSpec) *Libkrun {
 func (v *Libkrun) Create(ctx context.Context) (retErr error) {
 	defer func() {
 		if retErr != nil {
-			v.files.close()
+			retErr = errors.Join(retErr, v.Close())
 		}
 	}()
 
@@ -76,21 +82,35 @@ func (v *Libkrun) Create(ctx context.Context) (retErr error) {
 // Start launches Libkrun and blocks until it exits. vmWaitAbortCtx names the caller's
 // wait-abort context; graceful guest shutdown is requested outside this method.
 func (v *Libkrun) Start(vmWaitAbortCtx context.Context) error {
-	// krun_start_enter 后的代码在 https://github.com/containers/libkrun/issues/561 得到修复前，
-	// 永远没有机会执行，因为 Libkrun 会使用 exit 退出程序
-	//
-	// 但我仍然做象征意义上的清理工作，因为这样让人感到愉悦
 	v.files.startConsoleIO()
 	ret := C.krun_start_enter(C.uint32_t(v.ctxID))
-
-	// 让人愉悦但永远没机会执行的代码
-	v.files.close()
-
 	if ret != 0 {
 		return fmt.Errorf("Libkrun failed: %w", errCode(ret))
 	}
 
 	return nil
+}
+
+// Close releases the libkrun configuration context and the host-side files that
+// were kept alive for raw fd ownership. It is idempotent.
+func (v *Libkrun) Close() error {
+	v.closeOnce.Do(func() {
+		v.closeErr = v.close()
+	})
+	return v.closeErr
+}
+
+func (v *Libkrun) close() error {
+	var err error
+	if v.ctxCreated {
+		if ret := C.krun_free_ctx(C.uint32_t(v.ctxID)); ret != 0 {
+			err = errors.Join(err, errCode(ret))
+		}
+		v.ctxCreated = false
+		v.ctxID = 0
+	}
+	v.files.close()
+	return err
 }
 
 // SendSignal writes a signal message to the Libkrun's signal pipe.
@@ -105,7 +125,7 @@ func (v *Libkrun) SendSignal(ctx context.Context, name define.GuestSignalName) e
 		return err
 	}
 
-	return writeSignalMessage(ctx, v.files.signalPipe.write, append(b, '\n'))
+	return writeSignalMessage(ctx, v.files.signalPipe.write.file, append(b, '\n'))
 }
 
 func writeSignalMessage(ctx context.Context, f *os.File, msg []byte) error {
@@ -135,6 +155,7 @@ func (v *Libkrun) init() error {
 		return errCode(ctxID)
 	}
 	v.ctxID = uint32(ctxID)
+	v.ctxCreated = true
 
 	return nil
 }

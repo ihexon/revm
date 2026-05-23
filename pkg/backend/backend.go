@@ -10,4 +10,5 @@ type Backend interface {
 	Start(vmWaitAbortCtx context.Context) error
 	RequestShutdown(ctx context.Context) error
 	ForceStop(ctx context.Context) error
+	Close() error
 }
