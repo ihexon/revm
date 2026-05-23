@@ -87,16 +87,31 @@ func (v *Libkrun) addMainConsole(consoleID C.int32_t) error {
 
 // addStdioRedirect adds stdin/stdout/stderr ports for non-TTY mode.
 func (v *Libkrun) addStdioRedirect(consoleID C.int32_t) error {
-	stdinR, stdinW := pipe()
+	stdinR, stdinW, err := pipe()
+	if err != nil {
+		return err
+	}
 	go func() {
 		io.Copy(stdinW, os.Stdin)
 		stdinW.Close()
 	}()
 
-	stdoutR, stdoutW := pipe()
+	stdoutR, stdoutW, err := pipe()
+	if err != nil {
+		_ = stdinR.Close()
+		_ = stdinW.Close()
+		return err
+	}
 	go io.Copy(os.Stdout, stdoutR)
 
-	stderrR, stderrW := pipe()
+	stderrR, stderrW, err := pipe()
+	if err != nil {
+		_ = stdinR.Close()
+		_ = stdinW.Close()
+		_ = stdoutR.Close()
+		_ = stdoutW.Close()
+		return err
+	}
 	go io.Copy(os.Stderr, stderrR)
 
 	ports := []struct {
@@ -158,7 +173,10 @@ func (v *Libkrun) addGuestLogPort(consoleID C.int32_t) error {
 
 // addGuestSignalPort attaches a dedicated guest-signal port.
 func (v *Libkrun) addGuestSignalPort(consoleID C.int32_t) error {
-	sigR, sigW := pipe()
+	sigR, sigW, err := pipe()
+	if err != nil {
+		return err
+	}
 
 	name := cstr(define.GuestSignalConsolePort)
 	defer free(name)
@@ -181,10 +199,10 @@ func (v *Libkrun) addGuestSignalPort(consoleID C.int32_t) error {
 	return nil
 }
 
-func pipe() (*os.File, *os.File) {
+func pipe() (*os.File, *os.File, error) {
 	r, w, err := os.Pipe()
 	if err != nil {
-		panic(err)
+		return nil, nil, err
 	}
-	return r, w
+	return r, w, nil
 }

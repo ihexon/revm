@@ -67,7 +67,7 @@ type vmObservability struct {
 }
 
 // newProvider creates a libkrun Provider for the current platform.
-func newProvider(mc *define.MachineSpec) (backend.Backend, error) {
+func newProvider(ctx context.Context, mc *define.MachineSpec) (backend.Backend, error) {
 	switch {
 	case goruntime.GOOS == "darwin" && goruntime.GOARCH == "arm64":
 	case goruntime.GOOS == "linux" && (goruntime.GOARCH == "arm64" || goruntime.GOARCH == "amd64"):
@@ -78,7 +78,7 @@ func newProvider(mc *define.MachineSpec) (backend.Backend, error) {
 		return nil, err
 	}
 	p := libkrun.NewProvider(mc)
-	if err := p.Create(context.Background()); err != nil {
+	if err := p.Create(ctx); err != nil {
 		return nil, fmt.Errorf("create libkrun libkrun: %w", err)
 	}
 	return p, nil
@@ -172,7 +172,7 @@ func (vm *VM) build(ctx context.Context) error {
 		return fmt.Errorf("create symlinks: %w", err)
 	}
 
-	vmp, err := newProvider(mc)
+	vmp, err := newProvider(ctx, mc)
 	if err != nil {
 		releaseWorkspace()
 		return fmt.Errorf("create vm provider: %w", err)
