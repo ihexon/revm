@@ -13,6 +13,16 @@ import (
 
 const maxLogFileSize = 10 * 1024 * 1024
 
+// StartCommandLogging configures logrus and opens the run log for CLI preflight work.
+func StartCommandLogging(cfg Config) (*os.File, error) {
+	return setupRunLogging(cfg)
+}
+
+// StopCommandLogging releases a log file opened by StartCommandLogging.
+func StopCommandLogging(file *os.File) {
+	releaseRunLog(file)
+}
+
 func (c *Config) WithLogging(level string, logFilePath string) *Config {
 	if level == "" {
 		level = logrus.InfoLevel.String()

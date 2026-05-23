@@ -41,47 +41,10 @@ func main() {
 			&cli.StringFlag{Name: define.FlagExportSSHKeyPrivateFile, Usage: "file path to symlink the generated SSH key to"},
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
-			plan, err := revmcmd.ResolveRunPlan(command, revm.ModeContainer)
-			if err != nil {
-				return err
-			}
-
-			switch plan.Mode {
-			case revm.ModeControl:
-				return revm.Run(ctx, revmcmd.NewControlConfig(command, plan.PortUpdates))
-			case revm.ModeAttach:
-				return revm.Run(ctx, revmcmd.NewAttachConfig(command))
-			}
-
-			common, err := revmcmd.ParseCommon(command)
-			if err != nil {
-				return err
-			}
-
-			var containerDiskSpec *revm.ContainerDiskSpec
-			if value := command.String(define.FlagContainerDisk); value != "" {
-				spec, err := revm.ParseContainerDiskSpec(value)
-				if err != nil {
-					return err
-				}
-				containerDiskSpec = &spec
-			}
-
-			cfg := revmcmd.NewBootConfig(command, plan.Mode).
-				WithCPUs(int(command.Int8(define.FlagCPUS))).
-				WithMemory(command.Uint64(define.FlagMemoryInMB)).
-				WithNetwork(string(define.GVISOR)).
-				WithProxy(command.Bool(define.FlagUsingSystemProxy)).
-				WithEnv(command.StringSlice(define.FlagEnvs)...).
-				WithMount(command.StringSlice(define.FlagMount)...).
-				WithContainerDiskSpec(containerDiskSpec).
-				WithPodmanProxyAPIFile(command.String(define.FlagPodmanProxyAPIFile)).
-				WithManageAPIFile(command.String(define.FlagManageAPIFile)).
-				WithExportSSHKeyPrivateFile(command.String(define.FlagExportSSHKeyPrivateFile)).
-				WithRawDiskSpecs(common.RawDisks...).
-				WithEventReporter(command.String(define.FlagReportEvents))
-
-			return revm.Run(ctx, cfg)
+			return revmcmd.Run(ctx, command, revmcmd.CommandSpec{
+				DefaultMode:   revm.ModeContainer,
+				ConfigureBoot: configureBoot,
+			})
 		},
 	}
 
@@ -89,4 +52,43 @@ func main() {
 		logrus.Error(err)
 		os.Exit(1)
 	}
+}
+
+func configureBoot(command *cli.Command, cfg *revm.Config) (*revm.Config, error) {
+	common, err := revmcmd.ParseCommon(command)
+	if err != nil {
+		return nil, err
+	}
+
+	containerDiskSpec, err := parseContainerDisk(command)
+	if err != nil {
+		return nil, err
+	}
+
+	return cfg.
+		WithCPUs(int(command.Int8(define.FlagCPUS))).
+		WithMemory(command.Uint64(define.FlagMemoryInMB)).
+		WithNetwork(string(define.GVISOR)).
+		WithProxy(command.Bool(define.FlagUsingSystemProxy)).
+		WithEnv(command.StringSlice(define.FlagEnvs)...).
+		WithMount(command.StringSlice(define.FlagMount)...).
+		WithContainerDiskSpec(containerDiskSpec).
+		WithPodmanProxyAPIFile(command.String(define.FlagPodmanProxyAPIFile)).
+		WithManageAPIFile(command.String(define.FlagManageAPIFile)).
+		WithExportSSHKeyPrivateFile(command.String(define.FlagExportSSHKeyPrivateFile)).
+		WithRawDiskSpecs(common.RawDisks...).
+		WithEventReporter(command.String(define.FlagReportEvents)), nil
+}
+
+func parseContainerDisk(command *cli.Command) (*revm.ContainerDiskSpec, error) {
+	value := command.String(define.FlagContainerDisk)
+	if value == "" {
+		return nil, nil
+	}
+
+	spec, err := revm.ParseContainerDiskSpec(value)
+	if err != nil {
+		return nil, err
+	}
+	return &spec, nil
 }
