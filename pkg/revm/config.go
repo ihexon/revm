@@ -6,12 +6,10 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"io"
 	"linuxvm/pkg/define"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sync"
 
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/sirupsen/logrus"
@@ -214,69 +212,6 @@ func (c *Config) WithProxy(enable bool) *Config {
 	logrus.Infof("get proxy setting from system: %v", enable)
 	c.Proxy = enable
 	return c
-}
-
-const maxLogFileSize = 10 * 1024 * 1024
-
-func (c *Config) WithLogging(level string, logFilePath string) *Config {
-	if level == "" {
-		level = logrus.InfoLevel.String()
-	}
-
-	c.LogLevel = level
-
-	if logFilePath == "" {
-		logFilePath = filepath.Join(getSessionDir(c.SessionID), "logs", "revm.log")
-	}
-	c.LogTo = logFilePath
-
-	if err := setupLogrus(level); err != nil {
-		panic(fmt.Sprintf("setup logging: %v", err))
-	}
-	logFile, err := setupLogFile(*c)
-	if err != nil {
-		panic(fmt.Sprintf("setup logging: %v", err))
-	}
-	setCurrentLogFile(logFile)
-
-	return c
-}
-
-var currentRunLog struct {
-	sync.Mutex
-	file *os.File
-}
-
-func currentLogFile() *os.File {
-	currentRunLog.Lock()
-	defer currentRunLog.Unlock()
-	return currentRunLog.file
-}
-
-func setCurrentLogFile(file *os.File) {
-	currentRunLog.Lock()
-	defer currentRunLog.Unlock()
-
-	if currentRunLog.file != nil && currentRunLog.file != file {
-		_ = currentRunLog.file.Close()
-	}
-	currentRunLog.file = file
-	logrus.SetOutput(io.MultiWriter(os.Stderr, file))
-}
-
-func releaseLogFile(file *os.File) {
-	currentRunLog.Lock()
-	defer currentRunLog.Unlock()
-
-	if file != nil && currentRunLog.file == file {
-		logrus.SetOutput(os.Stderr)
-		_ = file.Close()
-		currentRunLog.file = nil
-		return
-	}
-	if file != nil {
-		_ = file.Close()
-	}
 }
 
 func (c *Config) WithCommand(bin string, args ...string) *Config {

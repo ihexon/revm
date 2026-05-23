@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	goruntime "runtime"
 	"strconv"
 	"sync"
@@ -158,48 +157,6 @@ func Build(ctx context.Context, cfg *Config) (*VM, error) {
 	}
 
 	return vm, nil
-}
-
-func setupLogrus(level string) error {
-	if level == "" {
-		level = logrus.InfoLevel.String()
-	}
-
-	l, err := logrus.ParseLevel(level)
-	if err != nil {
-		return fmt.Errorf("parse log level %q: %w", level, err)
-	}
-
-	logrus.SetLevel(l)
-	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp:   true,
-		TimestampFormat: "2006-01-02 15:04:05.000",
-		ForceColors:     true,
-	})
-	return nil
-}
-
-func setupLogFile(cfg Config) (*os.File, error) {
-	logFilePath := cfg.LogTo
-	if logFilePath == "" {
-		logFilePath = filepath.Join(getSessionDir(cfg.SessionID), "logs", "revm.log")
-	}
-
-	if err := os.MkdirAll(filepath.Dir(logFilePath), 0755); err != nil {
-		return nil, fmt.Errorf("create log directory: %w", err)
-	}
-
-	if info, err := os.Stat(logFilePath); err == nil && info.Size() > maxLogFileSize {
-		if err := os.Truncate(logFilePath, 0); err != nil {
-			return nil, fmt.Errorf("truncate log file: %w", err)
-		}
-	}
-
-	f, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("open log file: %w", err)
-	}
-	return f, nil
 }
 
 // build acquires all heavyweight resources. On failure it cleans up after itself.
