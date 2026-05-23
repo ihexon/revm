@@ -23,6 +23,7 @@ const (
 	FlagPortUnexport            = "port-unexport"
 	FlagListPort                = "list-port"
 	FlagExportRootfs            = "export-rootfs"
+	FlagImportRootfs            = "import-rootfs"
 
 	ContainerDiskUUID = "162cf68f-93c7-49ad-be53-45ed0e9fe42b"
 

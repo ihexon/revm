@@ -114,6 +114,111 @@ func TestExportRootfsRejectsOutputInsideRootfs(t *testing.T) {
 	}
 }
 
+func TestImportRootfsToSessionDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	srcDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(srcDir, "bin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "bin", "imported"), []byte("imported\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(filepath.Join(srcDir, "bin", "imported"), filepath.Join(srcDir, "bin", "imported-hardlink")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("imported", filepath.Join(srcDir, "bin", "imported-link")); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "rootfs.tar.zst")
+	if err := libarchive_go.NewArchiver().
+		WithArchiveFilePath(archivePath).
+		SetChdir(srcDir).
+		ModeC(context.Background()); err != nil {
+		t.Fatalf("create import archive: %v", err)
+	}
+
+	rootfsDir := filepath.Join(home, ".cache", "revm", "myengine", "rootfs")
+	if err := os.MkdirAll(filepath.Join(rootfsDir, "old"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootfsDir, "old", "file"), []byte("old\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := DefaultConfig().
+		WithSessionID("myengine").
+		WithRootfsImport(archivePath)
+	if err := ImportRootfs(context.Background(), *cfg); err != nil {
+		t.Fatalf("ImportRootfs() error = %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(rootfsDir, "bin", "imported"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "imported\n" {
+		t.Fatalf("imported content = %q, want imported", string(data))
+	}
+	link, err := os.Readlink(filepath.Join(rootfsDir, "bin", "imported-link"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if link != "imported" {
+		t.Fatalf("imported-link = %q, want imported", link)
+	}
+	importedInfo, err := os.Stat(filepath.Join(rootfsDir, "bin", "imported"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hardlinkInfo, err := os.Stat(filepath.Join(rootfsDir, "bin", "imported-hardlink"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(importedInfo, hardlinkInfo) {
+		t.Fatal("imported hardlink was not preserved")
+	}
+	if _, err := os.Stat(filepath.Join(rootfsDir, "old", "file")); err == nil {
+		t.Fatal("old rootfs content still exists after import")
+	}
+}
+
+func TestImportRootfsRejectsMissingArchive(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfg := DefaultConfig().
+		WithSessionID("myengine").
+		WithRootfsImport(filepath.Join(t.TempDir(), "missing.tar.zst"))
+
+	if err := ImportRootfs(context.Background(), *cfg); err == nil {
+		t.Fatal("ImportRootfs() accepted missing archive")
+	}
+}
+
+func TestImportRootfsRejectsArchiveInsideTargetRootfs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	rootfsDir := filepath.Join(home, ".cache", "revm", "myengine", "rootfs")
+	if err := os.MkdirAll(rootfsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(rootfsDir, "rootfs.tar.zst")
+	if err := os.WriteFile(archivePath, []byte("not an archive"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := DefaultConfig().
+		WithSessionID("myengine").
+		WithRootfsImport(archivePath)
+
+	if err := ImportRootfs(context.Background(), *cfg); err == nil {
+		t.Fatal("ImportRootfs() accepted archive inside target rootfs")
+	}
+}
+
 func assertZstdArchive(t *testing.T, path string) {
 	t.Helper()
 

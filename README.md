@@ -7,7 +7,7 @@ It has four user-facing subcommands:
 - `revm run`: boot a Linux rootfs and run a command.
 - `revm dockerd`: boot the built-in container runtime and expose a Docker-compatible Podman API socket.
 - `revm attach`: connect to an existing session.
-- `revm ctl`: operate on the control plane of an existing session, including port forwarding updates.
+- `revm ctl`: operate on an existing session, including port forwarding updates and rootfs import/export.
 
 The host CLI is intentionally small: start a session, control a session, or connect external tools to the sockets that the session publishes.
 
@@ -42,6 +42,13 @@ curl http://127.0.0.1:8080
 revm ctl --id dev --port-unexport 127.0.0.1:8080
 ```
 
+Export or import a session rootfs:
+
+```bash
+revm ctl --id dev --export-rootfs ./rootfs.tar.zst
+revm ctl --id imported-dev --import-rootfs ./rootfs.tar.zst
+```
+
 ## Sessions
 
 Every command requires `--id`. The session ID is the stable name used for runtime state, sockets, logs, generated SSH keys, and later control operations.
@@ -59,6 +66,7 @@ Important paths inside a session:
 - `socks/podman-api.sock`: default Podman API proxy socket for `revm dockerd`.
 - `logs/revm.log`: host-side command and VM lifecycle log.
 - `ssh/ssh-key`: generated private key used for attach and internal control.
+- `rootfs`: session root filesystem used by rootfs import/export.
 
 Use `--manage-api`, `--podman-api`, `--ssh-key`, and `--log-to` when a stable external path is needed.
 

@@ -73,6 +73,7 @@ type CtlOptions struct {
 	ListPort     bool
 	PortUpdates  PortUpdates
 	ExportRootfs string
+	ImportRootfs string
 	Command      []string
 }
 
@@ -184,13 +185,14 @@ func newCtlCommand() *cli.Command {
 	return &cli.Command{
 		Name:                      "ctl",
 		Usage:                     "control an existing VM session",
-		UsageText:                 "ctl --id <session-id> --list-port\n   ctl --id <session-id> [--port-export spec | --port-unexport spec]\n   ctl --id <session-id> --export-rootfs <path.tar.zst>",
+		UsageText:                 "ctl --id <session-id> --list-port\n   ctl --id <session-id> [--port-export spec | --port-unexport spec]\n   ctl --id <session-id> --export-rootfs <path.tar.zst>\n   ctl --id <session-id> --import-rootfs <path.tar.zst>",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: define.FlagListPort, Usage: "list current gvproxy port mappings for the running VM, including internal SSH forwarding"},
 			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "expose a guest TCP port on the host (format: [tcp:]<host-port>:<guest-port> or [tcp:]<host-ip>:<host-port>:<guest-port>); updates the running VM and exits; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagPortUnexport, Usage: "stop exposing a host TCP port for a running VM (format: [tcp:]<host-port> or [tcp:]<host-ip>:<host-port>); can be specified multiple times"},
 			&cli.StringFlag{Name: define.FlagExportRootfs, Usage: "export the session rootfs directory to a host tar.zst file"},
+			&cli.StringFlag{Name: define.FlagImportRootfs, Usage: "import a host tar.zst file into the session rootfs directory selected by --id"},
 			sessionFlag(),
 			logLevelFlag(),
 			logToFlag(),
@@ -352,6 +354,7 @@ func ParseCtlOptions(command *cli.Command) (CtlOptions, error) {
 		ListPort:     command.Bool(define.FlagListPort),
 		PortUpdates:  portUpdates,
 		ExportRootfs: command.String(define.FlagExportRootfs),
+		ImportRootfs: command.String(define.FlagImportRootfs),
 		Command:      command.Args().Slice(),
 	}
 	if err := validateCtlOptions(opts); err != nil {
@@ -454,6 +457,12 @@ func NewCtlConfig(opts CtlOptions) *revm.Config {
 			WithSessionID(opts.SessionID).
 			WithRootfsExport(opts.ExportRootfs)
 	}
+	if opts.ImportRootfs != "" {
+		return revm.DefaultConfig().
+			WithLogging(opts.Logging.Level, opts.Logging.To).
+			WithSessionID(opts.SessionID).
+			WithRootfsImport(opts.ImportRootfs)
+	}
 
 	return revm.DefaultConfig().
 		WithLogging(opts.Logging.Level, opts.Logging.To).
@@ -479,11 +488,14 @@ func validateCtlOptions(opts CtlOptions) error {
 	if opts.ExportRootfs != "" {
 		operationCount++
 	}
+	if opts.ImportRootfs != "" {
+		operationCount++
+	}
 	if operationCount > 1 {
 		return fmt.Errorf("ctl control operations cannot be combined")
 	}
 	if operationCount == 0 {
-		return fmt.Errorf("ctl requires --list-port, --port-export, --port-unexport, or --export-rootfs")
+		return fmt.Errorf("ctl requires --list-port, --port-export, --port-unexport, --export-rootfs, or --import-rootfs")
 	}
 	return nil
 }

@@ -95,6 +95,24 @@ func TestNewCtlConfigUsesRootfsExport(t *testing.T) {
 	}
 }
 
+func TestNewCtlConfigUsesRootfsImport(t *testing.T) {
+	cfg := NewCtlConfig(CtlOptions{
+		Logging:      LoggingOptions{Level: "info"},
+		SessionID:    "myengine",
+		ImportRootfs: "/tmp/rootfs.tar.zst",
+	})
+
+	if cfg.RunMode != revm.ModeControl {
+		t.Fatalf("RunMode = %q, want %q", cfg.RunMode, revm.ModeControl)
+	}
+	if cfg.RootfsImport != "/tmp/rootfs.tar.zst" {
+		t.Fatalf("RootfsImport = %q, want /tmp/rootfs.tar.zst", cfg.RootfsImport)
+	}
+	if cfg.PortList || cfg.RootfsExport != "" || len(cfg.PortForwards) != 0 || len(cfg.PortUnforwards) != 0 {
+		t.Fatalf("other control operations enabled: list=%v export=%q forwards=%#v unforwards=%#v", cfg.PortList, cfg.RootfsExport, cfg.PortForwards, cfg.PortUnforwards)
+	}
+}
+
 func TestValidateCtlOptionsRejectsListWithPortUpdates(t *testing.T) {
 	err := validateCtlOptions(CtlOptions{
 		ListPort: true,
@@ -126,6 +144,16 @@ func TestValidateCtlOptionsRejectsRootfsExportWithPortUpdates(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("validateCtlOptions() accepted --export-rootfs with port updates")
+	}
+}
+
+func TestValidateCtlOptionsRejectsRootfsImportWithRootfsExport(t *testing.T) {
+	err := validateCtlOptions(CtlOptions{
+		ExportRootfs: "/tmp/export.tar.zst",
+		ImportRootfs: "/tmp/import.tar.zst",
+	})
+	if err == nil {
+		t.Fatal("validateCtlOptions() accepted --import-rootfs with --export-rootfs")
 	}
 }
 

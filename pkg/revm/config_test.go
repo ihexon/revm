@@ -49,6 +49,23 @@ func TestNormalizeConfigControlRootfsExport(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfigControlRootfsImport(t *testing.T) {
+	cfg := DefaultConfig().
+		WithSessionID("myengine").
+		WithRootfsImport("/tmp/rootfs.tar.zst")
+
+	got, err := NormalizeConfig(*cfg)
+	if err != nil {
+		t.Fatalf("NormalizeConfig() error = %v", err)
+	}
+	if got.RunMode != ModeControl {
+		t.Fatalf("RunMode = %q, want %q", got.RunMode, ModeControl)
+	}
+	if got.RootfsImport != "/tmp/rootfs.tar.zst" {
+		t.Fatalf("RootfsImport = %q, want /tmp/rootfs.tar.zst", got.RootfsImport)
+	}
+}
+
 func TestNormalizeConfigRejectsCombinedControlOperations(t *testing.T) {
 	cfg := DefaultConfig().
 		WithSessionID("myengine").

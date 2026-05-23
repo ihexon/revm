@@ -8,6 +8,7 @@ Supported control operations:
 - `--port-export`: expose a guest TCP port on the host.
 - `--port-unexport`: remove a host port exposure.
 - `--export-rootfs`: export the rootfs from the session directory to a host tar.zst file.
+- `--import-rootfs`: import a host tar.zst file as the rootfs for the session selected by `--id`.
 
 Use [`revm attach`](./attach.en.md) to connect to the guest or execute commands.
 
@@ -18,9 +19,10 @@ revm ctl --id <session-id> --list-port
 revm ctl --id <session-id> --port-export <spec>
 revm ctl --id <session-id> --port-unexport <spec>
 revm ctl --id <session-id> --export-rootfs <path.tar.zst>
+revm ctl --id <session-id> --import-rootfs <path.tar.zst>
 ```
 
-`--id` must reference a running session.
+Port operations require `--id` to reference a running session. Rootfs import and export operate directly on the session directory; `--id` is the target rootfs session ID.
 
 ## Export Rootfs
 
@@ -31,6 +33,22 @@ revm ctl --id web --export-rootfs ./rootfs.tar.zst
 ```
 
 The archive is rooted at the rootfs contents and does not add an extra `rootfs/` directory. The output path cannot be inside that session rootfs directory.
+
+## Import Rootfs
+
+Import a tar.zst file as the rootfs for the session selected by `--id`:
+
+```bash
+revm ctl --id web --import-rootfs ./rootfs.tar.zst
+```
+
+Import first extracts into a temporary directory under the session directory, then replaces:
+
+```text
+~/.cache/revm/<session-id>/rootfs
+```
+
+Because of that, `--id` is the imported rootfs ID. Import replaces any existing rootfs; do not import while a VM is using that rootfs.
 
 ## List Ports
 

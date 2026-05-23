@@ -72,7 +72,7 @@ func Control(ctx context.Context, cfg *Config) (retErr error) {
 	logrus.Infof("revm build info: %s", buildTimeInfo())
 	logrus.Infof("control command, full cmdline: %q", os.Args)
 
-	if !normalizedCfg.PortList && len(normalizedCfg.PortForwards) == 0 && len(normalizedCfg.PortUnforwards) == 0 && normalizedCfg.RootfsExport == "" {
+	if !normalizedCfg.PortList && len(normalizedCfg.PortForwards) == 0 && len(normalizedCfg.PortUnforwards) == 0 && normalizedCfg.RootfsExport == "" && normalizedCfg.RootfsImport == "" {
 		return fmt.Errorf("no control operation requested")
 	}
 	if len(normalizedCfg.Command) > 0 {
@@ -84,6 +84,9 @@ func Control(ctx context.Context, cfg *Config) (retErr error) {
 	}
 	if normalizedCfg.RootfsExport != "" {
 		return ExportRootfs(ctx, normalizedCfg)
+	}
+	if normalizedCfg.RootfsImport != "" {
+		return ImportRootfs(ctx, normalizedCfg)
 	}
 
 	return updatePortForwards(ctx, normalizedCfg)
@@ -144,6 +147,103 @@ func ExportRootfs(ctx context.Context, normalizedCfg Config) error {
 	}
 	cleanup = false
 	logrus.Infof("exported rootfs %q to %q", rootfsAbs, outputPath)
+	return nil
+}
+
+func ImportRootfs(ctx context.Context, normalizedCfg Config) error {
+	if normalizedCfg.RootfsImport == "" {
+		return fmt.Errorf("rootfs import path must not be empty")
+	}
+	inputPath, err := filepath.Abs(filepath.Clean(normalizedCfg.RootfsImport))
+	if err != nil {
+		return fmt.Errorf("resolve rootfs import path: %w", err)
+	}
+	if info, err := os.Stat(inputPath); err != nil {
+		return fmt.Errorf("stat rootfs import archive %q: %w", inputPath, err)
+	} else if info.IsDir() {
+		return fmt.Errorf("rootfs import archive %q is a directory", inputPath)
+	}
+
+	rootfsDir := newMachinePathManager(getSessionDir(normalizedCfg.SessionID)).GetRootfsDir()
+	rootfsAbs, err := filepath.Abs(filepath.Clean(rootfsDir))
+	if err != nil {
+		return fmt.Errorf("resolve session rootfs path: %w", err)
+	}
+	if pathWithin(inputPath, rootfsAbs) {
+		return fmt.Errorf("rootfs import archive %q must not be inside target rootfs %q", inputPath, rootfsAbs)
+	}
+	parentDir := filepath.Dir(rootfsAbs)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return fmt.Errorf("create session directory: %w", err)
+	}
+
+	tmpDir, err := os.MkdirTemp(parentDir, "."+filepath.Base(rootfsAbs)+".import-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temporary rootfs import directory: %w", err)
+	}
+	cleanupTmp := true
+	defer func() {
+		if cleanupTmp {
+			_ = os.RemoveAll(tmpDir)
+		}
+	}()
+
+	if err := libarchive_go.NewArchiver().
+		WithArchiveFilePath(inputPath).
+		SetChdir(tmpDir).
+		SetSparse(true).
+		IncludeFileAttribute().
+		ModeX(ctx); err != nil {
+		return fmt.Errorf("extract rootfs import archive: %w", err)
+	}
+
+	backupDir, err := os.MkdirTemp(parentDir, "."+filepath.Base(rootfsAbs)+".old-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temporary rootfs backup path: %w", err)
+	}
+	if err := os.Remove(backupDir); err != nil {
+		return fmt.Errorf("prepare temporary rootfs backup path: %w", err)
+	}
+	cleanupBackup := false
+	defer func() {
+		if cleanupBackup {
+			_ = os.RemoveAll(backupDir)
+		}
+	}()
+
+	rootfsExists := false
+	if _, err := os.Lstat(rootfsAbs); err == nil {
+		rootfsExists = true
+		if err := os.Rename(rootfsAbs, backupDir); err != nil {
+			return fmt.Errorf("move existing rootfs aside: %w", err)
+		}
+		cleanupBackup = true
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat existing rootfs %q: %w", rootfsAbs, err)
+	}
+
+	installed := false
+	if err := os.Rename(tmpDir, rootfsAbs); err != nil {
+		if rootfsExists {
+			if restoreErr := os.Rename(backupDir, rootfsAbs); restoreErr != nil {
+				return fmt.Errorf("install imported rootfs: %w; restore existing rootfs: %v", err, restoreErr)
+			}
+		}
+		return fmt.Errorf("install imported rootfs: %w", err)
+	}
+	installed = true
+	cleanupTmp = false
+
+	if rootfsExists {
+		if err := os.RemoveAll(backupDir); err != nil {
+			return fmt.Errorf("remove previous rootfs backup: %w", err)
+		}
+		cleanupBackup = false
+	}
+	if !installed {
+		return fmt.Errorf("install imported rootfs failed")
+	}
+	logrus.Infof("imported rootfs %q to %q", inputPath, rootfsAbs)
 	return nil
 }
 

@@ -10,6 +10,7 @@
 - `--port-export`: 暴露 guest TCP 端口到 host。
 - `--port-unexport`: 取消 host 端口暴露。
 - `--export-rootfs`: 将 session 目录中的 rootfs 导出为 host 上的 tar.zst 文件。
+- `--import-rootfs`: 将 host 上的 tar.zst 文件导入为 `--id` 对应 session 的 rootfs。
 
 连接 guest 或执行命令请使用 [`revm attach`](./attach.md)。
 
@@ -20,9 +21,10 @@ revm ctl --id <session-id> --list-port
 revm ctl --id <session-id> --port-export <spec>
 revm ctl --id <session-id> --port-unexport <spec>
 revm ctl --id <session-id> --export-rootfs <path.tar.zst>
+revm ctl --id <session-id> --import-rootfs <path.tar.zst>
 ```
 
-`--id` 必须指向一个正在运行的 session。
+端口操作要求 `--id` 指向一个正在运行的 session。rootfs 导入和导出直接操作 session 目录，`--id` 就是目标 rootfs 的 session ID。
 
 ## 导出 rootfs
 
@@ -33,6 +35,22 @@ revm ctl --id web --export-rootfs ./rootfs.tar.zst
 ```
 
 tar 内容以 rootfs 内容为根，不会额外包含一层 `rootfs/` 目录。导出目标不能放在该 session 的 rootfs 目录内。
+
+## 导入 rootfs
+
+将 tar.zst 导入为 `--id` 对应 session 的 rootfs：
+
+```bash
+revm ctl --id web --import-rootfs ./rootfs.tar.zst
+```
+
+导入会先解包到 session 目录下的临时目录，解包成功后替换：
+
+```text
+~/.cache/revm/<session-id>/rootfs
+```
+
+因此 `--id` 是导入后的 rootfs ID。导入会替换已有 rootfs；不要在对应 VM 正在使用该 rootfs 时导入。
 
 ## 展示端口
 

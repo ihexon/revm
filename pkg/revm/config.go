@@ -67,6 +67,7 @@ type Config struct {
 	PortForwards         []define.PortForward `json:"portForwards,omitempty"`
 	PortUnforwards       []define.PortForward `json:"portUnforwards,omitempty"`
 	RootfsExport         string               `json:"rootfsExport,omitempty"`
+	RootfsImport         string               `json:"rootfsImport,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.
@@ -106,6 +107,7 @@ func (c *Config) WithControl(portForwards, portUnforwards []define.PortForward) 
 	c.Command = nil
 	c.PortList = false
 	c.RootfsExport = ""
+	c.RootfsImport = ""
 	c.PortForwards = append([]define.PortForward(nil), portForwards...)
 	c.PortUnforwards = append([]define.PortForward(nil), portUnforwards...)
 	return c
@@ -118,6 +120,7 @@ func (c *Config) WithPortList() *Config {
 	c.PortForwards = nil
 	c.PortUnforwards = nil
 	c.RootfsExport = ""
+	c.RootfsImport = ""
 	return c
 }
 
@@ -128,6 +131,18 @@ func (c *Config) WithRootfsExport(path string) *Config {
 	c.PortForwards = nil
 	c.PortUnforwards = nil
 	c.RootfsExport = path
+	c.RootfsImport = ""
+	return c
+}
+
+func (c *Config) WithRootfsImport(path string) *Config {
+	c.RunMode = ModeControl
+	c.Command = nil
+	c.PortList = false
+	c.PortForwards = nil
+	c.PortUnforwards = nil
+	c.RootfsExport = ""
+	c.RootfsImport = path
 	return c
 }
 
@@ -395,6 +410,9 @@ func validateControlConfig(cfg Config) error {
 		operationCount++
 	}
 	if cfg.RootfsExport != "" {
+		operationCount++
+	}
+	if cfg.RootfsImport != "" {
 		operationCount++
 	}
 	if operationCount > 1 {
