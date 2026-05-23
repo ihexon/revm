@@ -5,73 +5,14 @@ package main
 import (
 	"context"
 	"linuxvm/cmd/internal/revmcmd"
-	"linuxvm/pkg/define"
-	"linuxvm/pkg/revm"
 	"os"
 
 	"github.com/sirupsen/logrus"
-	"github.com/urfave/cli/v3"
 )
 
 func main() {
-	app := &cli.Command{
-		Name:                      "chroot",
-		Usage:                     "boot a Linux VM with a custom rootfs",
-		UsageText:                 "chroot [flags] <command> [args...]\n   chroot --attach --id <session-id> [--pty] [-- <command> [args...]]",
-		Description:               "boot a Linux microVM using libkrun and execute commands inside it, similar to chroot but with full kernel isolation; use --attach to connect to an existing session",
-		DisableSliceFlagSeparator: true,
-		Flags: []cli.Flag{
-			&cli.StringFlag{Name: define.FlagRootfs, Usage: "path to a rootfs directory to use as the VM root filesystem; must contain /bin/sh; takes priority over the built-in rootfs"},
-			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to host CPU count if unset or less than 1"},
-			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to host available memory if unset or less than 512"},
-			&cli.BoolFlag{Name: define.FlagAttachMode, Usage: "attach to an existing VM session instead of booting a new VM; requires --id"},
-			&cli.BoolFlag{Name: define.FlagPTY, Usage: "allocate a pseudo-terminal when attaching and launch an interactive shell"},
-			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
-			&cli.StringSliceFlag{Name: define.FlagRawDisk, Usage: "attach an ext4 raw disk image to the VM (format: <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>]); auto-created if the file does not exist; new disks default to a random UUID and mount at /mnt/<UUID>; can be specified multiple times"},
-			&cli.StringSliceFlag{Name: define.FlagMount, Usage: "share a host directory into the guest via VirtIO-FS (format: /host/path:/guest/path[,ro]); can be specified multiple times"},
-			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "expose a guest TCP port on the host (format: [tcp:]<host-port>:<guest-port> or [tcp:]<host-ip>:<host-port>:<guest-port>); in --attach mode, updates the running VM and exits; can be specified multiple times"},
-			&cli.StringSliceFlag{Name: define.FlagPortUnexport, Usage: "stop exposing a host TCP port for a running VM; requires --attach (format: [tcp:]<host-port> or [tcp:]<host-ip>:<host-port>); can be specified multiple times"},
-			&cli.BoolFlag{Name: define.FlagUsingSystemProxy, Usage: "read the macOS system HTTP/HTTPS proxy and forward it to the guest as http_proxy/https_proxy env vars; in gvisor mode, 127.0.0.1 is automatically rewritten to host.containers.internal"},
-			&cli.StringFlag{Name: define.FlagWorkDir, Usage: "working directory for command execution inside the guest; the guest-agent chdirs to this path before running the command", Value: "/"},
-			&cli.StringFlag{Name: define.FlagVNetworkType, Usage: "virtual network stack: gvisor uses gvisor-tap-vsock (full TCP/UDP, DNS, NAT via 192.168.127.0/24); tsi uses libkrun transparent socket interception", Value: string(define.GVISOR)},
-			&cli.StringFlag{Name: define.FlagReportEvents, Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888)"},
-			&cli.StringFlag{Name: define.FlagLogLevel, Usage: "log verbosity level (trace, debug, info, warn, error, fatal, panic)", Value: "info"},
-			&cli.StringFlag{Name: define.FlagLogTo, Usage: "custom log file path on host; defaults to /tmp/<session_id>/logs/vm.log when unset"},
-			&cli.StringFlag{Name: define.FlagSessionID, Usage: "required session name; used to derive the workspace directory; sessions with the same name are mutually exclusive via flock", Required: true},
-			&cli.StringFlag{Name: define.FlagManageAPIFile, Usage: "custom Unix socket path for the host-side VM management API; defaults to /tmp/<session_id>/socks/vmctl.sock"},
-			&cli.StringFlag{Name: define.FlagExportSSHKeyPrivateFile, Usage: "file path to symlink the generated SSH key to"},
-		},
-		Action: func(ctx context.Context, command *cli.Command) error {
-			return revmcmd.Run(ctx, command, revmcmd.CommandSpec{
-				DefaultMode:   revm.ModeRootfs,
-				ConfigureBoot: configureBoot,
-			})
-		},
-	}
-
-	if err := app.Run(context.Background(), os.Args); err != nil {
+	if err := revmcmd.NewApp("chroot").Run(context.Background(), os.Args); err != nil {
 		logrus.Error(err)
 		os.Exit(1)
 	}
-}
-
-func configureBoot(command *cli.Command, cfg *revm.Config) (*revm.Config, error) {
-	common, err := revmcmd.ParseCommon(command)
-	if err != nil {
-		return nil, err
-	}
-
-	return cfg.
-		WithCPUs(int(command.Int8(define.FlagCPUS))).
-		WithMemory(command.Uint64(define.FlagMemoryInMB)).
-		WithNetwork(command.String(define.FlagVNetworkType)).
-		WithProxy(command.Bool(define.FlagUsingSystemProxy)).
-		WithRootfs(command.String(define.FlagRootfs)).
-		WithWorkDir(command.String(define.FlagWorkDir)).
-		WithEnv(command.StringSlice(define.FlagEnvs)...).
-		WithManageAPIFile(command.String(define.FlagManageAPIFile)).
-		WithExportSSHKeyPrivateFile(command.String(define.FlagExportSSHKeyPrivateFile)).
-		WithMount(command.StringSlice(define.FlagMount)...).
-		WithRawDiskSpecs(common.RawDisks...).
-		WithEventReporter(command.String(define.FlagReportEvents)), nil
 }

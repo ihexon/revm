@@ -28,6 +28,7 @@ func (c *Config) WithLogging(level string, logFilePath string) *Config {
 		level = logrus.InfoLevel.String()
 	}
 
+	setupLogrus(level)
 	c.LogLevel = level
 
 	if logFilePath != "" {
@@ -38,9 +39,7 @@ func (c *Config) WithLogging(level string, logFilePath string) *Config {
 }
 
 func setupRunLogging(cfg Config) (*os.File, error) {
-	if err := setupLogrus(cfg.LogLevel); err != nil {
-		return nil, err
-	}
+	setupLogrus(cfg.LogLevel)
 	logFile, err := setupLogFile(cfg)
 	if err != nil {
 		return nil, err
@@ -49,14 +48,14 @@ func setupRunLogging(cfg Config) (*os.File, error) {
 	return logFile, nil
 }
 
-func setupLogrus(level string) error {
+func setupLogrus(level string) {
 	if level == "" {
 		level = logrus.InfoLevel.String()
 	}
 
 	l, err := logrus.ParseLevel(level)
 	if err != nil {
-		return fmt.Errorf("parse log level %q: %w", level, err)
+		panic(fmt.Errorf("parse log level %q: %w", level, err))
 	}
 
 	logrus.SetLevel(l)
@@ -65,7 +64,6 @@ func setupLogrus(level string) error {
 		TimestampFormat: "2006-01-02 15:04:05.000",
 		ForceColors:     true,
 	})
-	return nil
 }
 
 func setupLogFile(cfg Config) (*os.File, error) {

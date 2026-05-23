@@ -19,7 +19,7 @@ import (
 
 const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.23"
 
-var defaultBuildTargets = []string{"chroot", "dockerd"}
+var defaultBuildTargets = []string{"revm"}
 
 // Edit this table when revm-assets changes.
 var assetSHA256 = map[string]string{
@@ -58,9 +58,9 @@ type builder struct {
 func main() {
 	verbose := flag.Bool("v", false, "enable debug logging")
 	runLint := flag.Bool("lint", false, "run golangci-lint before building")
-	buildTarget := flag.String("build", "all", "target to build: all, chroot, or dockerd")
+	buildTarget := flag.String("build", "all", "target to build: all, revm, chroot, or dockerd")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: go run build.go [-v] [--lint] [--build all|chroot|dockerd]\n")
+		fmt.Fprintf(os.Stderr, "Usage: go run build.go [-v] [--lint] [--build all|revm|chroot|dockerd]\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -156,10 +156,10 @@ func parseBuildTargets(target string) ([]string, error) {
 	switch strings.TrimSpace(target) {
 	case "", "all":
 		return append([]string(nil), defaultBuildTargets...), nil
-	case "chroot", "dockerd":
+	case "revm", "chroot", "dockerd":
 		return []string{target}, nil
 	default:
-		return nil, fmt.Errorf("unsupported build target %q: use all, chroot, or dockerd", target)
+		return nil, fmt.Errorf("unsupported build target %q: use all, revm, chroot, or dockerd", target)
 	}
 }
 

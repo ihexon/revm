@@ -8,55 +8,76 @@ import (
 	"testing"
 )
 
-func TestNewRunPlan(t *testing.T) {
-	portUpdate := PortUpdates{
-		Exports: []define.PortForward{{
-			Protocol:  "tcp",
-			HostIP:    "127.0.0.1",
-			HostPort:  8888,
-			GuestPort: 8888,
-		}},
-	}
+func TestNewCtlConfigUsesControlForPortUpdates(t *testing.T) {
+	cfg := NewCtlConfig(CtlOptions{
+		Logging:   LoggingOptions{Level: "info"},
+		SessionID: "myengine",
+		PortUpdates: PortUpdates{
+			Exports: []define.PortForward{{
+				Protocol:  "tcp",
+				HostIP:    "127.0.0.1",
+				HostPort:  8888,
+				GuestPort: 8888,
+			}},
+		},
+		Command: []string{"sh"},
+	})
 
-	tests := []struct {
-		name        string
-		attach      bool
-		ports       PortUpdates
-		defaultMode revm.RunMode
-		wantMode    revm.RunMode
-	}{
-		{
-			name:        "port updates take precedence over boot",
-			ports:       portUpdate,
-			defaultMode: revm.ModeRootfs,
-			wantMode:    revm.ModeControl,
-		},
-		{
-			name:        "port updates take precedence over attach",
-			attach:      true,
-			ports:       portUpdate,
-			defaultMode: revm.ModeRootfs,
-			wantMode:    revm.ModeControl,
-		},
-		{
-			name:        "attach without port updates",
-			attach:      true,
-			defaultMode: revm.ModeRootfs,
-			wantMode:    revm.ModeAttach,
-		},
-		{
-			name:        "boot without port updates",
-			defaultMode: revm.ModeContainer,
-			wantMode:    revm.ModeContainer,
-		},
+	if cfg.RunMode != revm.ModeControl {
+		t.Fatalf("RunMode = %q, want %q", cfg.RunMode, revm.ModeControl)
 	}
+	if len(cfg.Command) != 0 {
+		t.Fatalf("Command = %#v, want empty for control mode", cfg.Command)
+	}
+	if len(cfg.PortForwards) != 1 {
+		t.Fatalf("PortForwards len = %d, want 1", len(cfg.PortForwards))
+	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := NewRunPlan(tt.attach, tt.ports, tt.defaultMode)
-			if got.Mode != tt.wantMode {
-				t.Fatalf("NewRunPlan() mode = %q, want %q", got.Mode, tt.wantMode)
-			}
-		})
+func TestNewCtlConfigUsesAttachWithoutPortUpdates(t *testing.T) {
+	cfg := NewCtlConfig(CtlOptions{
+		Logging:   LoggingOptions{Level: "info"},
+		SessionID: "myengine",
+		PTY:       true,
+		Command:   []string{"sh"},
+	})
+
+	if cfg.RunMode != revm.ModeAttach {
+		t.Fatalf("RunMode = %q, want %q", cfg.RunMode, revm.ModeAttach)
+	}
+	if len(cfg.Command) != 1 || cfg.Command[0] != "sh" {
+		t.Fatalf("Command = %#v, want [sh]", cfg.Command)
+	}
+	if !cfg.PTY {
+		t.Fatal("PTY = false, want true")
+	}
+}
+
+func TestNewRunConfig(t *testing.T) {
+	cfg := NewRunConfig(RunOptions{
+		Logging:   LoggingOptions{Level: "info"},
+		SessionID: "myengine",
+		Command:   []string{"sh"},
+	})
+
+	if cfg.RunMode != revm.ModeRootfs {
+		t.Fatalf("RunMode = %q, want %q", cfg.RunMode, revm.ModeRootfs)
+	}
+	if len(cfg.Command) != 1 || cfg.Command[0] != "sh" {
+		t.Fatalf("Command = %#v, want [sh]", cfg.Command)
+	}
+}
+
+func TestNewDockerdConfig(t *testing.T) {
+	cfg := NewDockerdConfig(DockerdOptions{
+		Logging:   LoggingOptions{Level: "info"},
+		SessionID: "myengine",
+	})
+
+	if cfg.RunMode != revm.ModeContainer {
+		t.Fatalf("RunMode = %q, want %q", cfg.RunMode, revm.ModeContainer)
+	}
+	if cfg.Network != string(define.GVISOR) {
+		t.Fatalf("Network = %q, want %q", cfg.Network, define.GVISOR)
 	}
 }

@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	if err := revmcmd.NewApp("dockerd").Run(context.Background(), os.Args); err != nil {
+	if err := revmcmd.NewApp("revm").Run(context.Background(), os.Args); err != nil {
 		logrus.Error(err)
 		os.Exit(1)
 	}
