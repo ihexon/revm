@@ -41,9 +41,7 @@ func main() {
 			&cli.StringFlag{Name: define.FlagManageAPIFile, Usage: "custom Unix socket path for the host-side VM management API; defaults to /tmp/<session_id>/socks/vmctl.sock"},
 			&cli.StringFlag{Name: define.FlagExportSSHKeyPrivateFile, Usage: "file path to symlink the generated SSH key to"},
 		},
-		Action: func(_ context.Context, command *cli.Command) error {
-			ctx := context.Background()
-
+		Action: func(ctx context.Context, command *cli.Command) error {
 			common, err := revmcmd.ParseCommon(command)
 			if err != nil {
 				return err
