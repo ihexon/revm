@@ -1,7 +1,7 @@
 # Guest Agent
 
 `cmd/guest-agent` runs inside every VM as the in-guest bootstrap companion. It is not the normal user entry
-point; the host-side `chroot` or `dockerd` process creates the VM, injects configuration, and this agent finishes guest
+point; the host-side `revm` process creates the VM, injects configuration, and this agent finishes guest
 initialization.
 
 ## Responsibilities
@@ -11,7 +11,7 @@ initialization.
 - Mount pseudo filesystems, raw block devices, and VirtIO-FS shares.
 - Configure guest networking for `gvisor` or `tsi`.
 - Start long-lived services such as SSH, Podman API, and NTP sync.
-- Run the user command in `chroot` mode, or keep the container engine alive in `dockerd` mode.
+- Run the user command in `revm run` mode, or keep the container engine alive in `revm dockerd` mode.
 - Probe readiness and report SSH / Podman / network status back to the host.
 - Sync disks and reboot the VM on shutdown signals.
 
@@ -21,7 +21,7 @@ initialization.
 2. Read the machine config from the host via vsock.
 3. Mount `/proc`, `/sys`, `/dev`, `/tmp`, `/run`, block devices, and VirtIO-FS mounts.
 4. Start mode-specific services:
-   - `chroot`: configure network, start SSH and time sync, then execute the requested command.
+   - `run`: configure network, start SSH and time sync, then execute the requested command.
    - `dockerd`: configure network, start Podman API, SSH, and time sync.
 5. Run readiness probes and send ready events back to the host.
 6. Wait for shutdown, sync disks, and force reboot the VM.

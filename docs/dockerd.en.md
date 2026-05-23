@@ -1,6 +1,6 @@
-# dockerd mode
+# dockerd subcommand
 
-`dockerd` mode starts a lightweight Linux container environment on your machine. You can keep using Docker CLI or Podman CLI, while containers run in an isolated Linux environment.
+`revm dockerd` mode starts a lightweight Linux container environment on your machine. You can keep using Docker CLI or Podman CLI, while containers run in an isolated Linux environment.
 
 It is a good fit for teams that want familiar container workflows without relying on a heavy desktop container runtime.
 
@@ -18,7 +18,7 @@ It is a good fit for teams that want familiar container workflows without relyin
 Start the runtime:
 
 ```bash
-./dockerd --id dev --podman-api /tmp/dockerd-dev.sock
+./revm dockerd --id dev --podman-api /tmp/dockerd-dev.sock
 ```
 
 Use Docker CLI from another terminal:
@@ -35,7 +35,7 @@ You keep the same command-line workflow while using an isolated Linux container 
 Mount the project directory and build an image:
 
 ```bash
-./dockerd --id app \
+./revm dockerd --id app \
   --podman-api /tmp/dockerd-app.sock \
   --mount "$PWD:/workspace"
 ```
@@ -53,7 +53,7 @@ This works well for local service development, image builds, dependency checks, 
 Use a persistent disk if you do not want to pull images again or lose container data:
 
 ```bash
-./dockerd --id dev --container-disk ~/.cache/dockerd-container.ext4
+./revm dockerd --id dev --container-disk ~/.cache/dockerd-container.ext4
 ```
 
 This keeps the container environment isolated while preserving long-lived state.
@@ -74,7 +74,7 @@ This is useful for testing web services, APIs, frontend build outputs, and local
 Wrap `dockerd` inside your own developer platform or automation tool:
 
 ```bash
-./dockerd --id ci \
+./revm dockerd --id ci \
   --podman-api /tmp/dockerd-podman.sock \
   --mount "$PWD:/workspace" \
   --log-level info
@@ -87,7 +87,7 @@ Higher-level tools can connect to the socket and get a stable container executio
 Start:
 
 ```bash
-./dockerd --id dev --podman-api /tmp/dockerd-dev.sock
+./revm dockerd --id dev --podman-api /tmp/dockerd-dev.sock
 ```
 
 Use Podman CLI:
@@ -119,7 +119,7 @@ docker run --rm hello-world
 For daily development, keep a fixed session:
 
 ```bash
-./dockerd --id dev \
+./revm dockerd --id dev \
   --podman-api /tmp/dockerd-dev.sock \
   --mount "$PWD:/workspace"
 ```
@@ -127,7 +127,7 @@ For daily development, keep a fixed session:
 Add a persistent disk when container state should survive across runs:
 
 ```bash
-./dockerd --id dev \
+./revm dockerd --id dev \
   --podman-api /tmp/dockerd-dev.sock \
   --mount "$PWD:/workspace" \
   --container-disk ~/.cache/dockerd-container.ext4
@@ -136,7 +136,7 @@ Add a persistent disk when container state should survive across runs:
 For team tool integration, use a stable socket path:
 
 ```bash
-./dockerd --id team \
+./revm dockerd --id team \
   --podman-api /tmp/dockerd-podman.sock \
   --mount "$PWD:/workspace"
 ```

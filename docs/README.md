@@ -2,10 +2,10 @@
 
 ## Chinese
 
-- [chroot mode](./chroot.md)
-- [dockerd mode](./dockerd.md)
+- [run mode](./run.md)
+- [dockerd subcommand](./dockerd.md)
 
 ## English
 
-- [chroot mode](./chroot.en.md)
-- [dockerd mode](./dockerd.en.md)
+- [run mode](./run.en.md)
+- [dockerd subcommand](./dockerd.en.md)

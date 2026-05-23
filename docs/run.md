@@ -1,8 +1,8 @@
-# chroot mode
+# run mode
 
-[English](./chroot.en.md)
+[English](./run.en.md)
 
-`chroot` 模式用于快速运行一个隔离的 Linux 命令环境。你可以把它理解成“更适合开发工作的 chroot”：使用方式像本地命令，运行环境更干净，也更适合自动化。
+`revm run` 用于快速运行一个隔离的 Linux 命令环境：使用方式像本地命令，运行环境更干净，也更适合自动化。
 
 ## 适合谁
 
@@ -18,7 +18,7 @@
 把当前项目目录挂载进去，然后在 Linux 环境里跑测试：
 
 ```bash
-./chroot --id build \
+./revm run --id build \
   --mount "$PWD:/workspace" \
   --workdir /workspace \
   -- sh -c 'make test'
@@ -35,7 +35,7 @@
 打开一个 Shell：
 
 ```bash
-./chroot --id debug -- sh
+./revm run --id debug -- sh
 ```
 
 你可以在里面验证命令、跑脚本、检查 Linux 行为，不需要长期维护一台 VM。
@@ -45,7 +45,7 @@
 如果你已经准备好了一个 rootfs，可以直接指定：
 
 ```bash
-./chroot --id ubuntu --rootfs ~/ubuntu-rootfs -- bash
+./revm run --id ubuntu --rootfs ~/ubuntu-rootfs -- bash
 ```
 
 这很适合复现特定发行版、特定依赖集合或某个线上问题环境。
@@ -55,7 +55,7 @@
 把它放进脚本或 CI 辅助工具里：
 
 ```bash
-./chroot --id ci \
+./revm run --id ci \
   --cpus 4 \
   --memory 4096 \
   --mount "$PWD:/src,ro" \
@@ -70,19 +70,19 @@
 使用内置 Linux 环境执行命令：
 
 ```bash
-./chroot --id quick -- sh -c 'uname -a && cat /etc/os-release'
+./revm run --id quick -- sh -c 'uname -a && cat /etc/os-release'
 ```
 
 进入交互式 Shell：
 
 ```bash
-./chroot --id shell -- sh
+./revm run --id shell -- sh
 ```
 
 挂载当前项目目录：
 
 ```bash
-./chroot --id dev \
+./revm run --id dev \
   --mount "$PWD:/workspace" \
   --workdir /workspace \
   -- sh
@@ -101,13 +101,13 @@
 如果只是临时验证，直接使用内置环境：
 
 ```bash
-./chroot --id test -- sh
+./revm run --id test -- sh
 ```
 
 如果是团队构建或测试，建议固定 rootfs、工作目录和资源配置：
 
 ```bash
-./chroot --id project-test \
+./revm run --id project-test \
   --rootfs ~/project-rootfs \
   --cpus 4 \
   --memory 4096 \

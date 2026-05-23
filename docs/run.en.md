@@ -1,6 +1,6 @@
-# chroot mode
+# run mode
 
-`chroot` mode starts an isolated Linux command environment quickly. It feels like a local command-line workflow, but gives builds, tests, scripts, and debugging tasks a cleaner runtime.
+`revm run` mode starts an isolated Linux command environment quickly. It feels like a local command-line workflow, but gives builds, tests, scripts, and debugging tasks a cleaner runtime.
 
 ## Who It Is For
 
@@ -16,7 +16,7 @@
 Mount the current project directory and run tests inside Linux:
 
 ```bash
-./chroot --id build \
+./revm run --id build \
   --mount "$PWD:/workspace" \
   --workdir /workspace \
   -- sh -c 'make test'
@@ -33,7 +33,7 @@ This helps when:
 Start a shell:
 
 ```bash
-./chroot --id debug -- sh
+./revm run --id debug -- sh
 ```
 
 Use it to verify commands, run scripts, or check Linux behavior without maintaining a long-lived VM.
@@ -43,7 +43,7 @@ Use it to verify commands, run scripts, or check Linux behavior without maintain
 If you already have a rootfs, pass it directly:
 
 ```bash
-./chroot --id ubuntu --rootfs ~/ubuntu-rootfs -- bash
+./revm run --id ubuntu --rootfs ~/ubuntu-rootfs -- bash
 ```
 
 This is useful for reproducing a specific distribution, dependency set, or production-like environment.
@@ -53,7 +53,7 @@ This is useful for reproducing a specific distribution, dependency set, or produ
 Use it inside scripts or CI helpers:
 
 ```bash
-./chroot --id ci \
+./revm run --id ci \
   --cpus 4 \
   --memory 4096 \
   --mount "$PWD:/src,ro" \
@@ -68,19 +68,19 @@ This turns environment setup and task execution into one repeatable command.
 Run a command with the built-in Linux environment:
 
 ```bash
-./chroot --id quick -- sh -c 'uname -a && cat /etc/os-release'
+./revm run --id quick -- sh -c 'uname -a && cat /etc/os-release'
 ```
 
 Open an interactive shell:
 
 ```bash
-./chroot --id shell -- sh
+./revm run --id shell -- sh
 ```
 
 Mount the current project directory:
 
 ```bash
-./chroot --id dev \
+./revm run --id dev \
   --mount "$PWD:/workspace" \
   --workdir /workspace \
   -- sh
@@ -99,13 +99,13 @@ Mount the current project directory:
 For quick checks, use the built-in environment:
 
 ```bash
-./chroot --id test -- sh
+./revm run --id test -- sh
 ```
 
 For team builds or tests, pin the rootfs, work directory, and resource settings:
 
 ```bash
-./chroot --id project-test \
+./revm run --id project-test \
   --rootfs ~/project-rootfs \
   --cpus 4 \
   --memory 4096 \

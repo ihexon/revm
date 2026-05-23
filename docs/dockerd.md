@@ -1,8 +1,8 @@
-# dockerd mode
+# dockerd subcommand
 
 [English](./dockerd.en.md)
 
-`dockerd` 模式用于在本机启动一个轻量的 Linux 容器运行环境。你可以继续使用熟悉的 Docker CLI 或 Podman CLI，但容器运行在独立的 Linux 环境中。
+`revm dockerd` 用于在本机启动一个轻量的 Linux 容器运行环境。你可以继续使用熟悉的 Docker CLI 或 Podman CLI，但容器运行在独立的 Linux 环境中。
 
 它适合希望保留容器开发体验，同时减少对重型桌面容器产品依赖的团队。
 
@@ -20,7 +20,7 @@
 启动运行环境：
 
 ```bash
-./dockerd --id dev --podman-api /tmp/dockerd-dev.sock
+./revm dockerd --id dev --podman-api /tmp/dockerd-dev.sock
 ```
 
 在另一个终端使用 Docker CLI：
@@ -37,7 +37,7 @@ docker run --rm hello-world
 把项目目录挂载进运行环境，然后构建镜像：
 
 ```bash
-./dockerd --id app \
+./revm dockerd --id app \
   --podman-api /tmp/dockerd-app.sock \
   --mount "$PWD:/workspace"
 ```
@@ -55,7 +55,7 @@ docker run --rm app
 如果你不想每次重新拉镜像或丢失容器数据，可以指定持久化磁盘：
 
 ```bash
-./dockerd --id dev --container-disk ~/.cache/dockerd-container.ext4
+./revm dockerd --id dev --container-disk ~/.cache/dockerd-container.ext4
 ```
 
 这让容器开发环境既可以独立运行，也可以保留长期使用的状态。
@@ -76,7 +76,7 @@ curl http://127.0.0.1:8080
 你可以把 `dockerd` 包装进自己的开发平台或自动化工具里：
 
 ```bash
-./dockerd --id ci \
+./revm dockerd --id ci \
   --podman-api /tmp/dockerd-podman.sock \
   --mount "$PWD:/workspace" \
   --log-level info
@@ -89,7 +89,7 @@ curl http://127.0.0.1:8080
 启动：
 
 ```bash
-./dockerd --id dev --podman-api /tmp/dockerd-dev.sock
+./revm dockerd --id dev --podman-api /tmp/dockerd-dev.sock
 ```
 
 使用 Podman CLI：
@@ -121,7 +121,7 @@ docker run --rm hello-world
 日常开发可以固定一个 session：
 
 ```bash
-./dockerd --id dev \
+./revm dockerd --id dev \
   --podman-api /tmp/dockerd-dev.sock \
   --mount "$PWD:/workspace"
 ```
@@ -129,7 +129,7 @@ docker run --rm hello-world
 如果希望容器状态长期保留，增加持久化磁盘：
 
 ```bash
-./dockerd --id dev \
+./revm dockerd --id dev \
   --podman-api /tmp/dockerd-dev.sock \
   --mount "$PWD:/workspace" \
   --container-disk ~/.cache/dockerd-container.ext4
@@ -138,7 +138,7 @@ docker run --rm hello-world
 如果是团队工具集成，建议指定稳定 socket 路径：
 
 ```bash
-./dockerd --id team \
+./revm dockerd --id team \
   --podman-api /tmp/dockerd-podman.sock \
   --mount "$PWD:/workspace"
 ```

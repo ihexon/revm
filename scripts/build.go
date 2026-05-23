@@ -58,9 +58,9 @@ type builder struct {
 func main() {
 	verbose := flag.Bool("v", false, "enable debug logging")
 	runLint := flag.Bool("lint", false, "run golangci-lint before building")
-	buildTarget := flag.String("build", "all", "target to build: all, revm, chroot, or dockerd")
+	buildTarget := flag.String("build", "all", "target to build: all or revm")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: go run build.go [-v] [--lint] [--build all|revm|chroot|dockerd]\n")
+		fmt.Fprintf(os.Stderr, "Usage: go run build.go [-v] [--lint] [--build all|revm]\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -156,10 +156,10 @@ func parseBuildTargets(target string) ([]string, error) {
 	switch strings.TrimSpace(target) {
 	case "", "all":
 		return append([]string(nil), defaultBuildTargets...), nil
-	case "revm", "chroot", "dockerd":
+	case "revm":
 		return []string{target}, nil
 	default:
-		return nil, fmt.Errorf("unsupported build target %q: use all, revm, chroot, or dockerd", target)
+		return nil, fmt.Errorf("unsupported build target %q: use all or revm", target)
 	}
 }
 
