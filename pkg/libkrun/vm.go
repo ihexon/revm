@@ -24,14 +24,7 @@ type Libkrun struct {
 	cfg   *define.MachineSpec
 	ctxID uint32
 
-	// Keep file references to prevent GC
-	files struct {
-		stdin, stdout, stderr *os.File
-		consolePty            [2]*os.File // master, slave
-		guestLog              *os.File
-		signalPipeR           *os.File // read end kept alive for Libkrun
-		signalPipeW           *os.File // write end
-	}
+	files libkrunFiles
 }
 
 // New creates a new Libkrun instance.
@@ -40,7 +33,13 @@ func New(cfg *define.MachineSpec) *Libkrun {
 }
 
 // Create initializes the Libkrun configuration.
-func (v *Libkrun) Create(ctx context.Context) error {
+func (v *Libkrun) Create(ctx context.Context) (retErr error) {
+	defer func() {
+		if retErr != nil {
+			v.files.close()
+		}
+	}()
+
 	if err := v.init(); err != nil {
 		return err
 	}
@@ -81,33 +80,11 @@ func (v *Libkrun) Start(vmWaitAbortCtx context.Context) error {
 	// 永远没有机会执行，因为 Libkrun 会使用 exit 退出程序
 	//
 	// 但我仍然做象征意义上的清理工作，因为这样让人感到愉悦
+	v.files.startConsoleIO()
 	ret := C.krun_start_enter(C.uint32_t(v.ctxID))
 
 	// 让人愉悦但永远没机会执行的代码
-	if v.files.signalPipeR != nil {
-		_ = v.files.signalPipeR.Close()
-	}
-	if v.files.signalPipeW != nil {
-		_ = v.files.signalPipeW.Close()
-	}
-	if v.files.guestLog != nil {
-		_ = v.files.guestLog.Close()
-	}
-	if v.files.consolePty[0] != nil {
-		_ = v.files.consolePty[0].Close()
-	}
-	if v.files.consolePty[1] != nil {
-		_ = v.files.consolePty[1].Close()
-	}
-	if v.files.stdin != nil {
-		_ = v.files.stdin.Close()
-	}
-	if v.files.stdout != nil {
-		_ = v.files.stdout.Close()
-	}
-	if v.files.stderr != nil {
-		_ = v.files.stderr.Close()
-	}
+	v.files.close()
 
 	if ret != 0 {
 		return fmt.Errorf("Libkrun failed: %w", errCode(ret))
@@ -118,7 +95,7 @@ func (v *Libkrun) Start(vmWaitAbortCtx context.Context) error {
 
 // SendSignal writes a signal message to the Libkrun's signal pipe.
 func (v *Libkrun) SendSignal(ctx context.Context, name define.GuestSignalName) error {
-	if v.files.signalPipeW == nil {
+	if v.files.signalPipe.write == nil {
 		return nil
 	}
 
@@ -128,7 +105,7 @@ func (v *Libkrun) SendSignal(ctx context.Context, name define.GuestSignalName) e
 		return err
 	}
 
-	return writeSignalMessage(ctx, v.files.signalPipeW, append(b, '\n'))
+	return writeSignalMessage(ctx, v.files.signalPipe.write, append(b, '\n'))
 }
 
 func writeSignalMessage(ctx context.Context, f *os.File, msg []byte) error {
