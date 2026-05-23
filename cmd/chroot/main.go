@@ -79,7 +79,7 @@ func main() {
 
 			switch {
 			case command.Bool(define.FlagAttachMode) && (len(portExportSpecs) > 0 || len(portUnexportSpecs) > 0):
-				cfg.WithControl(portExportSpecs, portUnexportSpecs)
+				cfg.WithControl(portExports, portUnexports)
 			case command.Bool(define.FlagAttachMode):
 				cfg.WithAttach(command.Args().Slice()...)
 			default:

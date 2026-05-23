@@ -59,17 +59,6 @@ func Control(ctx context.Context, cfg *Config) (retErr error) {
 	logrus.Infof("revm build info: %s", buildTimeInfo())
 	logrus.Infof("control command, full cmdline: %q", os.Args)
 
-	portExports, err := ParsePortExportSpecs(normalizedCfg.PortExportSpecs)
-	if err != nil {
-		return err
-	}
-	portUnexports, err := ParsePortUnexportSpecs(normalizedCfg.PortUnexportSpecs)
-	if err != nil {
-		return err
-	}
-	normalizedCfg.PortForwards = append(normalizedCfg.PortForwards, portExports...)
-	normalizedCfg.PortUnforwards = append(normalizedCfg.PortUnforwards, portUnexports...)
-
 	if len(normalizedCfg.PortForwards) == 0 && len(normalizedCfg.PortUnforwards) == 0 {
 		return fmt.Errorf("no port updates requested")
 	}

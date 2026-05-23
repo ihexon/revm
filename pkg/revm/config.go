@@ -67,8 +67,6 @@ type Config struct {
 	LogTo                string               `json:"logTo,omitempty"`
 	PortForwards         []define.PortForward `json:"portForwards,omitempty"`
 	PortUnforwards       []define.PortForward `json:"portUnforwards,omitempty"`
-	PortExportSpecs      []string             `json:"portExportSpecs,omitempty"`
-	PortUnexportSpecs    []string             `json:"portUnexportSpecs,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.
@@ -103,13 +101,11 @@ func (c *Config) WithAttach(cmdline ...string) *Config {
 	return c.WithCommandLine(cmdline...)
 }
 
-func (c *Config) WithControl(portExportSpecs, portUnexportSpecs []string) *Config {
+func (c *Config) WithControl(portForwards, portUnforwards []define.PortForward) *Config {
 	c.RunMode = ModeControl
 	c.Command = nil
-	c.PortForwards = nil
-	c.PortUnforwards = nil
-	c.PortExportSpecs = append([]string(nil), portExportSpecs...)
-	c.PortUnexportSpecs = append([]string(nil), portUnexportSpecs...)
+	c.PortForwards = append([]define.PortForward(nil), portForwards...)
+	c.PortUnforwards = append([]define.PortForward(nil), portUnforwards...)
 	return c
 }
 
@@ -419,8 +415,7 @@ func validateConfig(cfg Config) error {
 		if len(cfg.Command) > 0 {
 			return fmt.Errorf("control operations cannot be combined with an attach command")
 		}
-		if len(cfg.PortExportSpecs) == 0 && len(cfg.PortUnexportSpecs) == 0 &&
-			len(cfg.PortForwards) == 0 && len(cfg.PortUnforwards) == 0 {
+		if len(cfg.PortForwards) == 0 && len(cfg.PortUnforwards) == 0 {
 			return fmt.Errorf("control mode requires a control operation")
 		}
 		return nil
