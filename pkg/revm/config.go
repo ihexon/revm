@@ -63,8 +63,10 @@ type Config struct {
 	Proxy                bool                 `json:"proxy,omitempty"`
 	LogLevel             string               `json:"logLevel,omitempty"` // default "info"
 	LogTo                string               `json:"logTo,omitempty"`
+	PortList             bool                 `json:"portList,omitempty"`
 	PortForwards         []define.PortForward `json:"portForwards,omitempty"`
 	PortUnforwards       []define.PortForward `json:"portUnforwards,omitempty"`
+	RootfsExport         string               `json:"rootfsExport,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.
@@ -102,8 +104,30 @@ func (c *Config) WithAttach(cmdline ...string) *Config {
 func (c *Config) WithControl(portForwards, portUnforwards []define.PortForward) *Config {
 	c.RunMode = ModeControl
 	c.Command = nil
+	c.PortList = false
+	c.RootfsExport = ""
 	c.PortForwards = append([]define.PortForward(nil), portForwards...)
 	c.PortUnforwards = append([]define.PortForward(nil), portUnforwards...)
+	return c
+}
+
+func (c *Config) WithPortList() *Config {
+	c.RunMode = ModeControl
+	c.Command = nil
+	c.PortList = true
+	c.PortForwards = nil
+	c.PortUnforwards = nil
+	c.RootfsExport = ""
+	return c
+}
+
+func (c *Config) WithRootfsExport(path string) *Config {
+	c.RunMode = ModeControl
+	c.Command = nil
+	c.PortList = false
+	c.PortForwards = nil
+	c.PortUnforwards = nil
+	c.RootfsExport = path
 	return c
 }
 
@@ -362,7 +386,21 @@ func validateControlConfig(cfg Config) error {
 	if len(cfg.Command) > 0 {
 		return fmt.Errorf("control operations cannot be combined with an attach command")
 	}
-	if len(cfg.PortForwards) == 0 && len(cfg.PortUnforwards) == 0 {
+	hasPortUpdates := len(cfg.PortForwards) > 0 || len(cfg.PortUnforwards) > 0
+	operationCount := 0
+	if cfg.PortList {
+		operationCount++
+	}
+	if hasPortUpdates {
+		operationCount++
+	}
+	if cfg.RootfsExport != "" {
+		operationCount++
+	}
+	if operationCount > 1 {
+		return fmt.Errorf("control operations cannot be combined")
+	}
+	if operationCount == 0 {
 		return fmt.Errorf("control mode requires a control operation")
 	}
 	return nil

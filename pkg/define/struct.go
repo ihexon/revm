@@ -105,6 +105,12 @@ type PortForward struct {
 	GuestPort uint16 `json:"guestPort,omitempty"`
 }
 
+type PortMapping struct {
+	Protocol string `json:"protocol,omitempty"`
+	Local    string `json:"local,omitempty"`
+	Remote   string `json:"remote,omitempty"`
+}
+
 type GuestAgentCfg struct {
 	Workdir string   `json:"workdir,omitempty"`
 	Args    []string `json:"args,omitempty"`

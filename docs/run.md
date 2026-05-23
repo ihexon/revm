@@ -1,119 +1,176 @@
-# run mode
+# revm run
 
 [English](./run.en.md)
 
-`revm run` 用于快速运行一个隔离的 Linux 命令环境：使用方式像本地命令，运行环境更干净，也更适合自动化。
+`revm run` 启动一个 Linux rootfs session，并在 guest 内执行命令。它适合构建、测试、脚本执行、一次性调试和需要干净 Linux 环境的本地工具。
 
-## 适合谁
-
-- 想在干净 Linux 环境里跑构建和测试的开发者。
-- 想快速打开一次性 Linux Shell 的工程师。
-- 想检查 rootfs、验证脚本、复现用户环境的工具开发者。
-- 想给 CI、本地开发平台或沙箱执行能力找一个轻量底座的团队。
-
-## 典型场景
-
-### 场景 1：项目构建环境不想污染本机
-
-把当前项目目录挂载进去，然后在 Linux 环境里跑测试：
+## 基本用法
 
 ```bash
-./revm run --id build \
+revm run --id <session-id> [flags] -- <command> [args...]
+```
+
+`--id` 是必填项。`--` 之后的内容会作为 guest 内命令执行。
+
+```bash
+revm run --id quick -- sh -c 'uname -a && cat /etc/os-release'
+```
+
+打开交互式 shell：
+
+```bash
+revm run --id shell -- sh
+```
+
+挂载当前项目并在 guest 中执行测试：
+
+```bash
+revm run --id build \
   --mount "$PWD:/workspace" \
   --workdir /workspace \
   -- sh -c 'make test'
 ```
 
-适合解决这些问题：
+## rootfs
 
-- 本机依赖太多，构建结果不稳定。
-- 团队成员系统不同，测试结果不一致。
-- 只想为某个任务创建一个干净环境，用完就退出。
+不指定 `--rootfs` 时，`revm run` 使用内置 rootfs。
 
-### 场景 2：临时调试 Linux 命令或脚本
-
-打开一个 Shell：
+使用自定义 rootfs：
 
 ```bash
-./revm run --id debug -- sh
+revm run --id ubuntu --rootfs ~/rootfs/ubuntu -- bash
 ```
 
-你可以在里面验证命令、跑脚本、检查 Linux 行为，不需要长期维护一台 VM。
+自定义 rootfs 至少需要提供可执行的 `/bin/sh`。如果命令依赖其他工具，需要由 rootfs 自己提供。
 
-### 场景 3：使用自己的 rootfs 复现环境
-
-如果你已经准备好了一个 rootfs，可以直接指定：
+## 资源
 
 ```bash
-./revm run --id ubuntu --rootfs ~/ubuntu-rootfs -- bash
-```
-
-这很适合复现特定发行版、特定依赖集合或某个线上问题环境。
-
-### 场景 4：在自动化流程中执行任务
-
-把它放进脚本或 CI 辅助工具里：
-
-```bash
-./revm run --id ci \
+revm run --id test \
   --cpus 4 \
   --memory 4096 \
-  --mount "$PWD:/src,ro" \
-  --workdir /src \
-  -- sh -c './ci/test.sh'
+  -- sh -c './test.sh'
 ```
 
-这样团队可以把“准备环境”和“执行任务”合并成稳定、可重复的一步。
+- `--cpus`: vCPU 数量。未设置或小于 1 时使用主机 CPU 数量。
+- `--memory`: 内存大小，单位 MB。未设置时使用主机可用内存；最小值是 512。
 
-## 快速开始
+## 文件与目录
 
-使用内置 Linux 环境执行命令：
-
-```bash
-./revm run --id quick -- sh -c 'uname -a && cat /etc/os-release'
-```
-
-进入交互式 Shell：
+共享目录使用 VirtIO-FS：
 
 ```bash
-./revm run --id shell -- sh
-```
-
-挂载当前项目目录：
-
-```bash
-./revm run --id dev \
+revm run --id dev \
   --mount "$PWD:/workspace" \
+  --mount "$HOME/.cache/go-build:/go-cache,ro" \
   --workdir /workspace \
   -- sh
 ```
 
-## 核心能力
+挂载格式：
 
-- 使用内置 Linux 环境，也可以切换成团队自己的 rootfs。
-- 把本机项目目录挂载进去，直接在隔离环境里执行构建和测试。
-- 为不同项目固定工作目录、环境变量和资源大小。
-- 复用本机代理设置，方便下载依赖。
-- 输出日志，便于接入脚本、CI 或内部平台。
-
-## 推荐用法
-
-如果只是临时验证，直接使用内置环境：
-
-```bash
-./revm run --id test -- sh
+```text
+--mount /host/path:/guest/path[,ro]
 ```
 
-如果是团队构建或测试，建议固定 rootfs、工作目录和资源配置：
+原始 ext4 磁盘使用 `--raw-disk`：
 
 ```bash
-./revm run --id project-test \
-  --rootfs ~/project-rootfs \
-  --cpus 4 \
-  --memory 4096 \
-  --mount "$PWD:/workspace" \
-  --workdir /workspace \
-  -- sh -c 'make test'
+revm run --id disk \
+  --raw-disk ~/.cache/revm/data.ext4,mnt=/data,version=v1 \
+  -- sh -c 'df -h /data'
 ```
 
-这样每个人都能用同一套命令得到更一致的结果。
+磁盘格式：
+
+```text
+--raw-disk <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>]
+```
+
+如果文件不存在，revm 会创建它。`version` 用于区分磁盘内容版本，适合构建缓存和可重建数据。
+
+## 环境变量与代理
+
+传入环境变量：
+
+```bash
+revm run --id env \
+  --envs GOPROXY=https://proxy.golang.org,direct \
+  --envs CI=true \
+  -- sh -c 'env | sort'
+```
+
+复用 macOS 系统代理：
+
+```bash
+revm run --id proxy --system-proxy -- sh -c 'curl -I https://example.com'
+```
+
+在 gvisor 网络模式下，指向 `127.0.0.1` 的系统代理会被改写成 guest 可访问的 host 地址。
+
+## 网络
+
+`revm run` 默认使用 gvisor 网络：
+
+```bash
+revm run --id net --network gvisor -- sh
+```
+
+可选值：
+
+- `gvisor`: 使用 gvisor-tap-vsock，支持 NAT、DNS、端口暴露和容器场景。
+- `tsi`: 使用 libkrun transparent socket interception，路径更轻，但不支持 `revm ctl --port-export`。
+
+## 暴露 guest 端口
+
+端口暴露由 `revm ctl` 操作已有 session，不在 `revm run` 启动路径里解析。
+
+先启动一个长期运行的服务：
+
+```bash
+revm run --id web -- sh -c 'cd /tmp && python3 -m http.server 8000'
+```
+
+在另一个终端暴露端口：
+
+```bash
+revm ctl --id web --list-port
+revm ctl --id web --port-export 127.0.0.1:8080:8000
+curl http://127.0.0.1:8080
+revm ctl --id web --port-unexport 127.0.0.1:8080
+```
+
+端口展示和端口更新都要求 session 使用 gvisor 网络。`--list-port` 会展示 SSH、容器发布端口和手动暴露端口。
+
+## Attach
+
+`revm attach` 可以连接到已有 `run` session：
+
+```bash
+revm attach --id web --pty
+revm attach --id web -- sh -c 'ps aux'
+```
+
+`revm attach` 不会创建新 VM。如果 session 不存在，命令会失败。
+
+## 日志与控制接口
+
+默认日志路径：
+
+```text
+~/.cache/revm/<session-id>/logs/revm.log
+```
+
+显式指定日志：
+
+```bash
+revm run --id build --log-level debug --log-to /tmp/revm-build.log -- sh -c 'make test'
+```
+
+导出管理 API socket：
+
+```bash
+revm run --id build --manage-api /tmp/revm-build-vmctl.sock -- sh
+```
+
+管理 API 用于 `revm ctl` 获取 attach 信息和 gvproxy endpoint。

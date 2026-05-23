@@ -4,7 +4,7 @@ package main
 
 import (
 	"context"
-	"linuxvm/cmd/internal/revmcmd"
+	"linuxvm/cmd/revmcmd"
 	"os"
 
 	"github.com/sirupsen/logrus"

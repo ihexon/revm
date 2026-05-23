@@ -1,144 +1,164 @@
-# dockerd subcommand
+# revm dockerd
 
 [English](./dockerd.en.md)
 
-`revm dockerd` 用于在本机启动一个轻量的 Linux 容器运行环境。你可以继续使用熟悉的 Docker CLI 或 Podman CLI，但容器运行在独立的 Linux 环境中。
+`revm dockerd` 启动一个内置容器运行环境。它在 guest 内运行 Podman 服务，并在 host 上提供一个 Docker-compatible API socket，因此可以用 Docker CLI 或 Podman CLI 连接。
 
-它适合希望保留容器开发体验，同时减少对重型桌面容器产品依赖的团队。
-
-## 适合谁
-
-- 想用 Docker CLI，但希望容器运行环境更轻量的开发者。
-- 需要在本机稳定运行 Linux 容器的 macOS 或 Linux 用户。
-- 想把容器运行能力嵌入自研开发工具、CI 辅助工具或本地平台的团队。
-- 希望容器状态、项目目录、代理和日志都能被命令行清晰控制的工程团队。
-
-## 典型场景
-
-### 场景 1：用 Docker CLI 启动隔离容器
-
-启动运行环境：
+## 基本用法
 
 ```bash
-./revm dockerd --id dev --podman-api /tmp/dockerd-dev.sock
+revm dockerd --id <session-id> [flags]
+```
+
+启动容器 session：
+
+```bash
+revm dockerd --id dev --podman-api /tmp/revm-dev.sock
 ```
 
 在另一个终端使用 Docker CLI：
 
 ```bash
-export DOCKER_HOST=unix:///tmp/dockerd-dev.sock
+export DOCKER_HOST=unix:///tmp/revm-dev.sock
 docker run --rm hello-world
-```
-
-你不用改变使用习惯，就能获得一个独立的 Linux 容器环境。
-
-### 场景 2：本地开发项目需要容器
-
-把项目目录挂载进运行环境，然后构建镜像：
-
-```bash
-./revm dockerd --id app \
-  --podman-api /tmp/dockerd-app.sock \
-  --mount "$PWD:/workspace"
-```
-
-```bash
-export DOCKER_HOST=unix:///tmp/dockerd-app.sock
-docker build -t app /workspace
-docker run --rm app
-```
-
-适合本地服务开发、镜像构建、依赖验证和团队统一开发环境。
-
-### 场景 3：保留容器镜像和数据
-
-如果你不想每次重新拉镜像或丢失容器数据，可以指定持久化磁盘：
-
-```bash
-./revm dockerd --id dev --container-disk ~/.cache/dockerd-container.ext4
-```
-
-这让容器开发环境既可以独立运行，也可以保留长期使用的状态。
-
-### 场景 4：测试 Web 服务端口
-
-容器里的端口可以正常发布到本机：
-
-```bash
-docker run --rm -p 8080:80 nginx
-curl http://127.0.0.1:8080
-```
-
-适合验证 Web 服务、API 服务、前端构建产物和本地集成测试。
-
-### 场景 5：给内部工具提供容器能力
-
-你可以把 `dockerd` 包装进自己的开发平台或自动化工具里：
-
-```bash
-./revm dockerd --id ci \
-  --podman-api /tmp/dockerd-podman.sock \
-  --mount "$PWD:/workspace" \
-  --log-level info
-```
-
-上层工具只需要连接这个 socket，就能获得一套稳定的容器执行能力。
-
-## 快速开始
-
-启动：
-
-```bash
-./revm dockerd --id dev --podman-api /tmp/dockerd-dev.sock
 ```
 
 使用 Podman CLI：
 
 ```bash
-export CONTAINER_HOST=unix:///tmp/dockerd-dev.sock
+export CONTAINER_HOST=unix:///tmp/revm-dev.sock
 podman run --rm alpine uname -a
 ```
 
-使用 Docker CLI：
+## API Socket
+
+`--podman-api` 指定 host 上暴露的 Unix socket：
 
 ```bash
-export DOCKER_HOST=unix:///tmp/dockerd-dev.sock
-docker ps
-docker run --rm hello-world
+revm dockerd --id team --podman-api /tmp/revm-team.sock
 ```
 
-## 核心能力
+不指定时，默认路径在 session 目录内：
 
-- Docker CLI / Podman CLI 兼容。
-- 项目目录挂载，方便本地开发和镜像构建。
-- 容器端口发布，方便测试服务。
-- 可选持久化容器存储。
-- 支持本机代理设置，方便拉取依赖和镜像。
-- 支持日志和稳定接入方式，方便自动化集成。
+```text
+~/.cache/revm/<session-id>/socks/podman-api.sock
+```
 
-## 推荐用法
+这个 socket 由 host 侧代理转发到 guest 内 Podman API。上层工具只需要连接这个 socket，不需要知道 VM 内部细节。
 
-日常开发可以固定一个 session：
+## 项目目录
+
+挂载项目目录：
 
 ```bash
-./revm dockerd --id dev \
-  --podman-api /tmp/dockerd-dev.sock \
+revm dockerd --id app \
+  --podman-api /tmp/revm-app.sock \
   --mount "$PWD:/workspace"
 ```
 
-如果希望容器状态长期保留，增加持久化磁盘：
+构建镜像：
 
 ```bash
-./revm dockerd --id dev \
-  --podman-api /tmp/dockerd-dev.sock \
-  --mount "$PWD:/workspace" \
-  --container-disk ~/.cache/dockerd-container.ext4
+export DOCKER_HOST=unix:///tmp/revm-app.sock
+docker build -t app /workspace
+docker run --rm app
 ```
 
-如果是团队工具集成，建议指定稳定 socket 路径：
+挂载格式：
+
+```text
+--mount /host/path:/guest/path[,ro]
+```
+
+## 容器存储
+
+不指定 `--container-disk` 时，revm 使用 session 内默认容器存储盘。
+
+指定持久化存储盘：
 
 ```bash
-./revm dockerd --id team \
-  --podman-api /tmp/dockerd-podman.sock \
-  --mount "$PWD:/workspace"
+revm dockerd --id dev \
+  --podman-api /tmp/revm-dev.sock \
+  --container-disk ~/.cache/revm/container-storage.ext4
 ```
+
+格式：
+
+```text
+--container-disk <path>[,version=<string>]
+```
+
+如果文件不存在，revm 会创建它。如果磁盘保存的版本缺失或与 `version` 不一致，revm 会重新创建该磁盘。适合把容器存储当成可重建缓存管理。
+
+## 端口发布
+
+容器自己的端口发布继续使用 Docker 或 Podman CLI：
+
+```bash
+export DOCKER_HOST=unix:///tmp/revm-dev.sock
+docker run --rm -p 8080:80 nginx
+curl http://127.0.0.1:8080
+```
+
+guest agent 会配置 Podman machine marker，使容器 start/stop 时调用 gvproxy 的 expose/unexpose API。
+
+如果要手动暴露 guest 内的任意服务端口，使用 `revm ctl`：
+
+```bash
+revm ctl --id dev --list-port
+revm ctl --id dev --port-export 127.0.0.1:8081:8081
+revm ctl --id dev --port-unexport 127.0.0.1:8081
+```
+
+`--list-port` 会展示 SSH、容器发布端口和手动暴露端口。
+
+## 资源、代理和日志
+
+资源配置：
+
+```bash
+revm dockerd --id dev \
+  --cpus 4 \
+  --memory 4096 \
+  --podman-api /tmp/revm-dev.sock
+```
+
+复用 macOS 系统代理：
+
+```bash
+revm dockerd --id dev --system-proxy --podman-api /tmp/revm-dev.sock
+```
+
+指定日志：
+
+```bash
+revm dockerd --id dev \
+  --log-level debug \
+  --log-to /tmp/revm-dockerd.log \
+  --podman-api /tmp/revm-dev.sock
+```
+
+默认日志路径：
+
+```text
+~/.cache/revm/<session-id>/logs/revm.log
+```
+
+## Attach 和控制
+
+连接到运行中的容器 session：
+
+```bash
+revm attach --id dev --pty
+revm attach --id dev -- sh -c 'podman ps'
+```
+
+导出管理 API socket：
+
+```bash
+revm dockerd --id dev \
+  --manage-api /tmp/revm-dev-vmctl.sock \
+  --podman-api /tmp/revm-dev.sock
+```
+
+`revm attach` 通过管理 API 获取 SSH 信息并连接 guest。`revm ctl` 通过管理 API 获取 gvproxy endpoint 并执行控制面更新。

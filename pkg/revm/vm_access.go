@@ -10,6 +10,7 @@ import (
 	"io"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/gvproxy"
+	libarchive_go "linuxvm/pkg/libarchive"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/protocol"
 	"linuxvm/pkg/service/management"
@@ -17,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/sirupsen/logrus"
@@ -70,14 +72,112 @@ func Control(ctx context.Context, cfg *Config) (retErr error) {
 	logrus.Infof("revm build info: %s", buildTimeInfo())
 	logrus.Infof("control command, full cmdline: %q", os.Args)
 
-	if len(normalizedCfg.PortForwards) == 0 && len(normalizedCfg.PortUnforwards) == 0 {
-		return fmt.Errorf("no port updates requested")
+	if !normalizedCfg.PortList && len(normalizedCfg.PortForwards) == 0 && len(normalizedCfg.PortUnforwards) == 0 && normalizedCfg.RootfsExport == "" {
+		return fmt.Errorf("no control operation requested")
 	}
 	if len(normalizedCfg.Command) > 0 {
-		return fmt.Errorf("control port operations cannot be combined with an attach command")
+		return fmt.Errorf("control operations cannot be combined with an attach command")
+	}
+	if normalizedCfg.PortList {
+		_, err := ListPorts(ctx, cfg)
+		return err
+	}
+	if normalizedCfg.RootfsExport != "" {
+		return ExportRootfs(ctx, normalizedCfg)
 	}
 
 	return updatePortForwards(ctx, normalizedCfg)
+}
+
+func ExportRootfs(ctx context.Context, normalizedCfg Config) error {
+	if normalizedCfg.RootfsExport == "" {
+		return fmt.Errorf("rootfs export path must not be empty")
+	}
+	rootfsDir := newMachinePathManager(getSessionDir(normalizedCfg.SessionID)).GetRootfsDir()
+	if info, err := os.Stat(rootfsDir); err != nil {
+		return fmt.Errorf("stat session rootfs %q: %w", rootfsDir, err)
+	} else if !info.IsDir() {
+		return fmt.Errorf("session rootfs %q is not a directory", rootfsDir)
+	}
+
+	outputPath, err := filepath.Abs(filepath.Clean(normalizedCfg.RootfsExport))
+	if err != nil {
+		return fmt.Errorf("resolve rootfs export path: %w", err)
+	}
+	rootfsAbs, err := filepath.Abs(filepath.Clean(rootfsDir))
+	if err != nil {
+		return fmt.Errorf("resolve session rootfs path: %w", err)
+	}
+	if pathWithin(outputPath, rootfsAbs) {
+		return fmt.Errorf("rootfs export path %q must not be inside session rootfs %q", outputPath, rootfsAbs)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("create rootfs export directory: %w", err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(outputPath), "."+filepath.Base(outputPath)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temporary rootfs export: %w", err)
+	}
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close rootfs export: %w", err)
+	}
+	if err := libarchive_go.NewArchiver().
+		WithArchiveFilePath(tmpPath).
+		SetChdir(rootfsAbs).
+		ModeC(ctx); err != nil {
+		return fmt.Errorf("archive rootfs: %w", err)
+	}
+	if err := os.Chmod(tmpPath, 0644); err != nil {
+		return fmt.Errorf("chmod rootfs export: %w", err)
+	}
+	if err := os.Rename(tmpPath, outputPath); err != nil {
+		return fmt.Errorf("move rootfs export into place: %w", err)
+	}
+	cleanup = false
+	logrus.Infof("exported rootfs %q to %q", rootfsAbs, outputPath)
+	return nil
+}
+
+func pathWithin(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+}
+
+func ListPorts(ctx context.Context, cfg *Config) ([]define.PortMapping, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config must not be nil")
+	}
+
+	normalizedCfg, err := NormalizeConfig(*cfg)
+	if err != nil {
+		return nil, fmt.Errorf("resolve defaults: %w", err)
+	}
+	if normalizedCfg.RunMode != ModeControl {
+		return nil, fmt.Errorf("port list requires run mode %q, got %q", ModeControl, normalizedCfg.RunMode)
+	}
+	view, err := fetchManagementView(ctx, getSessionDir(normalizedCfg.SessionID))
+	if err != nil {
+		return nil, err
+	}
+	if view.NetworkMode != string(define.GVISOR) {
+		return nil, fmt.Errorf("port list requires network %q, got %q", define.GVISOR, view.NetworkMode)
+	}
+	if view.Endpoints.GVProxyAPI == "" {
+		return nil, fmt.Errorf("gvproxy API endpoint is empty")
+	}
+	return gvproxy.ListPorts(ctx, view.Endpoints.GVProxyAPI)
 }
 
 func updatePortForwards(ctx context.Context, normalizedCfg Config) error {

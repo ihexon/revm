@@ -31,3 +31,31 @@ func TestNormalizeConfigControlDoesNotResolveBootResources(t *testing.T) {
 		t.Fatalf("MemoryMB = %d, want 0 for control mode", got.MemoryMB)
 	}
 }
+
+func TestNormalizeConfigControlRootfsExport(t *testing.T) {
+	cfg := DefaultConfig().
+		WithSessionID("myengine").
+		WithRootfsExport("/tmp/rootfs.tar.zst")
+
+	got, err := NormalizeConfig(*cfg)
+	if err != nil {
+		t.Fatalf("NormalizeConfig() error = %v", err)
+	}
+	if got.RunMode != ModeControl {
+		t.Fatalf("RunMode = %q, want %q", got.RunMode, ModeControl)
+	}
+	if got.RootfsExport != "/tmp/rootfs.tar.zst" {
+		t.Fatalf("RootfsExport = %q, want /tmp/rootfs.tar.zst", got.RootfsExport)
+	}
+}
+
+func TestNormalizeConfigRejectsCombinedControlOperations(t *testing.T) {
+	cfg := DefaultConfig().
+		WithSessionID("myengine").
+		WithRootfsExport("/tmp/rootfs.tar.zst")
+	cfg.PortList = true
+
+	if _, err := NormalizeConfig(*cfg); err == nil {
+		t.Fatal("NormalizeConfig() accepted combined control operations")
+	}
+}

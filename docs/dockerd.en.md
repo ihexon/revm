@@ -1,142 +1,162 @@
-# dockerd subcommand
+# revm dockerd
 
-`revm dockerd` mode starts a lightweight Linux container environment on your machine. You can keep using Docker CLI or Podman CLI, while containers run in an isolated Linux environment.
+`revm dockerd` starts the built-in container runtime. It runs Podman inside the guest and exposes a Docker-compatible API socket on the host, so Docker CLI and Podman CLI can connect to it.
 
-It is a good fit for teams that want familiar container workflows without relying on a heavy desktop container runtime.
-
-## Who It Is For
-
-- Developers who want Docker CLI compatibility with a lighter runtime.
-- macOS or Linux users who need a stable local Linux container environment.
-- Teams embedding container execution into internal developer tools, CI helpers, or local platforms.
-- Engineering teams that want container state, project mounts, proxy settings, and logs controlled through the command line.
-
-## Common Scenarios
-
-### Scenario 1: Run Isolated Containers With Docker CLI
-
-Start the runtime:
+## Usage
 
 ```bash
-./revm dockerd --id dev --podman-api /tmp/dockerd-dev.sock
+revm dockerd --id <session-id> [flags]
+```
+
+Start a container session:
+
+```bash
+revm dockerd --id dev --podman-api /tmp/revm-dev.sock
 ```
 
 Use Docker CLI from another terminal:
 
 ```bash
-export DOCKER_HOST=unix:///tmp/dockerd-dev.sock
+export DOCKER_HOST=unix:///tmp/revm-dev.sock
 docker run --rm hello-world
-```
-
-You keep the same command-line workflow while using an isolated Linux container environment.
-
-### Scenario 2: Build Containers For A Local Project
-
-Mount the project directory and build an image:
-
-```bash
-./revm dockerd --id app \
-  --podman-api /tmp/dockerd-app.sock \
-  --mount "$PWD:/workspace"
-```
-
-```bash
-export DOCKER_HOST=unix:///tmp/dockerd-app.sock
-docker build -t app /workspace
-docker run --rm app
-```
-
-This works well for local service development, image builds, dependency checks, and team-wide development environments.
-
-### Scenario 3: Keep Images And Container Data
-
-Use a persistent disk if you do not want to pull images again or lose container data:
-
-```bash
-./revm dockerd --id dev --container-disk ~/.cache/dockerd-container.ext4
-```
-
-This keeps the container environment isolated while preserving long-lived state.
-
-### Scenario 4: Test Web Service Ports
-
-Container ports can be published to the host:
-
-```bash
-docker run --rm -p 8080:80 nginx
-curl http://127.0.0.1:8080
-```
-
-This is useful for testing web services, APIs, frontend build outputs, and local integration flows.
-
-### Scenario 5: Add Container Execution To Internal Tools
-
-Wrap `dockerd` inside your own developer platform or automation tool:
-
-```bash
-./revm dockerd --id ci \
-  --podman-api /tmp/dockerd-podman.sock \
-  --mount "$PWD:/workspace" \
-  --log-level info
-```
-
-Higher-level tools can connect to the socket and get a stable container execution backend.
-
-## Quick Start
-
-Start:
-
-```bash
-./revm dockerd --id dev --podman-api /tmp/dockerd-dev.sock
 ```
 
 Use Podman CLI:
 
 ```bash
-export CONTAINER_HOST=unix:///tmp/dockerd-dev.sock
+export CONTAINER_HOST=unix:///tmp/revm-dev.sock
 podman run --rm alpine uname -a
 ```
 
-Use Docker CLI:
+## API Socket
+
+`--podman-api` sets the Unix socket exposed on the host:
 
 ```bash
-export DOCKER_HOST=unix:///tmp/dockerd-dev.sock
-docker ps
-docker run --rm hello-world
+revm dockerd --id team --podman-api /tmp/revm-team.sock
 ```
 
-## Core Capabilities
+When omitted, the default path is inside the session directory:
 
-- Docker CLI and Podman CLI compatibility.
-- Project directory mounts for local development and image builds.
-- Container port publishing for service testing.
-- Optional persistent container storage.
-- Host proxy support for pulling dependencies and images.
-- Logs and stable connection points for automation.
+```text
+~/.cache/revm/<session-id>/socks/podman-api.sock
+```
 
-## Recommended Usage
+This socket is served by a host-side proxy that forwards to the Podman API inside the guest. Higher-level tools only need this socket; they do not need to know VM internals.
 
-For daily development, keep a fixed session:
+## Project Directories
+
+Mount a project directory:
 
 ```bash
-./revm dockerd --id dev \
-  --podman-api /tmp/dockerd-dev.sock \
+revm dockerd --id app \
+  --podman-api /tmp/revm-app.sock \
   --mount "$PWD:/workspace"
 ```
 
-Add a persistent disk when container state should survive across runs:
+Build an image:
 
 ```bash
-./revm dockerd --id dev \
-  --podman-api /tmp/dockerd-dev.sock \
-  --mount "$PWD:/workspace" \
-  --container-disk ~/.cache/dockerd-container.ext4
+export DOCKER_HOST=unix:///tmp/revm-app.sock
+docker build -t app /workspace
+docker run --rm app
 ```
 
-For team tool integration, use a stable socket path:
+Mount format:
+
+```text
+--mount /host/path:/guest/path[,ro]
+```
+
+## Container Storage
+
+When `--container-disk` is omitted, revm uses the default container storage disk inside the session.
+
+Use a persistent storage disk:
 
 ```bash
-./revm dockerd --id team \
-  --podman-api /tmp/dockerd-podman.sock \
-  --mount "$PWD:/workspace"
+revm dockerd --id dev \
+  --podman-api /tmp/revm-dev.sock \
+  --container-disk ~/.cache/revm/container-storage.ext4
 ```
+
+Format:
+
+```text
+--container-disk <path>[,version=<string>]
+```
+
+If the file does not exist, revm creates it. If the stored version is missing or does not match `version`, revm recreates the disk. This makes container storage manageable as a rebuildable cache.
+
+## Port Publishing
+
+Container port publishing continues to use Docker or Podman CLI:
+
+```bash
+export DOCKER_HOST=unix:///tmp/revm-dev.sock
+docker run --rm -p 8080:80 nginx
+curl http://127.0.0.1:8080
+```
+
+The guest agent configures the Podman machine marker so container start/stop calls gvproxy's expose/unexpose API.
+
+To manually expose any service port from the guest, use `revm ctl`:
+
+```bash
+revm ctl --id dev --list-port
+revm ctl --id dev --port-export 127.0.0.1:8081:8081
+revm ctl --id dev --port-unexport 127.0.0.1:8081
+```
+
+`--list-port` shows SSH, container-published ports, and manually exposed ports.
+
+## Resources, Proxy, And Logs
+
+Set resources:
+
+```bash
+revm dockerd --id dev \
+  --cpus 4 \
+  --memory 4096 \
+  --podman-api /tmp/revm-dev.sock
+```
+
+Reuse the macOS system proxy:
+
+```bash
+revm dockerd --id dev --system-proxy --podman-api /tmp/revm-dev.sock
+```
+
+Set log output:
+
+```bash
+revm dockerd --id dev \
+  --log-level debug \
+  --log-to /tmp/revm-dockerd.log \
+  --podman-api /tmp/revm-dev.sock
+```
+
+Default log path:
+
+```text
+~/.cache/revm/<session-id>/logs/revm.log
+```
+
+## Attach And Control
+
+Connect to a running container session:
+
+```bash
+revm attach --id dev --pty
+revm attach --id dev -- sh -c 'podman ps'
+```
+
+Export the management API socket:
+
+```bash
+revm dockerd --id dev \
+  --manage-api /tmp/revm-dev-vmctl.sock \
+  --podman-api /tmp/revm-dev.sock
+```
+
+`revm attach` uses the management API to resolve SSH metadata and connect to the guest. `revm ctl` uses the management API to resolve the gvproxy endpoint and perform control-plane updates.

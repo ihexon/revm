@@ -1,7 +1,6 @@
 package define
 
 const (
-	FlagAttachMode              = "attach"
 	FlagLogLevel                = "log-level"
 	FlagLogTo                   = "log-to"
 	FlagCPUS                    = "cpus"
@@ -22,6 +21,8 @@ const (
 	FlagReportEvents            = "report-events"
 	FlagPortExport              = "port-export"
 	FlagPortUnexport            = "port-unexport"
+	FlagListPort                = "list-port"
+	FlagExportRootfs            = "export-rootfs"
 
 	ContainerDiskUUID = "162cf68f-93c7-49ad-be53-45ed0e9fe42b"
 

@@ -4,8 +4,13 @@ package revmcmd
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/revm"
+	"os"
+	"sort"
+	"text/tabwriter"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -55,12 +60,20 @@ type DockerdOptions struct {
 	ReportURL          string
 }
 
+type AttachOptions struct {
+	Logging   LoggingOptions
+	SessionID string
+	PTY       bool
+	Command   []string
+}
+
 type CtlOptions struct {
-	Logging     LoggingOptions
-	SessionID   string
-	PTY         bool
-	PortUpdates PortUpdates
-	Command     []string
+	Logging      LoggingOptions
+	SessionID    string
+	ListPort     bool
+	PortUpdates  PortUpdates
+	ExportRootfs string
+	Command      []string
 }
 
 func NewApp(name string) *cli.Command {
@@ -71,6 +84,7 @@ func NewApp(name string) *cli.Command {
 		Commands: []*cli.Command{
 			newRunCommand(),
 			newDockerdCommand(),
+			newAttachCommand(),
 			newCtlCommand(),
 		},
 	}
@@ -145,28 +159,44 @@ func newDockerdCommand() *cli.Command {
 	}
 }
 
-func newCtlCommand() *cli.Command {
+func newAttachCommand() *cli.Command {
 	return &cli.Command{
-		Name:                      "ctl",
-		Usage:                     "control an existing VM session",
-		UsageText:                 "ctl --id <session-id> [--port-export spec | --port-unexport spec]\n   ctl --id <session-id> [--pty] [-- <command> [args...]]",
+		Name:                      "attach",
+		Usage:                     "attach to an existing VM session",
+		UsageText:                 "attach --id <session-id> [--pty] [-- <command> [args...]]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
-			&cli.BoolFlag{Name: define.FlagPTY, Usage: "allocate a pseudo-terminal when attaching and launch an interactive shell"},
-			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "expose a guest TCP port on the host (format: [tcp:]<host-port>:<guest-port> or [tcp:]<host-ip>:<host-port>:<guest-port>); updates the running VM and exits; can be specified multiple times"},
-			&cli.StringSliceFlag{Name: define.FlagPortUnexport, Usage: "stop exposing a host TCP port for a running VM (format: [tcp:]<host-port> or [tcp:]<host-ip>:<host-port>); can be specified multiple times"},
+			&cli.BoolFlag{Name: define.FlagPTY, Usage: "allocate a pseudo-terminal and launch an interactive shell"},
 			sessionFlag(),
 			logLevelFlag(),
 			logToFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
 			return runLogged(ctx, command, func() (*revm.Config, error) {
-				opts, err := ParseCtlOptions(command)
-				if err != nil {
-					return nil, err
-				}
-				return NewCtlConfig(opts), nil
+				opts := ParseAttachOptions(command)
+				return NewAttachConfig(opts), nil
 			})
+		},
+	}
+}
+
+func newCtlCommand() *cli.Command {
+	return &cli.Command{
+		Name:                      "ctl",
+		Usage:                     "control an existing VM session",
+		UsageText:                 "ctl --id <session-id> --list-port\n   ctl --id <session-id> [--port-export spec | --port-unexport spec]\n   ctl --id <session-id> --export-rootfs <path.tar.zst>",
+		DisableSliceFlagSeparator: true,
+		Flags: []cli.Flag{
+			&cli.BoolFlag{Name: define.FlagListPort, Usage: "list current gvproxy port mappings for the running VM, including internal SSH forwarding"},
+			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "expose a guest TCP port on the host (format: [tcp:]<host-port>:<guest-port> or [tcp:]<host-ip>:<host-port>:<guest-port>); updates the running VM and exits; can be specified multiple times"},
+			&cli.StringSliceFlag{Name: define.FlagPortUnexport, Usage: "stop exposing a host TCP port for a running VM (format: [tcp:]<host-port> or [tcp:]<host-ip>:<host-port>); can be specified multiple times"},
+			&cli.StringFlag{Name: define.FlagExportRootfs, Usage: "export the session rootfs directory to a host tar.zst file"},
+			sessionFlag(),
+			logLevelFlag(),
+			logToFlag(),
+		},
+		Action: func(ctx context.Context, command *cli.Command) error {
+			return runCtl(ctx, command)
 		},
 	}
 }
@@ -191,6 +221,42 @@ func runLogged(ctx context.Context, command *cli.Command, buildConfig func() (*r
 	cfg, err := buildConfig()
 	if err != nil {
 		return err
+	}
+
+	revm.StopCommandLogging(logFile)
+	preflight = false
+	return revm.Run(ctx, cfg)
+}
+
+func runCtl(ctx context.Context, command *cli.Command) (retErr error) {
+	logFile, err := revm.StartCommandLogging(*newPreflightConfig(command))
+	if err != nil {
+		return err
+	}
+
+	preflight := true
+	defer func() {
+		if !preflight {
+			return
+		}
+		if retErr != nil {
+			logrus.Error(retErr)
+		}
+		revm.StopCommandLogging(logFile)
+	}()
+
+	opts, err := ParseCtlOptions(command)
+	if err != nil {
+		return err
+	}
+	cfg := NewCtlConfig(opts)
+
+	if opts.ListPort {
+		ports, err := revm.ListPorts(ctx, cfg)
+		if err != nil {
+			return err
+		}
+		return writePortMappings(command.Writer, ports)
 	}
 
 	revm.StopCommandLogging(logFile)
@@ -265,19 +331,33 @@ func ParseDockerdOptions(command *cli.Command) (DockerdOptions, error) {
 	}, nil
 }
 
+func ParseAttachOptions(command *cli.Command) AttachOptions {
+	return AttachOptions{
+		Logging:   ParseLoggingOptions(command),
+		SessionID: command.String(define.FlagSessionID),
+		PTY:       command.Bool(define.FlagPTY),
+		Command:   command.Args().Slice(),
+	}
+}
+
 func ParseCtlOptions(command *cli.Command) (CtlOptions, error) {
 	portUpdates, err := ParsePortUpdates(command)
 	if err != nil {
 		return CtlOptions{}, err
 	}
 
-	return CtlOptions{
-		Logging:     ParseLoggingOptions(command),
-		SessionID:   command.String(define.FlagSessionID),
-		PTY:         command.Bool(define.FlagPTY),
-		PortUpdates: portUpdates,
-		Command:     command.Args().Slice(),
-	}, nil
+	opts := CtlOptions{
+		Logging:      ParseLoggingOptions(command),
+		SessionID:    command.String(define.FlagSessionID),
+		ListPort:     command.Bool(define.FlagListPort),
+		PortUpdates:  portUpdates,
+		ExportRootfs: command.String(define.FlagExportRootfs),
+		Command:      command.Args().Slice(),
+	}
+	if err := validateCtlOptions(opts); err != nil {
+		return CtlOptions{}, err
+	}
+	return opts, nil
 }
 
 func ParseRawDisks(command *cli.Command) ([]revm.RawDiskSpec, error) {
@@ -353,14 +433,7 @@ func NewDockerdConfig(opts DockerdOptions) *revm.Config {
 		WithEventReporter(opts.ReportURL)
 }
 
-func NewCtlConfig(opts CtlOptions) *revm.Config {
-	if opts.PortUpdates.HasUpdates() {
-		return revm.DefaultConfig().
-			WithLogging(opts.Logging.Level, opts.Logging.To).
-			WithSessionID(opts.SessionID).
-			WithControl(opts.PortUpdates.Exports, opts.PortUpdates.Unexports)
-	}
-
+func NewAttachConfig(opts AttachOptions) *revm.Config {
 	return revm.DefaultConfig().
 		WithLogging(opts.Logging.Level, opts.Logging.To).
 		WithSessionID(opts.SessionID).
@@ -368,8 +441,74 @@ func NewCtlConfig(opts CtlOptions) *revm.Config {
 		WithAttach(opts.Command...)
 }
 
+func NewCtlConfig(opts CtlOptions) *revm.Config {
+	if opts.ListPort {
+		return revm.DefaultConfig().
+			WithLogging(opts.Logging.Level, opts.Logging.To).
+			WithSessionID(opts.SessionID).
+			WithPortList()
+	}
+	if opts.ExportRootfs != "" {
+		return revm.DefaultConfig().
+			WithLogging(opts.Logging.Level, opts.Logging.To).
+			WithSessionID(opts.SessionID).
+			WithRootfsExport(opts.ExportRootfs)
+	}
+
+	return revm.DefaultConfig().
+		WithLogging(opts.Logging.Level, opts.Logging.To).
+		WithSessionID(opts.SessionID).
+		WithControl(opts.PortUpdates.Exports, opts.PortUpdates.Unexports)
+}
+
 func (p PortUpdates) HasUpdates() bool {
 	return len(p.Exports) > 0 || len(p.Unexports) > 0
+}
+
+func validateCtlOptions(opts CtlOptions) error {
+	if len(opts.Command) > 0 {
+		return fmt.Errorf("ctl does not accept command arguments; use revm attach")
+	}
+	operationCount := 0
+	if opts.ListPort {
+		operationCount++
+	}
+	if opts.PortUpdates.HasUpdates() {
+		operationCount++
+	}
+	if opts.ExportRootfs != "" {
+		operationCount++
+	}
+	if operationCount > 1 {
+		return fmt.Errorf("ctl control operations cannot be combined")
+	}
+	if operationCount == 0 {
+		return fmt.Errorf("ctl requires --list-port, --port-export, --port-unexport, or --export-rootfs")
+	}
+	return nil
+}
+
+func writePortMappings(w io.Writer, ports []define.PortMapping) error {
+	if w == nil {
+		w = os.Stdout
+	}
+	sort.Slice(ports, func(i, j int) bool {
+		if ports[i].Local == ports[j].Local {
+			return ports[i].Protocol < ports[j].Protocol
+		}
+		return ports[i].Local < ports[j].Local
+	})
+
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(tw, "PROTOCOL\tHOST\tGUEST"); err != nil {
+		return err
+	}
+	for _, port := range ports {
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", port.Protocol, port.Local, port.Remote); err != nil {
+			return err
+		}
+	}
+	return tw.Flush()
 }
 
 func sessionFlag() cli.Flag {

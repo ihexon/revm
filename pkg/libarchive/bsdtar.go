@@ -3,6 +3,7 @@ package libarchive_go
 /*
 #include <archive.h>
 #include <archive_entry.h>
+#include <locale.h>
 #include <stdlib.h>
 #include <string.h>
 */
@@ -13,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"unsafe"
 )
 
@@ -25,6 +27,12 @@ const (
 
 const (
 	modeX mode = iota
+	modeC
+)
+
+var (
+	cLocaleOnce sync.Once
+	cLocaleErr  error
 )
 
 // extractFlags for archive extraction
@@ -37,6 +45,7 @@ const (
 	ExtractACL              extractFlags = C.ARCHIVE_EXTRACT_ACL
 	ExtractXattr            extractFlags = C.ARCHIVE_EXTRACT_XATTR
 	ExtractFFlags           extractFlags = C.ARCHIVE_EXTRACT_FFLAGS
+	ExtractMacMetadata      extractFlags = C.ARCHIVE_EXTRACT_MAC_METADATA
 	ExtractSecureSymlink    extractFlags = C.ARCHIVE_EXTRACT_SECURE_SYMLINKS
 	ExtractSecureNoDot      extractFlags = C.ARCHIVE_EXTRACT_SECURE_NODOTDOT
 	ExtractSecureNoAbsolute extractFlags = C.ARCHIVE_EXTRACT_SECURE_NOABSOLUTEPATHS
@@ -44,11 +53,11 @@ const (
 	ExtractSparse           extractFlags = C.ARCHIVE_EXTRACT_SPARSE
 )
 
-// defaultExtractFlags: time + security checks (same as bsdtar for non-root)
-const defaultExtractFlags = ExtractTime | ExtractSecureSymlink | ExtractSecureNoDot | ExtractSecureNoAbsolute | ExtractUnlink
+// defaultExtractFlags matches bsdtar's ARCHIVE_EXTRACT_TIME plus SECURITY.
+const defaultExtractFlags = ExtractTime | ExtractSecureSymlink | ExtractSecureNoDot
 
-// defaultBytesPerBlock is the read buffer size (256KB for better throughput)
-const defaultBytesPerBlock = 256 * 1024
+// defaultBytesPerBlock matches bsdtar's DEFAULT_BYTES_PER_BLOCK.
+const defaultBytesPerBlock = 20 * 512
 
 // Archiver provides tar archive operations
 type Archiver struct {
@@ -167,6 +176,295 @@ func (t *Archiver) SetChdir(dir string) *Archiver {
 	return t
 }
 
+func ensureCLocale() error {
+	cLocaleOnce.Do(func() {
+		locale := C.CString("")
+		defer C.free(unsafe.Pointer(locale))
+		if C.setlocale(C.LC_ALL, locale) == nil {
+			cLocaleErr = errors.New("failed to set C locale from environment")
+		}
+	})
+	return cLocaleErr
+}
+
+// ModeC creates a pax tar archive compressed with zstd by default.
+// The archive is written to WithArchiveFilePath, or stdout if unset/"-".
+func (t *Archiver) ModeC(ctx context.Context) error {
+	if err := ensureCLocale(); err != nil {
+		return err
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("could not get current working directory: %w", err)
+	}
+	defer func() {
+		if err := os.Chdir(cwd); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "failed to restore original working directory: %v\n", err)
+		}
+	}()
+
+	if err := t.doChdir(); err != nil {
+		return err
+	}
+
+	writer := C.archive_write_new()
+	if writer == nil {
+		return errors.New("cannot allocate archive writer")
+	}
+	defer C.archive_write_free(writer)
+
+	if r := C.archive_write_set_format_pax_restricted(writer); r != C.ARCHIVE_OK {
+		return fmt.Errorf("set pax restricted format: %s", C.GoString(C.archive_error_string(writer)))
+	}
+	if r := C.archive_write_set_bytes_per_block(writer, C.int(t.bytesPerBlock)); r != C.ARCHIVE_OK {
+		return fmt.Errorf("set archive block size: %s", C.GoString(C.archive_error_string(writer)))
+	}
+	if r := C.archive_write_set_bytes_in_last_block(writer, C.int(-1)); r != C.ARCHIVE_OK {
+		return fmt.Errorf("set archive final block size: %s", C.GoString(C.archive_error_string(writer)))
+	}
+	if r := C.archive_write_add_filter_zstd(writer); r < C.ARCHIVE_WARN {
+		return fmt.Errorf("set zstd filter: %s", C.GoString(C.archive_error_string(writer)))
+	}
+
+	var filename *C.char
+	if t.filename != "" && t.filename != "-" {
+		filename = C.CString(t.filename)
+		defer C.free(unsafe.Pointer(filename))
+	}
+	if r := C.archive_write_open_filename(writer, filename); r != C.ARCHIVE_OK {
+		return fmt.Errorf("open archive writer: %s", C.GoString(C.archive_error_string(writer)))
+	}
+
+	reader := C.archive_read_disk_new()
+	if reader == nil {
+		return errors.New("cannot allocate disk reader")
+	}
+	defer C.archive_read_free(reader)
+	C.archive_read_disk_set_symlink_physical(reader)
+	C.archive_read_disk_set_behavior(reader, C.ARCHIVE_READDISK_MAC_COPYFILE)
+	C.archive_read_disk_set_standard_lookup(reader)
+
+	dot := C.CString(".")
+	defer C.free(unsafe.Pointer(dot))
+	if r := C.archive_read_disk_open(reader, dot); r != C.ARCHIVE_OK {
+		return fmt.Errorf("open archive source: %s", C.GoString(C.archive_error_string(reader)))
+	}
+
+	writeErr := t.writeArchiveFromDisk(ctx, reader, writer)
+	closeStatus := C.archive_write_close(writer)
+	if writeErr != nil {
+		return writeErr
+	}
+	if closeStatus != C.ARCHIVE_OK {
+		return fmt.Errorf("close archive writer: %s", C.GoString(C.archive_error_string(writer)))
+	}
+	return nil
+}
+
+func (t *Archiver) writeArchiveFromDisk(ctx context.Context, reader, writer *C.struct_archive) error {
+	readerOpen := true
+	defer func() {
+		if readerOpen {
+			C.archive_read_close(reader)
+		}
+	}()
+
+	resolver := C.archive_entry_linkresolver_new()
+	if resolver == nil {
+		return errors.New("cannot create link resolver")
+	}
+	defer C.archive_entry_linkresolver_free(resolver)
+	C.archive_entry_linkresolver_set_strategy(resolver, C.archive_format(writer))
+
+	var entry *C.struct_archive_entry
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		if entry != nil {
+			C.archive_entry_free(entry)
+			entry = nil
+		}
+		entry = C.archive_entry_new()
+		if entry == nil {
+			return errors.New("cannot allocate archive entry")
+		}
+		r := C.archive_read_next_header2(reader, entry)
+		if r == C.ARCHIVE_EOF {
+			break
+		}
+		if r != C.ARCHIVE_OK {
+			if r == C.ARCHIVE_FATAL || r == C.ARCHIVE_FAILED {
+				return fmt.Errorf("read archive source: %s", C.GoString(C.archive_error_string(reader)))
+			}
+			if r < C.ARCHIVE_WARN {
+				continue
+			}
+		}
+		if C.archive_read_disk_can_descend(reader) != 0 {
+			C.archive_read_disk_descend(reader)
+		}
+
+		if C.archive_entry_filetype(entry) != C.AE_IFREG {
+			C.archive_entry_set_size(entry, 0)
+		}
+		if t.verbose > 0 {
+			_, _ = fmt.Fprintf(os.Stderr, "a %s\n", C.GoString(C.archive_entry_pathname(entry)))
+		}
+
+		var spareEntry *C.struct_archive_entry
+		C.archive_entry_linkify(resolver, &entry, &spareEntry)
+		for entry != nil {
+			if err := t.writeArchiveEntry(reader, writer, entry); err != nil {
+				return err
+			}
+			if entry != spareEntry {
+				C.archive_entry_free(entry)
+			}
+			entry = spareEntry
+			spareEntry = nil
+		}
+	}
+	if entry != nil {
+		C.archive_entry_free(entry)
+		entry = nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if r := C.archive_read_close(reader); r != C.ARCHIVE_OK {
+		return fmt.Errorf("close archive source: %s", C.GoString(C.archive_error_string(reader)))
+	}
+	readerOpen = false
+	if err := t.writePendingHardlinks(ctx, reader, writer, resolver); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *Archiver) writePendingHardlinks(ctx context.Context, reader, writer *C.struct_archive, resolver *C.struct_archive_entry_linkresolver) error {
+	var entry *C.struct_archive_entry
+	var spareEntry *C.struct_archive_entry
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		C.archive_entry_linkify(resolver, &entry, &spareEntry)
+		if entry == nil {
+			return nil
+		}
+
+		sourcePath := C.archive_entry_sourcepath(entry)
+		if sourcePath != nil {
+			if r := C.archive_read_disk_open(reader, sourcePath); r != C.ARCHIVE_OK {
+				C.archive_entry_free(entry)
+				entry = nil
+				return fmt.Errorf("open pending hardlink source: %s", C.GoString(C.archive_error_string(reader)))
+			}
+
+			entry2 := C.archive_entry_new()
+			if entry2 == nil {
+				C.archive_read_close(reader)
+				C.archive_entry_free(entry)
+				entry = nil
+				return errors.New("cannot allocate pending hardlink source entry")
+			}
+			r := C.archive_read_next_header2(reader, entry2)
+			C.archive_entry_free(entry2)
+			if r != C.ARCHIVE_OK {
+				C.archive_read_close(reader)
+				C.archive_entry_free(entry)
+				entry = nil
+				if r == C.ARCHIVE_FATAL || r == C.ARCHIVE_FAILED {
+					return fmt.Errorf("read pending hardlink source: %s", C.GoString(C.archive_error_string(reader)))
+				}
+				continue
+			}
+		}
+
+		err := t.writeArchiveEntry(reader, writer, entry)
+		if sourcePath != nil {
+			C.archive_read_close(reader)
+		}
+		C.archive_entry_free(entry)
+		entry = nil
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func (t *Archiver) writeArchiveEntry(reader, writer *C.struct_archive, entry *C.struct_archive_entry) error {
+	pathname := C.GoString(C.archive_entry_pathname(entry))
+	r := C.archive_write_header(writer, entry)
+	if r != C.ARCHIVE_OK {
+		if r == C.ARCHIVE_FATAL {
+			return fmt.Errorf("write archive header for %q: %s", pathname, C.GoString(C.archive_error_string(writer)))
+		}
+		_, _ = fmt.Fprintf(os.Stderr, "warning: %s: %s\n", pathname, C.GoString(C.archive_error_string(writer)))
+	}
+	if r >= C.ARCHIVE_WARN && C.archive_entry_size(entry) > 0 {
+		if err := copyArchiveEntryData(reader, writer, pathname); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyArchiveEntryData(reader, writer *C.struct_archive, pathname string) error {
+	var buff unsafe.Pointer
+	var size C.size_t
+	var offset C.la_int64_t
+	var progress int64
+	zeroBuf := make([]byte, defaultBytesPerBlock)
+	for {
+		r := C.archive_read_data_block(reader, &buff, &size, &offset)
+		if r == C.ARCHIVE_EOF {
+			return nil
+		}
+		if r != C.ARCHIVE_OK {
+			return fmt.Errorf("read archive data for %q: %s", pathname, C.GoString(C.archive_error_string(reader)))
+		}
+		blockOffset := int64(offset)
+		if blockOffset > progress {
+			sparse := blockOffset - progress
+			if err := writeArchiveZeros(writer, pathname, zeroBuf, sparse); err != nil {
+				return err
+			}
+			progress += sparse
+		}
+		written := C.archive_write_data(writer, buff, size)
+		if written < 0 {
+			return fmt.Errorf("write archive data for %q: %s", pathname, C.GoString(C.archive_error_string(writer)))
+		}
+		if C.size_t(written) < size {
+			return fmt.Errorf("write archive data for %q: truncated write", pathname)
+		}
+		progress += int64(written)
+	}
+}
+
+func writeArchiveZeros(writer *C.struct_archive, pathname string, zeroBuf []byte, size int64) error {
+	for size > 0 {
+		chunk := len(zeroBuf)
+		if size < int64(chunk) {
+			chunk = int(size)
+		}
+		written := C.archive_write_data(writer, unsafe.Pointer(&zeroBuf[0]), C.size_t(chunk))
+		if written < 0 {
+			return fmt.Errorf("write sparse padding for %q: %s", pathname, C.GoString(C.archive_error_string(writer)))
+		}
+		if int(written) < chunk {
+			return fmt.Errorf("write sparse padding for %q: truncated write", pathname)
+		}
+		size -= int64(written)
+	}
+	return nil
+}
+
 // doChdir executes any pending chdir request
 func (t *Archiver) doChdir() error {
 	if t.pendingChdir == "" {
@@ -182,6 +480,10 @@ func (t *Archiver) doChdir() error {
 
 // ModeX extracts files from an archive (equivalent to tar -x)
 func (t *Archiver) ModeX(ctx context.Context) error {
+	if err := ensureCLocale(); err != nil {
+		return err
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("could not get current working directory: %w", err)
@@ -194,9 +496,11 @@ func (t *Archiver) ModeX(ctx context.Context) error {
 
 	extractFlags := defaultExtractFlags
 
-	// preserve permissions, owner, ACL, xattr, fflags (same as bsdtar -p)
-	if t.includeFileAttribute {
+	if os.Geteuid() == 0 || t.includeFileAttribute {
 		extractFlags |= ExtractPerm | ExtractOwner | ExtractACL | ExtractXattr | ExtractFFlags
+	}
+	if os.Geteuid() == 0 {
+		extractFlags |= ExtractMacMetadata
 	}
 
 	if t.sparse {
