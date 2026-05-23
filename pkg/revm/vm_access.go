@@ -39,15 +39,9 @@ func Attach(ctx context.Context, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("setup logging: %w", err)
 	}
+	defer releaseRunLog(logFile)
 
-	vm := &VM{
-		cfg: &normalizedCfg,
-		observability: vmObservability{
-			runLog: logFile,
-		},
-	}
-	defer vm.Release()
-	return vm.Attach(ctx)
+	return attach(ctx, normalizedCfg)
 }
 
 func Control(ctx context.Context, cfg *Config) (retErr error) {
@@ -117,40 +111,17 @@ func updatePortForwards(ctx context.Context, normalizedCfg Config) error {
 	return nil
 }
 
-// Attach connects to the existing VM session represented by vm.
-// It does not build or start a virtual machine.
-func (vm *VM) Attach(ctx context.Context) error {
-	if vm == nil {
-		return fmt.Errorf("vm must not be nil")
-	}
-	if vm.cfg == nil {
-		return fmt.Errorf("config must not be nil")
-	}
-
-	normalizedCfg, err := NormalizeConfig(*vm.cfg)
-	if err != nil {
-		return fmt.Errorf("resolve defaults: %w", err)
-	}
-	if normalizedCfg.RunMode != ModeAttach {
-		return fmt.Errorf("attach requires run mode %q, got %q", ModeAttach, normalizedCfg.RunMode)
-	}
-
-	vm.cfg = &normalizedCfg
-
-	if vm.workspace.dir == "" {
-		vm.workspace.dir = getSessionDir(normalizedCfg.SessionID)
-	}
-
-	attachSpec, err := fetchAttachSpec(ctx, vm.workspace.dir)
+func attach(ctx context.Context, cfg Config) error {
+	attachSpec, err := fetchAttachSpec(ctx, getSessionDir(cfg.SessionID))
 	if err != nil {
 		return err
 	}
 	sshTarget := sshTargetFromAttachSpec(attachSpec)
 
-	if vm.cfg.PTY {
+	if cfg.PTY {
 		return attachShell(ctx, sshTarget)
 	}
-	return attachRun(ctx, sshTarget, vm.cfg.Command...)
+	return attachRun(ctx, sshTarget, cfg.Command...)
 }
 
 func fetchAttachSpec(ctx context.Context, workspaceDirPath string) (protocol.AttachSpec, error) {
