@@ -125,21 +125,9 @@ func attach(ctx context.Context, cfg Config) error {
 }
 
 func fetchAttachSpec(ctx context.Context, workspaceDirPath string) (protocol.AttachSpec, error) {
-	vmctlAddr := newMachinePathManager(workspaceDirPath).GetVMCtlSocketFile()
-	client := network.NewUnixClient(vmctlAddr)
-	defer client.Close()
-
-	body, status, err := client.Get("/v2/attach").DoAndRead(ctx)
+	spec, err := fetchManagementJSON[protocol.AttachSpec](ctx, workspaceDirPath, "/v2/attach", "attach spec")
 	if err != nil {
-		return protocol.AttachSpec{}, fmt.Errorf("fetch attach spec: %w", err)
-	}
-	if status != http.StatusOK {
-		return protocol.AttachSpec{}, fmt.Errorf("management API returned status %d", status)
-	}
-
-	var spec protocol.AttachSpec
-	if err := json.Unmarshal(body, &spec); err != nil {
-		return protocol.AttachSpec{}, fmt.Errorf("decode attach spec: %w", err)
+		return protocol.AttachSpec{}, err
 	}
 	if spec.SchemaVersion != protocol.AttachSpecVersion {
 		return protocol.AttachSpec{}, fmt.Errorf("unsupported attach spec version: %d", spec.SchemaVersion)
@@ -148,23 +136,26 @@ func fetchAttachSpec(ctx context.Context, workspaceDirPath string) (protocol.Att
 }
 
 func fetchManagementView(ctx context.Context, workspaceDirPath string) (management.VMConfigView, error) {
+	return fetchManagementJSON[management.VMConfigView](ctx, workspaceDirPath, "/v2/vmconfig", "vm config")
+}
+
+func fetchManagementJSON[T any](ctx context.Context, workspaceDirPath, path, label string) (T, error) {
+	var value T
 	vmctlAddr := newMachinePathManager(workspaceDirPath).GetVMCtlSocketFile()
 	client := network.NewUnixClient(vmctlAddr)
 	defer client.Close()
 
-	body, status, err := client.Get("/v2/vmconfig").DoAndRead(ctx)
+	body, status, err := client.Get(path).DoAndRead(ctx)
 	if err != nil {
-		return management.VMConfigView{}, fmt.Errorf("fetch vm config: %w", err)
+		return value, fmt.Errorf("fetch %s: %w", label, err)
 	}
 	if status != http.StatusOK {
-		return management.VMConfigView{}, fmt.Errorf("management API returned status %d", status)
+		return value, fmt.Errorf("management API returned status %d", status)
 	}
-
-	var view management.VMConfigView
-	if err := json.Unmarshal(body, &view); err != nil {
-		return management.VMConfigView{}, fmt.Errorf("decode vm config: %w", err)
+	if err := json.Unmarshal(body, &value); err != nil {
+		return value, fmt.Errorf("decode %s: %w", label, err)
 	}
-	return view, nil
+	return value, nil
 }
 
 func sshTargetFromAttachSpec(spec protocol.AttachSpec) sshsvc.Target {
