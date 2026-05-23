@@ -25,7 +25,6 @@ func Run(ctx context.Context, cfg *Config) error {
 		defer vm.Release()
 		return vm.Run(ctx)
 	default:
-		releaseLogFile(currentLogFile())
 		return fmt.Errorf("unsupported run mode %q", cfg.RunMode)
 	}
 }

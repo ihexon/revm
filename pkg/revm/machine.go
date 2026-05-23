@@ -470,7 +470,6 @@ func (p *machineBuildPlan) setupWorkspace(ctx context.Context) error {
 }
 
 func (p *machineBuildPlan) configureLogFile(ctx context.Context) error {
-	// cfg.LogTo is set by WithLogging; fall back to workspace-relative path.
 	if p.cfg.LogTo != "" {
 		p.builder.LogFile = p.cfg.LogTo
 	} else {

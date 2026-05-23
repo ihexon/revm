@@ -25,10 +25,25 @@ import (
 // Attach resolves the attach configuration and connects to an existing VM
 // session without building or starting a virtual machine.
 func Attach(ctx context.Context, cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("config must not be nil")
+	}
+	normalizedCfg, err := NormalizeConfig(*cfg)
+	if err != nil {
+		return fmt.Errorf("resolve defaults: %w", err)
+	}
+	if normalizedCfg.RunMode != ModeAttach {
+		return fmt.Errorf("attach requires run mode %q, got %q", ModeAttach, normalizedCfg.RunMode)
+	}
+	logFile, err := setupRunLogging(normalizedCfg)
+	if err != nil {
+		return fmt.Errorf("setup logging: %w", err)
+	}
+
 	vm := &VM{
-		cfg: cfg,
+		cfg: &normalizedCfg,
 		observability: vmObservability{
-			runLog: currentLogFile(),
+			runLog: logFile,
 		},
 	}
 	defer vm.Release()
@@ -36,14 +51,6 @@ func Attach(ctx context.Context, cfg *Config) error {
 }
 
 func Control(ctx context.Context, cfg *Config) (retErr error) {
-	logFile := currentLogFile()
-	defer func() {
-		if retErr != nil {
-			logrus.Error(retErr)
-		}
-		releaseLogFile(logFile)
-	}()
-
 	if cfg == nil {
 		return fmt.Errorf("config must not be nil")
 	}
@@ -55,6 +62,16 @@ func Control(ctx context.Context, cfg *Config) (retErr error) {
 	if normalizedCfg.RunMode != ModeControl {
 		return fmt.Errorf("control operations require run mode %q, got %q", ModeControl, normalizedCfg.RunMode)
 	}
+	logFile, err := setupRunLogging(normalizedCfg)
+	if err != nil {
+		return fmt.Errorf("setup logging: %w", err)
+	}
+	defer func() {
+		if retErr != nil {
+			logrus.Error(retErr)
+		}
+		releaseRunLog(logFile)
+	}()
 
 	logrus.Infof("revm build info: %s", buildTimeInfo())
 	logrus.Infof("control command, full cmdline: %q", os.Args)

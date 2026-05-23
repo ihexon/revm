@@ -88,7 +88,7 @@ func newProvider(mc *define.MachineSpec) (backend.Backend, error) {
 // It must always be called, even if Run has not been called. Release is idempotent.
 func (vm *VM) Release() error {
 	if vm.observability.runLog != nil {
-		releaseLogFile(vm.observability.runLog)
+		releaseRunLog(vm.observability.runLog)
 		vm.observability.runLog = nil
 	}
 	if vm.workspace.release != nil {
@@ -122,16 +122,17 @@ func Build(ctx context.Context, cfg *Config) (*VM, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
 	}
-	logFile := currentLogFile()
 
 	normalizedCfg, err := NormalizeConfig(*cfg)
 	if err != nil {
-		releaseLogFile(logFile)
 		return nil, fmt.Errorf("resolve defaults: %w", err)
 	}
 	if normalizedCfg.RunMode == ModeAttach || normalizedCfg.RunMode == ModeControl {
-		releaseLogFile(logFile)
 		return nil, fmt.Errorf("%s mode does not build a VM", normalizedCfg.RunMode)
+	}
+	logFile, err := setupRunLogging(normalizedCfg)
+	if err != nil {
+		return nil, fmt.Errorf("setup logging: %w", err)
 	}
 
 	logrus.Infof("revm build info: %s", buildTimeInfo())

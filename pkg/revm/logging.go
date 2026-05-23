@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/sirupsen/logrus"
 )
@@ -21,21 +20,27 @@ func (c *Config) WithLogging(level string, logFilePath string) *Config {
 
 	c.LogLevel = level
 
-	if logFilePath == "" {
-		logFilePath = filepath.Join(getSessionDir(c.SessionID), "logs", "revm.log")
+	if logFilePath != "" {
+		c.LogTo = logFilePath
 	}
-	c.LogTo = logFilePath
 
 	if err := setupLogrus(level); err != nil {
 		panic(fmt.Sprintf("setup logging: %v", err))
 	}
-	logFile, err := setupLogFile(*c)
-	if err != nil {
-		panic(fmt.Sprintf("setup logging: %v", err))
-	}
-	setCurrentLogFile(logFile)
 
 	return c
+}
+
+func setupRunLogging(cfg Config) (*os.File, error) {
+	if err := setupLogrus(cfg.LogLevel); err != nil {
+		return nil, err
+	}
+	logFile, err := setupLogFile(cfg)
+	if err != nil {
+		return nil, err
+	}
+	logrus.SetOutput(io.MultiWriter(os.Stderr, logFile))
+	return logFile, nil
 }
 
 func setupLogrus(level string) error {
@@ -80,39 +85,9 @@ func setupLogFile(cfg Config) (*os.File, error) {
 	return f, nil
 }
 
-var currentRunLog struct {
-	sync.Mutex
-	file *os.File
-}
-
-func currentLogFile() *os.File {
-	currentRunLog.Lock()
-	defer currentRunLog.Unlock()
-	return currentRunLog.file
-}
-
-func setCurrentLogFile(file *os.File) {
-	currentRunLog.Lock()
-	defer currentRunLog.Unlock()
-
-	if currentRunLog.file != nil && currentRunLog.file != file {
-		_ = currentRunLog.file.Close()
-	}
-	currentRunLog.file = file
-	logrus.SetOutput(io.MultiWriter(os.Stderr, file))
-}
-
-func releaseLogFile(file *os.File) {
-	currentRunLog.Lock()
-	defer currentRunLog.Unlock()
-
-	if file != nil && currentRunLog.file == file {
-		logrus.SetOutput(os.Stderr)
-		_ = file.Close()
-		currentRunLog.file = nil
-		return
-	}
+func releaseRunLog(file *os.File) {
 	if file != nil {
+		logrus.SetOutput(os.Stderr)
 		_ = file.Close()
 	}
 }
