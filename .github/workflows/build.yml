@@ -43,18 +43,9 @@ jobs:
       - name: Upload artifact
         uses: 'actions/upload-artifact@v7'
         with:
-          name: chroot-darwin
+          name: revm-darwin
           path: |
-            chroot-*.tar.zst
-          if-no-files-found: error
-          overwrite: true
-
-      - name: Upload artifact
-        uses: 'actions/upload-artifact@v7'
-        with:
-          name: dockerd-darwin
-          path: |
-            dockerd-*.tar.zst
+            revm-*.tar.zst
           if-no-files-found: error
           overwrite: true
 
@@ -64,11 +55,9 @@ jobs:
       matrix:
         include:
           - runner: ubuntu-22.04
-            chroot_artifact_name: chroot-linux-x86_64
-            dockerd_artifact_name: dockerd-linux-x86_64
+            artifact_name: revm-linux-x86_64
           - runner: ubuntu-22.04-arm
-            chroot_artifact_name: chroot-linux-aarch64
-            dockerd_artifact_name: dockerd-linux-aarch64
+            artifact_name: revm-linux-aarch64
     runs-on: ${{ matrix.runner }}
     env:
       LINUX_BUILDER_IMAGE: revm-builder:ubuntu-25.10
@@ -93,21 +82,12 @@ jobs:
           go run scripts/build.go
           '
 
-      - name: Upload chroot artifact
+      - name: Upload artifact
         uses: 'actions/upload-artifact@v7'
         with:
-          name: ${{ matrix.chroot_artifact_name }}
+          name: ${{ matrix.artifact_name }}
           path: |
-            chroot-*.tar.zst
-          if-no-files-found: error
-          overwrite: true
-
-      - name: Upload dockerd artifact
-        uses: 'actions/upload-artifact@v7'
-        with:
-          name: ${{ matrix.dockerd_artifact_name }}
-          path: |
-            dockerd-*.tar.zst
+            revm-*.tar.zst
           if-no-files-found: error
           overwrite: true
 
@@ -127,8 +107,7 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            chroot-*.tar.zst
-            dockerd-*.tar.zst
+            revm-*.tar.zst
           append_body: true
           draft: false
           prerelease: false
