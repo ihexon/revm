@@ -13,8 +13,9 @@ import (
 	ssev2 "linuxvm/pkg/sse"
 	"net/http"
 	"sync"
+	"time"
 
-	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 )
 
 type Server struct {
@@ -51,19 +52,24 @@ func NewServer(machine Machine) (*Server, error) {
 	return &Server{
 		machine: machine,
 		srv:     httpv2.NewUnixSockHTTPServer("management-api", config.Endpoints.ManagementAPI),
-		sse:     ssev2.NewSSEServer(),
+		sse:     ssev2.NewServer(),
 	}, nil
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	// new management api
 	s.srv.Mux.HandleFunc("/v2/healthz", s.handleHealth)
 	s.srv.Mux.HandleFunc("/v2/vmconfig", s.handleVMConfig)
 	s.srv.Mux.HandleFunc("/v2/attach", s.handleAttach)
 	s.srv.Mux.HandleFunc("/v2/exec", s.handleExec)
 	s.srv.Mux.HandleFunc("/v2/stop", s.handleRequestVMStop)
 
-	return s.srv.Serve(ctx)
+	err := s.srv.Serve(ctx)
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_ = s.sse.Shutdown(shutdownCtx)
+
+	return err
 }
 
 type Info struct {
@@ -122,18 +128,18 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	topic := "sess-" + uuid.NewString()
-	ctx, cancel := context.WithCancel(context.WithValue(r.Context(), ssev2.TopicKey, topic)) //nolint:staticcheck
+	sess := s.sse.BeginSession()
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	go s.executeCommand(ctx, cancel, topic, req)
-	s.sse.ServeHTTP(w, r.WithContext(ctx))
+	go s.executeCommand(ctx, cancel, sess, req)
+	sess.ServeHTTP(w, r.WithContext(ctx))
 }
 
-func (s *Server) executeCommand(ctx context.Context, cancel context.CancelFunc, topic string, req execRequest) {
+func (s *Server) executeCommand(ctx context.Context, cancel context.CancelFunc, sess *ssev2.Session, req execRequest) {
 	defer cancel()
 	proc, err := sshsvc.GuestExec(ctx, s.machine.SSHTarget(), req.Bin, req.Args...)
 	if err != nil {
-		s.sse.Publish(topic, ssev2.TypeErr, "guest exec failed: "+err.Error())
+		publish(sess, ssev2.Stderr, "guest exec failed: "+err.Error())
 		return
 	}
 	var wg sync.WaitGroup
@@ -143,7 +149,7 @@ func (s *Server) executeCommand(ctx context.Context, cancel context.CancelFunc, 
 		sc := bufio.NewScanner(proc.StdoutPipeReader)
 		sc.Buffer(make([]byte, 64*1024), 1<<20)
 		for sc.Scan() {
-			s.sse.Publish(topic, ssev2.TypeOut, sc.Text())
+			publish(sess, ssev2.Stdout, sc.Text())
 		}
 	}()
 	go func() {
@@ -151,13 +157,19 @@ func (s *Server) executeCommand(ctx context.Context, cancel context.CancelFunc, 
 		sc := bufio.NewScanner(proc.StderrPipeReader)
 		sc.Buffer(make([]byte, 64*1024), 1<<20)
 		for sc.Scan() {
-			s.sse.Publish(topic, ssev2.TypeErr, sc.Text())
+			publish(sess, ssev2.Stderr, sc.Text())
 		}
 	}()
 	wg.Wait()
 	if err := <-proc.ErrChan; err != nil {
-		s.sse.Publish(topic, ssev2.TypeErr, "wait: "+err.Error())
+		publish(sess, ssev2.Stderr, "wait: "+err.Error())
 		return
 	}
-	s.sse.Publish(topic, "done", "done")
+	publish(sess, ssev2.Done, "done")
+}
+
+func publish(sess *ssev2.Session, typ ssev2.EventType, data string) {
+	if err := sess.Publish(typ, data); err != nil {
+		logrus.Warnf("sse: publish failed on session %s: %v", sess.Topic(), err)
+	}
 }
