@@ -7,11 +7,6 @@ on:
         description: "Dependency release tag, for example deps-v20260612.1"
         required: true
         type: string
-      update_lock:
-        description: "Commit deps.lock after publishing"
-        required: true
-        default: true
-        type: boolean
 
 permissions:
   contents: write
@@ -274,9 +269,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          ref: ${{ github.ref_name }}
       - uses: actions/download-artifact@v7
         with:
           path: deps/dist
@@ -297,13 +289,6 @@ jobs:
           for path in sorted(dist.glob("*.tar.zst")):
               assets[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
 
-          lock = {
-              "version": "${{ needs.validate.outputs.deps_version }}",
-              "base_url": "https://github.com/${{ github.repository }}/releases/download/${{ needs.validate.outputs.deps_version }}",
-              "assets": assets,
-          }
-          Path("deps.lock").write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n")
-
           sources = {}
           for line in Path("deps/sources.lock").read_text().splitlines():
               line = line.strip()
@@ -313,7 +298,8 @@ jobs:
               sources[key] = value
 
           manifest = {
-              "version": lock["version"],
+              "version": "${{ needs.validate.outputs.deps_version }}",
+              "base_url": "https://github.com/${{ github.repository }}/releases/download/${{ needs.validate.outputs.deps_version }}",
               "repository": "${{ github.repository }}",
               "workflow": "${{ github.workflow }}",
               "run_id": "${{ github.run_id }}",
@@ -336,26 +322,3 @@ jobs:
             deps/dist/deps.manifest.json
           make_latest: false
           fail_on_unmatched_files: true
-      - name: Commit deps.lock
-        if: inputs.update_lock
-        id: commit-lock
-        run: |
-          set -euo pipefail
-          if git diff --quiet -- deps.lock; then
-            echo "deps.lock is already current"
-            echo "committed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add deps.lock
-          git commit -m "build(deps): update dependency lock to ${{ needs.validate.outputs.deps_version }}" \
-            -m "- point revm builds at ${{ needs.validate.outputs.deps_version }} dependency assets" \
-            -m "- refresh dependency asset SHA-256 checksums from the published release"
-          git push origin HEAD:${{ github.ref_name }}
-          echo "committed=true" >> "$GITHUB_OUTPUT"
-      - name: Trigger revm build
-        if: inputs.update_lock
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run build.yml --ref "${{ github.ref_name }}"
