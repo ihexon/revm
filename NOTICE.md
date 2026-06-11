@@ -13,7 +13,7 @@ It wraps and links against `libkrun` through cgo, embeds guest-side helper
 programs, and packages host runtime libraries and static resources into release
 archives.
 
-Normal release builds consume dependency archives pinned by `scripts/build.go`.
+Normal release builds consume dependency archives pinned by `deps.lock`.
 
 Primary license: Apache-2.0, see `LICENSE`.
 
@@ -29,7 +29,7 @@ It builds and packages the runtime inputs consumed by `revm`, including:
 - the root filesystem archive used by `revm`
 
 Dependency source inputs are pinned in `deps/sources.lock`. Published
-dependency assets are pinned by `scripts/build.go`.
+dependency assets are pinned in the root `deps.lock`.
 
 ### libkrun
 
@@ -72,6 +72,9 @@ deps/scripts/*
 dependency release archives + SHA256SUMS + deps.manifest.json
         |
         v
+deps.lock
+        |
+        v
 scripts/build.go
         |
         v
@@ -81,7 +84,7 @@ revm release archive
 In practical terms:
 
 - `deps/` builds third-party runtime artifacts.
-- `scripts/build.go` pins the exact artifacts consumed by `revm`.
+- `deps.lock` pins the exact artifacts consumed by `revm`.
 - `revm` links against `libkrun` and bundles `libkrunfw` runtime libraries.
 - `libkrunfw` carries additional source-distribution obligations because it
   contains a bundled Linux kernel.

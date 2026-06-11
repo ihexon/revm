@@ -121,9 +121,9 @@ Build the release bundle from source:
 go run ./scripts --build revm
 ```
 
-The build downloads pinned dependency archives, verifies SHA-256 checksums, embeds the guest agent helpers, links the host binary, and writes release output under `out/revm`.
+The build reads `deps.lock`, downloads the pinned dependency archives from this repository's dependency release, verifies SHA-256 checksums, embeds the guest agent helpers, links the host binary, and writes release output under `out/revm`.
 
-Dependency archives are built separately by the manual `build-deps` workflow. Source inputs for that workflow are pinned in `deps/sources.lock`; the published asset release consumed by `revm` is pinned in `scripts/build.go`.
+Dependency archives are built separately by the manual `build-deps` workflow. Source inputs for that workflow are pinned in `deps/sources.lock`; the published asset release consumed by `revm` is pinned in `deps.lock`.
 
 Linux release archives are built to run on both glibc and musl based distributions. The public entrypoint in `bin/` is a launcher script that starts the bundled `.real` executable through the bundled glibc dynamic linker and library set in `lib/`. Run `bin/revm` directly after extracting an archive; do not bypass the launcher by running `bin/revm.real`.
 

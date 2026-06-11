@@ -7,15 +7,15 @@ The dependency build is intentionally separate from the normal `revm` build:
 - `deps/sources.lock` pins the upstream source inputs used to build dependency
   assets.
 - `.github/workflows/build-deps.yml` builds those assets on demand.
-- `scripts/build.go` pins the released dependency assets that it downloads and
-  verifies.
+- `deps.lock` in the repository root pins the released dependency assets that
+  `scripts/build.go` downloads and verifies.
 
 Run the dependency workflow manually when one of the pinned sources, build
 scripts, patches, or configs changes. The workflow publishes a `deps-*` GitHub
 release under this repository.
 
 Normal `revm` builds do not rebuild these dependencies. They consume the
-archives pinned by `scripts/build.go` so application builds stay fast and
+archives referenced by `deps.lock` so application builds stay fast and
 repeatable.
 
 ## Layout
