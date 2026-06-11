@@ -1,0 +1,361 @@
+name: build-deps
+
+on:
+  workflow_dispatch:
+    inputs:
+      deps_version:
+        description: "Dependency release tag, for example deps-v20260612.1"
+        required: true
+        type: string
+      update_lock:
+        description: "Commit deps.lock after publishing"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.deps_version }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  LINUX_BUILDER_IMAGE: revm-deps-builder:ubuntu-25.10
+  DROPBEAR_BUILDER_IMAGE: revm-deps-dropbear:alpine-3.23.3
+
+jobs:
+  validate:
+    name: validate inputs
+    runs-on: ubuntu-latest
+    outputs:
+      deps_version: ${{ steps.validate.outputs.deps_version }}
+    steps:
+      - id: validate
+        run: |
+          set -euo pipefail
+          deps_version="${{ inputs.deps_version }}"
+          if [[ ! "$deps_version" =~ ^deps-v[0-9]{8}\.[0-9]+$ ]]; then
+            echo "deps_version must look like deps-v20260612.1" >&2
+            exit 1
+          fi
+          echo "deps_version=$deps_version" >> "$GITHUB_OUTPUT"
+
+  build_alpine_rootfs_linux:
+    name: build alpine rootfs (${{ matrix.arch }})
+    needs: validate
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+          - os: ubuntu-22.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build Alpine rootfs
+        run: deps/scripts/build_alpine_rootfs_linux.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: alpine-rootfs-Linux-${{ matrix.arch }}.tar.zst
+          path: deps/dist/alpine-rootfs-Linux-${{ matrix.arch }}.tar.zst
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          overwrite: true
+
+  build_busybox_linux:
+    name: build busybox (${{ matrix.arch }})
+    needs: validate
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+          - os: ubuntu-22.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build Linux deps image
+        run: docker build -f deps/docker/linux.Dockerfile -t "$LINUX_BUILDER_IMAGE" deps
+      - name: Build BusyBox
+        run: |
+          docker run --rm \
+            --workdir "$GITHUB_WORKSPACE" \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            "$LINUX_BUILDER_IMAGE" \
+            deps/scripts/build_busybox_linux.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: busybox-Linux-${{ matrix.arch }}.tar.zst
+          path: deps/dist/busybox-Linux-${{ matrix.arch }}.tar.zst
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          overwrite: true
+
+  build_dropbear_linux:
+    name: build dropbear (${{ matrix.arch }})
+    needs: validate
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+          - os: ubuntu-22.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build Dropbear deps image
+        run: docker build -f deps/docker/dropbear.Dockerfile -t "$DROPBEAR_BUILDER_IMAGE" deps
+      - name: Build Dropbear
+        run: |
+          docker run --rm \
+            --workdir "$GITHUB_WORKSPACE" \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            "$DROPBEAR_BUILDER_IMAGE" \
+            deps/scripts/build_dropbear_linux.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dropbear-Linux-${{ matrix.arch }}.tar.zst
+          path: deps/dist/dropbear-Linux-${{ matrix.arch }}.tar.zst
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          overwrite: true
+
+  build_libkrun_linux:
+    name: build libkrun (${{ matrix.arch }})
+    needs: validate
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+          - os: ubuntu-22.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build Linux deps image
+        run: docker build -f deps/docker/linux.Dockerfile -t "$LINUX_BUILDER_IMAGE" deps
+      - name: Build libkrun
+        run: |
+          docker run --rm \
+            --workdir "$GITHUB_WORKSPACE" \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            "$LINUX_BUILDER_IMAGE" \
+            deps/scripts/build_libkrun_linux.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libkrun-Linux-${{ matrix.arch }}.tar.zst
+          path: deps/dist/libkrun-Linux-${{ matrix.arch }}.tar.zst
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          overwrite: true
+
+  build_libkrunfw_linux:
+    name: build libkrunfw (${{ matrix.arch }})
+    needs: validate
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+          - os: ubuntu-22.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build Linux deps image
+        run: docker build -f deps/docker/linux.Dockerfile -t "$LINUX_BUILDER_IMAGE" deps
+      - name: Build libkrunfw
+        run: |
+          docker run --rm \
+            --workdir "$GITHUB_WORKSPACE" \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            "$LINUX_BUILDER_IMAGE" \
+            deps/scripts/build_libkrunfw_linux.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libkrunfw-Linux-${{ matrix.arch }}.tar.zst
+          path: deps/dist/libkrunfw-Linux-${{ matrix.arch }}.tar.zst
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          overwrite: true
+      - uses: actions/upload-artifact@v7
+        if: matrix.arch == 'aarch64'
+        with:
+          name: libkrunfw-src-Linux-aarch64.tar.zst
+          path: deps/dist/libkrunfw-src-Linux-aarch64.tar.zst
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          overwrite: true
+
+  build_libkrun_darwin:
+    name: build libkrun (Darwin arm64)
+    needs: validate
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust nightly
+        run: rustup toolchain install nightly --profile minimal
+      - name: Build libepoxy
+        run: deps/scripts/build_libepoxy_darwin.sh
+      - name: Build virglrenderer
+        run: deps/scripts/build_virglrenderer_darwin.sh
+      - name: Build libkrun
+        run: deps/scripts/build_libkrun_darwin.sh
+      - name: Verify libkrun bundle
+        run: |
+          tar --zstd -tf deps/dist/libkrun-Darwin-arm64.tar.zst | sort > contents.txt
+          grep -Fx ./lib/libkrun.a contents.txt
+          grep -Fx ./lib/libkrun.dylib contents.txt
+          grep -Fx ./lib/libkrun.1.dylib contents.txt
+          grep -Fx ./lib/libkrun.1.18.0.dylib contents.txt
+          grep -Fx ./lib/libvirglrenderer.a contents.txt
+          grep -Fx ./lib/libepoxy.a contents.txt
+          grep -Fx ./lib/libMoltenVK.a contents.txt
+          grep -Fx ./lib/libSPIRVCross.a contents.txt
+          grep -Fx ./lib/libSPIRVTools.a contents.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libkrun-Darwin-arm64.tar.zst
+          path: deps/dist/libkrun-Darwin-arm64.tar.zst
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          overwrite: true
+
+  build_libkrunfw_darwin:
+    name: build libkrunfw (Darwin arm64)
+    needs:
+      - validate
+      - build_libkrunfw_linux
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v7
+        with:
+          name: libkrunfw-src-Linux-aarch64.tar.zst
+          path: deps/dist
+      - name: Build libkrunfw
+        run: deps/scripts/build_libkrunfw_darwin.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libkrunfw-Darwin-arm64.tar.zst
+          path: deps/dist/libkrunfw-Darwin-arm64.tar.zst
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          overwrite: true
+
+  release:
+    name: release deps
+    needs:
+      - validate
+      - build_alpine_rootfs_linux
+      - build_busybox_linux
+      - build_dropbear_linux
+      - build_libkrun_darwin
+      - build_libkrun_linux
+      - build_libkrunfw_darwin
+      - build_libkrunfw_linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+      - uses: actions/download-artifact@v7
+        with:
+          path: deps/dist
+          merge-multiple: true
+      - name: Generate checksums and manifest
+        run: |
+          set -euo pipefail
+          cd deps/dist
+          sha256sum *.tar.zst | sort -k2 > SHA256SUMS
+          cd ../..
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          dist = Path("deps/dist")
+          assets = {}
+          for path in sorted(dist.glob("*.tar.zst")):
+              assets[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+
+          lock = {
+              "version": "${{ needs.validate.outputs.deps_version }}",
+              "base_url": "https://github.com/${{ github.repository }}/releases/download/${{ needs.validate.outputs.deps_version }}",
+              "assets": assets,
+          }
+          Path("deps.lock").write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n")
+
+          sources = {}
+          for line in Path("deps/sources.lock").read_text().splitlines():
+              line = line.strip()
+              if not line or line.startswith("#") or "=" not in line:
+                  continue
+              key, value = line.split("=", 1)
+              sources[key] = value
+
+          manifest = {
+              "version": lock["version"],
+              "repository": "${{ github.repository }}",
+              "workflow": "${{ github.workflow }}",
+              "run_id": "${{ github.run_id }}",
+              "run_attempt": "${{ github.run_attempt }}",
+              "git_sha": "${{ github.sha }}",
+              "sources": sources,
+              "assets": assets,
+          }
+          (dist / "deps.manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+          PY
+      - name: Publish dependency release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.validate.outputs.deps_version }}
+          name: ${{ needs.validate.outputs.deps_version }}
+          body_path: deps/dist/deps.manifest.json
+          files: |
+            deps/dist/*.tar.zst
+            deps/dist/SHA256SUMS
+            deps/dist/deps.manifest.json
+          make_latest: false
+          fail_on_unmatched_files: true
+      - name: Commit deps.lock
+        if: inputs.update_lock
+        id: commit-lock
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- deps.lock; then
+            echo "deps.lock is already current"
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deps.lock
+          git commit -m "build(deps): update dependency lock to ${{ needs.validate.outputs.deps_version }}" \
+            -m "- point revm builds at ${{ needs.validate.outputs.deps_version }} dependency assets" \
+            -m "- refresh dependency asset SHA-256 checksums from the published release"
+          git push origin HEAD:${{ github.ref_name }}
+          echo "committed=true" >> "$GITHUB_OUTPUT"
+      - name: Trigger revm build
+        if: inputs.update_lock
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build.yml --ref "${{ github.ref_name }}"

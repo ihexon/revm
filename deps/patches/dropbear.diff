@@ -1,0 +1,16 @@
+diff --git a/src/svr-authpubkey.c b/src/svr-authpubkey.c
+index 9bb8db2..40a642d 100644
+--- a/src/svr-authpubkey.c
++++ b/src/svr-authpubkey.c
+@@ -594,6 +594,11 @@ static int checkfileperm(char * filename) {
+ 	int badperm = 0;
+ 
+ 	TRACE(("enter checkfileperm(%s)", filename))
++	char* env = getenv("PASS_FILEPEM_CHECK");
++	if (env && strcmp(env, "1") == 0) {
++		TRACE(("PASS_FILEPEM_CHECK is set, skipping file permission checks"))
++		return DROPBEAR_SUCCESS;
++	}
+ 
+ 	if (stat(filename, &filestat) != 0) {
+ 		TRACE(("leave checkfileperm: stat() != 0"))

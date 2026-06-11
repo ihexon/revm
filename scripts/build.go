@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -17,24 +18,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const assetsBase = "https://github.com/ihexon/revm-assets/releases/download/v2.0.23"
-
 var defaultBuildTargets = []string{"revm"}
 
-// Edit this table when revm-assets changes.
-var assetSHA256 = map[string]string{
-	"alpine-rootfs-Linux-aarch64.tar.zst": "f821e14647ce0de425ab0fce7b27d69c9af854c1d59ac51efcb3e238624f4457",
-	"alpine-rootfs-Linux-x86_64.tar.zst":  "4ded9e9e705d8c19e55830d2bbca2f0f1c238c69de46cfd89f6d6b5ae8eb579a",
-	"busybox-Linux-aarch64.tar.zst":       "b4415e0a6efdc00c55990758519d9a98115576f8f362496a98219246d734695b",
-	"busybox-Linux-x86_64.tar.zst":        "671cd6b34b8ed487a1d4a3ae38ba34b4aa13fd1d2e0bac9ef7d23eeb9664b2a0",
-	"dropbear-Linux-aarch64.tar.zst":      "190e0244f3cf80467c0a07e36e6f74fa03cfd3ac49d4e9e6bab69be839afc32e",
-	"dropbear-Linux-x86_64.tar.zst":       "19211ed2758dd4e41ff952cd02f1cbc290b541feeb218a51daba3e49211eb269",
-	"libkrun-Darwin-arm64.tar.zst":        "3a13e2eee78cd9209deb46e89bbbf26ea07bbb3a520b8dee68723a61c4633062",
-	"libkrun-Linux-aarch64.tar.zst":       "8aab48b188910543e66e696ecc1cf1b75e18745ec1605ed674478cef2f072658",
-	"libkrun-Linux-x86_64.tar.zst":        "76c5b37385b379b43b3ea8ed43ad7405c0c8ebd25cc4e27fbbae285230b47acc",
-	"libkrunfw-Darwin-arm64.tar.zst":      "3d4ef8ee124485f9541559efb6c816bcddb8b7a4aedfc8a35dd4946600fe2c99",
-	"libkrunfw-Linux-aarch64.tar.zst":     "28b66fae9f32daa41253f1617ca88cccb9f95214d9ee8d24ceb6e269765d9f3c",
-	"libkrunfw-Linux-x86_64.tar.zst":      "6c0aec4d878b166ee0b385edfd5a028b2d7a749712b10cc4005050beac4ab1b9",
+type depsLock struct {
+	Version string            `json:"version"`
+	BaseURL string            `json:"base_url"`
+	Assets  map[string]string `json:"assets"`
 }
 
 type builder struct {
@@ -53,6 +42,8 @@ type builder struct {
 	agentPath  string
 	pkgCfgPath string
 	homebrew   string
+
+	deps depsLock
 }
 
 func main() {
@@ -126,6 +117,10 @@ func newBuilder(targets []string, lint bool) (*builder, error) {
 	if homebrew == "" {
 		homebrew = "/opt/homebrew"
 	}
+	deps, err := loadDepsLock(filepath.Join(workspace, "deps.lock"))
+	if err != nil {
+		return nil, err
+	}
 
 	b := &builder{
 		goos:       runtime.GOOS,
@@ -139,6 +134,7 @@ func newBuilder(targets []string, lint bool) (*builder, error) {
 		staticDir:  filepath.Join(workspace, "pkg", "static_resources"),
 		serviceDir: filepath.Join(workspace, "cmd", "guest-agent", "pkg", "service"),
 		homebrew:   homebrew,
+		deps:       deps,
 	}
 	b.agentPath = filepath.Join(b.staticDir, "guest_agent", "guest-agent")
 
@@ -150,6 +146,28 @@ func newBuilder(targets []string, lint bool) (*builder, error) {
 	}
 
 	return b, nil
+}
+
+func loadDepsLock(path string) (depsLock, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return depsLock{}, fmt.Errorf("read deps lock %s: %w", path, err)
+	}
+
+	var lock depsLock
+	if err := json.Unmarshal(data, &lock); err != nil {
+		return depsLock{}, fmt.Errorf("parse deps lock %s: %w", path, err)
+	}
+	if strings.TrimSpace(lock.Version) == "" {
+		return depsLock{}, fmt.Errorf("deps lock %s: missing version", path)
+	}
+	if strings.TrimSpace(lock.BaseURL) == "" {
+		return depsLock{}, fmt.Errorf("deps lock %s: missing base_url", path)
+	}
+	if len(lock.Assets) == 0 {
+		return depsLock{}, fmt.Errorf("deps lock %s: missing assets", path)
+	}
+	return lock, nil
 }
 
 func parseBuildTargets(target string) ([]string, error) {
@@ -592,9 +610,9 @@ func (b *builder) depLibDir(name string) (string, error) {
 
 func (b *builder) archivePath(name string) (string, error) {
 	archivePath := filepath.Join(b.archiveDir, name)
-	expected := strings.TrimSpace(assetSHA256[name])
+	expected := strings.TrimSpace(b.deps.Assets[name])
 	if expected == "" {
-		return "", fmt.Errorf("missing sha256 for asset %s", name)
+		return "", fmt.Errorf("deps lock %s: missing sha256 for asset %s", b.deps.Version, name)
 	}
 
 	if exists(archivePath) {
@@ -613,7 +631,7 @@ func (b *builder) archivePath(name string) (string, error) {
 	_ = os.Remove(tmpPath)
 
 	logrus.Infof("downloading %s", name)
-	if err := downloadFile(assetsBase+"/"+name, tmpPath); err != nil {
+	if err := downloadFile(strings.TrimRight(b.deps.BaseURL, "/")+"/"+name, tmpPath); err != nil {
 		return "", err
 	}
 

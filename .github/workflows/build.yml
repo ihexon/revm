@@ -3,6 +3,7 @@ permissions:
 
 name: build.yml
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v**'

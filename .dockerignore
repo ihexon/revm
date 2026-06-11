@@ -5,6 +5,8 @@
 bin
 out
 .deps
+deps/.work
+deps/dist
 *.tar.xz
 *.tar.zst
 task.md
