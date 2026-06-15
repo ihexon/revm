@@ -24,12 +24,15 @@ set_libkrun_crate_type() {
 }
 
 build_libkrun_linux() {
+    install_rust_linux_musl_target
+
     export RUSTFLAGS="${RUSTFLAGS:-} -C linker=gcc -C link-arg=-static-libgcc"
 
     cd "$LIBKRUN_SRC"
     set_libkrun_crate_type '"cdylib", "staticlib", "lib"'
     make clean
     make PREFIX="$PREFIX" BLK=1 NET=1
+    verify_libkrun_init_blob
 
     rm -rf "$PREFIX"
     make PREFIX="$PREFIX" BLK=1 NET=1 install

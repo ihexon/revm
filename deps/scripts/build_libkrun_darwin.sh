@@ -58,6 +58,7 @@ install_static_deps_darwin() {
 
 build_libkrun_darwin() {
     export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-nightly}"
+    install_rust_linux_musl_target
 
     install_static_deps_darwin
 
@@ -70,6 +71,7 @@ build_libkrun_darwin() {
     set_libkrun_crate_type '"cdylib", "staticlib", "lib"'
     make clean
     TIMESYNC=1 make PREFIX="$PREFIX" BLK=1 NET=1 GPU=1
+    verify_libkrun_init_blob
     TIMESYNC=1 make PREFIX="$PREFIX" BLK=1 NET=1 GPU=1 install
 
     rm -rf "$PREFIX/lib/pkgconfig"
