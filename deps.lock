@@ -1,18 +1,18 @@
 {
   "assets": {
-    "alpine-rootfs-Linux-aarch64.tar.zst": "175f77e84e73f98ec2d7b1b5e19a411da6f0b9791a76069a798f2242e4323466",
-    "alpine-rootfs-Linux-x86_64.tar.zst": "076d43552201a0700d94405fe881d1ceb84389ea2dd9a4c16680aee2c38272a7",
-    "busybox-Linux-aarch64.tar.zst": "c14681ed05abc3e054c41b6d1ecf22a93d8d30c669254bf82956a7a94b5b4f6b",
-    "busybox-Linux-x86_64.tar.zst": "cf1ca6430256d2b45bb987b4d98c5c4e28f9e3966e5a5c8eedefd2ed75883ec9",
-    "dropbear-Linux-aarch64.tar.zst": "0e645eb77449303ad320d8c5e2128a78234ac2e049ee816b9ee159393b44b1cc",
-    "dropbear-Linux-x86_64.tar.zst": "51d05b8e9e1e2138f33ec96e32e41feb77732470a9d221678664bdd667136e26",
-    "libkrun-Darwin-arm64.tar.zst": "b9fdfe40885049a0a0d0e0616eda440255f74d9f3284601a161bd191d6f5b6e7",
-    "libkrun-Linux-aarch64.tar.zst": "881e6ad271d47bfc6fdebc685354270574c772d1c3a96c223ec716c5ccd615bd",
-    "libkrun-Linux-x86_64.tar.zst": "3dbfa2b9286dd49eae2fa69e2bc5a15fbd74595a72feee1c6dc5d2f7afbd89a3",
-    "libkrunfw-Darwin-arm64.tar.zst": "0fb237c66c51791d089737e14236c8d2cdff922c18ae8579b2c79a5fba9f4b8d",
-    "libkrunfw-Linux-aarch64.tar.zst": "d095a85d58678397811eab407f34726977f366d85e34404feaf3a64ac6c18387",
-    "libkrunfw-Linux-x86_64.tar.zst": "de1796f897f1f4705f8bc1a990fb3326804d5414302e0f9fe7f83872df43c0b1"
+    "alpine-rootfs-Linux-aarch64.tar.zst": "7479f1daf4f1e30f609e190d3611762308bb7fe98376ac2914ebd09c6997e199",
+    "alpine-rootfs-Linux-x86_64.tar.zst": "a034f977ecd1f142f9b189830bdd826d9b77321782a2db3f10abaa809001068a",
+    "busybox-Linux-aarch64.tar.zst": "dfce34bfedf150792327dba8bb5286a123a45ea2f9b8b64446bf095c87863403",
+    "busybox-Linux-x86_64.tar.zst": "844208f5ec6c16f2ad964441b8af845f505ea9f5a1019ddaa1b289cfab8a9a19",
+    "dropbear-Linux-aarch64.tar.zst": "e759e00192ad69dae64ec447c192083baf3f6536d817e45750021bb2d1310b30",
+    "dropbear-Linux-x86_64.tar.zst": "1504406b35830fd2cec9c4095f3ee220e6c59005175202f001c3c062b5138553",
+    "libkrun-Darwin-arm64.tar.zst": "d611e1ec1fbf3c370b7f3858f681d0801fdbbd3c892291c4e6652b031ead52b9",
+    "libkrun-Linux-aarch64.tar.zst": "1774919bdefd7a8d5a3c033dc8c45710f43459a8563c1bfe3318bff02ab6814c",
+    "libkrun-Linux-x86_64.tar.zst": "9443e73250db5e3c6b9238c69b087f080041553defbe800e1ac14e1c1e984cd2",
+    "libkrunfw-Darwin-arm64.tar.zst": "881d3beac804e6c839dc89f02c93773819e304a4ec7e7fecaad0c3df81e58332",
+    "libkrunfw-Linux-aarch64.tar.zst": "700d13f17f9e3957e3354336ebe7bb4951cf84848af32018253a079ed37295b3",
+    "libkrunfw-Linux-x86_64.tar.zst": "97810e0a45039aa034216db09d020a2e44c95e12b20cc543faefe34aae922791"
   },
-  "base_url": "https://github.com/ihexon/revm/releases/download/deps-v20260615.1",
-  "version": "deps-v20260615.1"
+  "base_url": "https://github.com/ihexon/revm/releases/download/deps-v20260615.3",
+  "version": "deps-v20260615.3"
 }
