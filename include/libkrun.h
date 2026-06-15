@@ -723,29 +723,17 @@ int krun_add_input_device(uint32_t ctx_id, const void *config_backend, size_t co
                             const void *events_backend, size_t events_backend_size);
 
 /**
- * Creates a passthrough input device from a host /dev/input/* file descriptor.
+ * Creates a passthrough input device from a host /dev/input/... file descriptor.
  * The device configuration will be automatically queried from the host device using ioctls.
  * 
  * Arguments:
  *  "ctx_id"  - The krun context
- *  "input_fd" - File descriptor to a /dev/input/* device on the host
+ *  "input_fd" - File descriptor to a /dev/input/... device on the host
  *
  * Returns:
  *  Zero on success or a negative error code otherwise.
  */
 int krun_add_input_device_fd(uint32_t ctx_id, int input_fd);
-
-/**
- * Enables or disables a virtio-snd device.
- *
- * Arguments:
- *  "ctx_id" - the configuration context ID.
- *  "enable" - boolean indicating whether virtio-snd should be enabled or disabled.
- *
- * Returns:
- *  Zero on success or a negative error number on failure.
- */
-int32_t krun_set_snd_device(uint32_t ctx_id, bool enable);
 
 /**
  * Vhost-user device types.
@@ -1122,13 +1110,13 @@ int32_t krun_check_nested_virt(void);
 #define KRUN_FEATURE_NET 0
 #define KRUN_FEATURE_BLK 1
 #define KRUN_FEATURE_GPU 2
-#define KRUN_FEATURE_SND 3
 #define KRUN_FEATURE_INPUT 4
 #define KRUN_FEATURE_TEE 6
 #define KRUN_FEATURE_AMD_SEV 7
 #define KRUN_FEATURE_INTEL_TDX 8
 #define KRUN_FEATURE_AWS_NITRO 9
 #define KRUN_FEATURE_VIRGL_RESOURCE_MAP2 10
+#define KRUN_FEATURE_INIT_BLOB 11
 
 /**
  * Checks if a specific feature was enabled at build time.
@@ -1167,6 +1155,13 @@ int32_t krun_get_max_vcpus(void);
 int32_t krun_split_irqchip(uint32_t ctx_id, bool enable);
 
 /*
+ * NOTE: Implicit resource creation is a legacy convenience. The 2.0 API
+ * (see https://github.com/containers/libkrun/issues/634) will not create
+ * any implicit resources. Callers should start using the
+ * krun_disable_implicit_* functions now to ease migration.
+ */
+
+/*
  * Do not create an implicit console device in the guest. By using this API,
  * libkrun will create zero console devices on behalf of the user. Any
  * console devices needed by the user must be added manually via other API
@@ -1179,6 +1174,98 @@ int32_t krun_split_irqchip(uint32_t ctx_id, bool enable);
  *  Zero on success or a negative error number on failure.
  */
 int32_t krun_disable_implicit_console(uint32_t ctx_id);
+
+/**
+ * Do not inject the default init binary (/init.krun) into the root
+ * filesystem. Must be called before krun_set_root().
+ *
+ * No-op when libkrun is built without the "init-blob" feature (there is no
+ * implicit init to disable).
+ *
+ * Arguments:
+ *  "ctx_id" - the configuration context ID.
+ *
+ * Returns:
+ *  Zero on success or a negative error number on failure.
+ */
+int32_t krun_disable_implicit_init(uint32_t ctx_id);
+
+/**
+ * Get a pointer to the built-in default init binary.
+ *
+ * This is the same binary that libkrun injects as /init.krun by default.
+ * Callers that use krun_disable_implicit_init() can use this to inject the
+ * init binary themselves (e.g. via krun_fs_add_overlay_file with custom
+ * settings).
+ *
+ * The returned pointer is valid for the lifetime of the process (static data).
+ *
+ * Arguments:
+ *  "data_out" - receives a pointer to the init binary bytes.
+ *  "len_out"  - receives the length in bytes.
+ *
+ * Returns:
+ *  Zero on success or a negative error number on failure.
+ *  -EINVAL   - data_out or len_out is NULL
+ *  -ENOTSUP  - libkrun was built without the "init-blob" feature
+ */
+int32_t krun_get_default_init(const uint8_t **data_out, size_t *len_out);
+
+/**
+ * Add a virtual overlay file to a virtiofs device.
+ *
+ * The file is backed entirely by host memory (no host file). The data
+ * pointer is NOT copied — the caller must keep the memory valid for the
+ * full VM lifetime.
+ *
+ * "path" may contain '/' to place the file inside a virtual directory
+ * previously created with krun_fs_add_overlay_dir (e.g. "etc/hostname").
+ * All intermediate directories must already exist; -ENOENT is returned
+ * if a component is missing, -ENOTDIR if a component is not a directory.
+ *
+ * Arguments:
+ *  "ctx_id"   - the configuration context ID.
+ *  "fs_tag"   - tag of the virtiofs device (e.g. "/dev/root").
+ *  "path"     - path of the file (e.g. "init.krun" or "etc/hostname").
+ *  "data"     - pointer to the file content.
+ *  "data_len" - length of the file content in bytes.
+ *  "mode"     - file mode bits (e.g. 0100644 for a regular file).
+ *  "one_shot" - if true, the file can only be looked up once.
+ *
+ * Returns:
+ *  Zero on success or a negative error number on failure.
+ *  -EINVAL  - invalid parameters (NULL pointer, empty path component)
+ *  -ENOENT  - context, fs_tag, or intermediate path component not found
+ *  -ENOTDIR - intermediate path component is not a directory
+ */
+int32_t krun_fs_add_overlay_file(uint32_t ctx_id, const char *fs_tag,
+                                 const char *path, const uint8_t *data,
+                                 size_t data_len, uint32_t mode, bool one_shot);
+
+/**
+ * Add a virtual overlay directory to a virtiofs device.
+ *
+ * The directory is empty and read-only, useful as a mount point.
+ *
+ * "path" may contain '/' to nest inside an existing virtual directory
+ * (e.g. "usr/lib"). All intermediate directories must already exist;
+ * -ENOENT is returned if a component is missing, -ENOTDIR if a component
+ * is not a directory.
+ *
+ * Arguments:
+ *  "ctx_id"   - the configuration context ID.
+ *  "fs_tag"   - tag of the virtiofs device (e.g. "/dev/root").
+ *  "path"     - path of the directory (e.g. "dev" or "usr/lib").
+ *  "mode"     - directory mode bits (e.g. 040755).
+ *
+ * Returns:
+ *  Zero on success or a negative error number on failure.
+ *  -EINVAL  - invalid parameters (NULL pointer, empty path component)
+ *  -ENOENT  - context, fs_tag, or intermediate path component not found
+ *  -ENOTDIR - intermediate path component is not a directory
+ */
+int32_t krun_fs_add_overlay_dir(uint32_t ctx_id, const char *fs_tag,
+                                const char *path, uint32_t mode);
 
 /**
  * Disable the implicit vsock device.
@@ -1223,18 +1310,28 @@ int32_t krun_set_kernel_console(uint32_t ctx_id, const char *console_id);
  * the stdin/stdout/stderr of the application in the guest appropriately.
  *
  * Arguments:
- *  "ctx_id"    - the configuration context ID.
- *  "input_fd"  - file descriptor to use as input for console.
- *  "output_fd" - file descriptor to use as output for console.
- *  "err_fd"    - file descriptor to use as err for console.
+ *  "ctx_id"       - the configuration context ID.
+ *  "input_fd"     - file descriptor to use as input for console (Unix).
+ *  "input_handle" - HANDLE to use as input for console (Windows).
+ *  "output_fd"     - file descriptor to use as output for console (Unix).
+ *  "output_handle" - HANDLE to use as output for console (Windows).
+ *  "err_fd"        - file descriptor to use as err for console (Unix).
+ *  "err_handle"    - HANDLE to use as err for console (Windows).
  *
  * Returns:
  *  Zero on success or a negative error number on failure.
  */
 int32_t krun_add_virtio_console_default(uint32_t ctx_id,
-                                      int input_fd,
-                                      int output_fd,
-                                      int err_fd);
+#ifdef _WIN32
+                                        void *input_handle,
+                                        void *output_handle,
+                                        void *err_handle
+#else
+                                        int input_fd,
+                                        int output_fd,
+                                        int err_fd
+#endif
+                                        );
 
 /*
  * Adds a legacy serial device to the guest.
@@ -1246,16 +1343,24 @@ int32_t krun_add_virtio_console_default(uint32_t ctx_id,
  * the first console created with the function will occupy the "ttyS1" ID.
  *
  * Arguments:
- *  "ctx_id"    - the configuration context ID.
- *  "input_fd"  - file descriptor to use as input for console.
- *  "output_fd" - file descriptor to use as output for console.
+ *  "ctx_id"       - the configuration context ID.
+ *  "input_fd"     - file descriptor to use as input for console (Unix).
+ *  "input_handle" - HANDLE to use as input for console (Windows).
+ *  "output_fd"     - file descriptor to use as output for console (Unix).
+ *  "output_handle" - HANDLE to use as output for console (Windows).
  *
  * Returns:
  *  Zero on success or a negative error number on failure.
  */
 int32_t krun_add_serial_console_default(uint32_t ctx_id,
-                                      int input_fd,
-                                      int output_fd);
+#ifdef _WIN32
+                                        void *input_handle,
+                                        void *output_handle
+#else
+                                        int input_fd,
+                                        int output_fd
+#endif
+                                        );
 
 /*
  * Adds a multi-port virtio-console device to the guest with explicitly configured ports.
@@ -1288,15 +1393,21 @@ int32_t krun_add_virtio_console_multiport(uint32_t ctx_id);
  *  "ctx_id"     - the configuration context ID
  *  "console_id" - the console ID returned by krun_add_virtio_console_multiport()
  *  "name"       - the name of the port for identifying the port in the guest, can be empty ("")
- *  "tty_fd"     - file descriptor for the TTY to use for both input, output, and determining terminal size
+ *  "tty_fd"     - file descriptor for the TTY to use for both input, output, and determining terminal size (Unix).
+ *  "tty_handle" - HANDLE for the TTY to use for both input, output, and determining terminal size (Windows).
  *
  * Returns:
  *  Zero on success or a negative error number on failure.
  */
 int32_t krun_add_console_port_tty(uint32_t ctx_id,
-                                   uint32_t console_id,
-                                   const char *name,
-                                   int tty_fd);
+                                  uint32_t console_id,
+                                  const char *name,
+#ifdef _WIN32
+                                  void *tty_handle
+#else
+                                  int tty_fd
+#endif
+                                  );
 
 /*
  * Adds a generic I/O port to a multi-port virtio-console device, suitable for arbitrary bidirectional 
@@ -1309,17 +1420,25 @@ int32_t krun_add_console_port_tty(uint32_t ctx_id,
  *  "ctx_id"     - the configuration context ID
  *  "console_id" - the console ID returned by krun_add_virtio_console_multiport()
  *  "name"       - the name of the port for identifying the port in the guest, can be empty ("")
- *  "input_fd"   - file descriptor to use for input (host writes, guest reads)
- *  "output_fd"  - file descriptor to use for output (guest writes, host reads)
+ *  "input_fd"     - file descriptor to use for input (host writes, guest reads) (Unix).
+ *  "input_handle" - HANDLE to use for input (host writes, guest reads) (Windows).
+ *  "output_fd"     - file descriptor to use for output (guest writes, host reads) (Unix).
+ *  "output_handle" - HANDLE to use for output (guest writes, host reads) (Windows).
  *
  * Returns:
  *  Zero on success or a negative error number on failure.
  */
 int32_t krun_add_console_port_inout(uint32_t ctx_id,
-                                     uint32_t console_id,
-                                     const char *name,
-                                     int input_fd,
-                                     int output_fd);
+                                    uint32_t console_id,
+                                    const char *name,
+#ifdef _WIN32
+                                    void *input_handle,
+                                    void *output_handle
+#else
+                                    int input_fd,
+                                    int output_fd
+#endif
+                                    );
 
 /**
  * Configure block device to be used as root filesystem.

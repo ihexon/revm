@@ -15,10 +15,20 @@ import (
 	"errors"
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/static_resources"
 	"os"
 	"runtime"
 	"sync"
 	"unsafe"
+)
+
+const (
+	rootFSTag            = "/dev/root"
+	defaultInitPath      = "init.krun"
+	guestHiddenBinDir    = ".bin"
+	guestAgentPath       = ".bin/guest-agent"
+	overlayFileMode      = 0755
+	overlayDirectoryMode = 0755
 )
 
 // Libkrun wraps Libkrun context and manages Libkrun lifecycle.
@@ -26,7 +36,8 @@ type Libkrun struct {
 	cfg   *define.MachineSpec
 	ctxID uint32
 
-	files libkrunFiles
+	files          libkrunFiles
+	guestAgentData unsafe.Pointer
 
 	ctxCreated bool
 	closeOnce  sync.Once
@@ -53,7 +64,13 @@ func (v *Libkrun) Create(ctx context.Context) (retErr error) {
 	if err := v.setResources(); err != nil {
 		return err
 	}
+	if err := v.disableImplicitInit(); err != nil {
+		return err
+	}
 	if err := v.setRootFS(); err != nil {
+		return err
+	}
+	if err := v.setupRootOverlay(); err != nil {
 		return err
 	}
 
@@ -110,6 +127,7 @@ func (v *Libkrun) close() error {
 		v.ctxID = 0
 	}
 	v.files.close()
+	v.freeGuestAgentData()
 	return err
 }
 
@@ -186,6 +204,95 @@ func (v *Libkrun) setRootFS() error {
 		return errCode(ret)
 	}
 	return nil
+}
+
+func (v *Libkrun) disableImplicitInit() error {
+	if ret := C.krun_disable_implicit_init(C.uint32_t(v.ctxID)); ret != 0 {
+		return errCode(ret)
+	}
+	return nil
+}
+
+func (v *Libkrun) setupRootOverlay() error {
+	if err := v.addDefaultInitOverlay(); err != nil {
+		return err
+	}
+	if err := v.addOverlayDir(guestHiddenBinDir, overlayDirectoryMode); err != nil {
+		return err
+	}
+	return v.addGuestAgentOverlay()
+}
+
+func (v *Libkrun) addDefaultInitOverlay() error {
+	var data *C.uint8_t
+	var dataLen C.size_t
+	if ret := C.krun_get_default_init(&data, &dataLen); ret != 0 {
+		return errCode(ret)
+	}
+	return v.addOverlayFile(defaultInitPath, data, dataLen, overlayFileMode, true)
+}
+
+func (v *Libkrun) addGuestAgentOverlay() error {
+	guestAgent, err := static_resources.GuestAgent()
+	if err != nil {
+		return err
+	}
+
+	v.freeGuestAgentData()
+	v.guestAgentData = C.CBytes(guestAgent)
+	if v.guestAgentData == nil {
+		return fmt.Errorf("failed to allocate guest-agent overlay")
+	}
+
+	data := (*C.uint8_t)(v.guestAgentData)
+	dataLen := C.size_t(len(guestAgent))
+	if err := v.addOverlayFile(guestAgentPath, data, dataLen, overlayFileMode, false); err != nil {
+		v.freeGuestAgentData()
+		return err
+	}
+	return nil
+}
+
+func (v *Libkrun) addOverlayFile(path string, data *C.uint8_t, dataLen C.size_t, mode C.uint32_t, oneShot bool) error {
+	tagC := cstr(rootFSTag)
+	defer free(tagC)
+
+	pathC := cstr(path)
+	defer free(pathC)
+
+	ret := C.krun_fs_add_overlay_file(
+		C.uint32_t(v.ctxID),
+		tagC,
+		pathC,
+		data,
+		dataLen,
+		mode,
+		C.bool(oneShot),
+	)
+	if ret != 0 {
+		return errCode(ret)
+	}
+	return nil
+}
+
+func (v *Libkrun) addOverlayDir(path string, mode C.uint32_t) error {
+	tagC := cstr(rootFSTag)
+	defer free(tagC)
+
+	pathC := cstr(path)
+	defer free(pathC)
+
+	if ret := C.krun_fs_add_overlay_dir(C.uint32_t(v.ctxID), tagC, pathC, mode); ret != 0 {
+		return errCode(ret)
+	}
+	return nil
+}
+
+func (v *Libkrun) freeGuestAgentData() {
+	if v.guestAgentData != nil {
+		C.free(v.guestAgentData)
+		v.guestAgentData = nil
+	}
 }
 
 // setGuestAgent configures the guest agent executable.

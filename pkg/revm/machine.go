@@ -239,10 +239,8 @@ func (v *machineBuilder) configureGuestAgent(ctx context.Context) error {
 	finalEnv = append(finalEnv, fmt.Sprintf("HOST_DOMAIN=%s", define.HostDomainInGVPNet))
 	finalEnv = append(finalEnv, fmt.Sprintf("%s=%s", define.EnvLogLevel, logrus.GetLevel().String()))
 
-	guestAgentFilePath := filepath.Join(v.RootFS, ".bin", "guest-agent")
-
-	if err := static_resources.WriteEmbeddedGuestAgent(guestAgentFilePath); err != nil {
-		return fmt.Errorf("failed to write guest-agent file to %q: %w", guestAgentFilePath, err)
+	if _, err := static_resources.GuestAgent(); err != nil {
+		return err
 	}
 
 	v.GuestAgentCfg = define.GuestAgentCfg{

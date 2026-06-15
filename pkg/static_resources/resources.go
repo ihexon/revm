@@ -57,23 +57,13 @@ func ExtractBuiltinRootfs(ctx context.Context, dstDir string) error {
 	return libarchive_go.NewArchiver().SetReader(bytes.NewReader(RootfsBytes)).SetChdir(dstDir).SetSparse(true).ModeX(ctx)
 }
 
-func WriteEmbeddedGuestAgent(targetPath string) error {
+func GuestAgent() ([]byte, error) {
 	if len(GuestAgentBytes) < 4 ||
 		GuestAgentBytes[0] != 0x7f ||
 		GuestAgentBytes[1] != 'E' ||
 		GuestAgentBytes[2] != 'L' ||
 		GuestAgentBytes[3] != 'F' {
-		return fmt.Errorf("embedded guest-agent is missing or invalid; build with scripts/build.go")
+		return nil, fmt.Errorf("embedded guest-agent is missing or invalid; build with scripts/build.go")
 	}
-
-	targetPath, err := filepath.Abs(filepath.Clean(targetPath))
-	if err != nil {
-		return err
-	}
-
-	if err = os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
-		return err
-	}
-
-	return os.WriteFile(targetPath, GuestAgentBytes, 0755)
+	return GuestAgentBytes, nil
 }
