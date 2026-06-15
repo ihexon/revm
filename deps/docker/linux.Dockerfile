@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cpio \
     curl \
     elfutils \
+    file \
     flex \
     gcc \
     g++ \

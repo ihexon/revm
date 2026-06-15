@@ -39,6 +39,17 @@ install_rust_linux_musl_target() {
     else
         rustup target add "$target"
     fi
+
+    if [[ "$(uname)" == "Darwin" ]]; then
+        case "$target" in
+            aarch64-unknown-linux-musl)
+                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="${CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER:-rust-lld}"
+                ;;
+            x86_64-unknown-linux-musl)
+                export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER="${CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER:-rust-lld}"
+                ;;
+        esac
+    fi
 }
 
 verify_libkrun_init_blob() {
