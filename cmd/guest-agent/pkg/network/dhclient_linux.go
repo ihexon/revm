@@ -42,6 +42,7 @@ func DHClient4(ctx context.Context, ifName string, attempts int) error {
 // gvproxy. Its address plan is explicit, so guest startup does not depend on
 // a raw packet socket or a DHCP broadcast exchange.
 func ConfigureStaticIPv4(ctx context.Context, ifName, address, gateway, nameserver string) error {
+	logrus.Infof("configuring static IPv4 on %s: address=%s gateway=%s dns=%s", ifName, address, gateway, nameserver)
 	if _, err := waitInterfaceUp(ctx, ifName); err != nil {
 		return err
 	}
@@ -74,6 +75,7 @@ func ConfigureStaticIPv4(ctx context.Context, ifName, address, gateway, nameserv
 	if err := os.WriteFile("/etc/resolv.conf", []byte("nameserver "+nameserver+"\n"), 0644); err != nil {
 		return fmt.Errorf("write resolv.conf: %w", err)
 	}
+	logrus.Infof("static IPv4 network ready on %s", ifName)
 	return nil
 }
 
