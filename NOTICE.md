@@ -9,9 +9,8 @@ This file documents the dependency relationship between `revm`, `libkrun`, and
 
 `revm` is the Go MicroVM application in this repository.
 
-It wraps and links against `libkrun` through cgo, embeds guest-side helper
-programs, and packages host runtime libraries and static resources into release
-archives.
+It wraps and links against `libkrun` through cgo, injects the guest agent, and
+packages host runtime libraries and static resources into release archives.
 
 Normal release builds consume dependency archives pinned by `deps.lock`.
 
@@ -25,8 +24,7 @@ It builds and packages the runtime inputs consumed by `revm`, including:
 
 - `libkrun`
 - `libkrunfw`
-- guest helper binaries such as BusyBox and Dropbear
-- the root filesystem archive used by `revm`
+- the Alpine root filesystem archive and its apk-installed runtime packages
 
 Dependency source inputs are pinned in `deps/sources.lock`. Published
 dependency assets are pinned in the root `deps.lock`.

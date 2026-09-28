@@ -18,11 +18,11 @@
 
 ## Boot Flow
 
-1. Initialize logging and unpack embedded helper binaries.
+1. Initialize logging and start the injected guest agent.
 2. Read the machine config from the host.
 3. Mount pseudo filesystems, block devices, and shared directories.
 4. Configure network.
-5. Start SSH and time sync.
+5. Start the optional SSH compatibility service and time sync.
 6. Dispatch by run mode:
    - `rootfs`: run the configured command.
    - `docker`: start the Podman API service and keep the VM alive.
