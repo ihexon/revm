@@ -23,12 +23,6 @@ checkout_libkrun() {
     cd "$LIBKRUN_SRC" && git checkout "$LIBKRUN_COMMIT"
 }
 
-set_libkrun_crate_type() {
-    cd "$LIBKRUN_SRC"
-    local crate_type="$1"
-    perl -0pi -e "s/crate-type = \\[[^\\]]+\\]/crate-type = [$crate_type]/" src/libkrun/Cargo.toml
-}
-
 unpack_static_deps_darwin() {
     if [[ ! -f "$LIBEPOXY_TAR" ]]; then
         echo "prebuilt $LIBEPOXY_TAR not found" >&2
@@ -68,14 +62,13 @@ build_libkrun_darwin() {
     export CPATH="$VIRGLRENDERER_PREFIX/include:$LIBEPOXY_PREFIX/include:$MOLTENVK_PREFIX/libexec/include${CPATH:+:$CPATH}"
 
     cd "$LIBKRUN_SRC"
-    set_libkrun_crate_type '"cdylib", "staticlib", "lib"'
     make clean
     TIMESYNC=1 make PREFIX="$PREFIX" BLK=1 NET=1 GPU=1
-    verify_libkrun_init_blob
+    verify_libkrun_bundle "$LIBKRUN_SRC/target/release"
     TIMESYNC=1 make PREFIX="$PREFIX" BLK=1 NET=1 GPU=1 install
 
     rm -rf "$PREFIX/lib/pkgconfig"
-    install -m 644 target/release/libkrun.a "$PREFIX/lib/"
+    verify_libkrun_bundle "$PREFIX/lib"
     install -m 644 "$VIRGLRENDERER_PREFIX/lib/libvirglrenderer.a" "$LIBEPOXY_PREFIX/lib/libepoxy.a" "$PREFIX/lib/"
     install -m 644 "$MOLTENVK_PREFIX/lib/libMoltenVK.a" "$MOLTENVK_PREFIX/libexec/lib/libSPIRVCross.a" "$MOLTENVK_PREFIX/libexec/lib/libSPIRVTools.a" "$PREFIX/lib/"
 }

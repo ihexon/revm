@@ -3,6 +3,7 @@
 package libkrun
 
 /*
-#cgo LDFLAGS: /tmp/.deps/libkrun/lib64/libkrun.a -L/tmp/.deps/libkrunfw/lib -lkrunfw
+#cgo CFLAGS: -I ../../include
+#cgo LDFLAGS: -L/tmp/.deps/libkrun/lib64 -lkrun -lkrun_init
 */
 import "C"

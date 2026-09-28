@@ -17,26 +17,19 @@ checkout_libkrun() {
     cd "$LIBKRUN_SRC" && git checkout "$LIBKRUN_COMMIT"
 }
 
-set_libkrun_crate_type() {
-    cd "$LIBKRUN_SRC"
-    local crate_type="$1"
-    perl -0pi -e "s/crate-type = \\[[^\\]]+\\]/crate-type = [$crate_type]/" src/libkrun/Cargo.toml
-}
-
 build_libkrun_linux() {
     install_rust_linux_musl_target
 
     export RUSTFLAGS="${RUSTFLAGS:-} -C linker=gcc -C link-arg=-static-libgcc"
 
     cd "$LIBKRUN_SRC"
-    set_libkrun_crate_type '"cdylib", "staticlib", "lib"'
     make clean
     make PREFIX="$PREFIX" BLK=1 NET=1
-    verify_libkrun_init_blob
+    verify_libkrun_bundle "$LIBKRUN_SRC/target/release"
 
     rm -rf "$PREFIX"
     make PREFIX="$PREFIX" BLK=1 NET=1 install
-    install -m 644 target/release/libkrun.a "$PREFIX/lib64/"
+    verify_libkrun_bundle "$PREFIX/lib64"
 }
 
 release() {

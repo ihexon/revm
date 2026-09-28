@@ -52,18 +52,17 @@ install_rust_linux_musl_target() {
     fi
 }
 
-verify_libkrun_init_blob() {
-    local init_bin init_file
-    init_bin="$(find "$LIBKRUN_SRC/target/release/build" -path "*/out/init" -type f -print -quit)"
-    if [[ -z "$init_bin" ]]; then
-        echo "libkrun init blob not found" >&2
-        exit 100
+verify_libkrun_bundle() {
+    local lib_dir="$1"
+    local libkrun_file="$lib_dir/libkrun.so.2.0.0"
+    local init_file="$lib_dir/libkrun_init.so.0.1.0"
+    if [[ "$(uname)" == "Darwin" ]]; then
+        libkrun_file="$lib_dir/libkrun.2.0.0.dylib"
+        init_file="$lib_dir/libkrun_init.0.1.0.dylib"
     fi
-
-    init_file="$(file -b "$init_bin")"
-    echo "libkrun init blob: $init_file"
-    if [[ "$init_file" != *ELF* || "$init_file" != *static* ]]; then
-        echo "libkrun init blob must be a static Linux ELF" >&2
+    if [[ ! -f "$libkrun_file" || ! -f "$init_file" ]]; then
+        echo "libkrun 2.x shared libraries not found in $lib_dir" >&2
+        find "$lib_dir" -maxdepth 1 -type f -print >&2 || true
         exit 100
     fi
 }

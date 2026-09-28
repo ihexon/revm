@@ -354,8 +354,14 @@ func (b *builder) prepareRuntimeLibsFor(target string) error {
 
 func (b *builder) prepareRuntimeLibsDarwin(target string) error {
 	libDir := b.libDir(target)
+	libkrunLibDir := filepath.Join(b.depsDir, "libkrun", "lib")
 	libkrunfwLibDir := filepath.Join(b.depsDir, "libkrunfw", "lib")
 
+	if err := copyWithCP(libkrunLibDir, libDir+"/", func(name string) bool {
+		return strings.HasSuffix(name, ".dylib")
+	}); err != nil {
+		return err
+	}
 	if err := copyWithCP(libkrunfwLibDir, libDir+"/", func(name string) bool {
 		return strings.HasSuffix(name, ".dylib")
 	}); err != nil {
@@ -364,6 +370,12 @@ func (b *builder) prepareRuntimeLibsDarwin(target string) error {
 
 	entitlements := filepath.Join(b.workspace, "revm.entitlements")
 	bin := b.executablePath(target)
+	if err := command(nil, "install_name_tool", "-change", "libkrun.2.dylib", "@loader_path/../lib/libkrun.2.dylib", bin); err != nil {
+		return err
+	}
+	if err := command(nil, "install_name_tool", "-change", "libkrun_init.0.dylib", "@loader_path/../lib/libkrun_init.0.dylib", bin); err != nil {
+		return err
+	}
 	if err := command(nil, "install_name_tool", "-change", "libkrunfw.5.dylib", "@loader_path/../lib/libkrunfw.5.dylib", bin); err != nil {
 		return err
 	}
@@ -372,6 +384,16 @@ func (b *builder) prepareRuntimeLibsDarwin(target string) error {
 
 func (b *builder) prepareRuntimeLibsLinux(target string) error {
 	libDir := b.libDir(target)
+
+	libkrunDir, err := b.depLibDir("libkrun")
+	if err != nil {
+		return err
+	}
+	if err := copyWithCP(libkrunDir, libDir+"/", func(name string) bool {
+		return strings.Contains(name, ".so")
+	}); err != nil {
+		return err
+	}
 
 	libkrunfwDir, err := b.depLibDir("libkrunfw")
 	if err != nil {

@@ -3,6 +3,7 @@
 package libkrun
 
 /*
+#cgo CFLAGS: -I ../../include
 #include <libkrun.h>
 */
 import "C"
@@ -17,7 +18,11 @@ import (
 
 var guestMAC = [6]byte{0x5a, 0x94, 0xef, 0xe4, 0x0c, 0xee}
 
-// setupNetwork configures the network backend.
+// Keep the feature set expected by gvproxy's vfkit transport. libkrun 2.x
+// accepts the virtio-net feature bits directly instead of exporting the old
+// COMPAT_NET_FEATURES macro.
+const compatNetFeatures = (1 << 0) | (1 << 1) | (1 << 7) | (1 << 10) | (1 << 11) | (1 << 14)
+
 func (v *Libkrun) setupNetwork() error {
 	switch v.cfg.VirtualNetworkMode {
 	case define.GVISOR:
@@ -32,31 +37,24 @@ func (v *Libkrun) setupNetwork() error {
 
 func (v *Libkrun) setupGVisor() error {
 	logrus.Info("configuring gvisor-tap-vsock network")
-
 	addr, err := network.ParseUnixAddr(v.cfg.GVPVNetAddr)
 	if err != nil {
 		return err
 	}
-
-	path := cstr(addr.Path)
-	defer free(path)
-
-	var mac [6]C.uint8_t
+	id := newKrunStr("eth0")
+	path := newKrunStr(addr.Path)
+	defer id.free()
+	defer path.free()
+	var macData [6]C.uint8_t
 	for i, b := range guestMAC {
-		mac[i] = C.uint8_t(b)
+		macData[i] = C.uint8_t(b)
 	}
-
-	ret := C.krun_add_net_unixgram(
-		C.uint32_t(v.ctxID),
-		path,
-		-1,
-		&mac[0],
-		C.COMPAT_NET_FEATURES,
-		C.NET_FLAG_VFKIT,
-	)
-
-	if ret != 0 {
-		return errCode(ret)
+	mac := C.KrunBytes{data: &macData[0], len: C.size_t(len(macData))}
+	var errOut C.KrunError
+	device := C.krun_net_device_new_unixgram_path(id.value, path.value, mac, C.uint32_t(compatNetFeatures), C.KRUN_NET_FLAGS_VFKIT, &errOut)
+	if err := checkKrunHandle("create gvisor network device", device, errOut); err != nil {
+		return err
 	}
+	C.krun_mmio_device_manager_add(v.manager, device)
 	return nil
 }

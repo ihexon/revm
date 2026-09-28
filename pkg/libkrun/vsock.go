@@ -3,6 +3,7 @@
 package libkrun
 
 /*
+#cgo CFLAGS: -I ../../include
 #include <libkrun.h>
 */
 import "C"
@@ -10,49 +11,29 @@ import "C"
 import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
-	"runtime"
 
 	"github.com/sirupsen/logrus"
 )
 
-// setupVSock configures the VSock device and port mappings.
 func (v *Libkrun) setupVSock() error {
-	if ret := C.krun_disable_implicit_vsock(C.uint32_t(v.ctxID)); ret != 0 {
-		return errCode(ret)
-	}
-
 	var features C.uint32_t
 	if v.cfg.VirtualNetworkMode == define.TSI {
-		features = C.KRUN_TSI_HIJACK_INET
-		if runtime.GOOS == "darwin" {
-			// macOS doesn't support KRUN_TSI_HIJACK_UNIX
-			features = C.KRUN_TSI_HIJACK_INET
-		}
+		features = C.KRUN_TSI_FLAGS_HIJACK_INET
 	}
-
-	if ret := C.krun_add_vsock(C.uint32_t(v.ctxID), features); ret != 0 {
-		return errCode(ret)
-	}
-
-	// Map ignition server port
-	addr, err := network.ParseUnixAddr(v.cfg.IgnitionServerCfg.ListenSockAddr)
-	if err != nil {
+	var errOut C.KrunError
+	device := C.krun_vsock_device_new(C.uint64_t(vsockCID), features, &errOut)
+	if err := checkKrunHandle("create vsock device", device, errOut); err != nil {
 		return err
 	}
-
-	path := cstr(addr.Path)
-	defer free(path)
-
-	ret := C.krun_add_vsock_port2(
-		C.uint32_t(v.ctxID),
-		C.uint32_t(define.DefaultVSockPort),
-		path,
-		false,
-	)
-	if ret != 0 {
-		return errCode(ret)
+	addr, err := network.ParseUnixAddr(v.cfg.IgnitionServerCfg.ListenSockAddr)
+	if err != nil {
+		C.krun_vsock_device_destroy(device)
+		return err
 	}
-
+	path := newKrunStr(addr.Path)
+	defer path.free()
+	C.krun_vsock_device_add_unix_port(device, C.uint32_t(define.DefaultVSockPort), path.value, C.bool(false))
+	C.krun_mmio_device_manager_add(v.manager, device)
 	logrus.Infof("vsock port %d → %s", define.DefaultVSockPort, addr.Path)
 	return nil
 }
