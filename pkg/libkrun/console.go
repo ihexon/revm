@@ -14,6 +14,7 @@ import (
 	"os"
 	"sync"
 	"syscall"
+	"unsafe"
 
 	"github.com/creack/pty"
 	"github.com/sirupsen/logrus"
@@ -56,10 +57,10 @@ func (v *Libkrun) setupConsole() (retErr error) {
 	var errOut C.KrunError
 	v.console = C.krun_console_builder_build(builder, &errOut)
 	builder = nil
-	if err := checkKrunHandle("build console", v.console, errOut); err != nil {
+	if err := checkKrunHandle("build console", unsafe.Pointer(v.console), errOut); err != nil {
 		return err
 	}
-	C.krun_mmio_device_manager_add(v.manager, v.console)
+	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(v.console)))
 	v.console = nil
 	v.files = files
 	return nil
@@ -163,7 +164,7 @@ func (v *Libkrun) addGuestSignalPort(builder C.KrunConsoleBuilder, files *libkru
 func addConsoleTTY(builder C.KrunConsoleBuilder, name string, fd int) error {
 	n := newKrunStr(name)
 	defer n.free()
-	var port uint32
+	var port C.uint32_t
 	var errOut C.KrunError
 	result := C.krun_console_builder_add_tty_port(builder, n.value, C.int(fd), &port, &errOut)
 	return checkKrunResult("add console TTY port", result, errOut)

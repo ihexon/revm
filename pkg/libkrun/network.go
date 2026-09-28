@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
+	"unsafe"
 
 	"github.com/sirupsen/logrus"
 )
@@ -52,9 +53,9 @@ func (v *Libkrun) setupGVisor() error {
 	mac := C.KrunBytes{data: &macData[0], len: C.size_t(len(macData))}
 	var errOut C.KrunError
 	device := C.krun_net_device_new_unixgram_path(id.value, path.value, mac, C.uint32_t(compatNetFeatures), C.KRUN_NET_FLAGS_VFKIT, &errOut)
-	if err := checkKrunHandle("create gvisor network device", device, errOut); err != nil {
+	if err := checkKrunHandle("create gvisor network device", unsafe.Pointer(device), errOut); err != nil {
 		return err
 	}
-	C.krun_mmio_device_manager_add(v.manager, device)
+	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
 	return nil
 }

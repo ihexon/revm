@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"unsafe"
 
 	"github.com/google/uuid"
 )
@@ -44,10 +45,10 @@ func (v *Libkrun) addDisk(path string) error {
 	defer diskPath.free()
 	var errOut C.KrunError
 	device := C.krun_block_device_new(id.value, diskPath.value, C.KRUN_DISK_FORMAT_RAW, &errOut)
-	if err := checkKrunHandle("create block device", device, errOut); err != nil {
+	if err := checkKrunHandle("create block device", unsafe.Pointer(device), errOut); err != nil {
 		return err
 	}
-	C.krun_mmio_device_manager_add(v.manager, device)
+	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
 	return nil
 }
 
@@ -78,10 +79,10 @@ func (v *Libkrun) addVirtioFS(tag, hostPath string, readOnly bool) error {
 	} else {
 		device = C.krun_fs_device_new(tagC.value, pathC.value, &errOut)
 	}
-	if err := checkKrunHandle("create virtiofs device", device, errOut); err != nil {
+	if err := checkKrunHandle("create virtiofs device", unsafe.Pointer(device), errOut); err != nil {
 		return err
 	}
 	C.krun_fs_device_set_dax_window_size(device, C.uint64_t(virtiofsMemWindow))
-	C.krun_mmio_device_manager_add(v.manager, device)
+	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
 	return nil
 }

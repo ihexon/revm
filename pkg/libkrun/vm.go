@@ -196,7 +196,7 @@ func (v *Libkrun) setResources() error {
 func (v *Libkrun) loadPayload() error {
 	var errOut C.KrunError
 	v.payload = C.krun_payload_load_krunfw(&errOut)
-	return checkKrunHandle("load libkrunfw payload", v.payload, errOut)
+	return checkKrunHandle("load libkrunfw payload", unsafe.Pointer(v.payload), errOut)
 }
 
 func (v *Libkrun) setupInitConfig() error {
@@ -265,7 +265,7 @@ func (v *Libkrun) setupRootFS() error {
 	root = C.krun_fs_device_new(tag.value, path.value, &errOut)
 	tag.free()
 	path.free()
-	if err := checkKrunHandle("create root filesystem", root, errOut); err != nil {
+	if err := checkKrunHandle("create root filesystem", unsafe.Pointer(root), errOut); err != nil {
 		return err
 	}
 	defer func() {
@@ -297,7 +297,7 @@ func (v *Libkrun) setupRootFS() error {
 	}
 	C.krun_fs_device_set_overlay(root, overlay)
 	overlay = nil
-	C.krun_mmio_device_manager_add(v.manager, root)
+	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(root)))
 	root = nil
 	return nil
 }
@@ -341,12 +341,12 @@ func (v *Libkrun) buildVMM() error {
 	var errOut C.KrunError
 	v.vmm = C.krun_vmm_builder_build(&v.vmmBuilder, &errOut)
 	v.vmmBuilder = nil
-	if err := checkKrunHandle("build VMM", v.vmm, errOut); err != nil {
+	if err := checkKrunHandle("build VMM", unsafe.Pointer(v.vmm), errOut); err != nil {
 		return err
 	}
 	errOut = nil
 	v.vmmHandle = C.krun_vmm_handle(v.vmm, &errOut)
-	return checkKrunHandle("obtain VMM handle", v.vmmHandle, errOut)
+	return checkKrunHandle("obtain VMM handle", unsafe.Pointer(v.vmmHandle), errOut)
 }
 
 func (v *Libkrun) freeGuestAgentData() {

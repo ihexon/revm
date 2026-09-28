@@ -11,6 +11,7 @@ import "C"
 import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
+	"unsafe"
 
 	"github.com/sirupsen/logrus"
 )
@@ -22,7 +23,7 @@ func (v *Libkrun) setupVSock() error {
 	}
 	var errOut C.KrunError
 	device := C.krun_vsock_device_new(C.uint64_t(vsockCID), features, &errOut)
-	if err := checkKrunHandle("create vsock device", device, errOut); err != nil {
+	if err := checkKrunHandle("create vsock device", unsafe.Pointer(device), errOut); err != nil {
 		return err
 	}
 	addr, err := network.ParseUnixAddr(v.cfg.IgnitionServerCfg.ListenSockAddr)
@@ -33,7 +34,7 @@ func (v *Libkrun) setupVSock() error {
 	path := newKrunStr(addr.Path)
 	defer path.free()
 	C.krun_vsock_device_add_unix_port(device, C.uint32_t(define.DefaultVSockPort), path.value, C.bool(false))
-	C.krun_mmio_device_manager_add(v.manager, device)
+	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
 	logrus.Infof("vsock port %d → %s", define.DefaultVSockPort, addr.Path)
 	return nil
 }
