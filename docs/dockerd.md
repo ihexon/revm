@@ -1,164 +1,156 @@
 # revm dockerd
 
-[English](./dockerd.en.md)
+[English](dockerd.en.md)
 
-`revm dockerd` 启动一个内置容器运行环境。它在 guest 内运行 Podman 服务，并在 host 上提供一个 Docker-compatible API socket，因此可以用 Docker CLI 或 Podman CLI 连接。
+revm dockerd 启动一个长期运行的 Alpine VM，在 guest 内启动 Podman API 服务，并在宿主机提供一个 Unix socket。Docker CLI 和 Podman CLI 可以通过这个 socket 使用容器运行时。
+
+dockerd 固定使用 gvisor 网络，因此支持容器端口发布和 revm ctl 端口控制。
 
 ## 基本用法
 
-```bash
-revm dockerd --id <session-id> [flags]
-```
+~~~text
+revm dockerd --id <session-id> [options]
+~~~
 
-启动容器 session：
-
-```bash
+~~~bash
 revm dockerd --id dev --podman-api /tmp/revm-dev.sock
-```
-
-在另一个终端使用 Docker CLI：
-
-```bash
 export DOCKER_HOST=unix:///tmp/revm-dev.sock
-docker run --rm hello-world
-```
+docker run --rm alpine uname -a
+~~~
 
-使用 Podman CLI：
+Podman 客户端使用 CONTAINER_HOST：
 
-```bash
+~~~bash
 export CONTAINER_HOST=unix:///tmp/revm-dev.sock
-podman run --rm alpine uname -a
-```
+podman run --rm alpine cat /etc/alpine-release
+~~~
 
-## API Socket
+服务会一直运行，直到收到停止信号或 host service 失败。停止 dockerd 后，容器也会失去其 guest runtime。
 
-`--podman-api` 指定 host 上暴露的 Unix socket：
+## API socket
 
-```bash
-revm dockerd --id team --podman-api /tmp/revm-team.sock
-```
+--podman-api 是宿主机上暴露的 Unix socket 路径。未指定时：
 
-不指定时，默认路径在 session 目录内：
-
-```text
+~~~text
 ~/.cache/revm/<session-id>/socks/podman-api.sock
-```
+~~~
 
-这个 socket 由 host 侧代理转发到 guest 内 Podman API。上层工具只需要连接这个 socket，不需要知道 VM 内部细节。
+这个 socket 由 host-side proxy 转发到 guest 内 Podman system service。客户端不需要访问 guest IP、vsock 或 SSH。
 
-## 项目目录
+管理 API 可以单独导出：
 
-挂载项目目录：
+~~~bash
+revm dockerd --id dev \
+  --podman-api /tmp/revm-dev.sock \
+  --manage-api /tmp/revm-dev-vmctl.sock
+~~~
 
-```bash
+## 项目目录和 home
+
+--mount 共享项目目录：
+
+~~~bash
 revm dockerd --id app \
   --podman-api /tmp/revm-app.sock \
   --mount "$PWD:/workspace"
-```
+~~~
 
-构建镜像：
-
-```bash
-export DOCKER_HOST=unix:///tmp/revm-app.sock
-docker build -t app /workspace
-docker run --rm app
-```
+dockerd 还会自动把宿主 home 目录挂载到 guest 中的相同路径，以便 Podman workload 使用项目、凭证和缓存。共享目录在 guest 中显示为 root:root；macOS 的 UID/GID 映射由 user.containers.override_stat xattr 提供，不修改宿主真实所有者。
 
 挂载格式：
 
-```text
+~~~text
 --mount /host/path:/guest/path[,ro]
-```
+~~~
+
+容器 workload 的 rootfs 由 Podman 镜像负责，不能通过 revm 的 --rootfs 替换 VM rootfs。
 
 ## 容器存储
 
-不指定 `--container-disk` 时，revm 使用 session 内默认容器存储盘。
+容器存储位于 guest 的 /var/lib/containers，并由一个 ext4 raw disk 提供。
 
-指定持久化存储盘：
+未指定 --container-disk 时，磁盘放在 session workspace：
 
-```bash
+~~~text
+~/.cache/revm/<session-id>/raw-disk/container-storage.ext4
+~~~
+
+使用持久化路径：
+
+~~~bash
 revm dockerd --id dev \
   --podman-api /tmp/revm-dev.sock \
-  --container-disk ~/.cache/revm/container-storage.ext4
-```
+  --container-disk "$HOME/.cache/revm/container-storage.ext4,version=containers-v1"
+~~~
 
 格式：
 
-```text
+~~~text
 --container-disk <path>[,version=<string>]
-```
+~~~
 
-如果文件不存在，revm 会创建它。如果磁盘保存的版本缺失或与 `version` 不一致，revm 会重新创建该磁盘。适合把容器存储当成可重建缓存管理。
+磁盘不存在时自动创建。已有磁盘缺少版本 xattr 或版本不一致时会重建；重建会删除旧容器镜像和容器数据。需要保留数据时不要改变 version，也不要删除磁盘。
 
 ## 端口发布
 
-容器自己的端口发布继续使用 Docker 或 Podman CLI：
+容器端口使用 Docker 或 Podman 的标准 -p 选项：
 
-```bash
+~~~bash
 export DOCKER_HOST=unix:///tmp/revm-dev.sock
 docker run --rm -p 8080:80 nginx
 curl http://127.0.0.1:8080
-```
+~~~
 
-guest agent 会配置 Podman machine marker，使容器 start/stop 时调用 gvproxy 的 expose/unexpose API。
+guest agent 为 Podman 配置 machine marker，使容器启动和停止时调用 gvisor forwarder 的 expose/unexpose。
 
-如果要手动暴露 guest 内的任意服务端口，使用 `revm ctl`：
+guest 内非容器服务可由 ctl 手动暴露：
 
-```bash
+~~~bash
 revm ctl --id dev --list-port
 revm ctl --id dev --port-export 127.0.0.1:8081:8081
 revm ctl --id dev --port-unexport 127.0.0.1:8081
-```
+~~~
 
-`--list-port` 会展示 SSH、容器发布端口和手动暴露端口。
+ctl 端口格式只支持 TCP 和 IPv4；使用 tsi 的 run session 不支持这些操作。
 
-## 资源、代理和日志
+## 资源、环境和代理
 
-资源配置：
-
-```bash
+~~~bash
 revm dockerd --id dev \
   --cpus 4 \
   --memory 4096 \
+  --envs CI=true \
+  --system-proxy \
   --podman-api /tmp/revm-dev.sock
-```
+~~~
 
-复用 macOS 系统代理：
+| 选项 | 说明 |
+| --- | --- |
+| --cpus | vCPU 数量，默认使用主机 CPU 数量，最大 32。 |
+| --memory | 内存 MB，默认使用主机总内存，最小 512。 |
+| --envs KEY=VALUE | 传给 Podman service 和容器运行环境的环境变量，可重复。 |
+| --system-proxy | 将 macOS 系统代理传入 guest。 |
+| --raw-disk | 添加额外 raw/ext4 磁盘，可重复。 |
+| --container-disk | 设置 Podman 容器存储盘。 |
+| --mount | 添加 VirtIO-FS 共享目录，可重复。 |
+| --podman-api | 自定义 Podman API socket。 |
+| --manage-api | 自定义 VM 管理 socket。 |
+| --ssh-key | 导出兼容 SSH key 的符号链接。 |
+| --report-events | 接收生命周期事件的 HTTP endpoint。 |
+| --log-level、--log-to | 设置日志等级和日志文件。 |
 
-```bash
-revm dockerd --id dev --system-proxy --podman-api /tmp/revm-dev.sock
-```
+dockerd 没有 --network 选项，始终使用 gvisor。
 
-指定日志：
+## Attach 和 ctl
 
-```bash
-revm dockerd --id dev \
-  --log-level debug \
-  --log-to /tmp/revm-dockerd.log \
-  --podman-api /tmp/revm-dev.sock
-```
-
-默认日志路径：
-
-```text
-~/.cache/revm/<session-id>/logs/revm.log
-```
-
-## Attach 和控制
-
-连接到运行中的容器 session：
-
-```bash
+~~~bash
 revm attach --id dev --pty
 revm attach --id dev -- sh -c 'podman ps'
-```
+revm ctl --id dev --list-port
+~~~
 
-导出管理 API socket：
+attach 使用 guest-control 执行普通命令，--pty 使用 SSH 兼容入口。ctl 只处理端口映射，不执行 guest 命令。
 
-```bash
-revm dockerd --id dev \
-  --manage-api /tmp/revm-dev-vmctl.sock \
-  --podman-api /tmp/revm-dev.sock
-```
+## 停止行为
 
-`revm attach` 通过管理 API 获取 SSH 信息并连接 guest。`revm ctl` 通过管理 API 获取 gvproxy endpoint 并执行控制面更新。
+第一次 SIGINT 或 SIGTERM 请求 libkrun 原生 shutdown；第二次信号或 host service 失败触发最长三秒的 force-stop。容器存储磁盘在正常停止时会同步。

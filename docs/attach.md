@@ -1,71 +1,85 @@
 # revm attach
 
-[English](./attach.en.md)
+[English](attach.en.md)
 
-`revm attach` 连接到已有 session。它不会启动新 VM，也不会处理启动参数。普通命令通过 guest control vsock endpoint 执行；`--pty` 仍使用 SSH 作为交互式兼容入口。
+revm attach 连接到一个正在运行的 session。它不构建、不启动新 VM，也不修改启动参数。
 
-## 基本用法
+普通命令通过 guest-control vsock 执行。交互式 PTY 使用 SSH 兼容入口，因为 guest-control 当前提供的是流式命令执行而不是终端分配。
 
-```bash
+## 语法
+
+~~~text
 revm attach --id <session-id> [--pty] [-- <command> [args...]]
-```
-
-交互式连接：
-
-```bash
-revm attach --id dev --pty
-```
+~~~
 
 执行命令：
 
-```bash
+~~~bash
 revm attach --id dev -- sh -c 'uname -a'
-```
+revm attach --id dev -- podman ps
+~~~
 
-不指定命令且不使用 `--pty` 时，默认执行 `/bin/sh`。
+不指定命令且不使用 --pty 时，默认执行 /bin/sh：
 
-## Session
+~~~bash
+revm attach --id dev
+~~~
 
-`--id` 必须指向一个正在运行的 session：
+打开交互式 shell：
 
-```bash
+~~~bash
+revm attach --id dev --pty
+~~~
+
+--pty 不接受后续 guest 命令参数；它直接打开 root 用户的交互式 SSH shell。
+
+## session 查找
+
+attach 使用 --id 定位：
+
+~~~text
+~/.cache/revm/<session-id>/socks/vmctl.sock
+~~~
+
+目标 session 必须正在运行。停止后的 session 只有日志和资源文件，不可以 attach。
+
+启动与连接示例：
+
+~~~bash
 revm run --id dev -- sh
 revm attach --id dev --pty
-```
+~~~
 
-或：
+容器 session：
 
-```bash
+~~~bash
 revm dockerd --id containers --podman-api /tmp/revm-containers.sock
 revm attach --id containers -- sh -c 'podman ps'
-```
+~~~
 
-## 工作方式
+## 控制面关系
 
-`revm attach` 会访问 session 的管理 API：
+attach 只处理 guest 命令和终端：
 
-```text
-~/.cache/revm/<session-id>/socks/vmctl.sock
-```
+- guest-control endpoint 负责普通命令的 stdin、stdout、stderr 和退出码。
+- --pty 通过管理 API 读取 SSH metadata，再通过 gvisor tunnel 或 tsi 直连 guest SSH。
+- attach 不负责端口映射；端口映射使用 ctl。
+- attach 不负责关闭 VM；停止由 run 或 dockerd 的宿主进程处理。
 
-管理 API 返回 guest-control endpoint，以及交互式兼容路径需要的 SSH 信息。
+## 日志和诊断
 
-## 日志
+~~~bash
+revm attach --id dev --log-level debug --log-to /tmp/revm-attach.log -- date
+tail -f ~/.cache/revm/dev/logs/revm.log
+~~~
 
-默认日志路径：
+如果 attach 报 session 不存在，先确认 --id 与启动命令完全一致，并检查管理 socket 是否存在。如果 guest 命令失败，attach 会转发 guest 的退出错误和 stderr。
 
-```text
-~/.cache/revm/<session-id>/logs/revm.log
-```
+## 选项
 
-指定日志：
-
-```bash
-revm attach --id dev --log-level debug --log-to /tmp/revm-attach.log -- sh -c 'date'
-```
-
-## 与 ctl 的区别
-
-`revm attach` 负责连接 guest 并执行用户命令。
-
-`revm ctl` 负责控制面更新，例如端口暴露和取消暴露。
+| 选项 | 说明 |
+| --- | --- |
+| --id | 必填 session 名称。 |
+| --pty | 通过 SSH 兼容入口打开交互终端。 |
+| --log-level | trace、debug、info、warn、error、fatal 或 panic。 |
+| --log-to | 自定义 host 日志文件。 |

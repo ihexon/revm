@@ -1,162 +1,154 @@
 # revm dockerd
 
-`revm dockerd` starts the built-in container runtime. It runs Podman inside the guest and exposes a Docker-compatible API socket on the host, so Docker CLI and Podman CLI can connect to it.
+revm dockerd starts a long-lived Alpine VM, launches the Podman API service in the guest, and exposes a Unix socket on the host. Docker CLI and Podman CLI use that socket as their container endpoint.
+
+dockerd always uses gvisor networking, so container port publishing and revm ctl port control are available.
 
 ## Usage
 
-```bash
-revm dockerd --id <session-id> [flags]
-```
+~~~text
+revm dockerd --id <session-id> [options]
+~~~
 
-Start a container session:
-
-```bash
+~~~bash
 revm dockerd --id dev --podman-api /tmp/revm-dev.sock
-```
-
-Use Docker CLI from another terminal:
-
-```bash
 export DOCKER_HOST=unix:///tmp/revm-dev.sock
-docker run --rm hello-world
-```
+docker run --rm alpine uname -a
+~~~
 
-Use Podman CLI:
+For a Podman client, use CONTAINER_HOST:
 
-```bash
+~~~bash
 export CONTAINER_HOST=unix:///tmp/revm-dev.sock
-podman run --rm alpine uname -a
-```
+podman run --rm alpine cat /etc/alpine-release
+~~~
 
-## API Socket
+The service stays alive until a stop signal or host-service failure. Stopping dockerd removes the guest runtime from the client.
 
-`--podman-api` sets the Unix socket exposed on the host:
+## API socket
 
-```bash
-revm dockerd --id team --podman-api /tmp/revm-team.sock
-```
+--podman-api is the host Unix socket path. When omitted:
 
-When omitted, the default path is inside the session directory:
-
-```text
+~~~text
 ~/.cache/revm/<session-id>/socks/podman-api.sock
-```
+~~~
 
-This socket is served by a host-side proxy that forwards to the Podman API inside the guest. Higher-level tools only need this socket; they do not need to know VM internals.
+A host-side proxy forwards this socket to the Podman system service in the guest. Clients do not need guest IP, vsock, or SSH details.
 
-## Project Directories
+Export the management API separately:
 
-Mount a project directory:
+~~~bash
+revm dockerd --id dev \
+  --podman-api /tmp/revm-dev.sock \
+  --manage-api /tmp/revm-dev-vmctl.sock
+~~~
 
-```bash
+## Project directories and home
+
+Share a project with --mount:
+
+~~~bash
 revm dockerd --id app \
   --podman-api /tmp/revm-app.sock \
   --mount "$PWD:/workspace"
-```
+~~~
 
-Build an image:
-
-```bash
-export DOCKER_HOST=unix:///tmp/revm-app.sock
-docker build -t app /workspace
-docker run --rm app
-```
+dockerd also mounts the host home directory at the same path in the guest, which lets workloads use project files, credentials, and caches. Shared inodes appear as root:root in the guest; on macOS, user.containers.override_stat provides the guest UID/GID view without changing host ownership.
 
 Mount format:
 
-```text
+~~~text
 --mount /host/path:/guest/path[,ro]
-```
+~~~
 
-## Container Storage
+A workload rootfs comes from the Podman image. revm --rootfs cannot replace the VM rootfs.
 
-When `--container-disk` is omitted, revm uses the default container storage disk inside the session.
+## Container storage
 
-Use a persistent storage disk:
+Container storage is mounted at /var/lib/containers from an ext4 raw disk.
 
-```bash
+Without --container-disk, the disk is stored in the session workspace:
+
+~~~text
+~/.cache/revm/<session-id>/raw-disk/container-storage.ext4
+~~~
+
+Use a persistent path:
+
+~~~bash
 revm dockerd --id dev \
   --podman-api /tmp/revm-dev.sock \
-  --container-disk ~/.cache/revm/container-storage.ext4
-```
+  --container-disk "$HOME/.cache/revm/container-storage.ext4,version=containers-v1"
+~~~
 
 Format:
 
-```text
+~~~text
 --container-disk <path>[,version=<string>]
-```
+~~~
 
-If the file does not exist, revm creates it. If the stored version is missing or does not match `version`, revm recreates the disk. This makes container storage manageable as a rebuildable cache.
+Missing disks are created. An existing disk with no version xattr or a different version is recreated; recreation deletes its old images and containers. Keep the same version and file when data must survive.
 
-## Port Publishing
+## Port publishing
 
-Container port publishing continues to use Docker or Podman CLI:
+Use the standard Docker or Podman -p option:
 
-```bash
+~~~bash
 export DOCKER_HOST=unix:///tmp/revm-dev.sock
 docker run --rm -p 8080:80 nginx
 curl http://127.0.0.1:8080
-```
+~~~
 
-The guest agent configures the Podman machine marker so container start/stop calls gvproxy's expose/unexpose API.
+The guest agent configures the Podman machine marker so container start and stop calls the gvisor forwarder's expose/unexpose operations.
 
-To manually expose any service port from the guest, use `revm ctl`:
+Expose a non-container guest service with ctl:
 
-```bash
+~~~bash
 revm ctl --id dev --list-port
 revm ctl --id dev --port-export 127.0.0.1:8081:8081
 revm ctl --id dev --port-unexport 127.0.0.1:8081
-```
+~~~
 
-`--list-port` shows SSH, container-published ports, and manually exposed ports.
+ctl port formats support TCP and IPv4 only. A run session using tsi does not support these operations.
 
-## Resources, Proxy, And Logs
+## Resources, environment, and proxy
 
-Set resources:
-
-```bash
+~~~bash
 revm dockerd --id dev \
   --cpus 4 \
   --memory 4096 \
+  --envs CI=true \
+  --system-proxy \
   --podman-api /tmp/revm-dev.sock
-```
+~~~
 
-Reuse the macOS system proxy:
+| Option | Description |
+| --- | --- |
+| --cpus | vCPU count, host CPU count by default, maximum 32. |
+| --memory | Memory in MB, host total by default, minimum 512. |
+| --envs KEY=VALUE | Environment passed to the Podman service and container runtime; repeatable. |
+| --system-proxy | Pass the macOS system proxy into the guest. |
+| --raw-disk | Add extra raw/ext4 disks; repeatable. |
+| --container-disk | Set the Podman container storage disk. |
+| --mount | Add VirtIO-FS shares; repeatable. |
+| --podman-api | Custom Podman API socket. |
+| --manage-api | Custom VM management socket. |
+| --ssh-key | Symlink the compatibility SSH key to a custom path. |
+| --report-events | HTTP endpoint for lifecycle events. |
+| --log-level and --log-to | Set log level and log file. |
 
-```bash
-revm dockerd --id dev --system-proxy --podman-api /tmp/revm-dev.sock
-```
+dockerd has no --network option; it always uses gvisor.
 
-Set log output:
+## Attach and ctl
 
-```bash
-revm dockerd --id dev \
-  --log-level debug \
-  --log-to /tmp/revm-dockerd.log \
-  --podman-api /tmp/revm-dev.sock
-```
-
-Default log path:
-
-```text
-~/.cache/revm/<session-id>/logs/revm.log
-```
-
-## Attach And Control
-
-Connect to a running container session:
-
-```bash
+~~~bash
 revm attach --id dev --pty
 revm attach --id dev -- sh -c 'podman ps'
-```
+revm ctl --id dev --list-port
+~~~
 
-Export the management API socket:
+attach uses guest-control for normal commands and SSH for --pty compatibility. ctl only changes port mappings; it does not execute guest commands.
 
-```bash
-revm dockerd --id dev \
-  --manage-api /tmp/revm-dev-vmctl.sock \
-  --podman-api /tmp/revm-dev.sock
-```
+## Stop behavior
 
-`revm attach` uses the management API to resolve SSH metadata and connect to the guest. `revm ctl` uses the management API to resolve the gvproxy endpoint and perform control-plane updates.
+The first SIGINT or SIGTERM requests native libkrun shutdown. A second signal or host-service failure triggers the bounded force-stop path, which waits at most three seconds. The container storage disk is synced during a normal stop.

@@ -1,170 +1,140 @@
 # revm run
 
-`revm run` boots the packaged Alpine Linux session and executes a command inside the guest. Use it for builds, tests, scripts, disposable debugging, and local tools that need a clean Linux runtime.
+revm run creates a session, boots the Alpine rootfs packaged with the release, and executes one command inside the guest. It is intended for builds, tests, scripts, disposable Linux tools, and local tasks that need isolation.
 
-## Usage
+## Syntax
 
-```bash
-revm run --id <session-id> [flags] -- <command> [args...]
-```
+~~~text
+revm run --id <session-id> [options] -- <command> [args...]
+~~~
 
-`--id` is required. Everything after `--` is executed inside the guest.
+--id is required. Arguments after -- form the guest command. Use sh -c explicitly when a command needs shell syntax.
 
-```bash
-revm run --id quick -- sh -c 'uname -a && cat /etc/os-release'
-```
+~~~bash
+revm run --id shell -- sh -c 'uname -a; cat /etc/os-release'
+revm run --id build --mount "$PWD:/workspace" --workdir /workspace -- sh -c 'make test'
+~~~
 
-Open an interactive shell:
+When the command exits, revm asks the guest to shut down and exits. Run a long-lived process in the guest, or use revm dockerd, when a session must stay available.
 
-```bash
-revm run --id shell -- sh
-```
+## Rootfs policy
 
-Mount the current project and run tests:
+The VM rootfs always comes from the Alpine archive embedded in the release. It includes:
 
-```bash
-revm run --id build \
+- the Alpine userspace and apk package manager
+- guest-agent
+- the dropbear SSH compatibility service
+- Podman, containers configuration, and container networking tools
+- tools required for networking, mounts, logging, and lifecycle control
+
+run does not accept --rootfs and does not replace, import, or export the VM rootfs. To use another distribution or userspace, start revm dockerd and run the image as a Podman workload. The workload then remains separate from the VM control plane.
+
+## Resources and networking
+
+~~~bash
+revm run --id test --cpus 4 --memory 4096 -- sh -c './test.sh'
+revm run --id net --network gvisor -- sh
+revm run --id light --network tsi -- sh
+~~~
+
+Options:
+
+| Option | Description |
+| --- | --- |
+| --cpus | vCPU count. Host CPU count when unset or less than 1; maximum 32. |
+| --memory | Memory in MB. Host total memory when unset; minimum 512. |
+| --network | gvisor or tsi, default gvisor. |
+| --workdir | Guest command working directory, default /. |
+| --envs KEY=VALUE | Environment for the guest command; repeatable. |
+| --system-proxy | Read the macOS HTTP/HTTPS proxy and pass it to the guest. In gvisor mode, loopback proxy addresses are rewritten. |
+
+gvisor uses gvisor-tap-vsock for DNS, NAT, TCP/UDP, and port forwarding. tsi uses libkrun transparent socket interception; it has a smaller host networking path but does not support manual ctl port mappings.
+
+## VirtIO-FS directories
+
+Use --mount to share a host directory:
+
+~~~text
+--mount /host/path:/guest/path[,ro]
+~~~
+
+~~~bash
+revm run --id files \
   --mount "$PWD:/workspace" \
-  --workdir /workspace \
-  -- sh -c 'make test'
-```
-
-## Alpine system rootfs
-
-`revm run` always uses the packaged Alpine rootfs. It contains the guest agent, network setup, logging, and control-plane runtime required by the VM; a host directory cannot replace the VM root filesystem.
-
-Other distributions or custom userspaces should run as Podman workloads through `revm dockerd`. Future rootfs workload support will keep the Alpine VM as the control plane.
-
-## Resources
-
-```bash
-revm run --id test \
-  --cpus 4 \
-  --memory 4096 \
-  -- sh -c './test.sh'
-```
-
-- `--cpus`: number of vCPUs. If unset or less than 1, revm uses the host CPU count.
-- `--memory`: memory in MB. If unset, revm uses host memory; the minimum is 512 MB.
-
-## Files And Directories
-
-Share directories with VirtIO-FS:
-
-```bash
-revm run --id dev \
-  --mount "$PWD:/workspace" \
-  --mount "$HOME/.cache/go-build:/go-cache,ro" \
+  --mount "$HOME/.cache:/host-cache,ro" \
   --workdir /workspace \
   -- sh
-```
+~~~
 
-Mount format:
+Shared inodes appear as root:root in the guest. On macOS, revm uses libkrun passthrough's user.containers.override_stat xattr to record the guest-visible UID, GID, and mode without changing the host ownership. Symlink inodes are not rewritten. Read-only host directories are temporarily made writable while the xattr is written, then restored.
 
-```text
---mount /host/path:/guest/path[,ro]
-```
+Omit ro when the guest must write. Mount sources are resolved to absolute paths and must be under the user's home directory or /tmp.
 
-Virtio-FS shared directories are presented as `root:root` in the guest. revm uses libkrun's `user.containers.override_stat` passthrough metadata instead of changing the host files' real UID/GID; the xattr remains on the host directory.
+## Raw disks
 
-Attach ext4 raw disks with `--raw-disk`:
+Use --raw-disk to attach a raw/ext4 disk in the guest. Missing images are created automatically.
 
-```bash
+~~~text
+--raw-disk <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=none|relaxed|full]
+~~~
+
+~~~bash
 revm run --id disk \
-  --raw-disk ~/.cache/revm/data.ext4,mnt=/data,version=v1 \
+  --raw-disk "$HOME/.cache/revm/data.ext4,version=v1,mnt=/data" \
   -- sh -c 'df -h /data'
-```
+~~~
 
-Disk format:
+Details:
 
-```text
---raw-disk <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>]
-```
+- mnt must be an absolute guest path. When omitted, the disk's default mount target is used.
+- version is stored and checked through user.vm.rawdisk.version; a mismatch recreates the image.
+- readonly and directio accept true or false.
+- sync accepts none, relaxed, or full.
+- uuid selects the filesystem UUID when a new image is created; an existing image is not rewritten.
 
-If the file does not exist, revm creates it. `version` is useful for rebuildable cache or data disks whose contents have a known schema.
+## Logs, sockets, and SSH keys
 
-## Environment And Proxy
+The default session directory is:
 
-Pass environment variables:
+~~~text
+~/.cache/revm/<session-id>/
+~~~
 
-```bash
-revm run --id env \
-  --envs GOPROXY=https://proxy.golang.org,direct \
-  --envs CI=true \
-  -- sh -c 'env | sort'
-```
+The default log is:
 
-Reuse the macOS system proxy:
-
-```bash
-revm run --id proxy --system-proxy -- sh -c 'curl -I https://example.com'
-```
-
-In gvisor network mode, system proxy endpoints that point at `127.0.0.1` are rewritten to a host address reachable from the guest.
-
-## Network
-
-`revm run` defaults to gvisor networking:
-
-```bash
-revm run --id net --network gvisor -- sh
-```
-
-Supported values:
-
-- `gvisor`: gvisor-tap-vsock with NAT, DNS, port forwarding, and container-friendly networking.
-- `tsi`: libkrun transparent socket interception. It is lighter, but does not support `revm ctl --port-export`.
-
-## Expose Guest Ports
-
-Port updates are performed by `revm ctl` against an existing session. They are not parsed by the `revm run` boot path.
-
-Start a long-running service:
-
-```bash
-revm run --id web -- sh -c 'cd /tmp && python3 -m http.server 8000'
-```
-
-Expose it from another terminal:
-
-```bash
-revm ctl --id web --list-port
-revm ctl --id web --port-export 127.0.0.1:8080:8000
-curl http://127.0.0.1:8080
-revm ctl --id web --port-unexport 127.0.0.1:8080
-```
-
-Port listing and port updates require gvisor networking. `--list-port` shows SSH, container-published ports, and manually exposed ports.
-
-## Attach
-
-`revm attach` can connect to an existing `run` session:
-
-```bash
-revm attach --id web --pty
-revm attach --id web -- sh -c 'ps aux'
-```
-
-`revm attach` never creates a new VM. It fails when the session does not exist.
-
-## Logs And Control Socket
-
-Default log path:
-
-```text
+~~~text
 ~/.cache/revm/<session-id>/logs/revm.log
-```
+~~~
 
-Set log output explicitly:
-
-```bash
+~~~bash
 revm run --id build --log-level debug --log-to /tmp/revm-build.log -- sh -c 'make test'
-```
-
-Export the management API socket:
-
-```bash
 revm run --id build --manage-api /tmp/revm-build-vmctl.sock -- sh
-```
+revm run --id build --ssh-key /tmp/revm-build-ssh-key -- sh
+~~~
 
-The management API is used by `revm ctl` to resolve attach metadata and the gvproxy endpoint.
+--manage-api and --ssh-key create symlinks to files inside the session. The management API is used by attach and ctl. Normal commands use guest-control over vsock; SSH remains mainly for --pty and compatibility.
+
+## Stop behavior
+
+The first SIGINT or SIGTERM requests the native libkrun shutdown. A second signal, launcher loss, or host-service failure enters the bounded force-stop path, which waits at most three seconds. A normal command exit returns the guest command result; failure to stop within the bound returns an error.
+
+## Complete option list
+
+~~~text
+--id
+--cpus
+--memory
+--envs
+--raw-disk
+--mount
+--system-proxy
+--workdir
+--network
+--manage-api
+--ssh-key
+--report-events
+--log-level
+--log-to
+~~~
+
+Run revm run --help for the complete help text from the current binary.

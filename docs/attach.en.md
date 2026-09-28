@@ -1,69 +1,83 @@
 # revm attach
 
-`revm attach` connects to an existing session. It never starts a new VM and does not process boot options. Non-PTY commands use the guest control vsock endpoint; `--pty` keeps SSH as the interactive compatibility path.
+revm attach connects to a running session. It does not build a VM, start a VM, or change boot options.
 
-## Usage
+Normal commands use the guest-control vsock endpoint. An interactive PTY uses the SSH compatibility path because guest-control currently provides streaming command execution rather than terminal allocation.
 
-```bash
+## Syntax
+
+~~~text
 revm attach --id <session-id> [--pty] [-- <command> [args...]]
-```
-
-Attach interactively:
-
-```bash
-revm attach --id dev --pty
-```
+~~~
 
 Run a command:
 
-```bash
+~~~bash
 revm attach --id dev -- sh -c 'uname -a'
-```
+revm attach --id dev -- podman ps
+~~~
 
-When no command is provided and `--pty` is not set, `/bin/sh` is executed.
+With no command and no --pty, attach runs /bin/sh:
 
-## Session
+~~~bash
+revm attach --id dev
+~~~
 
-`--id` must reference a running session:
+Open an interactive shell:
 
-```bash
+~~~bash
+revm attach --id dev --pty
+~~~
+
+--pty does not take a guest command after it; it opens an interactive root SSH shell.
+
+## Session lookup
+
+attach uses --id to locate:
+
+~~~text
+~/.cache/revm/<session-id>/socks/vmctl.sock
+~~~
+
+The target session must still be running. A stopped session retains logs and resources but cannot be attached.
+
+Start and attach:
+
+~~~bash
 revm run --id dev -- sh
 revm attach --id dev --pty
-```
+~~~
 
-Or:
+Container session:
 
-```bash
+~~~bash
 revm dockerd --id containers --podman-api /tmp/revm-containers.sock
 revm attach --id containers -- sh -c 'podman ps'
-```
+~~~
 
-## How It Works
+## Control-plane relationship
 
-`revm attach` reads the session management API:
+attach only handles guest commands and terminals:
 
-```text
-~/.cache/revm/<session-id>/socks/vmctl.sock
-```
+- guest-control carries command stdin, stdout, stderr, and exit status.
+- --pty reads SSH metadata from the management API, then uses a gvisor tunnel or a direct tsi address.
+- attach does not change port mappings; use ctl for that.
+- attach does not stop the VM; run or dockerd owns VM shutdown.
 
-The management API returns the guest-control endpoint and the SSH metadata used by the optional interactive compatibility path.
+## Logs and diagnostics
 
-## Logs
+~~~bash
+revm attach --id dev --log-level debug --log-to /tmp/revm-attach.log -- date
+tail -f ~/.cache/revm/dev/logs/revm.log
+~~~
 
-Default log path:
+When attach reports a missing session, verify that --id exactly matches the command that started it and check that the management socket exists. Guest command failures are returned with the guest exit error and stderr.
 
-```text
-~/.cache/revm/<session-id>/logs/revm.log
-```
+## Options
 
-Set log output:
-
-```bash
-revm attach --id dev --log-level debug --log-to /tmp/revm-attach.log -- sh -c 'date'
-```
-
-## Attach Versus ctl
-
-`revm attach` connects to the guest and runs user commands.
-
-`revm ctl` performs control-plane updates, such as port export and port unexport.
+| Option | Description |
+| --- | --- |
+| --id | Required session name. |
+| --pty | Open an interactive terminal through the SSH compatibility path. |
+| --log-level | trace, debug, info, warn, error, fatal, or panic. |
+| --log-to | Custom host log file. |

@@ -1,108 +1,132 @@
 # revm ctl
 
-`revm ctl` controls the control plane of an existing session. It never starts a new VM and never executes guest commands.
+revm ctl controls the host-side network control plane of a running session. It does not start a VM, execute a guest command, or modify a rootfs.
 
-Supported control operations:
+The only operations are:
 
-- `--list-port`: list current gvproxy port mappings.
-- `--port-export`: expose a guest TCP port on the host.
-- `--port-unexport`: remove a host port exposure.
+- --list-port: list current gvisor port mappings.
+- --port-export: expose a guest TCP port on the host.
+- --port-unexport: remove a host port exposure.
 
-Use [`revm attach`](./attach.en.md) to connect to the guest or execute commands.
+Use [revm attach](attach.en.md) for guest commands. Rootfs is outside ctl's scope; rootfs import, export, and --rootfs were removed.
 
-## Usage
+## Syntax
 
-```bash
+~~~text
 revm ctl --id <session-id> --list-port
-revm ctl --id <session-id> --port-export <spec>
-revm ctl --id <session-id> --port-unexport <spec>
-```
+revm ctl --id <session-id> --port-export <spec> [--port-export <spec>...]
+revm ctl --id <session-id> --port-unexport <spec> [--port-unexport <spec>...]
+~~~
 
-Port operations require `--id` to reference a running session.
+--id must reference a running session using gvisor networking. One invocation selects either list or port updates; one update invocation may contain both exports and unexports.
 
-## List Ports
+## List ports
 
-List every current port mapping:
-
-```bash
+~~~bash
 revm ctl --id web --list-port
-```
+~~~
 
-The output includes revm's internal SSH forward, container port publishing, and manually exposed ports:
+Example output:
 
-```text
+~~~text
 PROTOCOL  HOST            GUEST
 tcp       127.0.0.1:6123  192.168.127.2:22
 tcp       127.0.0.1:8080  192.168.127.2:8000
-```
+~~~
 
-## Expose Ports
+The list can include:
 
-Expose a guest port:
+- revm's internal SSH forwarding used by attach;
+- ports published by Podman containers with -p;
+- ports created manually with ctl.
 
-```bash
+The list comes from gvproxy and fails when the gvisor session is not running.
+
+## Export and unexport
+
+Expose guest port 8000 as host port 8080:
+
+~~~bash
 revm ctl --id web --port-export 127.0.0.1:8080:8000
 curl http://127.0.0.1:8080
-```
+~~~
 
-Remove the exposure:
+When the host IP is omitted, 127.0.0.1 is used:
 
-```bash
+~~~bash
+revm ctl --id web --port-export 8080:8000
+~~~
+
+Remove an exposure with its host endpoint:
+
+~~~bash
 revm ctl --id web --port-unexport 127.0.0.1:8080
-```
+~~~
 
-Update multiple ports at once:
+Update several ports in one call:
 
-```bash
+~~~bash
 revm ctl --id web \
   --port-export 127.0.0.1:8080:8000 \
-  --port-export 127.0.0.1:8443:8443
-```
+  --port-export 127.0.0.1:8443:8443 \
+  --port-unexport 127.0.0.1:9000
+~~~
 
-Port formats:
+Formats:
 
-```text
+~~~text
 --port-export [tcp:]<host-port>:<guest-port>
 --port-export [tcp:]<host-ip>:<host-port>:<guest-port>
 --port-unexport [tcp:]<host-port>
 --port-unexport [tcp:]<host-ip>:<host-port>
-```
+~~~
 
-When host IP is omitted, `127.0.0.1` is used. Only TCP and IPv4 are currently supported.
+Only TCP and IPv4 are accepted today. Ports must be 1 through 65535. A host port cannot conflict with revm's internal SSH forwarding or be duplicated in one update batch.
 
-## How It Works
+## How it works
 
-`revm ctl` first reads VM metadata from the session management API:
+ctl reads the VM view from the session management API:
 
-```text
+~~~text
 ~/.cache/revm/<session-id>/socks/vmctl.sock
-```
+~~~
 
-Port updates read the gvproxy control endpoint from the management API, then call the gvproxy forwarder API:
+The management API returns the gvproxy control endpoint. ctl then calls gvproxy's expose or unexpose forwarder API. No guest command is needed.
 
-```text
-/services/forwarder/expose
-/services/forwarder/unexpose
-```
+## Invalid usage
 
-Because of that, port updates require gvisor networking. `tsi` networking does not support `--port-export` or `--port-unexport`.
+No operation is an error:
 
-## Invalid Usage
-
-This fails because no control operation is selected:
-
-```bash
+~~~bash
 revm ctl --id dev
-```
+~~~
 
-This fails because `ctl` does not execute guest commands:
+ctl does not execute guest commands:
 
-```bash
+~~~bash
 revm ctl --id dev -- sh
-```
+~~~
 
-Use this instead:
+Use:
 
-```bash
+~~~bash
 revm attach --id dev -- sh
-```
+~~~
+
+A tsi session does not support list or port updates:
+
+~~~bash
+revm run --id light --network tsi -- sh
+revm ctl --id light --list-port
+~~~
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| --id | Required session name. |
+| --list-port | List gvisor mappings. |
+| --port-export | Create a TCP/IPv4 mapping; repeatable. |
+| --port-unexport | Remove a TCP/IPv4 mapping; repeatable. |
+| --log-level | Log level. |
+| --log-to | Custom host log file. |

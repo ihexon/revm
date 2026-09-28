@@ -1,52 +1,80 @@
-# Guest Agent
+# Guest agent
 
-`cmd/guest-agent` is the in-guest bootstrap process. Users should not run it directly; the host-side `revm` binary starts the VM, injects configuration, and lets the guest agent finish initialization.
+cmd/guest-agent builds the process injected into the Alpine VM at /.bin/guest-agent. It is an internal component; users normally interact with it through revm run, revm dockerd, revm attach, or revm ctl.
 
 ## Responsibilities
 
-- Use the Alpine rootfs utilities installed by `apk`; only the guest agent is
-  injected into `/.bin`.
-- Fetch VM configuration from the host through vsock and persist it inside the guest.
-- Mount `/proc`, `/sys`, `/dev`, `/tmp`, `/run`, raw block devices, and VirtIO-FS shares.
-- Configure guest networking for `gvisor` or `tsi`.
-- Start the optional SSH compatibility endpoint, time sync, and mode-specific long-running services.
-- Execute the user command for `revm run`.
-- Start the Podman API service for `revm dockerd`.
-- Configure Podman port publishing so container `-p` mappings call gvproxy expose/unexpose.
-- Report readiness and lifecycle state back to the host.
-- Sync disks and force reboot when the host requests shutdown.
+The guest agent:
 
-## Boot Flow
+- reads the VM configuration delivered through the ignition vsock or Unix socket;
+- mounts /proc, /sys, /dev, /tmp, /run, block devices, and VirtIO-FS shares;
+- configures gvisor or tsi networking;
+- starts the guest-control HTTP-over-vsock service;
+- starts the optional dropbear SSH compatibility endpoint;
+- runs the command supplied to revm run;
+- starts the Podman API service for revm dockerd;
+- supervises the Podman and dropbear processes;
+- forwards host lifecycle signals to guest children;
+- flushes mounted disks and reboots the guest when the compatibility shutdown path is used.
 
-1. Initialize logging and start the injected guest agent.
-2. Read the machine config from the host.
-3. Mount pseudo filesystems, block devices, and shared directories.
-4. Configure network.
-5. Start the optional SSH compatibility service and time sync.
-6. Dispatch by run mode:
-   - `rootfs`: run the configured command.
-   - `docker`: start the Podman API service and keep the VM alive.
-7. Run readiness probes and notify the host.
-8. Wait for shutdown, sync disks, and reboot.
+The Alpine rootfs is built separately and contains the runtime commands and apk packages. The guest agent is the only executable injected at runtime.
 
-## Host Control
+## Boot sequence
 
-The guest agent exposes no public user CLI. Host control flows through services created by the main `revm` process:
+1. Initialize logging from LOG_LEVEL.
+2. Read the guest specification from the host.
+3. Mount pseudo filesystems and the configured storage.
+4. Attach the guest log and signal virtio ports when available.
+5. Start the guest-control server.
+6. Configure the selected network.
+7. Dispatch by mode:
+   - command mode runs the requested binary and exits when it finishes;
+   - container mode starts Podman system service and remains alive.
+8. Start time synchronization and the SSH compatibility endpoint.
+9. Report readiness through the host-side management and Podman probes.
+10. On shutdown, stop child services, sync disks, and reboot.
 
-- `revm attach` uses GuestControl over vsock; `--pty` may use the optional SSH compatibility endpoint.
-- `revm ctl --port-export` and `revm ctl --port-unexport` obtain the gvproxy endpoint from the host management API and call gvproxy's forwarder API.
-- Container port publishing is initiated by Podman inside the guest and handled by gvproxy on the host.
+The host normally requests shutdown through libkrun's native shutdown API. Guest-control POST /v1/shutdown and the virtio signal path remain compatibility fallbacks for guests or older backends that do not complete native shutdown.
 
-## File Map
+## Guest-control
 
-| Path | Purpose |
-| ---- | ------- |
-| `main.go` | Guest boot orchestration, mode dispatch, and lifecycle |
-| `pkg/service/mount.go` | Pseudo filesystem, block device, and VirtIO-FS mounts |
-| `pkg/service/network.go` | Guest network setup for `gvisor` and `tsi` |
-| `pkg/service/dropbear.go` | Dropbear SSH server bootstrap |
-| `pkg/service/podman.go` | Podman system service bootstrap |
-| `pkg/service/runcmdline.go` | User command execution with console handling |
-| `pkg/service/readiness.go` | SSH, Podman, and network readiness probes |
-| `pkg/service/shutdown.go` | Shutdown coordination |
-| `pkg/supervisor/supervisor.go` | Minimal restart-capable process supervisor |
+The host-side attach path uses the guest-control endpoint for non-PTY commands. The endpoint streams stdout, stderr, and the final exit status. The shutdown endpoint is intentionally small and is not a general-purpose guest management API.
+
+PTY support is separate. revm attach --pty uses the SSH compatibility service because terminal allocation and interactive terminal resize are not part of the guest-control stream.
+
+## Storage and ownership
+
+The agent mounts VirtIO-FS shares at the configured target paths and mounts block devices at their configured guest paths. VirtIO-FS ownership is supplied by libkrun passthrough metadata; the guest-visible owner is root:root even when the host directory belongs to another user.
+
+The host writes user.containers.override_stat for regular files and directories when preparing a share. Symlink inodes are not rewritten.
+
+## Networking
+
+gvisor mode obtains an address through gvisor-tap-vsock and configures the guest route and DNS. tsi mode uses libkrun transparent socket interception and does not start gvproxy. Container mode is intentionally restricted to gvisor because Podman API proxying and container port publication use gvproxy.
+
+## Source map
+
+| Path | Responsibility |
+| --- | --- |
+| main.go | boot orchestration, signal ports, and mode dispatch |
+| pkg/service/vmconfig.go | fetch and decode the host VM configuration |
+| pkg/service/mount.go | pseudo filesystems, block devices, and VirtIO-FS |
+| pkg/service/network.go | gvisor and tsi guest networking |
+| pkg/service/guestcontrol.go | command and shutdown HTTP service |
+| pkg/service/dropbear.go | SSH compatibility service |
+| pkg/service/podman.go | Podman system service |
+| pkg/service/runcmdline.go | command execution and output handling |
+| pkg/service/shutdown.go | compatibility sync and reboot path |
+| pkg/supervisor/supervisor.go | restart-capable child process supervisor |
+| pkg/network and pkg/vsock | guest network and vsock helpers |
+
+## Build and test
+
+The guest agent is built as part of the root build script and embedded into the host release. For package-level development:
+
+~~~bash
+cd cmd/guest-agent
+go test ./...
+~~~
+
+The guest agent depends on the protocol and define packages from the parent module. Run the complete repository test suite before changing the wire format.

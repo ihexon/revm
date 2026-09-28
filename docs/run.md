@@ -1,172 +1,142 @@
 # revm run
 
-[English](./run.en.md)
+[English](run.en.md)
 
-`revm run` 启动一个内置 Alpine Linux session，并在 guest 内执行命令。它适合构建、测试、脚本执行、一次性调试和需要干净 Linux 环境的本地工具。
+revm run 启动一个新的 session，使用程序内置的 Alpine rootfs，在 guest 内执行一条命令。它适合构建、测试、脚本、一次性 Linux 工具和需要隔离环境的本地任务。
 
-## 基本用法
+## 语法
 
-```bash
-revm run --id <session-id> [flags] -- <command> [args...]
-```
+~~~text
+revm run --id <session-id> [options] -- <command> [args...]
+~~~
 
-`--id` 是必填项。`--` 之后的内容会作为 guest 内命令执行。
+--id 必填。-- 后面的参数原样组成 guest 命令；不应把宿主 shell 语法直接交给 revm，复杂逻辑请显式使用 sh -c。
 
-```bash
-revm run --id quick -- sh -c 'uname -a && cat /etc/os-release'
-```
+~~~bash
+revm run --id shell -- sh -c 'uname -a; cat /etc/os-release'
+revm run --id build --mount "$PWD:/workspace" --workdir /workspace -- sh -c 'make test'
+~~~
 
-打开交互式 shell：
+命令退出后，revm 请求 guest 关闭并退出。要保持 session 存活，请在 guest 中运行长期进程，或使用 revm dockerd。
 
-```bash
-revm run --id shell -- sh
-```
+## rootfs 策略
 
-挂载当前项目并在 guest 中执行测试：
+VM rootfs 固定来自 release 内置的 Alpine 压缩包。它包括：
 
-```bash
-revm run --id build \
+- Alpine 基础用户空间和 apk 包管理器
+- guest-agent
+- dropbear SSH 兼容服务
+- Podman、containers 配置和容器网络工具
+- 网络、挂载、日志和生命周期所需工具
+
+run 不支持 --rootfs，也不支持替换、导入或导出 VM rootfs。需要其他发行版或自定义用户空间时，应启动 revm dockerd，再通过 Podman 运行对应镜像；这样 workload 不会改变 VM 控制面。
+
+## 资源和网络
+
+~~~bash
+revm run --id test --cpus 4 --memory 4096 -- sh -c './test.sh'
+revm run --id net --network gvisor -- sh
+revm run --id light --network tsi -- sh
+~~~
+
+选项：
+
+| 选项 | 说明 |
+| --- | --- |
+| --cpus | vCPU 数量。未设置或小于 1 时使用主机 CPU 数量；最大 32。 |
+| --memory | 内存 MB。未设置时使用主机总内存；最小 512。 |
+| --network | gvisor 或 tsi，默认 gvisor。 |
+| --workdir | guest 命令的工作目录，默认 /。 |
+| --envs KEY=VALUE | 传入 guest 命令的环境变量，可重复。 |
+| --system-proxy | 读取 macOS 系统 HTTP/HTTPS 代理并传入 guest。gvisor 下会改写 127.0.0.1 代理地址。 |
+
+gvisor 使用 gvisor-tap-vsock，提供 DNS、NAT、TCP/UDP 和端口转发。tsi 使用 libkrun 的透明 socket interception，启动路径更轻，但不能使用 ctl 的手动端口映射。
+
+## VirtIO-FS 目录
+
+使用 --mount 将宿主目录共享到 guest：
+
+~~~text
+--mount /host/path:/guest/path[,ro]
+~~~
+
+~~~bash
+revm run --id files \
   --mount "$PWD:/workspace" \
-  --workdir /workspace \
-  -- sh -c 'make test'
-```
-
-## Alpine 系统根文件系统
-
-`revm run` 始终使用随程序打包的特制 Alpine rootfs。它包含 guest agent、网络初始化、日志和控制面所需的运行时，不支持用宿主目录替换 VM 根文件系统。
-
-需要运行其他发行版或自定义用户空间时，应通过 `revm dockerd` 和 Podman workload 实现；未来的 rootfs workload 支持不会改变 VM 的 Alpine 控制面。
-
-## 资源
-
-```bash
-revm run --id test \
-  --cpus 4 \
-  --memory 4096 \
-  -- sh -c './test.sh'
-```
-
-- `--cpus`: vCPU 数量。未设置或小于 1 时使用主机 CPU 数量。
-- `--memory`: 内存大小，单位 MB。未设置时使用主机可用内存；最小值是 512。
-
-## 文件与目录
-
-共享目录使用 VirtIO-FS：
-
-```bash
-revm run --id dev \
-  --mount "$PWD:/workspace" \
-  --mount "$HOME/.cache/go-build:/go-cache,ro" \
+  --mount "$HOME/.cache:/host-cache,ro" \
   --workdir /workspace \
   -- sh
-```
+~~~
 
-挂载格式：
+共享目录在 guest 中按 root:root 显示。macOS 下 revm 使用 libkrun passthrough 支持的 user.containers.override_stat xattr 记录 guest 可见的 UID、GID 和权限，不修改宿主文件真实所有者。符号链接不做递归修正。写入 xattr 时会临时处理宿主只读目录，再恢复原权限。
 
-```text
---mount /host/path:/guest/path[,ro]
-```
+如果 guest 需要读写目录，不要加 ro。mount 源路径会被解析为绝对路径，且必须位于用户 home 或 /tmp 下。
 
-Virtio-FS 共享目录在 guest 中按 `root:root` 显示。revm 使用 libkrun passthrough 支持的 `user.containers.override_stat` 元数据完成映射，不修改宿主文件的真实 UID/GID；宿主目录中的该 xattr 会被保留。
+## 原始磁盘
 
-原始 ext4 磁盘使用 `--raw-disk`：
+--raw-disk 将 raw/ext4 磁盘挂载到 guest。镜像不存在时自动创建。
 
-```bash
+~~~text
+--raw-disk <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=none|relaxed|full]
+~~~
+
+~~~bash
 revm run --id disk \
-  --raw-disk ~/.cache/revm/data.ext4,mnt=/data,version=v1 \
+  --raw-disk "$HOME/.cache/revm/data.ext4,version=v1,mnt=/data" \
   -- sh -c 'df -h /data'
-```
+~~~
 
-磁盘格式：
+说明：
 
-```text
---raw-disk <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>]
-```
+- mnt 必须是绝对 guest 路径；省略时使用磁盘自身的默认挂载目标。
+- version 写入并校验 user.vm.rawdisk.version；版本不一致时会重建镜像。
+- readonly、directio 接受 true 或 false。
+- sync 支持 none、relaxed、full。
+- uuid 只在新建镜像时用于指定文件系统 UUID；已存在镜像不会强制改 UUID。
 
-如果文件不存在，revm 会创建它。`version` 用于区分磁盘内容版本，适合构建缓存和可重建数据。
+## 日志、socket 和 SSH key
 
-## 环境变量与代理
+默认 session 目录：
 
-传入环境变量：
+~~~text
+~/.cache/revm/<session-id>/
+~~~
 
-```bash
-revm run --id env \
-  --envs GOPROXY=https://proxy.golang.org,direct \
-  --envs CI=true \
-  -- sh -c 'env | sort'
-```
+默认日志：
 
-复用 macOS 系统代理：
-
-```bash
-revm run --id proxy --system-proxy -- sh -c 'curl -I https://example.com'
-```
-
-在 gvisor 网络模式下，指向 `127.0.0.1` 的系统代理会被改写成 guest 可访问的 host 地址。
-
-## 网络
-
-`revm run` 默认使用 gvisor 网络：
-
-```bash
-revm run --id net --network gvisor -- sh
-```
-
-可选值：
-
-- `gvisor`: 使用 gvisor-tap-vsock，支持 NAT、DNS、端口暴露和容器场景。
-- `tsi`: 使用 libkrun transparent socket interception，路径更轻，但不支持 `revm ctl --port-export`。
-
-## 暴露 guest 端口
-
-端口暴露由 `revm ctl` 操作已有 session，不在 `revm run` 启动路径里解析。
-
-先启动一个长期运行的服务：
-
-```bash
-revm run --id web -- sh -c 'cd /tmp && python3 -m http.server 8000'
-```
-
-在另一个终端暴露端口：
-
-```bash
-revm ctl --id web --list-port
-revm ctl --id web --port-export 127.0.0.1:8080:8000
-curl http://127.0.0.1:8080
-revm ctl --id web --port-unexport 127.0.0.1:8080
-```
-
-端口展示和端口更新都要求 session 使用 gvisor 网络。`--list-port` 会展示 SSH、容器发布端口和手动暴露端口。
-
-## Attach
-
-`revm attach` 可以连接到已有 `run` session：
-
-```bash
-revm attach --id web --pty
-revm attach --id web -- sh -c 'ps aux'
-```
-
-`revm attach` 不会创建新 VM。如果 session 不存在，命令会失败。
-
-## 日志与控制接口
-
-默认日志路径：
-
-```text
+~~~text
 ~/.cache/revm/<session-id>/logs/revm.log
-```
+~~~
 
-显式指定日志：
-
-```bash
+~~~bash
 revm run --id build --log-level debug --log-to /tmp/revm-build.log -- sh -c 'make test'
-```
-
-导出管理 API socket：
-
-```bash
 revm run --id build --manage-api /tmp/revm-build-vmctl.sock -- sh
-```
+revm run --id build --ssh-key /tmp/revm-build-ssh-key -- sh
+~~~
 
-管理 API 用于 `revm ctl` 获取 attach 信息和 gvproxy endpoint。
+--manage-api 和 --ssh-key 创建指向 session 内部文件的符号链接。管理 API 供 attach 和 ctl 使用；普通命令通过 guest-control vsock 执行，SSH 主要保留给 --pty 和兼容场景。
+
+## 停止行为
+
+第一次 SIGINT 或 SIGTERM 使用 libkrun 原生 shutdown 请求 guest 关闭。第二次信号、宿主 launcher 消失或 host service 失败会进入有界 force-stop，最长等待三秒。命令正常结束返回 guest 的退出结果；无法在有界时间内停止时返回错误。
+
+## 全部选项
+
+~~~text
+--id
+--cpus
+--memory
+--envs
+--raw-disk
+--mount
+--system-proxy
+--workdir
+--network
+--manage-api
+--ssh-key
+--report-events
+--log-level
+--log-to
+~~~
+
+执行 revm run --help 查看当前二进制的完整说明。

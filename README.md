@@ -1,128 +1,137 @@
 # revm
 
-`revm` runs lightweight Linux microVM sessions from one CLI entrypoint.
+revm runs Linux commands in a small libkrun VM. It works on Apple Silicon macOS and on Linux amd64/arm64.
 
-It has four user-facing subcommands:
+Each VM has a name. The name is used for its sockets, logs, keys, and disks, so you can come back to the same VM with attach or ctl.
 
-- `revm run`: boot the built-in Alpine Linux VM and run a command.
-- `revm dockerd`: boot the built-in container runtime and expose a Docker-compatible Podman API socket.
-- `revm attach`: connect to an existing session.
-- `revm ctl`: operate on an existing session, including port forwarding updates.
+The VM always boots the Alpine rootfs shipped with revm. If you need a different userspace, start the container mode and run it with Podman. The VM rootfs itself is fixed.
 
-The host CLI is intentionally small: start a session, control a session, or connect external tools to the sockets that the session publishes.
+## Install
 
-## Quick Start
+Download a release for your platform, unpack it, and run bin/revm. Linux bundles include the loader and libraries they need; keep the directory layout from the archive.
 
-Run a command in the built-in Linux environment:
+To build the application from a checkout:
 
-```bash
-revm run --id shell -- sh -c 'uname -a && cat /etc/os-release'
-```
+~~~bash
+go run ./scripts --build revm
+~~~
 
-Start a container runtime session:
+libkrun, libkrunfw, and the Alpine rootfs are built by the GitHub Actions dependency workflow. The application build downloads the versions recorded in deps.lock; it does not rebuild those projects on the local machine.
 
-```bash
-revm dockerd --id dev --podman-api /tmp/revm-dev.sock
-export DOCKER_HOST=unix:///tmp/revm-dev.sock
-docker run --rm hello-world
-```
+## Run a command
 
-Attach to an existing session:
-
-```bash
-revm attach --id dev --pty
-```
-
-Expose a guest port on the host:
-
-```bash
-revm ctl --id dev --list-port
-revm ctl --id dev --port-export 127.0.0.1:8080:80
-curl http://127.0.0.1:8080
-revm ctl --id dev --port-unexport 127.0.0.1:8080
-```
-
-## Sessions
-
-Every command requires `--id`. The session ID is the stable name used for runtime state, sockets, logs, generated SSH keys, and later control operations.
-
-By default, session state is stored under:
-
-```text
-~/.cache/revm/<session-id>
-```
-
-Important paths inside a session:
-
-- `socks/vmctl.sock`: management API for the running VM.
-- `socks/gvpctl.sock`: gvproxy control API used by port forwarding.
-- `socks/podman-api.sock`: default Podman API proxy socket for `revm dockerd`.
-- `logs/revm.log`: host-side command and VM lifecycle log.
-- `ssh/ssh-key`: generated private key used for attach and internal control.
-
-Use `--manage-api`, `--podman-api`, `--ssh-key`, and `--log-to` when a stable external path is needed.
-
-## Command Model
-
-`revm run` creates a session from the packaged Alpine rootfs and runs the command after `--` inside the guest.
-
-```bash
+~~~bash
+revm run --id shell -- sh
 revm run --id build \
   --mount "$PWD:/workspace" \
   --workdir /workspace \
   -- sh -c 'make test'
-```
+~~~
 
-`revm dockerd` creates a long-running container session.
+Everything after the double dash is run in the guest. The default network is gvisor. Use --network tsi when you want libkrun's transparent socket interception and do not need ctl port forwarding.
 
-```bash
-revm dockerd --id containers \
-  --podman-api /tmp/revm-containers.sock \
-  --mount "$PWD:/workspace"
-```
+The rootfs already contains the guest agent and the tools used to bring up the network, mount filesystems, and run commands. It also includes Podman and the packages installed by the Alpine rootfs build. There is no custom rootfs option and no rootfs import/export command.
 
-`revm attach` and `revm ctl` never boot a new VM. They only talk to an existing session.
+## Run containers
 
-```bash
-revm attach --id containers --pty
-revm attach --id containers -- sh -c 'cat /etc/os-release'
-revm ctl --id containers --list-port
-revm ctl --id containers --port-export 8080:80
-```
+~~~bash
+revm dockerd --id containers --podman-api "$PWD/podman.sock"
+export DOCKER_HOST="unix://$PWD/podman.sock"
+docker run --rm alpine uname -a
+~~~
 
-## Networking
+Podman clients can use the same socket through CONTAINER_HOST. The container storage disk lives in the session directory by default. Give --container-disk a path if the storage should survive removal of the session directory.
 
-`revm run` defaults to `--network gvisor`; `revm dockerd` always uses gvisor networking. Port export and unexport require gvisor because they are implemented through gvproxy.
+The host home directory is shared into container sessions at the same path. Add more shares with --mount.
 
-Port specs are IPv4-only and TCP-only:
+## Attach to a running VM
 
-```text
---port-export [tcp:]<host-port>:<guest-port>
---port-export [tcp:]<host-ip>:<host-port>:<guest-port>
---port-unexport [tcp:]<host-port>
---port-unexport [tcp:]<host-ip>:<host-port>
-```
+~~~bash
+revm attach --id shell
+revm attach --id shell --pty
+revm attach --id containers -- podman ps
+~~~
 
-If the host IP is omitted, `127.0.0.1` is used.
+A normal attach uses the guest-control vsock service. The PTY form uses the SSH compatibility service because it needs terminal allocation. SSH is not required for ordinary command execution.
 
-## Build
+## Forward a port
 
-Build the release bundle from source:
+Port forwarding is available for sessions using gvisor:
 
-```bash
-go run ./scripts --build revm
-```
+~~~bash
+revm ctl --id web --list-port
+revm ctl --id web --port-export 127.0.0.1:8080:8000
+revm ctl --id web --port-unexport 127.0.0.1:8080
+~~~
 
-The build reads `deps.lock`, downloads the pinned dependency archives from this repository's dependency release, verifies SHA-256 checksums, embeds the guest agent helpers, links the host binary, and writes release output under `out/revm`.
+Forward specifications are TCP and IPv4:
 
-Dependency archives are built separately by the manual `build-deps` workflow. Source inputs for that workflow are pinned in `deps/sources.lock`; the published asset release consumed by `revm` is pinned in `deps.lock`.
+~~~text
+[host-ip:]host-port:guest-port
+~~~
 
-Linux release archives are built to run on both glibc and musl based distributions. The public entrypoint in `bin/` is a launcher script that starts the bundled `.real` executable through the bundled glibc dynamic linker and library set in `lib/`. Run `bin/revm` directly after extracting an archive; do not bypass the launcher by running `bin/revm.real`.
+If the host address is omitted, revm uses 127.0.0.1. The SSH port used by revm is reserved.
 
-## Documentation
+## Files and disks
 
-- [Documentation index](docs/README.md)
-- [Run commands in a VM](docs/run.en.md)
-- [Run container workloads](docs/dockerd.en.md)
-- [Attach to sessions](docs/attach.en.md)
-- [Control existing sessions](docs/ctl.en.md)
+The default session directory is:
+
+~~~text
+~/.cache/revm/<id>/
+~~~
+
+It contains the log, management sockets, generated SSH key, extracted Alpine rootfs, and any session-local disks. A normal exit leaves the directory in place.
+
+Share a host directory with VirtIO-FS:
+
+~~~bash
+revm run --id files --mount "$PWD:/workspace" -- sh
+~~~
+
+The guest sees shared files as root:root. On macOS, revm stores that guest view in the user.containers.override_stat extended attribute instead of changing the host UID or GID. Symlinks are left alone.
+
+Attach a raw disk when a command needs persistent data:
+
+~~~bash
+revm run --id disk \
+  --raw-disk "$HOME/.cache/revm/data.ext4,mnt=/data,version=v1" \
+  -- sh -c 'df -h /data'
+~~~
+
+Images that do not exist are created. Changing a disk version recreates the image.
+
+## Stopping
+
+The first Ctrl-C asks libkrun to shut the guest down. The host keeps the management and network services alive until the guest exits. A second Ctrl-C, a lost launcher, or a failed host service uses the bounded force-stop path.
+
+## Logs
+
+Logs go to ~/.cache/revm/<id>/logs/revm.log by default.
+
+~~~bash
+revm run --id build --log-level debug --log-to /tmp/revm-build.log -- sh -c 'make test'
+tail -f ~/.cache/revm/build/logs/revm.log
+~~~
+
+Use --manage-api, --podman-api, or --ssh-key when another program needs a socket or key at a known path.
+
+## Development
+
+Run the Go tests:
+
+~~~bash
+PKG_CONFIG_PATH="$(brew --prefix libarchive)/lib/pkgconfig:$(brew --prefix e2fsprogs)/lib/pkgconfig" \
+DYLD_LIBRARY_PATH=/tmp/.deps/libkrun/lib \
+go test ./...
+~~~
+
+Dependency builds are defined in .github/workflows/build-deps.yml. Their source revisions are in deps/sources.lock and the released archives are pinned in deps.lock.
+
+## More documentation
+
+- docs/run.md and docs/run.en.md
+- docs/dockerd.md and docs/dockerd.en.md
+- docs/attach.md and docs/attach.en.md
+- docs/ctl.md and docs/ctl.en.md
+- deps/README.md
+- cmd/guest-agent/README.md
