@@ -36,7 +36,7 @@ On Apple Silicon, `--gpu venus` adds a headless virtio-GPU device. The guest can
 revm run --id gpu --gpu venus -- vulkaninfo --summary
 ~~~
 
-The built-in Alpine rootfs contains Mesa's virtio Vulkan driver and `vulkan-tools`. Venus depends on the libkrun and virglrenderer artifacts from the dependency workflow, so a dependency release must be rebuilt after changing those projects.
+The built-in Alpine rootfs contains Mesa's virtio Vulkan driver, the Vulkan loader, and `vulkan-tools`. Venus depends on the libkrun and virglrenderer artifacts from the dependency workflow, so a dependency release must be rebuilt after changing those projects.
 
 The rootfs already contains the guest agent and the tools used to bring up the network, mount filesystems, and run commands. It also includes Podman and the packages installed by the Alpine rootfs build. There is no custom rootfs option and no rootfs import/export command.
 

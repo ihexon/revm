@@ -29,7 +29,7 @@ Manually dispatch build-deps in GitHub Actions with a release tag such as deps-v
 
 - builds Alpine rootfs, libkrun, and libkrunfw on Linux amd64 and arm64 runners;
 - builds libkrun, libkrunfw, and rendering dependencies on a macOS arm64 runner;
-- preinstalls bash, ca-certificates, dropbear, iproute2, nftables, openntpd, podman, tar, util-linux, zstd, mesa-vulkan-virtio, and vulkan-tools in the Alpine rootfs;
+- preinstalls bash, ca-certificates, dropbear, iproute2, nftables, openntpd, podman, tar, util-linux, zstd, mesa-vulkan-virtio, vulkan-loader, and vulkan-tools in the Alpine rootfs;
 - writes user.containers.override_stat metadata for the packaged rootfs;
 - keeps the aarch64 libkrunfw kernel on 4K guest pages for the current macOS Venus path;
 - generates SHA256SUMS and a manifest;

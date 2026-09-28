@@ -61,7 +61,7 @@ gvisor 使用 gvisor-tap-vsock，提供 DNS、NAT、TCP/UDP 和端口转发。ts
 revm run --id gpu --gpu venus -- sh -c 'ls -l /dev/dri/renderD128; vulkaninfo --summary'
 ~~~
 
-默认 rootfs 已安装 `mesa-vulkan-virtio` 和 `vulkan-tools`。`native-context` 尚未作为稳定选项提供。Venus 需要使用包含 GPU 支持的 libkrun、virglrenderer 和 libkrunfw 依赖 release。
+默认 rootfs 已安装 `mesa-vulkan-virtio`、`vulkan-loader` 和 `vulkan-tools`。`native-context` 尚未作为稳定选项提供。Venus 需要使用包含 GPU 支持的 libkrun、virglrenderer 和 libkrunfw 依赖 release。
 
 ## VirtIO-FS 目录
 

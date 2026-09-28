@@ -59,7 +59,7 @@ gvisor uses gvisor-tap-vsock for DNS, NAT, TCP/UDP, and port forwarding. tsi use
 revm run --id gpu --gpu venus -- sh -c 'ls -l /dev/dri/renderD128; vulkaninfo --summary'
 ~~~
 
-The packaged rootfs includes `mesa-vulkan-virtio` and `vulkan-tools`. `native-context` is not a stable revm option yet. Venus requires dependency releases built with GPU support in libkrun, virglrenderer, and libkrunfw.
+The packaged rootfs includes `mesa-vulkan-virtio`, `vulkan-loader`, and `vulkan-tools`. `native-context` is not a stable revm option yet. Venus requires dependency releases built with GPU support in libkrun, virglrenderer, and libkrunfw.
 
 ## VirtIO-FS directories
 
