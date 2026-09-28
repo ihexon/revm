@@ -383,7 +383,7 @@ func (b *builder) prepareRuntimeLibsDarwin(target string) error {
 }
 
 func (b *builder) prepareRuntimeLibsLinux(target string) error {
-	libDir := b.libDir(target)
+	libDir := filepath.Clean(b.libDir(target))
 
 	libkrunDir, err := b.depLibDir("libkrun")
 	if err != nil {
@@ -410,7 +410,8 @@ func (b *builder) prepareRuntimeLibsLinux(target string) error {
 		return err
 	}
 	for _, path := range deps {
-		if strings.HasPrefix(path, libDir+string(os.PathSeparator)) {
+		cleanPath := filepath.Clean(path)
+		if strings.HasPrefix(cleanPath, libDir+string(os.PathSeparator)) {
 			continue
 		}
 		if err := copyResolvedFileWithCP(path, libDir+"/"); err != nil {
