@@ -96,7 +96,7 @@ Share a host directory with VirtIO-FS:
 revm run --id files --mount "$PWD:/workspace" -- sh
 ~~~
 
-The guest sees shared files as root:root. On macOS, revm stores that guest view in the user.containers.override_stat extended attribute instead of changing the host UID or GID. Symlinks are left alone.
+Existing shared files retain the host UID, GID, and mode in the guest. revm does not pre-process external VirtIO-FS directories.
 
 Attach a raw disk when a command needs persistent data:
 

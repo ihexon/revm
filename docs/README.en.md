@@ -17,7 +17,7 @@ revm is a small CLI that manages libkrun microVM sessions. Every session has one
 - --rootfs and rootfs import/export commands are removed.
 - A different distribution or userspace should run as a Podman workload inside the Alpine VM.
 - Non-interactive commands use the guest-control vsock endpoint. SSH remains only as a PTY and compatibility entrypoint.
-- VirtIO-FS shares appear as root:root in the guest. On macOS, user.containers.override_stat stores the guest-visible UID, GID, and mode.
+- Existing files in VirtIO-FS shares retain the host UID, GID, and mode in the guest; revm does not pre-process external shared directories.
 - macOS arm64 can enable a headless virtio-GPU Venus device with `--gpu venus`; GPU is disabled by default.
 - run and dockerd create VMs; attach and ctl only connect to existing sessions.
 

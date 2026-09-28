@@ -77,7 +77,7 @@ revm run --id files \
   -- sh
 ~~~
 
-Shared inodes appear as root:root in the guest. On macOS, revm uses libkrun passthrough's user.containers.override_stat xattr to record the guest-visible UID, GID, and mode without changing the host ownership. Symlink inodes are not rewritten. Read-only host directories are temporarily made writable while the xattr is written, then restored.
+Existing shared inodes retain the host UID, GID, and mode in the guest. revm does not pre-process external shared directories.
 
 Omit ro when the guest must write. Mount sources are resolved to absolute paths and must be under the user's home directory or /tmp.
 

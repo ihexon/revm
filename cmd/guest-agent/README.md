@@ -44,9 +44,7 @@ PTY support is separate. revm attach --pty uses the SSH compatibility service be
 
 ## Storage and ownership
 
-The agent mounts VirtIO-FS shares at the configured target paths and mounts block devices at their configured guest paths. VirtIO-FS ownership is supplied by libkrun passthrough metadata; the guest-visible owner is root:root even when the host directory belongs to another user.
-
-The host writes user.containers.override_stat for regular files and directories when preparing a share. Symlink inodes are not rewritten.
+The agent mounts VirtIO-FS shares at the configured target paths and mounts block devices at their configured guest paths. Existing shared inodes retain the host UID, GID, and mode as reported by libkrun passthrough.
 
 ## Networking
 

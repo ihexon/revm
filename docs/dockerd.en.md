@@ -59,7 +59,7 @@ revm dockerd --id app \
   --mount "$PWD:/workspace"
 ~~~
 
-dockerd also mounts the host home directory at the same path in the guest, which lets workloads use project files, credentials, and caches. Shared inodes appear as root:root in the guest; on macOS, user.containers.override_stat provides the guest UID/GID view without changing host ownership.
+dockerd also mounts the host home directory at the same path in the guest, which lets workloads use project files, credentials, and caches. Existing shared inodes retain the host UID, GID, and mode in the guest; revm does not pre-process external shared directories.
 
 Mount format:
 

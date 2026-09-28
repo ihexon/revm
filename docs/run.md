@@ -79,7 +79,7 @@ revm run --id files \
   -- sh
 ~~~
 
-共享目录在 guest 中按 root:root 显示。macOS 下 revm 使用 libkrun passthrough 支持的 user.containers.override_stat xattr 记录 guest 可见的 UID、GID 和权限，不修改宿主文件真实所有者。符号链接不做递归修正。写入 xattr 时会临时处理宿主只读目录，再恢复原权限。
+共享目录中的已有文件在 guest 中保留宿主机 UID、GID 和权限。revm 不递归预处理外部共享目录。
 
 如果 guest 需要读写目录，不要加 ro。mount 源路径会被解析为绝对路径，且必须位于用户 home 或 /tmp 下。
 

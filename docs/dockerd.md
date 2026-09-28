@@ -61,7 +61,7 @@ revm dockerd --id app \
   --mount "$PWD:/workspace"
 ~~~
 
-dockerd 还会自动把宿主 home 目录挂载到 guest 中的相同路径，以便 Podman workload 使用项目、凭证和缓存。共享目录在 guest 中显示为 root:root；macOS 的 UID/GID 映射由 user.containers.override_stat xattr 提供，不修改宿主真实所有者。
+dockerd 还会自动把宿主 home 目录挂载到 guest 中的相同路径，以便 Podman workload 使用项目、凭证和缓存。共享目录中的已有文件在 guest 中保留宿主机 UID、GID 和权限；revm 不预处理外部共享目录。
 
 挂载格式：
 
