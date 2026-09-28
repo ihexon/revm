@@ -47,6 +47,7 @@ unpack_static_deps_darwin() {
 
 install_static_deps_darwin() {
     brew tap slp/krun
+    brew trust slp/krun
     brew install pkg-config molten-vk lld
     brew info molten-vk
     MOLTENVK_PREFIX="${MOLTENVK_PREFIX:-$(brew --prefix molten-vk)}"

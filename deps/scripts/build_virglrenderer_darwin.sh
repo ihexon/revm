@@ -54,6 +54,7 @@ build_virglrenderer_darwin() {
     local spirv_tools_lib
 
     brew tap slp/krun
+    brew trust slp/krun
     brew install meson ninja pkg-config molten-vk
     brew info molten-vk
     MOLTENVK_PREFIX="${MOLTENVK_PREFIX:-$(brew --prefix molten-vk)}"
