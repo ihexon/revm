@@ -21,6 +21,10 @@ checkout_libkrun() {
     rm -rf "$LIBKRUN_SRC"
     git clone "$LIBKRUN_REPO" "$LIBKRUN_SRC"
     cd "$LIBKRUN_SRC" && git checkout "$LIBKRUN_COMMIT"
+    # See the Linux builder for why the weak-client binding crates use ffier rc2.
+    sed -i '' 's/tag = "0.2.0rc1"/tag = "v0.2.0-rc2"/g' \
+        bindings/libkrun-via-cdylib-weak/Cargo.toml \
+        bindings/init-blob-via-cdylib/Cargo.toml
 }
 
 unpack_static_deps_darwin() {
