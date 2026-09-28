@@ -57,6 +57,7 @@ install_static_deps_darwin() {
 build_libkrun_darwin() {
     export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-nightly}"
     install_rust_linux_musl_target
+    prepare_ffier_rustfmt_compat
 
     install_static_deps_darwin
 

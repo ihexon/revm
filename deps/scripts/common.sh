@@ -52,6 +52,33 @@ install_rust_linux_musl_target() {
     fi
 }
 
+# libkrun's generated ffier clients invoke `rustfmt` from a Cargo build script.
+# Some upstream schemas currently make rustfmt abort before consuming stdin,
+# which surfaces as a misleading BrokenPipe panic in ffier-gen-rust-client.
+# Buffer the input and fall back to the valid generated source when formatting
+# fails; rustc remains the authoritative syntax/type checker for the client.
+prepare_ffier_rustfmt_compat() {
+    local real_rustfmt wrapper_dir wrapper
+    real_rustfmt="$(rustup which rustfmt 2>/dev/null || command -v rustfmt)"
+    wrapper_dir="$DEPS_WORK_DIR/bin"
+    wrapper="$wrapper_dir/rustfmt"
+    mkdir -p "$wrapper_dir"
+    cat > "$wrapper" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+input=\"\$(mktemp)\"
+trap 'rm -f "\$input"' EXIT
+cat > "\$input"
+if "$real_rustfmt" "\$@" < "\$input"; then
+    exit 0
+fi
+echo "warning: upstream ffier rustfmt failed; using unformatted generated client" >&2
+cat "\$input"
+EOF
+    chmod +x "$wrapper"
+    export PATH="$wrapper_dir:$PATH"
+}
+
 verify_libkrun_bundle() {
     local lib_dir="$1"
     local libkrun_file="$lib_dir/libkrun.so.2.0.0"

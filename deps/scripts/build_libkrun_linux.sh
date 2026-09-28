@@ -25,6 +25,7 @@ checkout_libkrun() {
 
 build_libkrun_linux() {
     install_rust_linux_musl_target
+    prepare_ffier_rustfmt_compat
 
     export RUSTFLAGS="${RUSTFLAGS:-} -C linker=gcc -C link-arg=-static-libgcc"
 
