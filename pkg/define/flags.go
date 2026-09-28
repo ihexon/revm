@@ -6,7 +6,6 @@ const (
 	FlagCPUS                    = "cpus"
 	FlagRawDisk                 = "raw-disk"
 	FlagMount                   = "mount"
-	FlagRootfs                  = "rootfs"
 	FlagUsingSystemProxy        = "system-proxy"
 	FlagWorkDir                 = "workdir"
 	FlagMemoryInMB              = "memory"
@@ -22,8 +21,6 @@ const (
 	FlagPortExport              = "port-export"
 	FlagPortUnexport            = "port-unexport"
 	FlagListPort                = "list-port"
-	FlagExportRootfs            = "export-rootfs"
-	FlagImportRootfs            = "import-rootfs"
 
 	ContainerDiskUUID = "162cf68f-93c7-49ad-be53-45ed0e9fe42b"
 

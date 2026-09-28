@@ -156,27 +156,7 @@ func (v *machineBuilder) withBuiltInAlpineRootfs(ctx context.Context) error {
 	if err := static_resources.ExtractBuiltinRootfs(ctx, alpineRootfsDir); err != nil {
 		return err
 	}
-
-	return v.withUserProvidedRootfs(ctx, alpineRootfsDir)
-}
-
-func (v *machineBuilder) withUserProvidedRootfs(ctx context.Context, rootfsPath string) error {
-	if rootfsPath == "" {
-		return fmt.Errorf("rootfs path is empty")
-	}
-
-	rootfsPath, err := filepath.Abs(filepath.Clean(rootfsPath))
-	if err != nil {
-		return err
-	}
-
-	_, err = os.Lstat(filepath.Join(rootfsPath, "bin", "sh"))
-	if err != nil {
-		return fmt.Errorf("rootfs path %q does not contain shell interpreter /bin/sh: %w", rootfsPath, err)
-	}
-
-	v.RootFS = rootfsPath
-
+	v.RootFS = alpineRootfsDir
 	return nil
 }
 
@@ -516,14 +496,8 @@ func (p *machineBuildPlan) configureProxy(ctx context.Context) error {
 
 func (p *machineBuildPlan) prepareRootfs(ctx context.Context) error {
 	logrus.Info("preparing rootfs...")
-	if p.cfg.Rootfs != "" {
-		if err := p.builder.withUserProvidedRootfs(ctx, p.cfg.Rootfs); err != nil {
-			return err
-		}
-	} else {
-		if err := p.builder.withBuiltInAlpineRootfs(ctx); err != nil {
-			return err
-		}
+	if err := p.builder.withBuiltInAlpineRootfs(ctx); err != nil {
+		return err
 	}
 	logrus.Info("preparing rootfs completed")
 	return nil

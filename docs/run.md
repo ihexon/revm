@@ -2,7 +2,7 @@
 
 [English](./run.en.md)
 
-`revm run` 启动一个 Linux rootfs session，并在 guest 内执行命令。它适合构建、测试、脚本执行、一次性调试和需要干净 Linux 环境的本地工具。
+`revm run` 启动一个内置 Alpine Linux session，并在 guest 内执行命令。它适合构建、测试、脚本执行、一次性调试和需要干净 Linux 环境的本地工具。
 
 ## 基本用法
 
@@ -31,17 +31,11 @@ revm run --id build \
   -- sh -c 'make test'
 ```
 
-## rootfs
+## Alpine 系统根文件系统
 
-不指定 `--rootfs` 时，`revm run` 使用内置 rootfs。
+`revm run` 始终使用随程序打包的特制 Alpine rootfs。它包含 guest agent、网络初始化、日志和控制面所需的运行时，不支持用宿主目录替换 VM 根文件系统。
 
-使用自定义 rootfs：
-
-```bash
-revm run --id ubuntu --rootfs ~/rootfs/ubuntu -- bash
-```
-
-自定义 rootfs 至少需要提供可执行的 `/bin/sh`。如果命令依赖其他工具，需要由 rootfs 自己提供。
+需要运行其他发行版或自定义用户空间时，应通过 `revm dockerd` 和 Podman workload 实现；未来的 rootfs workload 支持不会改变 VM 的 Alpine 控制面。
 
 ## 资源
 

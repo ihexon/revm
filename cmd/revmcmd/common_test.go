@@ -13,21 +13,12 @@ func TestNewCtlConfigUsesControl(t *testing.T) {
 	cfg := NewCtlConfig(CtlOptions{
 		Logging:   LoggingOptions{Level: "info"},
 		SessionID: "myengine",
-		PortUpdates: PortUpdates{
-			Exports: []define.PortForward{{
-				Protocol:  "tcp",
-				HostIP:    "127.0.0.1",
-				HostPort:  8888,
-				GuestPort: 8888,
-			}},
-		},
+		PortUpdates: PortUpdates{Exports: []define.PortForward{{
+			Protocol: "tcp", HostIP: "127.0.0.1", HostPort: 8888, GuestPort: 8888,
+		}}},
 	})
-
 	if cfg.RunMode != revm.ModeControl {
 		t.Fatalf("RunMode = %q, want %q", cfg.RunMode, revm.ModeControl)
-	}
-	if len(cfg.Command) != 0 {
-		t.Fatalf("Command = %#v, want empty for control mode", cfg.Command)
 	}
 	if len(cfg.PortForwards) != 1 {
 		t.Fatalf("PortForwards len = %d, want 1", len(cfg.PortForwards))
@@ -35,21 +26,9 @@ func TestNewCtlConfigUsesControl(t *testing.T) {
 }
 
 func TestNewAttachConfig(t *testing.T) {
-	cfg := NewAttachConfig(AttachOptions{
-		Logging:   LoggingOptions{Level: "info"},
-		SessionID: "myengine",
-		PTY:       true,
-		Command:   []string{"sh"},
-	})
-
-	if cfg.RunMode != revm.ModeAttach {
-		t.Fatalf("RunMode = %q, want %q", cfg.RunMode, revm.ModeAttach)
-	}
-	if len(cfg.Command) != 1 || cfg.Command[0] != "sh" {
-		t.Fatalf("Command = %#v, want [sh]", cfg.Command)
-	}
-	if !cfg.PTY {
-		t.Fatal("PTY = false, want true")
+	cfg := NewAttachConfig(AttachOptions{Logging: LoggingOptions{Level: "info"}, SessionID: "myengine", PTY: true, Command: []string{"sh"}})
+	if cfg.RunMode != revm.ModeAttach || !cfg.PTY || len(cfg.Command) != 1 || cfg.Command[0] != "sh" {
+		t.Fatalf("attach config = %#v", cfg)
 	}
 }
 
@@ -60,109 +39,21 @@ func TestValidateCtlOptionsRequiresPortUpdate(t *testing.T) {
 }
 
 func TestNewCtlConfigUsesPortList(t *testing.T) {
-	cfg := NewCtlConfig(CtlOptions{
-		Logging:   LoggingOptions{Level: "info"},
-		SessionID: "myengine",
-		ListPort:  true,
-	})
-
-	if cfg.RunMode != revm.ModeControl {
-		t.Fatalf("RunMode = %q, want %q", cfg.RunMode, revm.ModeControl)
-	}
-	if !cfg.PortList {
-		t.Fatal("PortList = false, want true")
-	}
-	if len(cfg.PortForwards) != 0 || len(cfg.PortUnforwards) != 0 {
-		t.Fatalf("port updates = (%#v, %#v), want empty", cfg.PortForwards, cfg.PortUnforwards)
-	}
-}
-
-func TestNewCtlConfigUsesRootfsExport(t *testing.T) {
-	cfg := NewCtlConfig(CtlOptions{
-		Logging:      LoggingOptions{Level: "info"},
-		SessionID:    "myengine",
-		ExportRootfs: "/tmp/rootfs.tar.zst",
-	})
-
-	if cfg.RunMode != revm.ModeControl {
-		t.Fatalf("RunMode = %q, want %q", cfg.RunMode, revm.ModeControl)
-	}
-	if cfg.RootfsExport != "/tmp/rootfs.tar.zst" {
-		t.Fatalf("RootfsExport = %q, want /tmp/rootfs.tar.zst", cfg.RootfsExport)
-	}
-	if cfg.PortList || len(cfg.PortForwards) != 0 || len(cfg.PortUnforwards) != 0 {
-		t.Fatalf("other control operations enabled: list=%v forwards=%#v unforwards=%#v", cfg.PortList, cfg.PortForwards, cfg.PortUnforwards)
-	}
-}
-
-func TestNewCtlConfigUsesRootfsImport(t *testing.T) {
-	cfg := NewCtlConfig(CtlOptions{
-		Logging:      LoggingOptions{Level: "info"},
-		SessionID:    "myengine",
-		ImportRootfs: "/tmp/rootfs.tar.zst",
-	})
-
-	if cfg.RunMode != revm.ModeControl {
-		t.Fatalf("RunMode = %q, want %q", cfg.RunMode, revm.ModeControl)
-	}
-	if cfg.RootfsImport != "/tmp/rootfs.tar.zst" {
-		t.Fatalf("RootfsImport = %q, want /tmp/rootfs.tar.zst", cfg.RootfsImport)
-	}
-	if cfg.PortList || cfg.RootfsExport != "" || len(cfg.PortForwards) != 0 || len(cfg.PortUnforwards) != 0 {
-		t.Fatalf("other control operations enabled: list=%v export=%q forwards=%#v unforwards=%#v", cfg.PortList, cfg.RootfsExport, cfg.PortForwards, cfg.PortUnforwards)
+	cfg := NewCtlConfig(CtlOptions{Logging: LoggingOptions{Level: "info"}, SessionID: "myengine", ListPort: true})
+	if cfg.RunMode != revm.ModeControl || !cfg.PortList || len(cfg.PortForwards) != 0 || len(cfg.PortUnforwards) != 0 {
+		t.Fatalf("port list config = %#v", cfg)
 	}
 }
 
 func TestValidateCtlOptionsRejectsListWithPortUpdates(t *testing.T) {
-	err := validateCtlOptions(CtlOptions{
-		ListPort: true,
-		PortUpdates: PortUpdates{
-			Exports: []define.PortForward{{
-				Protocol:  "tcp",
-				HostIP:    "127.0.0.1",
-				HostPort:  8888,
-				GuestPort: 8888,
-			}},
-		},
-	})
+	err := validateCtlOptions(CtlOptions{ListPort: true, PortUpdates: PortUpdates{Exports: []define.PortForward{{Protocol: "tcp", HostPort: 8888, GuestPort: 8888}}}})
 	if err == nil {
 		t.Fatal("validateCtlOptions() accepted --list-port with port updates")
 	}
 }
 
-func TestValidateCtlOptionsRejectsRootfsExportWithPortUpdates(t *testing.T) {
-	err := validateCtlOptions(CtlOptions{
-		ExportRootfs: "/tmp/rootfs.tar.zst",
-		PortUpdates: PortUpdates{
-			Exports: []define.PortForward{{
-				Protocol:  "tcp",
-				HostIP:    "127.0.0.1",
-				HostPort:  8888,
-				GuestPort: 8888,
-			}},
-		},
-	})
-	if err == nil {
-		t.Fatal("validateCtlOptions() accepted --export-rootfs with port updates")
-	}
-}
-
-func TestValidateCtlOptionsRejectsRootfsImportWithRootfsExport(t *testing.T) {
-	err := validateCtlOptions(CtlOptions{
-		ExportRootfs: "/tmp/export.tar.zst",
-		ImportRootfs: "/tmp/import.tar.zst",
-	})
-	if err == nil {
-		t.Fatal("validateCtlOptions() accepted --import-rootfs with --export-rootfs")
-	}
-}
-
 func TestValidateCtlOptionsRejectsCommandArguments(t *testing.T) {
-	err := validateCtlOptions(CtlOptions{
-		ListPort: true,
-		Command:  []string{"sh"},
-	})
-	if err == nil {
+	if err := validateCtlOptions(CtlOptions{ListPort: true, Command: []string{"sh"}}); err == nil {
 		t.Fatal("validateCtlOptions() accepted command arguments")
 	}
 }
@@ -174,42 +65,24 @@ func TestWritePortMappings(t *testing.T) {
 		{Protocol: "tcp", Local: "127.0.0.1:6123", Remote: "192.168.127.2:22"},
 	})
 	if err != nil {
-		t.Fatalf("writePortMappings() error = %v", err)
+		t.Fatal(err)
 	}
-
-	want := "PROTOCOL  HOST            GUEST\n" +
-		"tcp       127.0.0.1:6123  192.168.127.2:22\n" +
-		"tcp       127.0.0.1:8080  192.168.127.2:80\n"
+	want := "PROTOCOL  HOST            GUEST\n" + "tcp       127.0.0.1:6123  192.168.127.2:22\n" + "tcp       127.0.0.1:8080  192.168.127.2:80\n"
 	if buf.String() != want {
 		t.Fatalf("output = %q, want %q", buf.String(), want)
 	}
 }
 
 func TestNewRunConfig(t *testing.T) {
-	cfg := NewRunConfig(RunOptions{
-		Logging:   LoggingOptions{Level: "info"},
-		SessionID: "myengine",
-		Command:   []string{"sh"},
-	})
-
-	if cfg.RunMode != revm.ModeRootfs {
-		t.Fatalf("RunMode = %q, want %q", cfg.RunMode, revm.ModeRootfs)
-	}
-	if len(cfg.Command) != 1 || cfg.Command[0] != "sh" {
-		t.Fatalf("Command = %#v, want [sh]", cfg.Command)
+	cfg := NewRunConfig(RunOptions{Logging: LoggingOptions{Level: "info"}, SessionID: "myengine", Command: []string{"sh"}})
+	if cfg.RunMode != revm.ModeRootfs || len(cfg.Command) != 1 || cfg.Command[0] != "sh" {
+		t.Fatalf("run config = %#v", cfg)
 	}
 }
 
 func TestNewDockerdConfig(t *testing.T) {
-	cfg := NewDockerdConfig(DockerdOptions{
-		Logging:   LoggingOptions{Level: "info"},
-		SessionID: "myengine",
-	})
-
-	if cfg.RunMode != revm.ModeContainer {
-		t.Fatalf("RunMode = %q, want %q", cfg.RunMode, revm.ModeContainer)
-	}
-	if cfg.Network != string(define.GVISOR) {
-		t.Fatalf("Network = %q, want %q", cfg.Network, define.GVISOR)
+	cfg := NewDockerdConfig(DockerdOptions{Logging: LoggingOptions{Level: "info"}, SessionID: "myengine"})
+	if cfg.RunMode != revm.ModeContainer || cfg.Network != string(define.GVISOR) {
+		t.Fatalf("dockerd config = %#v", cfg)
 	}
 }

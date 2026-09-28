@@ -1,6 +1,6 @@
 # revm run
 
-`revm run` boots a Linux rootfs session and executes a command inside the guest. Use it for builds, tests, scripts, disposable debugging, and local tools that need a clean Linux runtime.
+`revm run` boots the packaged Alpine Linux session and executes a command inside the guest. Use it for builds, tests, scripts, disposable debugging, and local tools that need a clean Linux runtime.
 
 ## Usage
 
@@ -29,17 +29,11 @@ revm run --id build \
   -- sh -c 'make test'
 ```
 
-## rootfs
+## Alpine system rootfs
 
-When `--rootfs` is omitted, `revm run` uses the built-in rootfs.
+`revm run` always uses the packaged Alpine rootfs. It contains the guest agent, network setup, logging, and control-plane runtime required by the VM; a host directory cannot replace the VM root filesystem.
 
-Use a custom rootfs:
-
-```bash
-revm run --id ubuntu --rootfs ~/rootfs/ubuntu -- bash
-```
-
-A custom rootfs must provide an executable `/bin/sh`. Any other tools required by the command must also be present in that rootfs.
+Other distributions or custom userspaces should run as Podman workloads through `revm dockerd`. Future rootfs workload support will keep the Alpine VM as the control plane.
 
 ## Resources
 

@@ -33,7 +33,6 @@ type RunOptions struct {
 	MemoryMB      uint64
 	Network       string
 	UseProxy      bool
-	Rootfs        string
 	WorkDir       string
 	Envs          []string
 	Mounts        []string
@@ -68,13 +67,11 @@ type AttachOptions struct {
 }
 
 type CtlOptions struct {
-	Logging      LoggingOptions
-	SessionID    string
-	ListPort     bool
-	PortUpdates  PortUpdates
-	ExportRootfs string
-	ImportRootfs string
-	Command      []string
+	Logging     LoggingOptions
+	SessionID   string
+	ListPort    bool
+	PortUpdates PortUpdates
+	Command     []string
 }
 
 func NewApp(name string) *cli.Command {
@@ -94,11 +91,10 @@ func NewApp(name string) *cli.Command {
 func newRunCommand() *cli.Command {
 	return &cli.Command{
 		Name:                      "run",
-		Usage:                     "boot a Linux VM with a custom rootfs",
+		Usage:                     "boot the built-in Alpine Linux VM",
 		UsageText:                 "run [flags] <command> [args...]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: define.FlagRootfs, Usage: "path to a rootfs directory to use as the VM root filesystem; must contain /bin/sh; takes priority over the built-in rootfs"},
 			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to host CPU count if unset or less than 1"},
 			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to host available memory if unset or less than 512"},
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
@@ -185,14 +181,12 @@ func newCtlCommand() *cli.Command {
 	return &cli.Command{
 		Name:                      "ctl",
 		Usage:                     "control an existing VM session",
-		UsageText:                 "ctl --id <session-id> --list-port\n   ctl --id <session-id> [--port-export spec | --port-unexport spec]\n   ctl --id <session-id> --export-rootfs <path.tar.zst>\n   ctl --id <session-id> --import-rootfs <path.tar.zst>",
+		UsageText:                 "ctl --id <session-id> --list-port\n   ctl --id <session-id> [--port-export spec | --port-unexport spec]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: define.FlagListPort, Usage: "list current gvproxy port mappings for the running VM, including internal SSH forwarding"},
 			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "expose a guest TCP port on the host (format: [tcp:]<host-port>:<guest-port> or [tcp:]<host-ip>:<host-port>:<guest-port>); updates the running VM and exits; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagPortUnexport, Usage: "stop exposing a host TCP port for a running VM (format: [tcp:]<host-port> or [tcp:]<host-ip>:<host-port>); can be specified multiple times"},
-			&cli.StringFlag{Name: define.FlagExportRootfs, Usage: "export the session rootfs directory to a host tar.zst file"},
-			&cli.StringFlag{Name: define.FlagImportRootfs, Usage: "import a host tar.zst file into the session rootfs directory selected by --id"},
 			sessionFlag(),
 			logLevelFlag(),
 			logToFlag(),
@@ -293,7 +287,6 @@ func ParseRunOptions(command *cli.Command) (RunOptions, error) {
 		MemoryMB:      command.Uint64(define.FlagMemoryInMB),
 		Network:       command.String(define.FlagVNetworkType),
 		UseProxy:      command.Bool(define.FlagUsingSystemProxy),
-		Rootfs:        command.String(define.FlagRootfs),
 		WorkDir:       command.String(define.FlagWorkDir),
 		Envs:          command.StringSlice(define.FlagEnvs),
 		Mounts:        command.StringSlice(define.FlagMount),
@@ -349,13 +342,11 @@ func ParseCtlOptions(command *cli.Command) (CtlOptions, error) {
 	}
 
 	opts := CtlOptions{
-		Logging:      ParseLoggingOptions(command),
-		SessionID:    command.String(define.FlagSessionID),
-		ListPort:     command.Bool(define.FlagListPort),
-		PortUpdates:  portUpdates,
-		ExportRootfs: command.String(define.FlagExportRootfs),
-		ImportRootfs: command.String(define.FlagImportRootfs),
-		Command:      command.Args().Slice(),
+		Logging:     ParseLoggingOptions(command),
+		SessionID:   command.String(define.FlagSessionID),
+		ListPort:    command.Bool(define.FlagListPort),
+		PortUpdates: portUpdates,
+		Command:     command.Args().Slice(),
 	}
 	if err := validateCtlOptions(opts); err != nil {
 		return CtlOptions{}, err
@@ -407,7 +398,6 @@ func NewRunConfig(opts RunOptions) *revm.Config {
 		WithMemory(opts.MemoryMB).
 		WithNetwork(opts.Network).
 		WithProxy(opts.UseProxy).
-		WithRootfs(opts.Rootfs).
 		WithWorkDir(opts.WorkDir).
 		WithEnv(opts.Envs...).
 		WithManageAPIFile(opts.ManageAPIFile).
@@ -451,19 +441,6 @@ func NewCtlConfig(opts CtlOptions) *revm.Config {
 			WithSessionID(opts.SessionID).
 			WithPortList()
 	}
-	if opts.ExportRootfs != "" {
-		return revm.DefaultConfig().
-			WithLogging(opts.Logging.Level, opts.Logging.To).
-			WithSessionID(opts.SessionID).
-			WithRootfsExport(opts.ExportRootfs)
-	}
-	if opts.ImportRootfs != "" {
-		return revm.DefaultConfig().
-			WithLogging(opts.Logging.Level, opts.Logging.To).
-			WithSessionID(opts.SessionID).
-			WithRootfsImport(opts.ImportRootfs)
-	}
-
 	return revm.DefaultConfig().
 		WithLogging(opts.Logging.Level, opts.Logging.To).
 		WithSessionID(opts.SessionID).
@@ -485,17 +462,11 @@ func validateCtlOptions(opts CtlOptions) error {
 	if opts.PortUpdates.HasUpdates() {
 		operationCount++
 	}
-	if opts.ExportRootfs != "" {
-		operationCount++
-	}
-	if opts.ImportRootfs != "" {
-		operationCount++
-	}
 	if operationCount > 1 {
 		return fmt.Errorf("ctl control operations cannot be combined")
 	}
 	if operationCount == 0 {
-		return fmt.Errorf("ctl requires --list-port, --port-export, --port-unexport, --export-rootfs, or --import-rootfs")
+		return fmt.Errorf("ctl requires --list-port, --port-export, or --port-unexport")
 	}
 	return nil
 }

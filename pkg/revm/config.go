@@ -43,10 +43,9 @@ type Config struct {
 	SessionID string  `json:"sessionID,omitempty"` // session name
 	CPUs      int     `json:"cpus,omitempty"`      // 0 → host CPU count
 	MemoryMB  uint64  `json:"memoryMB,omitempty"`  // 0 → host total RAM
-	Rootfs    string  `json:"rootfs,omitempty"`    // empty → built-in Alpine
 
 	// Command specifies the program to run inside the VM.
-	// It is required by rootfs mode and optional in attach mode.
+	// It is required by run mode and optional in attach mode.
 	Command []string `json:"command,omitempty"`
 	WorkDir string   `json:"workdir,omitempty"`
 	Env     []string `json:"env,omitempty"`
@@ -66,8 +65,6 @@ type Config struct {
 	PortList             bool                 `json:"portList,omitempty"`
 	PortForwards         []define.PortForward `json:"portForwards,omitempty"`
 	PortUnforwards       []define.PortForward `json:"portUnforwards,omitempty"`
-	RootfsExport         string               `json:"rootfsExport,omitempty"`
-	RootfsImport         string               `json:"rootfsImport,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.
@@ -106,8 +103,6 @@ func (c *Config) WithControl(portForwards, portUnforwards []define.PortForward) 
 	c.RunMode = ModeControl
 	c.Command = nil
 	c.PortList = false
-	c.RootfsExport = ""
-	c.RootfsImport = ""
 	c.PortForwards = append([]define.PortForward(nil), portForwards...)
 	c.PortUnforwards = append([]define.PortForward(nil), portUnforwards...)
 	return c
@@ -119,30 +114,6 @@ func (c *Config) WithPortList() *Config {
 	c.PortList = true
 	c.PortForwards = nil
 	c.PortUnforwards = nil
-	c.RootfsExport = ""
-	c.RootfsImport = ""
-	return c
-}
-
-func (c *Config) WithRootfsExport(path string) *Config {
-	c.RunMode = ModeControl
-	c.Command = nil
-	c.PortList = false
-	c.PortForwards = nil
-	c.PortUnforwards = nil
-	c.RootfsExport = path
-	c.RootfsImport = ""
-	return c
-}
-
-func (c *Config) WithRootfsImport(path string) *Config {
-	c.RunMode = ModeControl
-	c.Command = nil
-	c.PortList = false
-	c.PortForwards = nil
-	c.PortUnforwards = nil
-	c.RootfsExport = ""
-	c.RootfsImport = path
 	return c
 }
 
@@ -161,14 +132,6 @@ func (c *Config) WithMemory(mb uint64) *Config {
 		return c
 	}
 	c.MemoryMB = mb
-	return c
-}
-
-func (c *Config) WithRootfs(path string) *Config {
-	if path == "" {
-		return c
-	}
-	c.Rootfs = path
 	return c
 }
 
@@ -407,12 +370,6 @@ func validateControlConfig(cfg Config) error {
 		operationCount++
 	}
 	if hasPortUpdates {
-		operationCount++
-	}
-	if cfg.RootfsExport != "" {
-		operationCount++
-	}
-	if cfg.RootfsImport != "" {
 		operationCount++
 	}
 	if operationCount > 1 {
