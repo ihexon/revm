@@ -38,7 +38,6 @@ type builder struct {
 	archiveDir string
 
 	staticDir  string
-	serviceDir string
 	agentPath  string
 	pkgCfgPath string
 	homebrew   string
@@ -132,7 +131,6 @@ func newBuilder(targets []string, lint bool) (*builder, error) {
 		depsDir:    "/tmp/.deps",
 		archiveDir: filepath.Join("/tmp/.deps", "archives"),
 		staticDir:  filepath.Join(workspace, "pkg", "static_resources"),
-		serviceDir: filepath.Join(workspace, "cmd", "guest-agent", "pkg", "service"),
 		homebrew:   homebrew,
 		deps:       deps,
 	}
@@ -204,34 +202,8 @@ func (b *builder) prepareWorkspace() error {
 }
 
 func (b *builder) prepareGuestAssets() error {
-	arch, err := b.linuxAssetArch()
-	if err != nil {
-		return err
-	}
-	for _, asset := range []struct {
-		name    string
-		srcRel  string
-		dstPath string
-	}{
-		{
-			name:    fmt.Sprintf("busybox-Linux-%s.tar.zst", arch),
-			srcRel:  filepath.Join("usr", "bin", "busybox"),
-			dstPath: filepath.Join(b.serviceDir, "busybox.static"),
-		},
-		{
-			name:    fmt.Sprintf("dropbear-Linux-%s.tar.zst", arch),
-			srcRel:  filepath.Join("bin", "dropbearmulti"),
-			dstPath: filepath.Join(b.serviceDir, "dropbearmulti"),
-		},
-	} {
-		cacheDir := filepath.Join(b.depsDir, strings.TrimSuffix(asset.name, ".tar.zst"))
-		if err := b.extractArchive(asset.name, cacheDir); err != nil {
-			return err
-		}
-		if err := copyWithCP(filepath.Join(cacheDir, asset.srcRel), asset.dstPath, nil); err != nil {
-			return err
-		}
-	}
+	// The built-in Alpine rootfs contains all runtime utilities installed by
+	// apk. Only the guest-agent binary is injected into the VM overlay.
 	return nil
 }
 
@@ -564,8 +536,6 @@ func (b *builder) placeholderPaths() []string {
 	return []string{
 		filepath.Join(b.staticDir, "rootfs", "rootfs.tar.zst"),
 		b.agentPath,
-		filepath.Join(b.serviceDir, "busybox.static"),
-		filepath.Join(b.serviceDir, "dropbearmulti"),
 	}
 }
 

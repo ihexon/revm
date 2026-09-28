@@ -1,19 +1,23 @@
 package protocol
 
-const GuestSpecVersion = 1
+const GuestSpecVersion = 2
 
 // GuestSpec is the versioned host-to-guest boot contract.
 // Keep this type limited to fields consumed inside the guest-agent.
 type GuestSpec struct {
-	SchemaVersion int             `json:"schemaVersion"`
-	RunMode       string          `json:"runMode,omitempty"`
-	NetworkMode   string          `json:"networkMode,omitempty"`
-	TTY           bool            `json:"tty,omitempty"`
-	Cmdline       GuestCmdline    `json:"cmdline,omitempty"`
-	Mounts        []GuestMount    `json:"mounts,omitempty"`
-	BlkDevs       []GuestBlockDev `json:"blkDevs,omitempty"`
-	SSH           GuestSSH        `json:"ssh,omitempty"`
-	Podman        GuestPodman     `json:"podman,omitempty"`
+	SchemaVersion int          `json:"schemaVersion"`
+	RunMode       string       `json:"runMode,omitempty"`
+	NetworkMode   string       `json:"networkMode,omitempty"`
+	TTY           bool         `json:"tty,omitempty"`
+	Cmdline       GuestCmdline `json:"cmdline,omitempty"`
+	Storage       GuestStorage `json:"storage,omitempty"`
+	SSH           GuestSSH     `json:"ssh,omitempty"`
+	Podman        GuestPodman  `json:"podman,omitempty"`
+}
+
+type GuestStorage struct {
+	VirtioFS []GuestMount    `json:"virtiofs,omitempty"`
+	Blocks   []GuestBlockDev `json:"blocks,omitempty"`
 }
 
 type GuestCmdline struct {
@@ -34,10 +38,11 @@ type GuestMount struct {
 }
 
 type GuestBlockDev struct {
-	FsType  string `json:"fsType,omitempty"`
-	UUID    string `json:"UUID,omitempty"`
-	Path    string `json:"path,omitempty"`
-	MountTo string `json:"mountTo,omitempty"`
+	FsType   string `json:"fsType,omitempty"`
+	UUID     string `json:"UUID,omitempty"`
+	Path     string `json:"path,omitempty"`
+	MountTo  string `json:"mountTo,omitempty"`
+	ReadOnly bool   `json:"readOnly,omitempty"`
 }
 
 type GuestSSH struct {

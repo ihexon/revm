@@ -2,10 +2,6 @@
   "assets": {
     "alpine-rootfs-Linux-aarch64.tar.zst": "a8f6a86aa3722549e8b9bb776aea989ac1accf9c87f0a6a2007b67c0d45cea5b",
     "alpine-rootfs-Linux-x86_64.tar.zst": "b3afc55d26f9c541bebdb091350a7db0dc9573ab72d5bf82769fd04722dc4037",
-    "busybox-Linux-aarch64.tar.zst": "b935f627da723d9ca8b0e3634f60d6a4f11d90f6c90d94a676370a8f6e245e17",
-    "busybox-Linux-x86_64.tar.zst": "4b8024b095c89ca6a1126137613f47cc35179f8a5afcd20bb3a9bb6f663c9e64",
-    "dropbear-Linux-aarch64.tar.zst": "7fc47f856fd45000d3177dce965efcd1d81c48d19a66c789804948bb18d16b38",
-    "dropbear-Linux-x86_64.tar.zst": "1ba13cf772761c7e54af6cc260ba372a31030d3b1ee622bc7cd4b02b2f1c5eed",
     "libkrun-Darwin-arm64.tar.zst": "5fddbfd7b4a7300c84b9cc91c9a5d2cb39383a1ed81239a370398f7d941e0911",
     "libkrun-Linux-aarch64.tar.zst": "67dca9b862910c0f1aa8fe5e0c83f1abb781fd7518b006b3b86bea127b5c7872",
     "libkrun-Linux-x86_64.tar.zst": "cdc974062c2d34e8e18218f1f50edd99fcfe1766a064e1978976b5d0c78de9bf",

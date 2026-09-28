@@ -12,6 +12,7 @@ import (
 	"os"
 	gopath "path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -19,10 +20,13 @@ import (
 )
 
 type RawDiskSpec struct {
-	Path    string `json:"path,omitempty"`
-	UUID    string `json:"uuid,omitempty"`
-	Version string `json:"version,omitempty"`
-	MountTo string `json:"mountTo,omitempty"`
+	Path     string `json:"path,omitempty"`
+	UUID     string `json:"uuid,omitempty"`
+	Version  string `json:"version,omitempty"`
+	MountTo  string `json:"mountTo,omitempty"`
+	ReadOnly bool   `json:"readOnly,omitempty"`
+	DirectIO bool   `json:"directIO,omitempty"`
+	SyncMode uint32 `json:"syncMode,omitempty"`
 }
 
 type ContainerDiskSpec struct {
@@ -98,6 +102,29 @@ func ParseRawDiskSpec(input string) (RawDiskSpec, error) {
 				return RawDiskSpec{}, fmt.Errorf("raw disk mount target must be an absolute guest path, got %q", value)
 			}
 			spec.MountTo = cleanMount
+		case "readonly", "ro":
+			valueBool, err := strconv.ParseBool(value)
+			if err != nil {
+				return RawDiskSpec{}, fmt.Errorf("invalid raw disk readonly value %q", value)
+			}
+			spec.ReadOnly = valueBool
+		case "directio", "direct-io":
+			valueBool, err := strconv.ParseBool(value)
+			if err != nil {
+				return RawDiskSpec{}, fmt.Errorf("invalid raw disk directio value %q", value)
+			}
+			spec.DirectIO = valueBool
+		case "sync":
+			switch strings.ToLower(value) {
+			case "none":
+				spec.SyncMode = define.SyncModeNone
+			case "relaxed":
+				spec.SyncMode = define.SyncModeRelaxed
+			case "full":
+				spec.SyncMode = define.SyncModeFull
+			default:
+				return RawDiskSpec{}, fmt.Errorf("unsupported raw disk sync mode %q", value)
+			}
 		default:
 			return RawDiskSpec{}, fmt.Errorf("unsupported raw disk option %q", key)
 		}
@@ -153,17 +180,17 @@ func ParseContainerDiskSpec(input string) (ContainerDiskSpec, error) {
 	return spec, nil
 }
 
-func (v *machineBuilder) prepareRawDisk(ctx context.Context, spec RawDiskSpec) (define.BlkDev, error) {
+func (v *machineBuilder) prepareRawDisk(ctx context.Context, spec RawDiskSpec) (define.BlockDeviceSpec, error) {
 	spec, err := normalizeRawDiskSpec(spec)
 	if err != nil {
-		return define.BlkDev{}, err
+		return define.BlockDeviceSpec{}, err
 	}
 
 	logrus.Infof("preparing raw disk: path=%q requested_uuid=%q requested_version=%q requested_mount=%q", spec.Path, spec.UUID, spec.Version, spec.MountTo)
 
 	exists, err := rawDiskExists(spec.Path)
 	if err != nil {
-		return define.BlkDev{}, err
+		return define.BlockDeviceSpec{}, err
 	}
 
 	if exists {
@@ -171,12 +198,12 @@ func (v *machineBuilder) prepareRawDisk(ctx context.Context, spec RawDiskSpec) (
 
 		recreate, err := shouldRecreateRAWDisk(ctx, spec)
 		if err != nil {
-			return define.BlkDev{}, err
+			return define.BlockDeviceSpec{}, err
 		}
 		if recreate {
 			logrus.Infof("recreating raw disk: path=%q", spec.Path)
 			if err := os.Remove(spec.Path); err != nil && !os.IsNotExist(err) {
-				return define.BlkDev{}, fmt.Errorf("remove stale raw disk %q: %w", spec.Path, err)
+				return define.BlockDeviceSpec{}, fmt.Errorf("remove stale raw disk %q: %w", spec.Path, err)
 			}
 			return createRAWDisk(ctx, spec)
 		}
@@ -185,23 +212,39 @@ func (v *machineBuilder) prepareRawDisk(ctx context.Context, spec RawDiskSpec) (
 			logrus.Infof("raw disk exists, requested uuid is ignored: path=%q requested_uuid=%q", spec.Path, spec.UUID)
 		}
 
-		return inspectRAWDisk(ctx, spec.Path, spec.MountTo)
+		dev, err := inspectRAWDisk(ctx, spec.Path, spec.MountTo)
+		return applyRawDiskRuntimeOptions(dev, spec), err
 	}
 
-	return createRAWDisk(ctx, spec)
+	dev, err := createRAWDisk(ctx, spec)
+	return applyRawDiskRuntimeOptions(dev, spec), err
 }
 
-func (v *machineBuilder) prepareContainerStorageDisk(ctx context.Context, spec *ContainerDiskSpec, defaultPath string) (define.BlkDev, error) {
+func applyRawDiskRuntimeOptions(dev define.BlockDeviceSpec, spec RawDiskSpec) define.BlockDeviceSpec {
+	if dev.GuestMount == nil {
+		dev.GuestMount = &define.BlockMountSpec{}
+	}
+	dev.ID = dev.GuestMount.UUID
+	dev.Format = define.DiskFormatRaw
+	dev.ReadOnly = spec.ReadOnly
+	dev.DirectIO = spec.DirectIO
+	dev.SyncMode = spec.SyncMode
+	dev.GuestMount.Target = resolveRawDiskMount(dev.GuestMount.UUID, spec.MountTo)
+	dev.GuestMount.ReadOnly = spec.ReadOnly
+	return dev
+}
+
+func (v *machineBuilder) prepareContainerStorageDisk(ctx context.Context, spec *ContainerDiskSpec, defaultPath string) (define.BlockDeviceSpec, error) {
 	rawDiskSpec, err := resolveContainerDiskSpec(spec, defaultPath)
 	if err != nil {
-		return define.BlkDev{}, err
+		return define.BlockDeviceSpec{}, err
 	}
 
 	logrus.Infof("preparing container disk: path=%q requested_version=%q effective_version=%q mount=%q", rawDiskSpec.Path, containerDiskVersionValue(spec), rawDiskSpec.Version, rawDiskSpec.MountTo)
 
 	exists, err := rawDiskExists(rawDiskSpec.Path)
 	if err != nil {
-		return define.BlkDev{}, err
+		return define.BlockDeviceSpec{}, err
 	}
 
 	if exists {
@@ -209,20 +252,22 @@ func (v *machineBuilder) prepareContainerStorageDisk(ctx context.Context, spec *
 
 		recreate, err := shouldBumpContainerDisk(ctx, rawDiskSpec)
 		if err != nil {
-			return define.BlkDev{}, err
+			return define.BlockDeviceSpec{}, err
 		}
 		if recreate {
 			logrus.Infof("recreating container disk: path=%q", rawDiskSpec.Path)
 			if err := os.Remove(rawDiskSpec.Path); err != nil && !os.IsNotExist(err) {
-				return define.BlkDev{}, fmt.Errorf("remove stale container disk %q: %w", rawDiskSpec.Path, err)
+				return define.BlockDeviceSpec{}, fmt.Errorf("remove stale container disk %q: %w", rawDiskSpec.Path, err)
 			}
 			return createRAWDisk(ctx, rawDiskSpec)
 		}
 
-		return inspectRAWDisk(ctx, rawDiskSpec.Path, rawDiskSpec.MountTo)
+		dev, err := inspectRAWDisk(ctx, rawDiskSpec.Path, rawDiskSpec.MountTo)
+		return applyRawDiskRuntimeOptions(dev, rawDiskSpec), err
 	}
 
-	return createRAWDisk(ctx, rawDiskSpec)
+	dev, err := createRAWDisk(ctx, rawDiskSpec)
+	return applyRawDiskRuntimeOptions(dev, rawDiskSpec), err
 }
 
 func normalizeRawDiskSpec(spec RawDiskSpec) (RawDiskSpec, error) {
@@ -348,7 +393,7 @@ func shouldBumpContainerDisk(ctx context.Context, spec RawDiskSpec) (bool, error
 	return false, nil
 }
 
-func createRAWDisk(ctx context.Context, spec RawDiskSpec) (define.BlkDev, error) {
+func createRAWDisk(ctx context.Context, spec RawDiskSpec) (define.BlockDeviceSpec, error) {
 	diskUUID := spec.UUID
 	if diskUUID == "" {
 		diskUUID = uuid.NewString()
@@ -358,42 +403,45 @@ func createRAWDisk(ctx context.Context, spec RawDiskSpec) (define.BlkDev, error)
 
 	diskMgr, err := newRawDiskManager()
 	if err != nil {
-		return define.BlkDev{}, err
+		return define.BlockDeviceSpec{}, err
 	}
 
 	logrus.Infof("extracting embedded raw disk image: path=%q", spec.Path)
 	if err := extractEmbeddedRAWDisk(ctx, spec.Path); err != nil {
-		return define.BlkDev{}, fmt.Errorf("extract embedded raw disk to %q: %w", spec.Path, err)
+		return define.BlockDeviceSpec{}, fmt.Errorf("extract embedded raw disk to %q: %w", spec.Path, err)
 	}
 
 	logrus.Infof("writing raw disk uuid: path=%q uuid=%q", spec.Path, diskUUID)
 	if err := diskMgr.NewUUID(ctx, diskUUID, spec.Path); err != nil {
-		return define.BlkDev{}, fmt.Errorf("write uuid %q to raw disk %q: %w", diskUUID, spec.Path, err)
+		return define.BlockDeviceSpec{}, fmt.Errorf("write uuid %q to raw disk %q: %w", diskUUID, spec.Path, err)
 	}
 
 	if spec.Version != "" {
 		logrus.Infof("writing raw disk version xattr: path=%q key=%q value=%q", spec.Path, define.XattrDiskVersionKey, spec.Version)
 		if err := newRawDiskXattrManager().SetXattr(ctx, spec.Path, define.XattrDiskVersionKey, spec.Version, true); err != nil {
-			return define.BlkDev{}, fmt.Errorf("write raw disk version xattr on %q: %w", spec.Path, err)
+			return define.BlockDeviceSpec{}, fmt.Errorf("write raw disk version xattr on %q: %w", spec.Path, err)
 		}
 	}
 
 	return inspectRAWDisk(ctx, spec.Path, spec.MountTo)
 }
 
-func inspectRAWDisk(ctx context.Context, rawDiskPath string, mountOverride string) (define.BlkDev, error) {
+func inspectRAWDisk(ctx context.Context, rawDiskPath string, mountOverride string) (define.BlockDeviceSpec, error) {
 	diskMgr, err := newRawDiskManager()
 	if err != nil {
-		return define.BlkDev{}, err
+		return define.BlockDeviceSpec{}, err
 	}
 
 	info, err := diskMgr.Inspect(ctx, rawDiskPath)
 	if err != nil {
-		return define.BlkDev{}, err
+		return define.BlockDeviceSpec{}, err
 	}
 
-	info.MountTo = resolveRawDiskMount(info.UUID, mountOverride)
-	logrus.Infof("raw disk ready: path=%q uuid=%q mount=%q fstype=%q", info.Path, info.UUID, info.MountTo, info.FsType)
+	if info.GuestMount == nil {
+		info.GuestMount = &define.BlockMountSpec{}
+	}
+	info.GuestMount.Target = resolveRawDiskMount(info.GuestMount.UUID, mountOverride)
+	logrus.Infof("raw disk ready: path=%q uuid=%q mount=%q fstype=%q", info.Path, info.GuestMount.UUID, info.GuestMount.Target, info.GuestMount.FsType)
 	return *info, nil
 }
 

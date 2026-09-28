@@ -13,8 +13,8 @@ func SyncRTCTime(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		// Some supported BusyBox builds omit ntpd. The guest clock is still
-		// initialized by the VMM, so an optional sync failure is diagnostic only.
+		// Time synchronization is optional. The guest clock is initialized by the
+		// VMM, so an unavailable ntpd package is diagnostic only.
 		logrus.Debugf("guest clock sync unavailable: %v", err)
 	}
 	return nil

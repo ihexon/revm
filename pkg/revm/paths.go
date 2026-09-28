@@ -41,6 +41,10 @@ func (p *machinePathManager) GetIgnSocketFile() string {
 	return p.GetSocketFile("ign.sock")
 }
 
+func (p *machinePathManager) GetGuestControlSocketFile() string {
+	return p.GetSocketFile("guest-control.sock")
+}
+
 // GetSSHKeyFilePath returns the path to the SSH key pair file
 func (p *machinePathManager) GetSSHKeyFilePath() string {
 	return filepath.Clean(filepath.Join(p.workspaceDir, "ssh", "ssh-key"))

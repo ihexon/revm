@@ -21,7 +21,6 @@ defaults:
 
 env:
   LINUX_BUILDER_IMAGE: revm-deps-builder:ubuntu-25.10
-  DROPBEAR_BUILDER_IMAGE: revm-deps-dropbear:alpine-3.23.3
 
 jobs:
   validate:
@@ -59,68 +58,6 @@ jobs:
         with:
           name: alpine-rootfs-Linux-${{ matrix.arch }}.tar.zst
           path: deps/dist/alpine-rootfs-Linux-${{ matrix.arch }}.tar.zst
-          if-no-files-found: error
-          retention-days: 1
-          compression-level: 0
-          overwrite: true
-
-  build_busybox_linux:
-    name: build busybox (${{ matrix.arch }})
-    needs: validate
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            arch: x86_64
-          - os: ubuntu-22.04-arm
-            arch: aarch64
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-      - name: Build Linux deps image
-        run: docker build -f deps/docker/linux.Dockerfile -t "$LINUX_BUILDER_IMAGE" deps
-      - name: Build BusyBox
-        run: |
-          docker run --rm \
-            --workdir "$GITHUB_WORKSPACE" \
-            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
-            "$LINUX_BUILDER_IMAGE" \
-            deps/scripts/build_busybox_linux.sh
-      - uses: actions/upload-artifact@v7
-        with:
-          name: busybox-Linux-${{ matrix.arch }}.tar.zst
-          path: deps/dist/busybox-Linux-${{ matrix.arch }}.tar.zst
-          if-no-files-found: error
-          retention-days: 1
-          compression-level: 0
-          overwrite: true
-
-  build_dropbear_linux:
-    name: build dropbear (${{ matrix.arch }})
-    needs: validate
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            arch: x86_64
-          - os: ubuntu-22.04-arm
-            arch: aarch64
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-      - name: Build Dropbear deps image
-        run: docker build -f deps/docker/dropbear.Dockerfile -t "$DROPBEAR_BUILDER_IMAGE" deps
-      - name: Build Dropbear
-        run: |
-          docker run --rm \
-            --workdir "$GITHUB_WORKSPACE" \
-            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
-            "$DROPBEAR_BUILDER_IMAGE" \
-            deps/scripts/build_dropbear_linux.sh
-      - uses: actions/upload-artifact@v7
-        with:
-          name: dropbear-Linux-${{ matrix.arch }}.tar.zst
-          path: deps/dist/dropbear-Linux-${{ matrix.arch }}.tar.zst
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
@@ -262,8 +199,6 @@ jobs:
     needs:
       - validate
       - build_alpine_rootfs_linux
-      - build_busybox_linux
-      - build_dropbear_linux
       - build_libkrun_darwin
       - build_libkrun_linux
       - build_libkrunfw_darwin

@@ -89,7 +89,12 @@ func newProvider(ctx context.Context, mc *define.MachineSpec) (backend.Backend, 
 func (vm *VM) Release() error {
 	var retErr error
 	if vm.runtime.backend != nil {
-		retErr = errors.Join(retErr, vm.runtime.backend.Close())
+		if err := vm.runtime.backend.Close(); err != nil {
+			// Keep ownership when the VMM is still running. Dropping the backend
+			// here would make a later safe retry impossible and could release the
+			// workspace while libkrun still references it.
+			return err
+		}
 		vm.runtime.backend = nil
 	}
 	vm.runtime.view = nil
@@ -258,6 +263,8 @@ func (vm *VM) createUserSymlinks() error {
 // the VM run to end. If the VM exits or the run is cancelled normally, Run
 // returns nil; otherwise it returns the first meaningful failure cause.
 func (vm *VM) Run(ctx context.Context) error {
+	runFinished := make(chan struct{})
+	defer close(runFinished)
 	hostServicesCtx, stopHostServices := context.WithCancelCause(ctx)
 	defer stopHostServices(context.Canceled)
 
@@ -290,6 +297,13 @@ func (vm *VM) Run(ctx context.Context) error {
 		vm.forceVirtualMachine()
 		forceVMRun(context.Canceled)
 	}
+	go func() {
+		select {
+		case <-ctx.Done():
+			forceHostShutdown()
+		case <-runFinished:
+		}
+	}()
 
 	vm.startShutdownMonitors(hostServicesCtx, vm.requestGuestShutdown, forceHostShutdown)
 
@@ -315,12 +329,34 @@ func (vm *VM) Run(ctx context.Context) error {
 }
 
 func (vm *VM) requestGuestShutdown() {
+	if vm.runtime.backend == nil {
+		return
+	}
 	if err := vm.runtime.backend.RequestShutdown(context.Background()); err != nil {
 		logrus.Warnf("request guest shutdown failed: %v", err)
 	}
 }
 
+// Pause suspends guest execution through libkrun's thread-safe VMM handle.
+func (vm *VM) Pause(ctx context.Context) error {
+	if vm.runtime.backend == nil {
+		return errors.New("VM backend is unavailable")
+	}
+	return vm.runtime.backend.Pause(ctx)
+}
+
+// Resume resumes a VM previously paused with Pause.
+func (vm *VM) Resume(ctx context.Context) error {
+	if vm.runtime.backend == nil {
+		return errors.New("VM backend is unavailable")
+	}
+	return vm.runtime.backend.Resume(ctx)
+}
+
 func (vm *VM) forceVirtualMachine() {
+	if vm.runtime.backend == nil {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), defaultForceStopTimeout)
 	defer cancel()
 

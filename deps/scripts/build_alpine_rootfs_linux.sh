@@ -21,8 +21,8 @@ build_alpine_rootfs_linux() {
     rm -rf "$ROOTFS"
     mkdir -p "$ROOTFS"
 
-    docker run --name="$CONTAINER" "alpine:$ALPINE_VERSION" \
-        sh -c "apk add --no-cache bash nftables podman tar util-linux zstd && rm -rf /var/lib/containers"
+	docker run --name="$CONTAINER" "alpine:$ALPINE_VERSION" \
+		sh -c "apk add --no-cache bash ca-certificates dropbear iproute2 nftables openntpd podman tar util-linux zstd && rm -rf /var/lib/containers"
 
     docker export "$CONTAINER" | tar -x -C "$ROOTFS"
     install -D -m 0644 "$DEPS_DIR/config/containers.conf" "$ROOTFS/etc/containers/containers.conf"

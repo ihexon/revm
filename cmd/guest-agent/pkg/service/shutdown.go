@@ -19,7 +19,9 @@ func (s *Step) SyncDisk() {
 }
 
 func (s *Step) Reboot() {
-	_ = exec.Command(BusyboxPath(), "reboot", "-f").Run()
+	// Use the kernel API directly so shutdown does not depend on a particular
+	// command implementation in the rootfs.
+	_ = syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 }
 
 // WaitAndShutdown waits for the interrupt signal and shutdown the VM

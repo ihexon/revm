@@ -26,6 +26,11 @@ type Dropbear struct {
 	cfg DropbearConfig
 }
 
+const (
+	dropbearCommand    = "/usr/sbin/dropbear"
+	dropbearKeyCommand = "/usr/bin/dropbearkey"
+)
+
 // NewDropbear creates a new Dropbear instance with the given configuration.
 func NewDropbear(cfg DropbearConfig) *Dropbear {
 	return &Dropbear{cfg: cfg}
@@ -37,7 +42,7 @@ func (d *Dropbear) GenerateHostKey(ctx context.Context) error {
 		return fmt.Errorf("create key dir: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, DropbearmultiPath(), "dropbearkey", "-t", "ed25519", "-f", d.cfg.PrivateKeyPath)
+	cmd := exec.CommandContext(ctx, dropbearKeyCommand, "-t", "ed25519", "-f", d.cfg.PrivateKeyPath)
 	cmd.Stderr = StderrWriter()
 	cmd.Stdout = StderrWriter()
 
@@ -75,7 +80,7 @@ func (d *Dropbear) Start(ctx context.Context) {
 
 	sv := supervisor.New(supervisor.Config{
 		Name:       "dropbear",
-		Cmd:        DropbearmultiPath(),
+		Cmd:        dropbearCommand,
 		Args:       args,
 		Env:        []string{"PASS_FILEPEM_CHECK=1"},
 		Stdout:     StderrWriter(),
@@ -88,6 +93,14 @@ func (d *Dropbear) Start(ctx context.Context) {
 
 // StartGuestSSHServer support TSI/Gvisor network mode
 func StartGuestSSHServer(ctx context.Context, vmc *protocol.GuestSpec) error {
+	if _, err := os.Stat(dropbearKeyCommand); err != nil {
+		logrus.Warnf("SSH compatibility endpoint disabled: %s is unavailable: %v", dropbearKeyCommand, err)
+		return nil
+	}
+	if _, err := os.Stat(dropbearCommand); err != nil {
+		logrus.Warnf("SSH compatibility endpoint disabled: %s is unavailable: %v", dropbearCommand, err)
+		return nil
+	}
 	cfg := DropbearConfig{
 		ListenAddr:         vmc.SSH.GuestSSHServerListenAddr,
 		PrivateKeyPath:     vmc.SSH.GuestSSHPrivateKeyFile,

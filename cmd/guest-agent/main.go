@@ -164,10 +164,6 @@ func main() {
 func run(ctx context.Context, _ *cli.Command) error {
 	setupLogger()
 
-	if err := service.InitBinDir(); err != nil {
-		return fmt.Errorf("init bin dir: %w", err)
-	}
-
 	vmc, err := service.GetVMConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("get vm config: %w", err)
@@ -180,6 +176,11 @@ func run(ctx context.Context, _ *cli.Command) error {
 	// Now that /sys is available, wire up the dedicated guest log and signal ports.
 	setupGuestLogPort()
 	setupGuestSignalPort()
+	go func() {
+		if err := service.StartGuestControlServer(ctx); err != nil {
+			logrus.Warnf("guest control server stopped: %v", err)
+		}
+	}()
 
 	// 4. Mount block devices and virtiofs
 	if err := service.MountBlockDevices(ctx, vmc); err != nil {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -11,32 +12,38 @@ import (
 )
 
 func ExecNoOutput(ctx context.Context, args ...string) error {
-	cmd := exec.CommandContext(ctx, BusyboxPath(), args...)
+	if len(args) == 0 {
+		return fmt.Errorf("command is empty")
+	}
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Env = os.Environ()
 	cmd.Stderr = nil
 	cmd.Stdout = nil
 
-	logrus.Debugf("busybox: %v", cmd.Args)
+	logrus.Debugf("guest command: %v", cmd.Args)
 	return cmd.Run()
 }
 
-// ExecOutput runs a busybox command and captures output to the provided writers.
+// ExecOutput runs a rootfs command and captures output to the provided writers.
 func ExecOutput(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-	cmd := exec.CommandContext(ctx, BusyboxPath(), args...)
+	if len(args) == 0 {
+		return fmt.Errorf("command is empty")
+	}
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Env = os.Environ()
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 
-	logrus.Debugf("busybox: %v", cmd.Args)
+	logrus.Debugf("guest command: %v", cmd.Args)
 	return cmd.Run()
 }
 
-// Mount runs busybox mount command.
+// Mount runs the rootfs mount command.
 func Mount(ctx context.Context, args ...string) error {
 	return ExecOutput(ctx, StderrWriter(), StderrWriter(), append([]string{"mount"}, args...)...)
 }
 
-// Umount runs busybox umount command.
+// Umount runs the rootfs umount command.
 func Umount(ctx context.Context, target string) error {
 	return ExecNoOutput(ctx, "umount", "-l", "-d", "-f", target)
 }

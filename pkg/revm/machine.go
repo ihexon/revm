@@ -201,7 +201,7 @@ func (v *machineBuilder) withUserProvidedMounts(dirs []string) error {
 		}
 		mounts[i].Source = p
 	}
-	v.Mounts = append(v.Mounts, mounts...)
+	v.Storage.VirtioFS = append(v.Storage.VirtioFS, mounts...)
 	return nil
 }
 
@@ -225,6 +225,11 @@ func (v *machineBuilder) configureGuestAgent(ctx context.Context) error {
 
 	v.IgnitionServerCfg = define.IgnitionServerCfg{
 		ListenSockAddr: unixUSL.String(),
+	}
+	controlURL := &url.URL{Scheme: "unix", Path: v.pathMgr.GetGuestControlSocketFile()}
+	v.GuestControlAddr = controlURL.String()
+	if err := os.Remove(controlURL.Path); err != nil && !os.IsNotExist(err) {
+		return err
 	}
 
 	if v.RootFS == "" {

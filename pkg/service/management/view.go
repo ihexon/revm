@@ -22,6 +22,7 @@ type EndpointView struct {
 	GVProxyAPI    string `json:"gvproxyAPI,omitempty"`
 	PodmanAPI     string `json:"podmanAPI,omitempty"`
 	SSH           string `json:"ssh,omitempty"`
+	GuestControl  string `json:"guestControl,omitempty"`
 }
 
 type MountView struct {
@@ -32,7 +33,10 @@ type MountView struct {
 }
 
 type DiskView struct {
-	UUID    string `json:"uuid,omitempty"`
-	MountTo string `json:"mountTo,omitempty"`
-	FsType  string `json:"fsType,omitempty"`
+	UUID     string `json:"uuid,omitempty"`
+	MountTo  string `json:"mountTo,omitempty"`
+	FsType   string `json:"fsType,omitempty"`
+	ReadOnly bool   `json:"readOnly,omitempty"`
+	DirectIO bool   `json:"directIO,omitempty"`
+	SyncMode uint32 `json:"syncMode,omitempty"`
 }

@@ -11,7 +11,7 @@ import (
 )
 
 type Manager interface {
-	Inspect(ctx context.Context, blkPath string) (*define.BlkDev, error)
+	Inspect(ctx context.Context, blkPath string) (*define.BlockDeviceSpec, error)
 	Create(ctx context.Context, blkPath string, sizeInMib uint64) error
 	NewUUID(ctx context.Context, id string, blkPath string) error
 }
@@ -23,7 +23,7 @@ func NewBlkManager() (*RawDiskManager, error) {
 	return &RawDiskManager{}, nil
 }
 
-func (b RawDiskManager) Inspect(ctx context.Context, blkPath string) (*define.BlkDev, error) {
+func (b RawDiskManager) Inspect(ctx context.Context, blkPath string) (*define.BlockDeviceSpec, error) {
 	blkPath, err := filepath.Abs(blkPath)
 	if err != nil {
 		return nil, err
@@ -34,10 +34,15 @@ func (b RawDiskManager) Inspect(ctx context.Context, blkPath string) (*define.Bl
 		return nil, err
 	}
 
-	return &define.BlkDev{
-		UUID:   info.UUID,
-		FsType: info.Type,
-		Path:   blkPath,
+	return &define.BlockDeviceSpec{
+		ID:       info.UUID,
+		Path:     blkPath,
+		Format:   define.DiskFormatRaw,
+		SyncMode: define.SyncModeRelaxed,
+		GuestMount: &define.BlockMountSpec{
+			UUID:   info.UUID,
+			FsType: info.Type,
+		},
 	}, nil
 }
 

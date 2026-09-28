@@ -10,8 +10,8 @@ import (
 	"strings"
 )
 
-func CmdLineMountToMounts(mnts []string) []define.Mount {
-	var mounts []define.Mount //nolint:prealloc
+func CmdLineMountToMounts(mnts []string) []define.VirtioFSSpec {
+	var mounts []define.VirtioFSSpec //nolint:prealloc
 	for i, volume := range mnts {
 		if volume == "" {
 			continue
@@ -68,8 +68,8 @@ type VirtIoFs struct {
 	Target   string
 }
 
-func (v VirtIoFs) ToMount() define.Mount {
-	return define.Mount{
+func (v VirtIoFs) ToMount() define.VirtioFSSpec {
+	return define.VirtioFSSpec{
 		ReadOnly: v.ReadOnly,
 		Tag:      v.Tag,
 		Source:   v.Source,

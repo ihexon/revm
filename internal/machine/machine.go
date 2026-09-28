@@ -7,7 +7,9 @@ import (
 
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/gvproxy"
+	"linuxvm/pkg/network"
 	"linuxvm/pkg/protocol"
+	"linuxvm/pkg/service/guestcontrol"
 	"linuxvm/pkg/service/management"
 	sshsvc "linuxvm/pkg/service/ssh"
 )
@@ -61,10 +63,12 @@ func (m *Machine) GuestSpec() protocol.GuestSpec {
 		NetworkMode:   string(m.spec.VirtualNetworkMode),
 		TTY:           m.spec.TTY,
 		Cmdline:       guestCmdlineFromSpec(m.spec.Cmdline),
-		Mounts:        guestMountsFromSpec(m.spec.Mounts),
-		BlkDevs:       guestBlockDevsFromSpec(m.spec.BlkDevs),
-		SSH:           guestSSHFromSpec(m.spec.SSHInfo),
-		Podman:        guestPodmanFromSpec(m.spec.PodmanInfo),
+		Storage: protocol.GuestStorage{
+			VirtioFS: guestMountsFromSpec(m.spec.Storage.VirtioFS),
+			Blocks:   guestBlockDevsFromSpec(m.spec.Storage.Blocks),
+		},
+		SSH:    guestSSHFromSpec(m.spec.SSHInfo),
+		Podman: guestPodmanFromSpec(m.spec.PodmanInfo),
 	}
 }
 
@@ -78,7 +82,22 @@ func (m *Machine) AttachSpec() protocol.AttachSpec {
 		GVPCtlAddr:               sshTarget.GVPCtlAddr,
 		GuestSSHServerListenAddr: sshTarget.GuestSSHServerListenAddr,
 		GuestTunnelHost:          sshTarget.GuestTunnelHost,
+		GuestControlCID:          define.GuestVSockCID,
+		GuestControlPort:         define.GuestControlPort,
+		GuestControlSocket:       m.spec.GuestControlAddr,
 	}
+}
+
+func (m *Machine) GuestControlTarget() guestcontrol.Target {
+	return guestcontrol.Target{CID: define.GuestVSockCID, Port: define.GuestControlPort, UnixSocket: unixSocketPath(m.spec.GuestControlAddr)}
+}
+
+func unixSocketPath(raw string) string {
+	addr, err := network.ParseUnixAddr(raw)
+	if err != nil {
+		return ""
+	}
+	return addr.Path
 }
 
 func (m *Machine) ManagementView() management.VMConfigView {
@@ -94,11 +113,12 @@ func (m *Machine) ManagementView() management.VMConfigView {
 			GVProxyAPI:    m.spec.GVPCtlAddr,
 			PodmanAPI:     m.spec.PodmanInfo.HostPodmanProxyAddr,
 			SSH:           m.spec.SSHInfo.HostSSHProxyListenAddr,
+			GuestControl:  m.spec.GuestControlAddr,
 		},
 		TTY: m.spec.TTY,
 	}
 
-	for _, mount := range m.spec.Mounts {
+	for _, mount := range m.spec.Storage.VirtioFS {
 		view.Mounts = append(view.Mounts, management.MountView{
 			ReadOnly: mount.ReadOnly,
 			Source:   mount.Source,
@@ -107,12 +127,19 @@ func (m *Machine) ManagementView() management.VMConfigView {
 		})
 	}
 
-	for _, disk := range m.spec.BlkDevs {
-		view.Disks = append(view.Disks, management.DiskView{
-			UUID:    disk.UUID,
-			MountTo: disk.MountTo,
-			FsType:  disk.FsType,
-		})
+	for _, disk := range m.spec.Storage.Blocks {
+		diskView := management.DiskView{
+			ReadOnly: disk.ReadOnly,
+			DirectIO: disk.DirectIO,
+			SyncMode: disk.SyncMode,
+		}
+		if disk.GuestMount != nil {
+			diskView.UUID = disk.GuestMount.UUID
+			diskView.MountTo = disk.GuestMount.Target
+			diskView.FsType = disk.GuestMount.FsType
+			diskView.ReadOnly = diskView.ReadOnly || disk.GuestMount.ReadOnly
+		}
+		view.Disks = append(view.Disks, diskView)
 	}
 
 	return view
@@ -151,7 +178,7 @@ func guestCmdlineFromSpec(cmd define.Cmdline) protocol.GuestCmdline {
 	}
 }
 
-func guestMountsFromSpec(mounts []define.Mount) []protocol.GuestMount {
+func guestMountsFromSpec(mounts []define.VirtioFSSpec) []protocol.GuestMount {
 	out := make([]protocol.GuestMount, 0, len(mounts))
 	for _, m := range mounts {
 		out = append(out, protocol.GuestMount{
@@ -167,14 +194,18 @@ func guestMountsFromSpec(mounts []define.Mount) []protocol.GuestMount {
 	return out
 }
 
-func guestBlockDevsFromSpec(devs []define.BlkDev) []protocol.GuestBlockDev {
+func guestBlockDevsFromSpec(devs []define.BlockDeviceSpec) []protocol.GuestBlockDev {
 	out := make([]protocol.GuestBlockDev, 0, len(devs))
 	for _, d := range devs {
+		if d.GuestMount == nil {
+			continue
+		}
 		out = append(out, protocol.GuestBlockDev{
-			FsType:  d.FsType,
-			UUID:    d.UUID,
-			Path:    d.Path,
-			MountTo: d.MountTo,
+			FsType:   d.GuestMount.FsType,
+			UUID:     d.GuestMount.UUID,
+			Path:     d.Path,
+			MountTo:  d.GuestMount.Target,
+			ReadOnly: d.ReadOnly || d.GuestMount.ReadOnly,
 		})
 	}
 	return out

@@ -1,11 +1,5 @@
 ALPINE_VERSION=3.23.3
 
-BUSYBOX_AARCH64_DEB_URL=https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/pool/main/b/busybox/busybox-static_1.37.0-4ubuntu1_arm64.deb
-BUSYBOX_X86_64_DEB_URL=https://mirrors.tuna.tsinghua.edu.cn/ubuntu/pool/main/b/busybox/busybox-static_1.36.1-6ubuntu3.1_amd64.deb
-
-DROPBEAR_REPO=https://github.com/mkj/dropbear.git
-DROPBEAR_REF=DROPBEAR_2025.89
-
 LIBEPOXY_VERSION=1.5.10
 LIBEPOXY_SHA256=072cda4b59dd098bba8c2363a6247299db1fa89411dc221c8b81b8ee8192e623
 

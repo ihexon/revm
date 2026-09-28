@@ -2,7 +2,7 @@
 
 [English](./attach.en.md)
 
-`revm attach` 连接到已有 session。它不会启动新 VM，也不会处理启动参数；它只读取 session 的管理 API，获取 SSH 连接信息，然后进入 guest。
+`revm attach` 连接到已有 session。它不会启动新 VM，也不会处理启动参数。普通命令通过 guest control vsock endpoint 执行；`--pty` 仍使用 SSH 作为交互式兼容入口。
 
 ## 基本用法
 
@@ -48,7 +48,7 @@ revm attach --id containers -- sh -c 'podman ps'
 ~/.cache/revm/<session-id>/socks/vmctl.sock
 ```
 
-管理 API 返回 SSH key、guest 地址和 gvproxy tunnel 信息。随后 `revm attach` 使用这些信息连接 guest 内的 Dropbear SSH server。
+管理 API 返回 guest-control endpoint，以及交互式兼容路径需要的 SSH 信息。
 
 ## 日志
 

@@ -13,7 +13,7 @@ func (v *machineBuilder) configureContainerRAWDisk(ctx context.Context, spec *Co
 		return fmt.Errorf("prepare container storage raw disk: %w", err)
 	}
 
-	v.BlkDevs = append(v.BlkDevs, blkDev)
+	v.Storage.Blocks = append(v.Storage.Blocks, blkDev)
 	return nil
 }
 
@@ -24,7 +24,7 @@ func (v *machineBuilder) withUserProvidedStorageRAWDisk(ctx context.Context, dis
 			return fmt.Errorf("prepare raw disk %q: %w", spec.Path, err)
 		}
 
-		v.BlkDevs = append(v.BlkDevs, blkDev)
+		v.Storage.Blocks = append(v.Storage.Blocks, blkDev)
 	}
 
 	return nil

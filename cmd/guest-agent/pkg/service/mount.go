@@ -3,14 +3,22 @@ package service
 import (
 	"context"
 	"fmt"
-	"linuxvm/pkg/define"
 	"linuxvm/pkg/protocol"
 	"os"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 )
 
-type Mnt define.Mount
+type Mnt struct {
+	ReadOnly bool
+	Source   string
+	Tag      string
+	Target   string
+	Type     string
+	Opts     string
+	UUID     string
+}
 
 // virtiofs filesystem type
 const virtiofsType = "virtiofs"
@@ -39,13 +47,17 @@ const (
 
 func (mnt *Mnt) makeMountCmdline(action MountActionType) ([]string, error) {
 	var args []string
-
+	var mountOpts []string
 	if mnt.Opts != "" {
-		args = append(args, "-o", mnt.Opts)
+		mountOpts = append(mountOpts, mnt.Opts)
 	}
-
 	if mnt.ReadOnly {
-		args = append(args, "-o", "ro")
+		mountOpts = append(mountOpts, "ro")
+		// A read-only block device cannot replay an ext4 journal. noload keeps
+		// the mount strictly read-only while allowing a clean image to mount.
+		if mnt.Type == "ext4" {
+			mountOpts = append(mountOpts, "noload")
+		}
 	}
 
 	switch action {
@@ -57,9 +69,10 @@ func (mnt *Mnt) makeMountCmdline(action MountActionType) ([]string, error) {
 		if mnt.Type == "" {
 			return nil, fmt.Errorf("filesystem type is empty")
 		}
-		// only ext4 support data=ordered
-		if mnt.Type == "ext4" {
-			args = append(args, "-o", "data=ordered")
+		// Keep journal ordering for writable ext4. Read-only mounts use noload
+		// above because the block device itself is read-only.
+		if mnt.Type == "ext4" && !mnt.ReadOnly {
+			mountOpts = append(mountOpts, "data=ordered")
 		}
 		args = append(args, "-t", mnt.Type, "UUID="+mnt.UUID, mnt.Target)
 	case VirtioFsAction:
@@ -79,6 +92,11 @@ func (mnt *Mnt) makeMountCmdline(action MountActionType) ([]string, error) {
 		args = append(args, "-t", mnt.Type, mnt.Type, mnt.Target)
 	default:
 		return nil, fmt.Errorf("unsupported mount action")
+	}
+	if len(mountOpts) > 0 {
+		// Alpine's mount implementation treats repeated -o flags inconsistently.
+		// Pass one comma-separated option list so read-only and discard semantics survive.
+		args = append([]string{"-o", strings.Join(mountOpts, ",")}, args...)
 	}
 
 	return args, nil
@@ -179,12 +197,12 @@ func MountAllPseudoMnt(ctx context.Context) error {
 }
 
 func MountVirtiofs(ctx context.Context, vmc *protocol.GuestSpec) error {
-	if len(vmc.Mounts) == 0 {
+	if len(vmc.Storage.VirtioFS) == 0 {
 		logrus.Debug("no virtiofs mounts configured")
 		return nil
 	}
 
-	for _, virtiofsMnt := range vmc.Mounts {
+	for _, virtiofsMnt := range vmc.Storage.VirtioFS {
 		mnt := &Mnt{
 			Tag:      virtiofsMnt.Tag,
 			Target:   virtiofsMnt.Target,
@@ -207,18 +225,19 @@ func MountVirtiofs(ctx context.Context, vmc *protocol.GuestSpec) error {
 }
 
 func MountBlockDevices(ctx context.Context, vmc *protocol.GuestSpec) error {
-	if len(vmc.BlkDevs) == 0 {
+	if len(vmc.Storage.Blocks) == 0 {
 		logrus.Debug("no block devices will be mounted, skip")
 		return nil
 	}
 
-	for _, dataDiskMnt := range vmc.BlkDevs {
+	for _, dataDiskMnt := range vmc.Storage.Blocks {
 		mnt := &Mnt{
-			Source: dataDiskMnt.Path,
-			Opts:   "rw,discard",
-			UUID:   dataDiskMnt.UUID,
-			Type:   dataDiskMnt.FsType,
-			Target: dataDiskMnt.MountTo,
+			Source:   dataDiskMnt.Path,
+			Opts:     "discard",
+			UUID:     dataDiskMnt.UUID,
+			Type:     dataDiskMnt.FsType,
+			Target:   dataDiskMnt.MountTo,
+			ReadOnly: dataDiskMnt.ReadOnly,
 		}
 
 		if IsMounted(mnt.Target) {

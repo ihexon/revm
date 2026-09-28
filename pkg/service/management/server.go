@@ -9,7 +9,7 @@ import (
 	"fmt"
 	httpv2 "linuxvm/pkg/http"
 	"linuxvm/pkg/protocol"
-	sshsvc "linuxvm/pkg/service/ssh"
+	guestcontrol "linuxvm/pkg/service/guestcontrol"
 	ssev2 "linuxvm/pkg/sse"
 	"net/http"
 	"sync"
@@ -32,7 +32,7 @@ type Machine interface {
 	RequestShutdown(ctx context.Context) error
 	ManagementView() VMConfigView
 	AttachSpec() protocol.AttachSpec
-	SSHTarget() sshsvc.Target
+	GuestControlTarget() guestcontrol.Target
 }
 
 func writeJSON(w http.ResponseWriter, code int, value interface{}) {
@@ -108,14 +108,18 @@ func (s *Server) handleRequestVMStop(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	_ = s.machine.RequestShutdown(r.Context())
+	if err := s.machine.RequestShutdown(r.Context()); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, errResponse{Error: err.Error()})
+		return
+	}
 	writeJSON(w, http.StatusOK, nil)
 }
 
 type execRequest struct {
-	Bin  string   `json:"bin,omitempty"`
-	Args []string `json:"args,omitempty"`
-	Env  []string `json:"env,omitempty"`
+	Bin     string   `json:"bin,omitempty"`
+	Args    []string `json:"args,omitempty"`
+	Env     []string `json:"env,omitempty"`
+	WorkDir string   `json:"workDir,omitempty"`
 }
 
 func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +141,13 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) executeCommand(ctx context.Context, cancel context.CancelFunc, sess *ssev2.Session, req execRequest) {
 	defer cancel()
-	proc, err := sshsvc.GuestExec(ctx, s.machine.SSHTarget(), req.Bin, req.Args...)
+	proc, err := guestcontrol.GuestExecRequest(ctx, s.machine.GuestControlTarget(), protocol.GuestControlRequest{
+		SchemaVersion: protocol.GuestControlVersion,
+		Bin:           req.Bin,
+		Args:          req.Args,
+		Env:           req.Env,
+		WorkDir:       req.WorkDir,
+	})
 	if err != nil {
 		publish(sess, ssev2.Stderr, "guest exec failed: "+err.Error())
 		return

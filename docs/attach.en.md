@@ -1,6 +1,6 @@
 # revm attach
 
-`revm attach` connects to an existing session. It never starts a new VM and does not process boot options; it only reads the session management API, resolves SSH metadata, and enters the guest.
+`revm attach` connects to an existing session. It never starts a new VM and does not process boot options. Non-PTY commands use the guest control vsock endpoint; `--pty` keeps SSH as the interactive compatibility path.
 
 ## Usage
 
@@ -46,7 +46,7 @@ revm attach --id containers -- sh -c 'podman ps'
 ~/.cache/revm/<session-id>/socks/vmctl.sock
 ```
 
-The management API returns the SSH key, guest address, and gvproxy tunnel metadata. `revm attach` then connects to the Dropbear SSH server inside the guest.
+The management API returns the guest-control endpoint and the SSH metadata used by the optional interactive compatibility path.
 
 ## Logs
 

@@ -12,4 +12,7 @@ type AttachSpec struct {
 	GVPCtlAddr               string `json:"gvpCtlAddr,omitempty"`
 	GuestSSHServerListenAddr string `json:"guestSSHServerListenAddr,omitempty"`
 	GuestTunnelHost          string `json:"guestTunnelHost,omitempty"`
+	GuestControlCID          uint32 `json:"guestControlCID,omitempty"`
+	GuestControlPort         uint32 `json:"guestControlPort,omitempty"`
+	GuestControlSocket       string `json:"guestControlSocket,omitempty"`
 }

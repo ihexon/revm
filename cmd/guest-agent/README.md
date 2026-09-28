@@ -4,11 +4,12 @@
 
 ## Responsibilities
 
-- Extract embedded BusyBox and Dropbear helpers into `/.bin`.
+- Use the Alpine rootfs utilities installed by `apk`; only the guest agent is
+  injected into `/.bin`.
 - Fetch VM configuration from the host through vsock and persist it inside the guest.
 - Mount `/proc`, `/sys`, `/dev`, `/tmp`, `/run`, raw block devices, and VirtIO-FS shares.
 - Configure guest networking for `gvisor` or `tsi`.
-- Start SSH, time sync, and mode-specific long-running services.
+- Start the optional SSH compatibility endpoint, time sync, and mode-specific long-running services.
 - Execute the user command for `revm run`.
 - Start the Podman API service for `revm dockerd`.
 - Configure Podman port publishing so container `-p` mappings call gvproxy expose/unexpose.
@@ -32,7 +33,7 @@
 
 The guest agent exposes no public user CLI. Host control flows through services created by the main `revm` process:
 
-- `revm attach` obtains SSH metadata from the host management API and connects to Dropbear.
+- `revm attach` uses GuestControl over vsock; `--pty` may use the optional SSH compatibility endpoint.
 - `revm ctl --port-export` and `revm ctl --port-unexport` obtain the gvproxy endpoint from the host management API and call gvproxy's forwarder API.
 - Container port publishing is initiated by Podman inside the guest and handled by gvproxy on the host.
 
@@ -41,7 +42,6 @@ The guest agent exposes no public user CLI. Host control flows through services 
 | Path | Purpose |
 | ---- | ------- |
 | `main.go` | Guest boot orchestration, mode dispatch, and lifecycle |
-| `pkg/service/embedded.go` | Embedded BusyBox and Dropbear extraction |
 | `pkg/service/mount.go` | Pseudo filesystem, block device, and VirtIO-FS mounts |
 | `pkg/service/network.go` | Guest network setup for `gvisor` and `tsi` |
 | `pkg/service/dropbear.go` | Dropbear SSH server bootstrap |

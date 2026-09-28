@@ -30,7 +30,6 @@ const (
 )
 
 const (
-	BuiltinBusybox          = "/.bin/busybox"
 	GuestAgentPathInGuest   = "/.bin/guest-agent"
 	GuestHiddenBinDir       = "/.bin"
 	VMConfigFilePathInGuest = "/vmconfig.json"
@@ -48,6 +47,10 @@ const (
 	GuestSubnet        = "192.168.127.0/24"
 
 	DefaultVSockPort = 25882
+	GuestControlPort = 25883
+	// libkrun assigns the guest CID 3; CID 2 is the host and is used by the
+	// guest agent when it connects back to the ignition server.
+	GuestVSockCID = 3
 
 	LocalHost = "127.0.0.1"
 

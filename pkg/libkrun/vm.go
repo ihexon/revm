@@ -99,6 +99,32 @@ func (v *Libkrun) Start(_ context.Context) error {
 	return nil
 }
 
+// Shutdown asks libkrun to perform its native guest shutdown. It is safe to
+// call while krun_vmm_run is blocked; the handle is designed for that purpose.
+func (v *Libkrun) Shutdown(_ context.Context) error {
+	if v.vmmHandle == nil {
+		return errors.New("libkrun: VMM handle is unavailable")
+	}
+	var errOut C.KrunError
+	return checkKrunResult("shutdown VMM", C.krun_vmm_handle_shutdown(v.vmmHandle, &errOut), errOut)
+}
+
+func (v *Libkrun) Pause(_ context.Context) error {
+	if v.vmmHandle == nil {
+		return errors.New("libkrun: VMM handle is unavailable")
+	}
+	var errOut C.KrunError
+	return checkKrunResult("pause VMM", C.krun_vmm_handle_pause(v.vmmHandle, &errOut), errOut)
+}
+
+func (v *Libkrun) Resume(_ context.Context) error {
+	if v.vmmHandle == nil {
+		return errors.New("libkrun: VMM handle is unavailable")
+	}
+	var errOut C.KrunError
+	return checkKrunResult("resume VMM", C.krun_vmm_handle_resume(v.vmmHandle, &errOut), errOut)
+}
+
 // Close releases handles and host file descriptors. It is idempotent and also
 // cleans up partially built graphs after a failed Create call.
 func (v *Libkrun) Close() error {
@@ -247,10 +273,23 @@ func (v *Libkrun) setupDevices() error {
 	if err := v.setupVSock(); err != nil {
 		return err
 	}
+	if err := v.setupRNG(); err != nil {
+		return err
+	}
 	if err := v.setupNetwork(); err != nil {
 		return err
 	}
 	return v.setupStorage()
+}
+
+func (v *Libkrun) setupRNG() error {
+	var errOut C.KrunError
+	device := C.krun_rng_device_new(&errOut)
+	if err := checkKrunHandle("create RNG device", unsafe.Pointer(device), errOut); err != nil {
+		return err
+	}
+	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
+	return nil
 }
 
 func (v *Libkrun) setupRootFS() error {
@@ -338,6 +377,9 @@ func (v *Libkrun) buildVMM() error {
 	if C.krun_check_nested_virt() {
 		C.krun_vmm_builder_nested_virt(&v.vmmBuilder, true)
 	}
+	// Enable the upstream guest shutdown device. The request is still
+	// best-effort on platforms where libkrun does not implement it.
+	C.krun_vmm_builder_shutdown_support(&v.vmmBuilder, C.bool(true))
 	var errOut C.KrunError
 	v.vmm = C.krun_vmm_builder_build(&v.vmmBuilder, &errOut)
 	v.vmmBuilder = nil

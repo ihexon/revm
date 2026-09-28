@@ -13,6 +13,7 @@ import (
 	libarchive_go "linuxvm/pkg/libarchive"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/protocol"
+	guestcontrol "linuxvm/pkg/service/guestcontrol"
 	"linuxvm/pkg/service/management"
 	sshsvc "linuxvm/pkg/service/ssh"
 	"net/http"
@@ -20,7 +21,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"al.essio.dev/pkg/shellescape"
 	"github.com/sirupsen/logrus"
 )
 
@@ -316,12 +316,24 @@ func attach(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	sshTarget := sshTargetFromAttachSpec(attachSpec)
+	controlTarget := guestcontrol.Target{CID: attachSpec.GuestControlCID, Port: attachSpec.GuestControlPort}
+	if attachSpec.GuestControlSocket != "" {
+		if addr, parseErr := network.ParseUnixAddr(attachSpec.GuestControlSocket); parseErr == nil {
+			controlTarget.UnixSocket = addr.Path
+		}
+	}
+	defaults := guestcontrol.DefaultTarget()
+	if controlTarget.CID == 0 {
+		controlTarget.CID = defaults.CID
+	}
+	if controlTarget.Port == 0 {
+		controlTarget.Port = defaults.Port
+	}
 
 	if cfg.PTY {
-		return attachShell(ctx, sshTarget)
+		return attachShell(ctx, sshTargetFromAttachSpec(attachSpec))
 	}
-	return attachRun(ctx, sshTarget, cfg.Command...)
+	return attachRun(ctx, controlTarget, cfg.Command...)
 }
 
 func fetchAttachSpec(ctx context.Context, workspaceDirPath string) (protocol.AttachSpec, error) {
@@ -369,23 +381,35 @@ func sshTargetFromAttachSpec(spec protocol.AttachSpec) sshsvc.Target {
 	}
 }
 
-// attachRun executes a command in the attached VM session over SSH.
+// attachRun executes a command in the attached VM session over GuestControl.
 // If cmdline is empty, it runs /bin/sh.
-func attachRun(ctx context.Context, sshTarget sshsvc.Target, cmdline ...string) error {
+func attachRun(ctx context.Context, controlTarget guestcontrol.Target, cmdline ...string) error {
 	if len(cmdline) == 0 {
 		cmdline = []string{filepath.Join("/", "bin", "sh")}
 	}
 
-	client, err := sshsvc.MakeSSHClient(ctx, sshTarget)
+	proc, err := guestcontrol.GuestExec(ctx, controlTarget, cmdline[0], cmdline[1:]...)
 	if err != nil {
-		return fmt.Errorf("ssh connect: %w", err)
+		return err
 	}
-	defer client.Close()
-
-	return client.Run(ctx, shellescape.QuoteCommand(cmdline))
+	stderrDone := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(os.Stderr, proc.StderrPipeReader)
+		close(stderrDone)
+	}()
+	_, copyErr := io.Copy(os.Stdout, proc.StdoutPipeReader)
+	if copyErr != nil {
+		return copyErr
+	}
+	<-stderrDone
+	if err := <-proc.ErrChan; err != nil {
+		return err
+	}
+	return nil
 }
 
-// attachShell starts an interactive shell in the attached VM session over SSH.
+// attachShell starts an interactive shell in the attached VM session over SSH
+// as the compatibility path because GuestControl PTY support is separate.
 func attachShell(ctx context.Context, sshTarget sshsvc.Target) error {
 	client, err := sshsvc.MakeSSHClient(ctx, sshTarget)
 	if err != nil {
@@ -399,28 +423,47 @@ func attachShell(ctx context.Context, sshTarget sshsvc.Target) error {
 // Exec runs a command inside the guest VM and returns its combined stdout
 // output. It blocks until the command completes.
 func (vm *VM) Exec(ctx context.Context, name string, args ...string) ([]byte, error) {
-	client, err := sshsvc.MakeSSHClient(ctx, vm.runtime.view.SSHTarget())
+	proc, err := guestcontrol.GuestExec(ctx, vm.runtime.view.GuestControlTarget(), name, args...)
 	if err != nil {
-		return nil, fmt.Errorf("ssh connect: %w", err)
+		return nil, err
 	}
-	defer client.Close()
-
-	return client.Output(ctx, shellescape.QuoteCommand(append([]string{name}, args...)))
+	stderrDone := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(io.Discard, proc.StderrPipeReader)
+		close(stderrDone)
+	}()
+	out, err := io.ReadAll(proc.StdoutPipeReader)
+	if err != nil {
+		return nil, err
+	}
+	<-stderrDone
+	if err := <-proc.ErrChan; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ExecWith runs a command inside the guest VM with custom I/O streams.
 // It blocks until the command completes.
 func (vm *VM) ExecWith(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer,
 	name string, args ...string) error {
-	client, err := sshsvc.MakeSSHClient(ctx, vm.runtime.view.SSHTarget())
+	proc, err := guestcontrol.GuestExecWith(ctx, vm.runtime.view.GuestControlTarget(), stdin, name, args...)
 	if err != nil {
-		return fmt.Errorf("ssh connect: %w", err)
+		return err
 	}
-	defer client.Close()
-
-	return client.RunWith(ctx,
-		shellescape.QuoteCommand(append([]string{name}, args...)),
-		stdin, stdout, stderr)
+	copyErrCh := make(chan error, 2)
+	go func() { _, err := io.Copy(stdout, proc.StdoutPipeReader); copyErrCh <- err }()
+	go func() { _, err := io.Copy(stderr, proc.StderrPipeReader); copyErrCh <- err }()
+	var copyErr error
+	for i := 0; i < 2; i++ {
+		if err := <-copyErrCh; err != nil && copyErr == nil {
+			copyErr = err
+		}
+	}
+	if err := <-proc.ErrChan; err != nil && copyErr == nil {
+		copyErr = err
+	}
+	return copyErr
 }
 
 // Shell opens an interactive shell session to the guest VM.

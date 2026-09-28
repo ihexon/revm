@@ -4,48 +4,116 @@ package libkrun
 
 import (
 	"context"
+	"errors"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/network"
+	"linuxvm/pkg/service/guestcontrol"
 	"runtime"
+	"sync"
 )
 
 type Provider struct {
 	mc      *define.MachineSpec
 	libkrun *Libkrun
+	mu      sync.Mutex
+	running bool
+	started bool
+	runDone chan struct{}
+	state   providerState
 }
 
+type providerState uint8
+
+const (
+	providerCreated providerState = iota
+	providerRunning
+	providerExited
+	providerClosed
+)
+
 func NewProvider(ctx context.Context, mc *define.MachineSpec) (*Provider, error) {
-	p := &Provider{mc: mc, libkrun: New(mc)}
+	p := &Provider{mc: mc, libkrun: New(mc), runDone: make(chan struct{}), state: providerCreated}
 	if err := p.libkrun.Create(ctx); err != nil {
 		return nil, err
 	}
 	return p, nil
 }
 
-func (p *Provider) Start(vmWaitAbortCtx context.Context) error {
-	ch := make(chan error, 1)
-	go func() {
-		runtime.LockOSThread()
-		// vmWaitAbortCtx follows the blocking libkrun Start call. Graceful shutdown is
-		// requested separately through RequestShutdown, not by cancelling this ctx.
-		ch <- p.libkrun.Start(vmWaitAbortCtx)
+func (p *Provider) Start(_ context.Context) error {
+	p.mu.Lock()
+	if p.started || p.state == providerClosed {
+		p.mu.Unlock()
+		return errors.New("libkrun: VMM can only be started once")
+	}
+	p.started = true
+	p.running = true
+	p.state = providerRunning
+	p.mu.Unlock()
+
+	defer func() {
+		p.mu.Lock()
+		p.running = false
+		p.state = providerExited
+		close(p.runDone)
+		p.mu.Unlock()
 	}()
 
-	select {
-	case err := <-ch:
-		return err
-	case <-vmWaitAbortCtx.Done():
-		return vmWaitAbortCtx.Err()
-	}
+	// krun_vmm_run is a consuming, blocking call. It must stay on its locked
+	// OS thread and must be allowed to return before any handle is destroyed.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return p.libkrun.Start(context.Background())
 }
 
 func (p *Provider) RequestShutdown(ctx context.Context) error {
-	return p.libkrun.SendSignal(ctx, define.GuestSignalTerminated)
+	nativeErr := p.libkrun.Shutdown(ctx)
+	// Native shutdown is preferred, but a successful request does not mean the
+	// guest has completed its shutdown path. Ask the guest agent to sync and
+	// reboot as well; the endpoint is idempotent and is the portable fallback
+	// for Linux and older kernels.
+	controlTarget := guestcontrol.DefaultTarget()
+	if addr, err := network.ParseUnixAddr(p.mc.GuestControlAddr); err == nil {
+		controlTarget.UnixSocket = addr.Path
+	}
+	guestErr := guestcontrol.Shutdown(ctx, controlTarget)
+	if nativeErr == nil || guestErr == nil {
+		return nil
+	}
+	if err := p.libkrun.SendSignal(ctx, define.GuestSignalTerminated); err != nil {
+		return errors.Join(nativeErr, guestErr, err)
+	}
+	return nil
+}
+
+func (p *Provider) Pause(ctx context.Context) error {
+	return p.libkrun.Pause(ctx)
+}
+
+func (p *Provider) Resume(ctx context.Context) error {
+	return p.libkrun.Resume(ctx)
 }
 
 func (p *Provider) ForceStop(ctx context.Context) error {
-	return p.libkrun.SendSignal(ctx, define.GuestSignalTerminated)
+	if err := p.RequestShutdown(ctx); err != nil {
+		return err
+	}
+	select {
+	case <-p.runDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (p *Provider) Close() error {
+	p.mu.Lock()
+	running := p.running
+	if !running {
+		p.state = providerClosed
+	}
+	p.mu.Unlock()
+	if running {
+		return errors.New("libkrun: cannot close while VMM is running")
+	}
 	return p.libkrun.Close()
 }
