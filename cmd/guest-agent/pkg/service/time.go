@@ -4,22 +4,18 @@ package service
 
 import (
 	"context"
-	"guestAgent/pkg/supervisor"
-	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 func SyncRTCTime(ctx context.Context) error {
-	args := []string{"ntpd", "-q", "-p", "pool.ntp.org"}
-
-	sv := supervisor.New(supervisor.Config{
-		Name:       "ntpd",
-		Cmd:        BusyboxPath(),
-		Args:       args,
-		Stderr:     StderrWriter(),
-		Stdout:     StderrWriter(),
-		Restart:    true,
-		RetryDelay: 60 * time.Minute,
-	})
-	sv.Run(ctx)
+	if err := ExecNoOutput(ctx, "ntpd", "-q", "-p", "pool.ntp.org"); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		// Some supported BusyBox builds omit ntpd. The guest clock is still
+		// initialized by the VMM, so an optional sync failure is diagnostic only.
+		logrus.Debugf("guest clock sync unavailable: %v", err)
+	}
 	return nil
 }
