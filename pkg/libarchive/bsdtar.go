@@ -16,6 +16,8 @@ import (
 	"os"
 	"sync"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 type mode int
@@ -506,11 +508,16 @@ func (t *Archiver) ModeX(ctx context.Context) error {
 	extractFlags := defaultExtractFlags
 
 	if os.Geteuid() == 0 || t.includeFileAttribute {
-		extractFlags |= ExtractPerm | ExtractOwner | ExtractACL | ExtractXattr | ExtractFFlags
+		extractFlags |= ExtractPerm | ExtractOwner | ExtractACL | ExtractFFlags
+		if !t.includeXattr {
+			extractFlags |= ExtractXattr
+		}
 	}
-	if t.includeXattr {
-		extractFlags |= ExtractXattr
-	}
+	// IncludeXattr is restored after each entry is extracted. libarchive's
+	// disk writer attempts to set xattrs before restoring the archived mode,
+	// which fails when an existing entry is read-only on macOS. The explicit
+	// restore path temporarily grants owner write permission and then restores
+	// the archived mode.
 	if os.Geteuid() == 0 {
 		extractFlags |= ExtractMacMetadata
 	}
@@ -697,12 +704,63 @@ func (t *Archiver) readArchive(ctx context.Context, writer *C.struct_archive) er
 			}
 			return fmt.Errorf("extract %v: %v", pathname, errStr)
 		}
+		if t.includeXattr && !t.includeFileAttribute {
+			if err := restoreEntryXattrs(pathname, entry); err != nil {
+				return fmt.Errorf("restore extended attributes for %v: %w", pathname, err)
+			}
+		}
 	}
 
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
+	return nil
+}
+
+func restoreEntryXattrs(pathname string, entry *C.struct_archive_entry) error {
+	if C.archive_entry_xattr_count(entry) == 0 {
+		return nil
+	}
+
+	info, err := os.Lstat(pathname)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil
+	}
+
+	originalMode := info.Mode().Perm()
+	writableMode := originalMode | 0200
+	if writableMode != originalMode {
+		if err := os.Chmod(pathname, writableMode); err != nil {
+			return err
+		}
+		defer func() { _ = os.Chmod(pathname, originalMode) }()
+	}
+
+	if C.archive_entry_xattr_reset(entry) < 0 {
+		return errors.New("cannot enumerate extended attributes")
+	}
+	for {
+		var name *C.char
+		var value unsafe.Pointer
+		var size C.size_t
+		next := C.archive_entry_xattr_next(entry, &name, &value, &size)
+		if next != C.ARCHIVE_OK {
+			// archive_entry_xattr_next returns a negative status after the
+			// final attribute (currently ARCHIVE_WARN in libarchive).
+			break
+		}
+		if name == nil {
+			return errors.New("archive entry has an empty extended-attribute name")
+		}
+		data := unsafe.Slice((*byte)(value), int(size))
+		if err := unix.Lsetxattr(pathname, C.GoString(name), data, 0); err != nil {
+			return fmt.Errorf("%s: %w", C.GoString(name), err)
+		}
+	}
 	return nil
 }
 

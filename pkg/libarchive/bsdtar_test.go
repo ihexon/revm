@@ -77,6 +77,54 @@ func TestModeCRoundTripsVirtioFSOverrideStat(t *testing.T) {
 	}
 }
 
+func TestModeXRestoresXattrOnExistingReadOnlyDirectory(t *testing.T) {
+	srcDir := t.TempDir()
+	readonly := filepath.Join(srcDir, "readonly")
+	if err := os.Mkdir(readonly, 0755); err != nil {
+		t.Fatal(err)
+	}
+	const key = "user.containers.override_stat"
+	if err := unix.Setxattr(readonly, key, []byte("0:0:0555"), 0); err != nil {
+		if err == unix.ENOTSUP || err == unix.EOPNOTSUPP {
+			t.Skipf("filesystem does not support xattrs: %v", err)
+		}
+		t.Fatal(err)
+	}
+	if err := os.Chmod(readonly, 0555); err != nil {
+		t.Fatal(err)
+	}
+
+	archivePath := filepath.Join(t.TempDir(), "rootfs.tar.zst")
+	if err := NewArchiver().WithArchiveFilePath(archivePath).SetChdir(srcDir).ModeC(context.Background()); err != nil {
+		t.Fatalf("ModeC() error = %v", err)
+	}
+
+	dstDir := t.TempDir()
+	dstReadonly := filepath.Join(dstDir, "readonly")
+	if err := os.Mkdir(dstReadonly, 0555); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewArchiver().
+		WithArchiveFilePath(archivePath).
+		SetChdir(dstDir).
+		IncludeXattr().
+		ModeX(context.Background()); err != nil {
+		t.Fatalf("ModeX() error = %v", err)
+	}
+
+	size, err := unix.Getxattr(dstReadonly, key, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := make([]byte, size)
+	if _, err := unix.Getxattr(dstReadonly, key, value); err != nil {
+		t.Fatal(err)
+	}
+	if string(value) != "0:0:0555" {
+		t.Fatalf("override stat = %q, want %q", value, "0:0:0555")
+	}
+}
+
 func TestModeCPreservesHardlinks(t *testing.T) {
 	srcDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(srcDir, "original"), []byte("shared\n"), 0644); err != nil {
