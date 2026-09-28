@@ -11,6 +11,7 @@ import "C"
 import (
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/filesystem"
 	"os"
 	"path/filepath"
 	"unsafe"
@@ -85,6 +86,9 @@ func (v *Libkrun) addVirtioFS(spec define.VirtioFSSpec) error {
 	}
 	if !stat.IsDir() {
 		return fmt.Errorf("not a directory: %s", resolved)
+	}
+	if err := filesystem.EnsureVirtioFSRootOwnership(resolved); err != nil {
+		return fmt.Errorf("normalize virtiofs root ownership: %w", err)
 	}
 	tagC := newKrunStr(tag)
 	pathC := newKrunStr(resolved)

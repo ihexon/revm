@@ -52,7 +52,7 @@ func (d *Dropbear) GenerateHostKey(ctx context.Context) error {
 
 // WriteAuthorizedKeys writes the public key to the authorized_keys file.
 func (d *Dropbear) WriteAuthorizedKeys(publicKey string) error {
-	if err := os.MkdirAll(filepath.Dir(d.cfg.AuthorizedKeysFile), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(d.cfg.AuthorizedKeysFile), 0700); err != nil {
 		return fmt.Errorf("create authorized_keys dir: %w", err)
 	}
 
@@ -66,11 +66,11 @@ func (d *Dropbear) WriteAuthorizedKeys(publicKey string) error {
 // Start starts the dropbear SSH server via supervisor. Blocks until ctx is cancelled.
 func (d *Dropbear) Start(ctx context.Context) {
 	args := []string{
-		"dropbear",
 		"-D", filepath.Dir(d.cfg.AuthorizedKeysFile),
 		"-p", d.cfg.ListenAddr,
 		"-r", d.cfg.PrivateKeyPath,
 		"-F", // foreground
+		"-E", // log to the guest console instead of syslog
 		"-s", // disable password login
 	}
 
@@ -82,7 +82,6 @@ func (d *Dropbear) Start(ctx context.Context) {
 		Name:       "dropbear",
 		Cmd:        dropbearCommand,
 		Args:       args,
-		Env:        []string{"PASS_FILEPEM_CHECK=1"},
 		Stdout:     StderrWriter(),
 		Stderr:     StderrWriter(),
 		Restart:    true,
@@ -99,6 +98,13 @@ func StartGuestSSHServer(ctx context.Context, vmc *protocol.GuestSpec) error {
 	}
 	if _, err := os.Stat(dropbearCommand); err != nil {
 		logrus.Warnf("SSH compatibility endpoint disabled: %s is unavailable: %v", dropbearCommand, err)
+		return nil
+	}
+	// Alpine rootfs files are served through virtiofs and may retain the host
+	// UID for /root. Dropbear rejects root public-key login when the home
+	// directory is not owned by root, so normalize it before starting SSH.
+	if err := os.Chown("/root", 0, 0); err != nil {
+		logrus.Warnf("SSH compatibility endpoint disabled: normalize /root ownership: %v", err)
 		return nil
 	}
 	cfg := DropbearConfig{
