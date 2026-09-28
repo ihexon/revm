@@ -31,11 +31,11 @@ build_libkrun_linux() {
 
     cd "$LIBKRUN_SRC"
     make clean
-    make PREFIX="$PREFIX" BLK=1 NET=1
+    make PREFIX="$PREFIX" BLK=1 NET=1 FFI=1
     verify_libkrun_bundle "$LIBKRUN_SRC/target/release"
 
     rm -rf "$PREFIX"
-    make PREFIX="$PREFIX" BLK=1 NET=1 install
+    make PREFIX="$PREFIX" BLK=1 NET=1 FFI=1 install
     verify_libkrun_bundle "$PREFIX/lib64"
 }
 

@@ -68,9 +68,9 @@ build_libkrun_darwin() {
 
     cd "$LIBKRUN_SRC"
     make clean
-    TIMESYNC=1 make PREFIX="$PREFIX" BLK=1 NET=1 GPU=1
+    TIMESYNC=1 make PREFIX="$PREFIX" BLK=1 NET=1 GPU=1 FFI=1
     verify_libkrun_bundle "$LIBKRUN_SRC/target/release"
-    TIMESYNC=1 make PREFIX="$PREFIX" BLK=1 NET=1 GPU=1 install
+    TIMESYNC=1 make PREFIX="$PREFIX" BLK=1 NET=1 GPU=1 FFI=1 install
 
     rm -rf "$PREFIX/lib/pkgconfig"
     verify_libkrun_bundle "$PREFIX/lib"
