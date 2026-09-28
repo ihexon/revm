@@ -74,6 +74,10 @@ build_libkrun_darwin() {
     TIMESYNC=1 make PREFIX="$PREFIX" BLK=1 NET=1 GPU=1 FFI=1 install
 
     rm -rf "$PREFIX/lib/pkgconfig"
+    # krun-init embeds the temporary GitHub Actions checkout in its Mach-O
+    # install name. Normalize it before publishing the dependency archive so
+    # consumers can relocate the bundled library.
+    install_name_tool -id "libkrun_init.0.dylib" "$PREFIX/lib/libkrun_init.0.1.0.dylib"
     verify_libkrun_bundle "$PREFIX/lib"
     install -m 644 "$VIRGLRENDERER_PREFIX/lib/libvirglrenderer.a" "$LIBEPOXY_PREFIX/lib/libepoxy.a" "$PREFIX/lib/"
     install -m 644 "$MOLTENVK_PREFIX/lib/libMoltenVK.a" "$MOLTENVK_PREFIX/libexec/lib/libSPIRVCross.a" "$MOLTENVK_PREFIX/libexec/lib/libSPIRVTools.a" "$PREFIX/lib/"
