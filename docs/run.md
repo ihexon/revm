@@ -73,6 +73,8 @@ revm run --id dev \
 --mount /host/path:/guest/path[,ro]
 ```
 
+Virtio-FS 共享目录在 guest 中按 `root:root` 显示。revm 使用 libkrun passthrough 支持的 `user.containers.override_stat` 元数据完成映射，不修改宿主文件的真实 UID/GID；宿主目录中的该 xattr 会被保留。
+
 原始 ext4 磁盘使用 `--raw-disk`：
 
 ```bash

@@ -71,6 +71,8 @@ Mount format:
 --mount /host/path:/guest/path[,ro]
 ```
 
+Virtio-FS shared directories are presented as `root:root` in the guest. revm uses libkrun's `user.containers.override_stat` passthrough metadata instead of changing the host files' real UID/GID; the xattr remains on the host directory.
+
 Attach ext4 raw disks with `--raw-disk`:
 
 ```bash
