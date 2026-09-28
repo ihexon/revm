@@ -18,6 +18,7 @@ revm 是一个以 session 为单位管理 libkrun microVM 的小型 CLI。每个
 - 自定义发行版或 rootfs 应作为 Podman workload 运行在 Alpine VM 内。
 - 非交互命令通过 guest-control vsock 执行；SSH 只保留为 PTY 和内部兼容入口。
 - VirtIO-FS 共享目录在 guest 中显示为 root:root。macOS 使用 user.containers.override_stat 保存 guest 可见的 UID、GID 和权限。
+- macOS arm64 可以用 `--gpu venus` 启用 headless virtio-GPU；默认关闭。
 - run 和 dockerd 创建 VM；attach 和 ctl 只连接已有 VM。
 
 ## 命令关系

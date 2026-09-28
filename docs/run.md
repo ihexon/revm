@@ -46,11 +46,22 @@ revm run --id light --network tsi -- sh
 | --cpus | vCPU 数量。未设置或小于 1 时使用主机 CPU 数量；最大 32。 |
 | --memory | 内存 MB。未设置时使用主机总内存；最小 512。 |
 | --network | gvisor 或 tsi，默认 gvisor。 |
+| --gpu | macOS arm64 上使用 `venus` 启用 headless virtio-GPU；默认 `off`。 |
 | --workdir | guest 命令的工作目录，默认 /。 |
 | --envs KEY=VALUE | 传入 guest 命令的环境变量，可重复。 |
 | --system-proxy | 读取 macOS 系统 HTTP/HTTPS 代理并传入 guest。gvisor 下会改写 127.0.0.1 代理地址。 |
 
 gvisor 使用 gvisor-tap-vsock，提供 DNS、NAT、TCP/UDP 和端口转发。tsi 使用 libkrun 的透明 socket interception，启动路径更轻，但不能使用 ctl 的手动端口映射。
+
+## GPU（macOS arm64）
+
+`--gpu venus` 将 virtio-GPU 暴露给 guest，并通过 Mesa Venus、virglrenderer、MoltenVK 和 Metal 使用 Apple GPU。revm 不创建窗口，也不转发键盘或鼠标；它适合 Vulkan compute 和需要 `/dev/dri/renderD128` 的 guest workload。
+
+~~~bash
+revm run --id gpu --gpu venus -- sh -c 'ls -l /dev/dri/renderD128; vulkaninfo --summary'
+~~~
+
+默认 rootfs 已安装 `mesa-vulkan-virtio` 和 `vulkan-tools`。`native-context` 尚未作为稳定选项提供。Venus 需要使用包含 GPU 支持的 libkrun、virglrenderer 和 libkrunfw 依赖 release。
 
 ## VirtIO-FS 目录
 
@@ -132,6 +143,7 @@ revm run --id build --ssh-key /tmp/revm-build-ssh-key -- sh
 --system-proxy
 --workdir
 --network
+--gpu
 --manage-api
 --ssh-key
 --report-events

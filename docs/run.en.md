@@ -44,11 +44,22 @@ Options:
 | --cpus | vCPU count. Host CPU count when unset or less than 1; maximum 32. |
 | --memory | Memory in MB. Host total memory when unset; minimum 512. |
 | --network | gvisor or tsi, default gvisor. |
+| --gpu | Use `venus` on macOS arm64 to enable a headless virtio-GPU device; default `off`. |
 | --workdir | Guest command working directory, default /. |
 | --envs KEY=VALUE | Environment for the guest command; repeatable. |
 | --system-proxy | Read the macOS HTTP/HTTPS proxy and pass it to the guest. In gvisor mode, loopback proxy addresses are rewritten. |
 
 gvisor uses gvisor-tap-vsock for DNS, NAT, TCP/UDP, and port forwarding. tsi uses libkrun transparent socket interception; it has a smaller host networking path but does not support manual ctl port mappings.
+
+## GPU on macOS arm64
+
+`--gpu venus` exposes a virtio-GPU device to the guest and routes Vulkan through Mesa Venus, virglrenderer, MoltenVK, and Metal. revm does not create a window or forward keyboard and mouse input; this is intended for Vulkan compute and workloads that use `/dev/dri/renderD128`.
+
+~~~bash
+revm run --id gpu --gpu venus -- sh -c 'ls -l /dev/dri/renderD128; vulkaninfo --summary'
+~~~
+
+The packaged rootfs includes `mesa-vulkan-virtio` and `vulkan-tools`. `native-context` is not a stable revm option yet. Venus requires dependency releases built with GPU support in libkrun, virglrenderer, and libkrunfw.
 
 ## VirtIO-FS directories
 
@@ -130,6 +141,7 @@ The first SIGINT or SIGTERM requests the native libkrun shutdown. A second signa
 --system-proxy
 --workdir
 --network
+--gpu
 --manage-api
 --ssh-key
 --report-events

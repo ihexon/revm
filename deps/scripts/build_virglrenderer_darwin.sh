@@ -94,7 +94,7 @@ build_virglrenderer_darwin() {
             --buildtype=release \
             --default-library=static \
             -Dvenus=true \
-            -Drender-server=false \
+            -Drender-server=true \
             -Ddrm=disabled \
             '-Dplatforms=[]'
 

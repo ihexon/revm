@@ -39,10 +39,11 @@ func (m RunMode) IsValid() bool {
 }
 
 type Config struct {
-	RunMode   RunMode `json:"runMode,omitempty"`
-	SessionID string  `json:"sessionID,omitempty"` // session name
-	CPUs      int     `json:"cpus,omitempty"`      // 0 → host CPU count
-	MemoryMB  uint64  `json:"memoryMB,omitempty"`  // 0 → host total RAM
+	RunMode   RunMode           `json:"runMode,omitempty"`
+	SessionID string            `json:"sessionID,omitempty"` // session name
+	CPUs      int               `json:"cpus,omitempty"`      // 0 → host CPU count
+	MemoryMB  uint64            `json:"memoryMB,omitempty"`  // 0 → host total RAM
+	GPU       define.GPUBackend `json:"gpu,omitempty"`       // "off" or "venus"
 
 	// Command specifies the program to run inside the VM.
 	// It is required by run mode and optional in attach mode.
@@ -148,6 +149,14 @@ func (c *Config) WithNetwork(mode string) *Config {
 		return c
 	}
 	c.Network = mode
+	return c
+}
+
+func (c *Config) WithGPU(backend define.GPUBackend) *Config {
+	if backend == "" {
+		return c
+	}
+	c.GPU = backend
 	return c
 }
 
@@ -307,6 +316,9 @@ func NormalizeConfig(cfg Config) (Config, error) {
 	if cfg.WorkDir == "" {
 		cfg.WorkDir = "/"
 	}
+	if cfg.GPU == "" {
+		cfg.GPU = define.GPUOff
+	}
 
 	if cfg.RunMode != ModeAttach && cfg.RunMode != ModeControl {
 		if cfg.CPUs <= 0 {
@@ -401,6 +413,12 @@ func validateBuildConfig(cfg Config) error {
 	}
 	if cfg.CPUs > 32 {
 		return fmt.Errorf("cpus must be at most 32 (libkrun supported limit), got %d", cfg.CPUs)
+	}
+	if !cfg.GPU.IsValid() {
+		return fmt.Errorf("gpu must be %q or %q, got %q", define.GPUOff, define.GPUVenus, cfg.GPU)
+	}
+	if cfg.GPU == define.GPUVenus && !(runtime.GOOS == "darwin" && runtime.GOARCH == "arm64") {
+		return fmt.Errorf("gpu backend %q is only supported on darwin/arm64", cfg.GPU)
 	}
 
 	switch cfg.Network {

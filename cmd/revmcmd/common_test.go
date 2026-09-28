@@ -80,6 +80,18 @@ func TestNewRunConfig(t *testing.T) {
 	}
 }
 
+func TestNewRunConfigCarriesGPU(t *testing.T) {
+	cfg := NewRunConfig(RunOptions{
+		Logging:   LoggingOptions{Level: "info"},
+		SessionID: "gpu",
+		GPU:       define.GPUVenus,
+		Command:   []string{"sh"},
+	})
+	if cfg.GPU != define.GPUVenus {
+		t.Fatalf("GPU = %q, want %q", cfg.GPU, define.GPUVenus)
+	}
+}
+
 func TestNewDockerdConfig(t *testing.T) {
 	cfg := NewDockerdConfig(DockerdOptions{Logging: LoggingOptions{Level: "info"}, SessionID: "myengine"})
 	if cfg.RunMode != revm.ModeContainer || cfg.Network != string(define.GVISOR) {

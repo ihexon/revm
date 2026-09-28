@@ -22,6 +22,11 @@ build_libkrunfw_linux() {
     cp -av "$DEPS_DIR/config/config-libkrunfw_x86_64" "$LIBKRUNFW_SRC/config-libkrunfw_x86_64"
 
     if [[ "$ARCH" == "aarch64" ]]; then
+        grep -Fx 'CONFIG_ARM64_4K_PAGES=y' "$LIBKRUNFW_SRC/config-libkrunfw_aarch64"
+        ! grep -Eq '^CONFIG_ARM64_(16K|64K)_PAGES=y' "$LIBKRUNFW_SRC/config-libkrunfw_aarch64"
+    fi
+
+    if [[ "$ARCH" == "aarch64" ]]; then
         ARCH=arm64 make PREFIX="$PREFIX" -j8
         rm -rf "$PREFIX"
         ARCH=arm64 make PREFIX="$PREFIX" -j8 install

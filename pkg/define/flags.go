@@ -12,6 +12,7 @@ const (
 	FlagPTY                     = "pty"
 	FlagEnvs                    = "envs"
 	FlagVNetworkType            = "network"
+	FlagGPU                     = "gpu"
 	FlagSessionID               = "id"
 	FlagContainerDisk           = "container-disk"
 	FlagPodmanProxyAPIFile      = "podman-api"

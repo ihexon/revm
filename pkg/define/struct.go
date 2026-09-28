@@ -4,9 +4,10 @@ package define
 type MachineSpec struct {
 	WorkspaceDir string `json:"workspaceDir,omitempty"`
 
-	MemoryInMB uint64 `json:"memoryInMB,omitempty"`
-	Cpus       uint8  `json:"cpus,omitempty"`
-	RootFS     string `json:"rootFS,omitempty"`
+	MemoryInMB uint64     `json:"memoryInMB,omitempty"`
+	Cpus       uint8      `json:"cpus,omitempty"`
+	RootFS     string     `json:"rootFS,omitempty"`
+	GPUBackend GPUBackend `json:"gpuBackend,omitempty"`
 
 	// Storage is the complete host-to-guest storage plan. It is prepared before
 	// the VMM is built and translated to libkrun devices by the backend.

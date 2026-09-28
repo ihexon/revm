@@ -6,6 +6,12 @@ revm dockerd 启动一个长期运行的 Alpine VM，在 guest 内启动 Podman 
 
 dockerd 固定使用 gvisor 网络，因此支持容器端口发布和 revm ctl 端口控制。
 
+在 macOS arm64 上可以用 `--gpu venus` 为 VM 添加 headless virtio-GPU。Podman workload 可以在 guest 中使用 `/dev/dri/renderD128`，但 revm 不会自动修改容器的 GPU 参数：需要由 workload 自己使用 Vulkan 或显式传递设备。
+
+~~~bash
+revm dockerd --id gpu-containers --gpu venus --podman-api /tmp/revm-gpu.sock
+~~~
+
 ## 基本用法
 
 ~~~text

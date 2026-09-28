@@ -279,6 +279,9 @@ func (v *Libkrun) setupDevices() error {
 	if err := v.setupBalloon(); err != nil {
 		return err
 	}
+	if err := v.setupGPU(); err != nil {
+		return err
+	}
 	if err := v.setupNetwork(); err != nil {
 		return err
 	}

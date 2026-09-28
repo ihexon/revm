@@ -32,6 +32,7 @@ type RunOptions struct {
 	CPUs          int
 	MemoryMB      uint64
 	Network       string
+	GPU           define.GPUBackend
 	UseProxy      bool
 	WorkDir       string
 	Envs          []string
@@ -48,6 +49,7 @@ type DockerdOptions struct {
 	SessionID          string
 	CPUs               int
 	MemoryMB           uint64
+	GPU                define.GPUBackend
 	UseProxy           bool
 	Envs               []string
 	Mounts             []string
@@ -98,6 +100,7 @@ func newRunCommand() *cli.Command {
 			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to host CPU count if unset or less than 1"},
 			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to host available memory if unset or less than 512"},
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
+			&cli.StringFlag{Name: define.FlagGPU, Usage: "guest GPU backend: off disables GPU; venus enables a headless virtio-gpu device backed by host Metal", Value: string(define.GPUOff)},
 			&cli.StringSliceFlag{Name: define.FlagRawDisk, Usage: "attach a raw disk (format: <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=relaxed|full|none]); auto-created if missing; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagMount, Usage: "share a host directory into the guest via VirtIO-FS (format: /host/path:/guest/path[,ro]); can be specified multiple times"},
 			&cli.BoolFlag{Name: define.FlagUsingSystemProxy, Usage: "read the macOS system HTTP/HTTPS proxy and forward it to the guest as http_proxy/https_proxy env vars; in gvisor mode, 127.0.0.1 is automatically rewritten to host.containers.internal"},
@@ -131,6 +134,7 @@ func newDockerdCommand() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to host CPU count if unset or less than 1"},
 			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to host available memory if unset or less than 512"},
+			&cli.StringFlag{Name: define.FlagGPU, Usage: "guest GPU backend: off disables GPU; venus enables a headless virtio-gpu device backed by host Metal", Value: string(define.GPUOff)},
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagRawDisk, Usage: "attach a raw disk (format: <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=relaxed|full|none]); auto-created if missing; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagMount, Usage: "share a host directory into the guest via VirtIO-FS (format: /host/path:/guest/path[,ro]); can be specified multiple times"},
@@ -286,6 +290,7 @@ func ParseRunOptions(command *cli.Command) (RunOptions, error) {
 		CPUs:          int(command.Int8(define.FlagCPUS)),
 		MemoryMB:      command.Uint64(define.FlagMemoryInMB),
 		Network:       command.String(define.FlagVNetworkType),
+		GPU:           define.GPUBackend(command.String(define.FlagGPU)),
 		UseProxy:      command.Bool(define.FlagUsingSystemProxy),
 		WorkDir:       command.String(define.FlagWorkDir),
 		Envs:          command.StringSlice(define.FlagEnvs),
@@ -314,6 +319,7 @@ func ParseDockerdOptions(command *cli.Command) (DockerdOptions, error) {
 		SessionID:          command.String(define.FlagSessionID),
 		CPUs:               int(command.Int8(define.FlagCPUS)),
 		MemoryMB:           command.Uint64(define.FlagMemoryInMB),
+		GPU:                define.GPUBackend(command.String(define.FlagGPU)),
 		UseProxy:           command.Bool(define.FlagUsingSystemProxy),
 		Envs:               command.StringSlice(define.FlagEnvs),
 		Mounts:             command.StringSlice(define.FlagMount),
@@ -397,6 +403,7 @@ func NewRunConfig(opts RunOptions) *revm.Config {
 		WithCPUs(opts.CPUs).
 		WithMemory(opts.MemoryMB).
 		WithNetwork(opts.Network).
+		WithGPU(opts.GPU).
 		WithProxy(opts.UseProxy).
 		WithWorkDir(opts.WorkDir).
 		WithEnv(opts.Envs...).
@@ -415,6 +422,7 @@ func NewDockerdConfig(opts DockerdOptions) *revm.Config {
 		WithCPUs(opts.CPUs).
 		WithMemory(opts.MemoryMB).
 		WithNetwork(string(define.GVISOR)).
+		WithGPU(opts.GPU).
 		WithProxy(opts.UseProxy).
 		WithEnv(opts.Envs...).
 		WithMount(opts.Mounts...).
