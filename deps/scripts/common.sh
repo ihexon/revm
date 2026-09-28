@@ -58,7 +58,7 @@ install_rust_linux_musl_target() {
 patch_ffier_generator() {
     local libkrun_src="$1"
     local cargo_home="${CARGO_HOME:-$HOME/.cargo}"
-    cargo fetch --locked --manifest-path "$libkrun_src/Cargo.toml"
+    cargo fetch --manifest-path "$libkrun_src/Cargo.toml"
     while IFS= read -r generator; do
         python3 - "$generator" <<'PY'
 import pathlib
