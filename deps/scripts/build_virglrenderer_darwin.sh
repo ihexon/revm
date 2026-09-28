@@ -84,6 +84,8 @@ build_virglrenderer_darwin() {
     perl -0pi -e "s|-I/opt/homebrew/opt/molten-vk/libexec/include|-I$MOLTENVK_PREFIX/libexec/include|" meson.build
     perl -0pi -e "s|if not with_host_windows\\n   subdir\\('vtest'\\)\\nendif\\n\\n||" meson.build
 
+    # The render-server proxy uses Linux F_SEAL_* APIs. macOS uses Venus
+    # in-process through MoltenVK instead.
     PKG_CONFIG_PATH="$LIBEPOXY_PREFIX/lib/pkgconfig" \
     PKG_CONFIG_ALL_STATIC=1 \
     CPPFLAGS="-I$LIBEPOXY_PREFIX/include -I$MOLTENVK_PREFIX/libexec/include" \
@@ -94,7 +96,7 @@ build_virglrenderer_darwin() {
             --buildtype=release \
             --default-library=static \
             -Dvenus=true \
-            -Drender-server=true \
+            -Drender-server=false \
             -Ddrm=disabled \
             '-Dplatforms=[]'
 
