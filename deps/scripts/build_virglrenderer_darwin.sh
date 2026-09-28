@@ -79,6 +79,7 @@ build_virglrenderer_darwin() {
     tar -xf "$dist" -C "$WORKSPACE/build"
 
     cd "$src"
+    patch -p1 < "$REPO_ROOT/deps/patches/virglrenderer-resource-map-fixed.patch"
     perl -0pi -e "s|add_project_link_arguments\\('-lMoltenVK', language : 'c'\\)|add_project_link_arguments('$moltenvk_lib', '$spirv_cross_lib', '$spirv_tools_lib', language : 'c')|" meson.build
     perl -0pi -e "s|-I/opt/homebrew/opt/molten-vk/libexec/include|-I$MOLTENVK_PREFIX/libexec/include|" meson.build
     perl -0pi -e "s|if not with_host_windows\\n   subdir\\('vtest'\\)\\nendif\\n\\n||" meson.build
