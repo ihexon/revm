@@ -45,7 +45,15 @@ for current, dirs, files in os.walk(root, topdown=True, followlinks=False):
             if stat.S_ISLNK(info.st_mode):
                 continue
             value = f"0:0:0{stat.S_IMODE(info.st_mode):o}".encode()
-            os.setxattr(path, "user.containers.override_stat", value, follow_symlinks=False)
+            mode = stat.S_IMODE(info.st_mode)
+            writable = mode | 0o200
+            if writable != mode:
+                os.chmod(path, writable)
+            try:
+                os.setxattr(path, "user.containers.override_stat", value, follow_symlinks=False)
+            finally:
+                if writable != mode:
+                    os.chmod(path, mode)
         except OSError as exc:
             raise SystemExit(f"set virtiofs ownership xattr on {path}: {exc}")
 PY
