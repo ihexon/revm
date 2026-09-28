@@ -16,7 +16,6 @@ import (
 	"errors"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/static_resources"
 	"os"
 	"path/filepath"
@@ -310,9 +309,6 @@ func (v *Libkrun) setupRootFS() error {
 	rootPath, err := filepath.Abs(v.cfg.RootFS)
 	if err != nil {
 		return fmt.Errorf("resolve rootfs: %w", err)
-	}
-	if err := filesystem.EnsureVirtioFSRootOwnership(rootPath); err != nil {
-		return fmt.Errorf("normalize root virtiofs ownership: %w", err)
 	}
 	root := C.KrunFsDevice(nil)
 	var errOut C.KrunError

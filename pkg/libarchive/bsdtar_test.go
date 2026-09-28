@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestModeCArchivesUTF8Pathnames(t *testing.T) {
@@ -36,6 +38,42 @@ func TestModeCArchivesUTF8Pathnames(t *testing.T) {
 	}
 	if string(data) != "cert\n" {
 		t.Fatalf("content = %q, want cert", string(data))
+	}
+}
+
+func TestModeCRoundTripsVirtioFSOverrideStat(t *testing.T) {
+	srcDir := t.TempDir()
+	srcPath := filepath.Join(srcDir, "file")
+	if err := os.WriteFile(srcPath, []byte("data\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	const key = "user.containers.override_stat"
+	if err := unix.Setxattr(srcPath, key, []byte("0:0:0644"), 0); err != nil {
+		if err == unix.ENOTSUP || err == unix.EOPNOTSUPP {
+			t.Skipf("filesystem does not support xattrs: %v", err)
+		}
+		t.Fatal(err)
+	}
+
+	archivePath := filepath.Join(t.TempDir(), "rootfs.tar.zst")
+	if err := NewArchiver().WithArchiveFilePath(archivePath).SetChdir(srcDir).ModeC(context.Background()); err != nil {
+		t.Fatalf("ModeC() error = %v", err)
+	}
+
+	dstDir := t.TempDir()
+	if err := NewArchiver().WithArchiveFilePath(archivePath).SetChdir(dstDir).IncludeFileAttribute().ModeX(context.Background()); err != nil {
+		t.Fatalf("ModeX() error = %v", err)
+	}
+	size, err := unix.Getxattr(filepath.Join(dstDir, "file"), key, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := make([]byte, size)
+	if _, err := unix.Getxattr(filepath.Join(dstDir, "file"), key, value); err != nil {
+		t.Fatal(err)
+	}
+	if string(value) != "0:0:0644" {
+		t.Fatalf("override stat = %q, want %q", value, "0:0:0644")
 	}
 }
 

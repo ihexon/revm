@@ -54,7 +54,7 @@ func ExtractBuiltinRootfs(ctx context.Context, dstDir string) error {
 		RootfsBytes = nil
 	}()
 
-	return libarchive_go.NewArchiver().SetReader(bytes.NewReader(RootfsBytes)).SetChdir(dstDir).SetSparse(true).ModeX(ctx)
+	return libarchive_go.NewArchiver().SetReader(bytes.NewReader(RootfsBytes)).SetChdir(dstDir).SetSparse(true).IncludeFileAttribute().ModeX(ctx)
 }
 
 func GuestAgent() ([]byte, error) {
