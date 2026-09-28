@@ -74,6 +74,7 @@ type Archiver struct {
 	fastRead             bool
 	sparse               bool
 	includeFileAttribute bool
+	includeXattr         bool
 	transform            map[string]string
 }
 
@@ -158,6 +159,14 @@ func (t *Archiver) SetFastRead(fastRead bool) *Archiver {
 
 func (t *Archiver) IncludeFileAttribute() *Archiver {
 	t.includeFileAttribute = true
+	return t
+}
+
+// IncludeXattr enables extended-attribute extraction without attempting to
+// restore archive ownership or ACL metadata. This is useful when a non-root
+// host unpacks a rootfs archive but still needs libkrun's ownership metadata.
+func (t *Archiver) IncludeXattr() *Archiver {
+	t.includeXattr = true
 	return t
 }
 
@@ -498,6 +507,9 @@ func (t *Archiver) ModeX(ctx context.Context) error {
 
 	if os.Geteuid() == 0 || t.includeFileAttribute {
 		extractFlags |= ExtractPerm | ExtractOwner | ExtractACL | ExtractXattr | ExtractFFlags
+	}
+	if t.includeXattr {
+		extractFlags |= ExtractXattr
 	}
 	if os.Geteuid() == 0 {
 		extractFlags |= ExtractMacMetadata
