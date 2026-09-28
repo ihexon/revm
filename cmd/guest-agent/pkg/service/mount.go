@@ -208,6 +208,7 @@ func MountVirtiofs(ctx context.Context, vmc *protocol.GuestSpec) error {
 			Target:   virtiofsMnt.Target,
 			Type:     virtiofsMnt.Type,
 			ReadOnly: virtiofsMnt.ReadOnly,
+			Opts:     virtiofsMnt.Opts,
 		}
 
 		if IsMounted(mnt.Target) {
