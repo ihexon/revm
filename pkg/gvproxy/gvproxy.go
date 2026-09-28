@@ -24,7 +24,7 @@ import (
 
 const (
 	defaultMTU        = 1500
-	gatewayIP         = "192.168.127.1"
+	gatewayIP         = define.GatewayIP
 	hostIP            = "192.168.127.254"
 	gatewayMACAddress = "5a:94:ef:e4:0c:dd"
 	guestMACAddress   = "5a:94:ef:e4:0c:ee"
@@ -101,7 +101,8 @@ func NewConfig(spec Spec) (*Config, error) {
 		NotifyAddr:  spec.NotifyAddr,
 		Stack: types.Configuration{
 			MTU:               defaultMTU,
-			Subnet:            "192.168.127.0/24",
+			Debug:             os.Getenv("REVM_GVPROXY_DEBUG") == "1",
+			Subnet:            define.GuestSubnet,
 			GatewayIP:         gatewayIP,
 			DeviceIP:          spec.GuestIP,
 			HostIP:            hostIP,

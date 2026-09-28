@@ -43,6 +43,9 @@ const (
 
 	UnspecifiedAddress = "0.0.0.0"
 	GuestIP            = "192.168.127.2"
+	GuestCIDR          = "192.168.127.2/24"
+	GatewayIP          = "192.168.127.1"
+	GuestSubnet        = "192.168.127.0/24"
 
 	DefaultVSockPort = 25882
 

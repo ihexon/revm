@@ -42,7 +42,9 @@ func (v *Libkrun) setupGVisor() error {
 	if err != nil {
 		return err
 	}
-	id := newKrunStr("eth0")
+	// libkrun's device registry uses stable netN identifiers. The guest still
+	// receives the first virtio-net device as eth0.
+	id := newKrunStr("net0")
 	path := newKrunStr(addr.Path)
 	defer id.free()
 	defer path.free()

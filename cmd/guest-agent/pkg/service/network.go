@@ -10,8 +10,7 @@ import (
 )
 
 const (
-	eth0     = "eth0"
-	attempts = 3
+	eth0 = "eth0"
 )
 
 const (
@@ -43,7 +42,10 @@ func ConfigureNetwork(ctx context.Context, mode define.VNetMode) error {
 			return fmt.Errorf("write podman-machine marker: %w", err)
 		}
 
-		return network.DHClient4(ctx, eth0, attempts)
+		// gvproxy's built-in address plan is fixed and its DHCP broadcast path
+		// is not reliable with current libkrun virtio-net on macOS. Configure
+		// the guest directly so startup does not depend on a raw packet socket.
+		return network.ConfigureStaticIPv4(ctx, eth0, define.GuestCIDR, define.GatewayIP, define.GatewayIP)
 	}
 
 	return fmt.Errorf("unsupported network mode: %s", mode)
