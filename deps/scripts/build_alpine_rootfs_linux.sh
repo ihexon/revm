@@ -31,7 +31,6 @@ build_alpine_rootfs_linux() {
 	# rootfs archive so runtime VM creation does not need a recursive walk.
 	python3 - "$ROOTFS" <<'PY'
 import os
-import errno
 import stat
 import sys
 
@@ -43,22 +42,20 @@ for current, dirs, files in os.walk(root, topdown=True, followlinks=False):
     for path in entries:
         try:
             info = os.lstat(path)
-            is_symlink = stat.S_ISLNK(info.st_mode)
+            if stat.S_ISLNK(info.st_mode):
+                continue
             value = f"0:0:0{stat.S_IMODE(info.st_mode):o}".encode()
             mode = stat.S_IMODE(info.st_mode)
             writable = mode | 0o200
-            if not is_symlink and writable != mode:
+            if writable != mode:
                 os.chmod(path, writable)
             try:
                 os.setxattr(path, "user.containers.override_stat", value, follow_symlinks=False)
-            except OSError as exc:
-                # Linux filesystems commonly reject xattrs on symlinks. The
-                # target inode still carries the ownership metadata.
-                if not is_symlink or exc.errno not in (errno.EPERM, errno.EOPNOTSUPP):
-                    raise SystemExit(f"set virtiofs ownership xattr on {path}: {exc}")
             finally:
-                if not is_symlink and writable != mode:
+                if writable != mode:
                     os.chmod(path, mode)
+        except OSError as exc:
+            raise SystemExit(f"set virtiofs ownership xattr on {path}: {exc}")
 PY
 }
 
