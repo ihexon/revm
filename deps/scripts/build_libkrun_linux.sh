@@ -21,11 +21,11 @@ checkout_libkrun() {
     sed -i 's/tag = "0.2.0rc1"/tag = "v0.2.0-rc2"/g' \
         bindings/libkrun-via-cdylib-weak/Cargo.toml \
         bindings/init-blob-via-cdylib/Cargo.toml
+    patch_ffier_generator "$LIBKRUN_SRC"
 }
 
 build_libkrun_linux() {
     install_rust_linux_musl_target
-    prepare_ffier_rustfmt_compat
 
     export RUSTFLAGS="${RUSTFLAGS:-} -C linker=gcc -C link-arg=-static-libgcc"
 

@@ -52,31 +52,30 @@ install_rust_linux_musl_target() {
     fi
 }
 
-# libkrun's generated ffier clients invoke `rustfmt` from a Cargo build script.
-# Some upstream schemas currently make rustfmt abort before consuming stdin,
-# which surfaces as a misleading BrokenPipe panic in ffier-gen-rust-client.
-# Buffer the input and fall back to the valid generated source when formatting
-# fails; rustc remains the authoritative syntax/type checker for the client.
-prepare_ffier_rustfmt_compat() {
-    local real_rustfmt wrapper_dir wrapper
-    real_rustfmt="$(rustup which rustfmt 2>/dev/null || command -v rustfmt)"
-    wrapper_dir="$DEPS_WORK_DIR/bin"
-    wrapper="$wrapper_dir/rustfmt"
-    mkdir -p "$wrapper_dir"
-    cat > "$wrapper" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-input=\"\$(mktemp)\"
-trap 'rm -f "\$input"' EXIT
-cat > "\$input"
-if "$real_rustfmt" "\$@" < "\$input"; then
-    exit 0
-fi
-echo "warning: upstream ffier rustfmt failed; using unformatted generated client" >&2
-cat "\$input"
-EOF
-    chmod +x "$wrapper"
-    export PATH="$wrapper_dir:$PATH"
+# libkrun's current ffier generator aborts with BrokenPipe while formatting the
+# 2.0 schema. Formatting is not part of the generated ABI, so patch only this
+# build-time helper after Cargo has fetched it and let rustc validate the source.
+patch_ffier_generator() {
+    local libkrun_src="$1"
+    local cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+    cargo fetch --locked --manifest-path "$libkrun_src/Cargo.toml"
+    while IFS= read -r generator; do
+        python3 - "$generator" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+source = path.read_text()
+start_marker = "fn rustfmt(src: &str) -> String {"
+end_marker = "\n}\n\n/// Generate from a JSON file path."
+if start_marker not in source or "src.to_owned()" in source:
+    raise SystemExit(0)
+start = source.index(start_marker)
+end = source.index(end_marker, start) + 2
+replacement = "fn rustfmt(src: &str) -> String {\n    src.to_owned()\n}"
+path.write_text(source[:start] + replacement + source[end:])
+PY
+    done < <(find "$cargo_home/git/checkouts" -path '*/ffier-gen-rust-client/src/lib.rs' -type f -print)
 }
 
 verify_libkrun_bundle() {

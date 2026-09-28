@@ -25,6 +25,7 @@ checkout_libkrun() {
     sed -i '' 's/tag = "0.2.0rc1"/tag = "v0.2.0-rc2"/g' \
         bindings/libkrun-via-cdylib-weak/Cargo.toml \
         bindings/init-blob-via-cdylib/Cargo.toml
+    patch_ffier_generator "$LIBKRUN_SRC"
 }
 
 unpack_static_deps_darwin() {
@@ -57,7 +58,6 @@ install_static_deps_darwin() {
 build_libkrun_darwin() {
     export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-nightly}"
     install_rust_linux_musl_target
-    prepare_ffier_rustfmt_compat
 
     install_static_deps_darwin
 
