@@ -104,6 +104,10 @@ build_virglrenderer_darwin() {
     cat >> "$PREFIX/lib/pkgconfig/virglrenderer.pc" <<EOF
 Libs.private: $moltenvk_lib $spirv_cross_lib $spirv_tools_lib -framework Metal -framework Foundation -framework QuartzCore -framework CoreGraphics -framework IOSurface -framework IOKit -framework AppKit -lc++ -lobjc
 EOF
+    # The krunkit fork contains the virgl APIs required by current rutabaga,
+    # but retains the historical 0.10.x Meson project version. Current
+    # libkrun checks the pkg-config compatibility version at build time.
+    sed -i '' -E 's/^Version: .*/Version: 1.3.0/' "$PREFIX/lib/pkgconfig/virglrenderer.pc"
 }
 
 release() {
