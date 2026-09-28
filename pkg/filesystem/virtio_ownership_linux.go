@@ -3,6 +3,7 @@
 package filesystem
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,22 +21,26 @@ func EnsureVirtioFSRootOwnership(path string) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return nil
-		}
-		info, err := entry.Info()
+		info, err := os.Lstat(current)
 		if err != nil {
 			return err
 		}
 		value := []byte(fmt.Sprintf("0:0:0%o", info.Mode().Perm()))
-		if err := setVirtioFSOwnershipXattr(current, info.Mode().Perm(), value); err != nil {
+		if err := setVirtioFSOwnershipXattr(current, info.Mode().Perm(), info.Mode()&os.ModeSymlink != 0, value); err != nil {
 			return fmt.Errorf("set virtiofs ownership xattr on %q: %w", current, err)
 		}
 		return nil
 	})
 }
 
-func setVirtioFSOwnershipXattr(path string, mode os.FileMode, value []byte) error {
+func setVirtioFSOwnershipXattr(path string, mode os.FileMode, symlink bool, value []byte) error {
+	if symlink {
+		err := unix.Lsetxattr(path, virtioFSOverrideStatXattr, value, 0)
+		if errors.Is(err, unix.EPERM) || errors.Is(err, unix.EOPNOTSUPP) {
+			return nil
+		}
+		return err
+	}
 	original := mode.Perm()
 	writable := original | 0200
 	if writable != original {
