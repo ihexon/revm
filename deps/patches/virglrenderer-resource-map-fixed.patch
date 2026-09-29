@@ -1,0 +1,47 @@
+diff --git a/src/virglrenderer.c b/src/virglrenderer.c
+index ee476513..bd23aca3 100644
+--- a/src/virglrenderer.c
++++ b/src/virglrenderer.c
+@@ -1247,6 +1247,28 @@ int virgl_renderer_resource_map(uint32_t res_handle, void **out_map, uint64_t *o
+    return ret;
+ }
+ 
++int virgl_renderer_resource_map_fixed(uint32_t res_handle, void *addr)
++{
++   struct virgl_resource *res = virgl_resource_lookup(res_handle);
++   if (!res || !addr)
++      return -EINVAL;
++
++   switch (res->fd_type) {
++   case VIRGL_RESOURCE_FD_DMABUF:
++   case VIRGL_RESOURCE_FD_SHM:
++      if (mmap(addr, res->map_size, PROT_WRITE | PROT_READ,
++               MAP_FIXED | MAP_SHARED, res->fd, 0) == MAP_FAILED)
++         return -EINVAL;
++      return 0;
++   case VIRGL_RESOURCE_FD_OPAQUE:
++   case VIRGL_RESOURCE_OPAQUE_HANDLE:
++   case VIRGL_RESOURCE_FD_INVALID:
++      return -EOPNOTSUPP;
++   }
++
++   return -EOPNOTSUPP;
++}
++
+ int virgl_renderer_resource_unmap(uint32_t res_handle)
+ {
+    TRACE_FUNC();
+diff --git a/src/virglrenderer.h b/src/virglrenderer.h
+index 08db11ca..1f602683 100644
+--- a/src/virglrenderer.h
++++ b/src/virglrenderer.h
+@@ -397,6 +397,9 @@ virgl_renderer_resource_create_blob(const struct virgl_renderer_resource_create_
+ 
+ VIRGL_EXPORT int virgl_renderer_resource_map(uint32_t res_handle, void **map, uint64_t *out_size);
+ 
++/* Map a resource at a caller-selected address for current rutabaga_gfx. */
++VIRGL_EXPORT int virgl_renderer_resource_map_fixed(uint32_t res_handle, void *addr);
++
+ VIRGL_EXPORT int virgl_renderer_resource_unmap(uint32_t res_handle);
+ 
+ #define VIRGL_RENDERER_MAP_CACHE_MASK      0x0f

@@ -71,6 +71,9 @@ build_virglrenderer_darwin() {
     tar -xf "$dist" -C "$WORKSPACE/build"
 
     cd "$src"
+    # libkrun main's rutabaga backend uses the fixed-address mapping entry
+    # point; the Homebrew slp fork does not expose it yet.
+    patch -p1 < "$REPO_ROOT/deps/patches/virglrenderer-resource-map-fixed.patch"
     perl -0pi -e "s|if not with_host_windows\\n   subdir\\('vtest'\\)\\nendif\\n\\n||" meson.build
 
     PKG_CONFIG_PATH="$LIBEPOXY_PREFIX/lib/pkgconfig" \
