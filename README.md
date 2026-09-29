@@ -106,26 +106,30 @@ The first Ctrl-C asks libkrun to shut the guest down. The host keeps the managem
 
 ## Logs
 
-Logs go to ~/.cache/revm/<id>/logs/revm.log by default.
+Logs are kept in the session directory. The terminal is reserved for guest command output, so host lifecycle messages do not scramble an interactive command.
+
+~~~text
+~/.cache/revm/<id>/logs/revm.log  host lifecycle and control-plane logs
+~/.cache/revm/<id>/logs/vm.log    guest-agent and compatibility-service logs
+~~~
 
 ~~~bash
-revm run --id build --log-level debug --log-to /tmp/revm-build.log -- sh -c 'make test'
+revm run --id build --log-level debug -- sh -c 'make test'
 tail -f ~/.cache/revm/build/logs/revm.log
+tail -f ~/.cache/revm/build/logs/vm.log
 ~~~
 
 Use --manage-api, --podman-api, or --ssh-key when another program needs a socket or key at a known path.
 
 ## Development
 
-Run the Go tests:
+Build the application from a checkout:
 
 ~~~bash
-PKG_CONFIG_PATH="$(brew --prefix libarchive)/lib/pkgconfig:$(brew --prefix e2fsprogs)/lib/pkgconfig" \
-DYLD_LIBRARY_PATH=/tmp/.deps/libkrun/lib \
-go test ./...
+go run ./scripts --build revm
 ~~~
 
-Dependency builds are defined in .github/workflows/build-deps.yml. Their source revisions are in deps/sources.lock and the released archives are pinned in deps.lock.
+The dependency workflow in .github/workflows/build-deps.yml builds libkrun, libkrunfw, and the Alpine rootfs. Their source revisions are in deps/sources.lock and the released archives are pinned in deps.lock.
 
 ## More documentation
 

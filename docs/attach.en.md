@@ -67,7 +67,7 @@ attach only handles guest commands and terminals:
 ## Logs and diagnostics
 
 ~~~bash
-revm attach --id dev --log-level debug --log-to /tmp/revm-attach.log -- date
+revm attach --id dev --log-level debug -- date
 tail -f ~/.cache/revm/dev/logs/revm.log
 ~~~
 
@@ -80,4 +80,3 @@ When attach reports a missing session, verify that --id exactly matches the comm
 | --id | Required session name. |
 | --pty | Open an interactive terminal through the SSH compatibility path. |
 | --log-level | trace, debug, info, warn, error, fatal, or panic. |
-| --log-to | Custom host log file. |

@@ -37,7 +37,7 @@ Every command requires --id. The default session directory is:
 ~/.cache/revm/<session-id>/
 ~~~
 
-Logs go to logs/revm.log in the session directory by default. The management socket, Podman socket, and SSH key can be exported to custom paths with the command flags.
+Logs always go to two files in the session directory: logs/revm.log for host lifecycle and control-plane messages, and logs/vm.log for the guest-agent and compatibility services. The management socket, Podman socket, and SSH key can be exported to custom paths with command flags.
 
 The two network modes are gvisor and tsi. gvisor provides gvisor-tap-vsock, NAT, DNS, and port control. tsi uses libkrun transparent socket interception and does not support manual ctl port mappings.
 

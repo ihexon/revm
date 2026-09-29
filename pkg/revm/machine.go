@@ -453,11 +453,7 @@ func (p *machineBuildPlan) setupWorkspace(ctx context.Context) error {
 }
 
 func (p *machineBuildPlan) configureLogFile(ctx context.Context) error {
-	if p.cfg.LogTo != "" {
-		p.builder.LogFile = p.cfg.LogTo
-	} else {
-		p.builder.LogFile = filepath.Join(p.builder.WorkspaceDir, "logs", "vm.log")
-	}
+	p.builder.LogFile = filepath.Join(p.builder.WorkspaceDir, "logs", "vm.log")
 	return nil
 }
 

@@ -6,8 +6,6 @@ revm dockerd 启动一个长期运行的 Alpine VM，在 guest 内启动 Podman 
 
 dockerd 固定使用 gvisor 网络，因此支持容器端口发布和 revm ctl 端口控制。
 
-~~~bash
-~~~
 
 ## 基本用法
 
@@ -140,7 +138,7 @@ revm dockerd --id dev \
 | --manage-api | 自定义 VM 管理 socket。 |
 | --ssh-key | 导出兼容 SSH key 的符号链接。 |
 | --report-events | 接收生命周期事件的 HTTP endpoint。 |
-| --log-level、--log-to | 设置日志等级和日志文件。 |
+| --log-level | 设置日志等级。日志始终写入 session 目录。 |
 
 dockerd 没有 --network 选项，始终使用 gvisor。
 

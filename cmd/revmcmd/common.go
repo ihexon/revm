@@ -18,7 +18,6 @@ import (
 
 type LoggingOptions struct {
 	Level string
-	To    string
 }
 
 type PortUpdates struct {
@@ -108,7 +107,6 @@ func newRunCommand() *cli.Command {
 			&cli.StringFlag{Name: define.FlagReportEvents, Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888)"},
 			sessionFlag(),
 			logLevelFlag(),
-			logToFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
 			return runLogged(ctx, command, func() (*revm.Config, error) {
@@ -142,7 +140,6 @@ func newDockerdCommand() *cli.Command {
 			&cli.StringFlag{Name: define.FlagReportEvents, Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888)"},
 			sessionFlag(),
 			logLevelFlag(),
-			logToFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
 			return runLogged(ctx, command, func() (*revm.Config, error) {
@@ -166,7 +163,6 @@ func newAttachCommand() *cli.Command {
 			&cli.BoolFlag{Name: define.FlagPTY, Usage: "allocate a pseudo-terminal and launch an interactive shell"},
 			sessionFlag(),
 			logLevelFlag(),
-			logToFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
 			return runLogged(ctx, command, func() (*revm.Config, error) {
@@ -189,7 +185,6 @@ func newCtlCommand() *cli.Command {
 			&cli.StringSliceFlag{Name: define.FlagPortUnexport, Usage: "stop exposing a host TCP port for a running VM (format: [tcp:]<host-port> or [tcp:]<host-ip>:<host-port>); can be specified multiple times"},
 			sessionFlag(),
 			logLevelFlag(),
-			logToFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
 			return runCtl(ctx, command)
@@ -263,14 +258,13 @@ func runCtl(ctx context.Context, command *cli.Command) (retErr error) {
 func newPreflightConfig(command *cli.Command) *revm.Config {
 	logging := ParseLoggingOptions(command)
 	return revm.DefaultConfig().
-		WithLogging(logging.Level, logging.To).
+		WithLogging(logging.Level).
 		WithSessionID(command.String(define.FlagSessionID))
 }
 
 func ParseLoggingOptions(command *cli.Command) LoggingOptions {
 	return LoggingOptions{
 		Level: command.String(define.FlagLogLevel),
-		To:    command.String(define.FlagLogTo),
 	}
 }
 
@@ -390,7 +384,7 @@ func ParsePortUpdates(command *cli.Command) (PortUpdates, error) {
 
 func NewRunConfig(opts RunOptions) *revm.Config {
 	return revm.DefaultConfig().
-		WithLogging(opts.Logging.Level, opts.Logging.To).
+		WithLogging(opts.Logging.Level).
 		WithSessionID(opts.SessionID).
 		WithMode(revm.ModeRootfs).
 		WithCommandLine(opts.Command...).
@@ -409,7 +403,7 @@ func NewRunConfig(opts RunOptions) *revm.Config {
 
 func NewDockerdConfig(opts DockerdOptions) *revm.Config {
 	return revm.DefaultConfig().
-		WithLogging(opts.Logging.Level, opts.Logging.To).
+		WithLogging(opts.Logging.Level).
 		WithSessionID(opts.SessionID).
 		WithMode(revm.ModeContainer).
 		WithCPUs(opts.CPUs).
@@ -428,7 +422,7 @@ func NewDockerdConfig(opts DockerdOptions) *revm.Config {
 
 func NewAttachConfig(opts AttachOptions) *revm.Config {
 	return revm.DefaultConfig().
-		WithLogging(opts.Logging.Level, opts.Logging.To).
+		WithLogging(opts.Logging.Level).
 		WithSessionID(opts.SessionID).
 		WithPTY(opts.PTY).
 		WithAttach(opts.Command...)
@@ -437,12 +431,12 @@ func NewAttachConfig(opts AttachOptions) *revm.Config {
 func NewCtlConfig(opts CtlOptions) *revm.Config {
 	if opts.ListPort {
 		return revm.DefaultConfig().
-			WithLogging(opts.Logging.Level, opts.Logging.To).
+			WithLogging(opts.Logging.Level).
 			WithSessionID(opts.SessionID).
 			WithPortList()
 	}
 	return revm.DefaultConfig().
-		WithLogging(opts.Logging.Level, opts.Logging.To).
+		WithLogging(opts.Logging.Level).
 		WithSessionID(opts.SessionID).
 		WithControl(opts.PortUpdates.Exports, opts.PortUpdates.Unexports)
 }
@@ -500,8 +494,4 @@ func sessionFlag() cli.Flag {
 
 func logLevelFlag() cli.Flag {
 	return &cli.StringFlag{Name: define.FlagLogLevel, Usage: "log verbosity level (trace, debug, info, warn, error, fatal, panic)", Value: "info"}
-}
-
-func logToFlag() cli.Flag {
-	return &cli.StringFlag{Name: define.FlagLogTo, Usage: "custom log file path on host; defaults to ~/.cache/revm/<session_id>/logs/revm.log"}
 }

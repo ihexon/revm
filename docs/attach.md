@@ -69,7 +69,7 @@ attach 只处理 guest 命令和终端：
 ## 日志和诊断
 
 ~~~bash
-revm attach --id dev --log-level debug --log-to /tmp/revm-attach.log -- date
+revm attach --id dev --log-level debug -- date
 tail -f ~/.cache/revm/dev/logs/revm.log
 ~~~
 
@@ -82,4 +82,3 @@ tail -f ~/.cache/revm/dev/logs/revm.log
 | --id | 必填 session 名称。 |
 | --pty | 通过 SSH 兼容入口打开交互终端。 |
 | --log-level | trace、debug、info、warn、error、fatal 或 panic。 |
-| --log-to | 自定义 host 日志文件。 |

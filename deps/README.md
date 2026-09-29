@@ -64,4 +64,4 @@ go run ./scripts --build revm
 - 检查 build-deps workflow 在 macOS、Linux amd64、Linux arm64 全部成功。
 - 确认 Alpine rootfs 的 apk 包和 guest agent 启动流程一致。
 - 更新 deps.lock 的 release 版本和 SHA-256。
-- 再运行 Go 单元测试、应用构建和 VM smoke test。
+- 再完成应用构建和 VM smoke test。

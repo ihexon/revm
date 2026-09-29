@@ -2,7 +2,6 @@ package define
 
 const (
 	FlagLogLevel                = "log-level"
-	FlagLogTo                   = "log-to"
 	FlagCPUS                    = "cpus"
 	FlagRawDisk                 = "raw-disk"
 	FlagMount                   = "mount"

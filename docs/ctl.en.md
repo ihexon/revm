@@ -129,4 +129,3 @@ revm ctl --id light --list-port
 | --port-export | Create a TCP/IPv4 mapping; repeatable. |
 | --port-unexport | Remove a TCP/IPv4 mapping; repeatable. |
 | --log-level | Log level. |
-| --log-to | Custom host log file. |

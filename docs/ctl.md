@@ -131,4 +131,3 @@ revm ctl --id light --list-port
 | --port-export | 创建 TCP/IPv4 映射，可重复。 |
 | --port-unexport | 删除 TCP/IPv4 映射，可重复。 |
 | --log-level | 日志等级。 |
-| --log-to | 自定义 host 日志文件。 |

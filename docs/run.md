@@ -102,14 +102,15 @@ revm run --id disk \
 ~/.cache/revm/<session-id>/
 ~~~
 
-默认日志：
+日志始终写入 session 目录：
 
 ~~~text
-~/.cache/revm/<session-id>/logs/revm.log
+~/.cache/revm/<session-id>/logs/revm.log  宿主生命周期和控制面
+~/.cache/revm/<session-id>/logs/vm.log    guest-agent 和兼容服务
 ~~~
 
 ~~~bash
-revm run --id build --log-level debug --log-to /tmp/revm-build.log -- sh -c 'make test'
+revm run --id build --log-level debug -- sh -c 'make test'
 revm run --id build --manage-api /tmp/revm-build-vmctl.sock -- sh
 revm run --id build --ssh-key /tmp/revm-build-ssh-key -- sh
 ~~~
@@ -136,7 +137,6 @@ revm run --id build --ssh-key /tmp/revm-build-ssh-key -- sh
 --ssh-key
 --report-events
 --log-level
---log-to
 ~~~
 
 执行 revm run --help 查看当前二进制的完整说明。

@@ -22,18 +22,13 @@ func StopCommandLogging(file *os.File) {
 	releaseRunLog(file)
 }
 
-func (c *Config) WithLogging(level string, logFilePath string) *Config {
+func (c *Config) WithLogging(level string) *Config {
 	if level == "" {
 		level = logrus.InfoLevel.String()
 	}
 
 	setupLogrus(level)
 	c.LogLevel = level
-
-	if logFilePath != "" {
-		c.LogTo = logFilePath
-	}
-
 	return c
 }
 
@@ -70,10 +65,7 @@ func setupLogrus(level string) {
 }
 
 func setupLogFile(cfg Config) (*os.File, error) {
-	logFilePath := cfg.LogTo
-	if logFilePath == "" {
-		logFilePath = filepath.Join(getSessionDir(cfg.SessionID), "logs", "revm.log")
-	}
+	logFilePath := filepath.Join(getSessionDir(cfg.SessionID), "logs", "revm.log")
 
 	if err := os.MkdirAll(filepath.Dir(logFilePath), 0755); err != nil {
 		return nil, fmt.Errorf("create log directory: %w", err)

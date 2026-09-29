@@ -66,13 +66,12 @@ gvisor mode obtains an address through gvisor-tap-vsock and configures the guest
 | pkg/supervisor/supervisor.go | restart-capable child process supervisor |
 | pkg/network and pkg/vsock | guest network and vsock helpers |
 
-## Build and test
+## Build
 
-The guest agent is built as part of the root build script and embedded into the host release. For package-level development:
+The guest agent is built by the root build script and embedded into the host release. Build the application from the repository root:
 
 ~~~bash
-cd cmd/guest-agent
-go test ./...
+go run ./scripts --build revm
 ~~~
 
-The guest agent depends on the protocol and define packages from the parent module. Run the complete repository test suite before changing the wire format.
+The guest agent depends on the protocol and define packages from the parent module. Keep changes to its wire format in sync with the host-side service.

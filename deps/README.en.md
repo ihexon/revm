@@ -64,4 +64,4 @@ It downloads the current platform's dependency assets, embeds guest-agent and st
 - Confirm build-deps succeeds on macOS, Linux amd64, and Linux arm64.
 - Check that the Alpine apk set matches guest-agent startup.
 - Update the dependency release and checksums in deps.lock.
-- Run Go tests, the application build, and VM smoke tests.
+- Run the application build and VM smoke tests.

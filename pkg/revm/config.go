@@ -61,7 +61,6 @@ type Config struct {
 	ReportURL            string               `json:"reportURL,omitempty"`
 	Proxy                bool                 `json:"proxy,omitempty"`
 	LogLevel             string               `json:"logLevel,omitempty"` // default "info"
-	LogTo                string               `json:"logTo,omitempty"`
 	PortList             bool                 `json:"portList,omitempty"`
 	PortForwards         []define.PortForward `json:"portForwards,omitempty"`
 	PortUnforwards       []define.PortForward `json:"portUnforwards,omitempty"`

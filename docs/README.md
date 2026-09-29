@@ -37,7 +37,7 @@ ctl       -> 查询或修改 gvisor TCP 端口映射
 ~/.cache/revm/<session-id>/
 ~~~
 
-日志默认写入 session 目录中的 logs/revm.log。管理 socket、Podman socket 和 SSH key 都可以通过对应命令的路径选项导出到自定义位置。
+日志始终写入 session 目录中的两个文件：logs/revm.log 记录宿主生命周期和控制面，logs/vm.log 记录 guest-agent 及兼容服务。管理 socket、Podman socket 和 SSH key 仍可以通过对应命令的路径选项导出到自定义位置。
 
 网络模式有 gvisor 和 tsi 两种。gvisor 提供 gvisor-tap-vsock、NAT、DNS 和端口控制；tsi 使用 libkrun 的透明 socket interception，但不支持 ctl 的手动端口映射。
 

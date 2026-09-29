@@ -4,8 +4,6 @@ revm dockerd starts a long-lived Alpine VM, launches the Podman API service in t
 
 dockerd always uses gvisor networking, so container port publishing and revm ctl port control are available.
 
-~~~bash
-~~~
 
 ## Usage
 
@@ -138,7 +136,7 @@ revm dockerd --id dev \
 | --manage-api | Custom VM management socket. |
 | --ssh-key | Symlink the compatibility SSH key to a custom path. |
 | --report-events | HTTP endpoint for lifecycle events. |
-| --log-level and --log-to | Set log level and log file. |
+| --log-level | Set the log level. Logs always go to the session directory. |
 
 dockerd has no --network option; it always uses gvisor.
 

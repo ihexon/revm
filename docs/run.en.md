@@ -100,14 +100,15 @@ The default session directory is:
 ~/.cache/revm/<session-id>/
 ~~~
 
-The default log is:
+Logs always go to the session directory:
 
 ~~~text
-~/.cache/revm/<session-id>/logs/revm.log
+~/.cache/revm/<session-id>/logs/revm.log  host lifecycle and control plane
+~/.cache/revm/<session-id>/logs/vm.log    guest-agent and compatibility services
 ~~~
 
 ~~~bash
-revm run --id build --log-level debug --log-to /tmp/revm-build.log -- sh -c 'make test'
+revm run --id build --log-level debug -- sh -c 'make test'
 revm run --id build --manage-api /tmp/revm-build-vmctl.sock -- sh
 revm run --id build --ssh-key /tmp/revm-build-ssh-key -- sh
 ~~~
@@ -134,7 +135,6 @@ The first SIGINT or SIGTERM requests the native libkrun shutdown. A second signa
 --ssh-key
 --report-events
 --log-level
---log-to
 ~~~
 
 Run revm run --help for the complete help text from the current binary.
