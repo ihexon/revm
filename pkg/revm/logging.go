@@ -4,7 +4,6 @@ package revm
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
@@ -44,7 +43,12 @@ func setupRunLogging(cfg Config) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	logrus.SetOutput(io.MultiWriter(os.Stderr, logFile))
+	// Keep host lifecycle logs out of the command's stdout/stderr streams. In
+	// TTY mode those streams are the guest console, so writing both streams at
+	// once makes log lines interleave with command output and corrupt the
+	// terminal layout. Callers can follow the session log when they need the
+	// lifecycle trace.
+	logrus.SetOutput(logFile)
 	return logFile, nil
 }
 
@@ -62,7 +66,6 @@ func setupLogrus(level string) {
 	logrus.SetFormatter(&logrus.TextFormatter{
 		FullTimestamp:   true,
 		TimestampFormat: "2006-01-02 15:04:05.000",
-		ForceColors:     true,
 	})
 }
 

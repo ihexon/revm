@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"guestAgent/pkg/service"
-	"io"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/protocol"
 	"os"
@@ -40,7 +39,6 @@ func setupLogger() {
 	logrus.SetFormatter(&logrus.TextFormatter{
 		FullTimestamp:   true,
 		TimestampFormat: "2006-01-02 15:04:05.000",
-		ForceColors:     true,
 	})
 
 	return
@@ -54,9 +52,11 @@ func setupGuestLogPort() {
 		return
 	}
 
-	writer := io.MultiWriter(os.Stderr, f)
-	logrus.SetOutput(writer)
-	service.SetStderrWriter(writer)
+	// Guest logs share the same host-side session file as host lifecycle logs.
+	// Do not mirror them to the guest TTY: doing so races with the user's
+	// command output and produces visually corrupted terminal lines.
+	logrus.SetOutput(f)
+	service.SetStderrWriter(f)
 	logrus.Infof("guest logs attached to virtio port %s", f.Name())
 }
 
