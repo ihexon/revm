@@ -53,10 +53,10 @@ gvisor uses gvisor-tap-vsock for DNS, NAT, TCP/UDP, and port forwarding. tsi use
 
 ## GPU on macOS arm64
 
-`--gpu venus` exposes a virtio-GPU device to the guest and routes Vulkan through Mesa Venus, virglrenderer, MoltenVK, and Metal. revm does not create a window or forward keyboard and mouse input; this is intended for Vulkan compute and workloads that use `/dev/dri/renderD128`.
+`--gpu venus` exposes a virtio-GPU device to the guest and connects it to Apple GPU support through Mesa Venus, virglrenderer, MoltenVK, and Metal. With current libkrun main, the `magma-gpu` worker still panics when `vulkaninfo` creates a device; the `/dev/dri/card0` and `/dev/dri/renderD128` smoke test passes, while full Vulkan workloads remain blocked by that upstream issue. revm does not create a window or forward keyboard and mouse input.
 
 ~~~bash
-revm run --id gpu --gpu venus -- sh -c 'ls -l /dev/dri/renderD128; vulkaninfo --summary'
+revm run --id gpu --gpu venus -- ls -l /dev/dri
 ~~~
 
 The packaged rootfs includes `mesa-vulkan-virtio`, `vulkan-loader`, and `vulkan-tools`. `native-context` is not a stable revm option yet. Venus requires dependency releases built with GPU support in libkrun, virglrenderer, and libkrunfw.

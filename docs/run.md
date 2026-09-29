@@ -55,10 +55,10 @@ gvisor 使用 gvisor-tap-vsock，提供 DNS、NAT、TCP/UDP 和端口转发。ts
 
 ## GPU（macOS arm64）
 
-`--gpu venus` 将 virtio-GPU 暴露给 guest，并通过 Mesa Venus、virglrenderer、MoltenVK 和 Metal 使用 Apple GPU。revm 不创建窗口，也不转发键盘或鼠标；它适合 Vulkan compute 和需要 `/dev/dri/renderD128` 的 guest workload。
+`--gpu venus` 将 virtio-GPU 暴露给 guest，并通过 Mesa Venus、virglrenderer、MoltenVK 和 Metal 接入 Apple GPU。当前 upstream libkrun main 的 `magma-gpu` worker 在 `vulkaninfo` 创建设备时仍会 panic；`/dev/dri/card0` 和 `/dev/dri/renderD128` 的设备 smoke test 正常，完整 Vulkan workload 仍受上游问题阻塞。revm 不创建窗口，也不转发键盘或鼠标。
 
 ~~~bash
-revm run --id gpu --gpu venus -- sh -c 'ls -l /dev/dri/renderD128; vulkaninfo --summary'
+revm run --id gpu --gpu venus -- ls -l /dev/dri
 ~~~
 
 默认 rootfs 已安装 `mesa-vulkan-virtio`、`vulkan-loader` 和 `vulkan-tools`。`native-context` 尚未作为稳定选项提供。Venus 需要使用包含 GPU 支持的 libkrun、virglrenderer 和 libkrunfw 依赖 release。
