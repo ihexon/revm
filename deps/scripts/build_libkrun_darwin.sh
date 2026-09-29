@@ -107,6 +107,11 @@ build_libkrun_darwin() {
             [[ -e "$dep" ]] || continue
             install_name_tool -change "$dep" "@rpath/$(basename "$dep")" "$dylib" 2>/dev/null || true
         done
+        # install_name_tool invalidates the linker signature. macOS may kill
+        # an unsigned or stale-signed dylib before main() when it is loaded by
+        # the signed revm executable, so refresh an ad-hoc signature after all
+        # install-name and rpath changes are complete.
+        codesign --force --sign - "$dylib"
     done
 
     for dylib in "$PREFIX"/lib/*.dylib; do
