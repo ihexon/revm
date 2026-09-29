@@ -1,0 +1,13 @@
+--- a/server/render_socket.c
++++ b/server/render_socket.c
+@@ -10,6 +10,12 @@
+ #include <sys/types.h>
+ #include <unistd.h>
+ 
++#ifdef __APPLE__
++#ifndef MSG_CMSG_CLOEXEC
++#define MSG_CMSG_CLOEXEC 0
++#endif
++#endif
++
+ #define RENDER_SOCKET_MAX_FD_COUNT 8

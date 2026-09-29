@@ -1,0 +1,13 @@
+--- a/src/proxy/proxy_socket.c
++++ b/src/proxy/proxy_socket.c
+@@ -11,6 +11,12 @@
+ #include <sys/uio.h>
+ #include <unistd.h>
+ 
++#ifdef __APPLE__
++#ifndef MSG_CMSG_CLOEXEC
++#define MSG_CMSG_CLOEXEC 0
++#endif
++#endif
++
+ #define PROXY_SOCKET_MAX_FD_COUNT 8
