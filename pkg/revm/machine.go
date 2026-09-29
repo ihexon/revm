@@ -422,7 +422,6 @@ func (p *machineBuildPlan) build(ctx context.Context) error {
 		{"logging", p.configureLogFile},
 		{"ssh", p.configureSSH},
 		{"resources", p.configureResources},
-		{"gpu", p.configureGPU},
 		{"network", p.configureNetwork},
 		{"port forwards", p.configurePortForwards},
 		{"proxy", p.configureProxy},
@@ -438,14 +437,6 @@ func (p *machineBuildPlan) build(ctx context.Context) error {
 		if err := step.run(ctx); err != nil {
 			return fmt.Errorf("%s: %w", step.name, err)
 		}
-	}
-	return nil
-}
-
-func (p *machineBuildPlan) configureGPU(ctx context.Context) error {
-	p.builder.GPUBackend = p.cfg.GPU
-	if p.cfg.GPU == define.GPUVenus {
-		logrus.Info("configuring headless virtio-gpu Venus")
 	}
 	return nil
 }

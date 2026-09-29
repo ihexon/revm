@@ -29,21 +29,6 @@ const (
 	TSI    VNetMode = "tsi"
 )
 
-// GPUBackend selects the guest virtio-gpu implementation.
-//
-// Venus is intentionally opt-in. It exposes a headless virtio-gpu device to
-// the guest and does not create a host window or input device.
-type GPUBackend string
-
-const (
-	GPUOff   GPUBackend = "off"
-	GPUVenus GPUBackend = "venus"
-)
-
-func (g GPUBackend) IsValid() bool {
-	return g == "" || g == GPUOff || g == GPUVenus
-}
-
 const (
 	GuestAgentPathInGuest   = "/.bin/guest-agent"
 	GuestHiddenBinDir       = "/.bin"

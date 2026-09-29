@@ -30,14 +30,6 @@ revm run --id build \
 
 Everything after the double dash is run in the guest. The default network is gvisor. Use --network tsi when you want libkrun's transparent socket interception and do not need ctl port forwarding.
 
-On Apple Silicon, `--gpu venus` adds a headless virtio-GPU device. The guest exposes `/dev/dri/card0` and `/dev/dri/renderD128`; revm does not open a macOS window or forward input events. GPU support is disabled unless requested explicitly:
-
-~~~bash
-revm run --id gpu --gpu venus -- ls -l /dev/dri
-~~~
-
-The built-in Alpine rootfs contains Mesa's virtio Vulkan driver, the Vulkan loader, and `vulkan-tools`. The current libkrun main Venus path still panics in its `magma-gpu` worker when `vulkaninfo` creates a device; the virtio-GPU device smoke test works, but Vulkan workloads remain blocked by that upstream issue. Venus depends on the libkrun and virglrenderer artifacts from the dependency workflow, so a dependency release must be rebuilt after changing those projects.
-
 The rootfs already contains the guest agent and the tools used to bring up the network, mount filesystems, and run commands. It also includes Podman and the packages installed by the Alpine rootfs build. There is no custom rootfs option and no rootfs import/export command.
 
 ## Run containers

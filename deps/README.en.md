@@ -28,11 +28,8 @@ deps.lock pins released asset names, version, and SHA-256. The application build
 Manually dispatch build-deps in GitHub Actions with a release tag such as deps-v20260928.1. The workflow:
 
 - builds Alpine rootfs, libkrun, and libkrunfw on Linux amd64 and arm64 runners;
-- builds libkrun, libkrunfw, and rendering dependencies on a macOS arm64 runner;
-- builds the macOS Venus stack the same way as [homebrew-krun](https://github.com/libkrun/homebrew-krun): the slp virglrenderer fork is built with Venus enabled and the render server disabled, then the shared virglrenderer, libepoxy, and MoltenVK dylibs are shipped with libkrun;
-- preinstalls bash, ca-certificates, dropbear, iproute2, nftables, openntpd, podman, tar, util-linux, zstd, mesa-vulkan-virtio, vulkan-loader, and vulkan-tools in the Alpine rootfs;
+- builds libkrun and libkrunfw on a macOS arm64 runner;
 - writes user.containers.override_stat metadata for the packaged rootfs;
-- keeps the aarch64 libkrunfw kernel on 4K guest pages for the current macOS Venus path;
 - generates SHA256SUMS and a manifest;
 - publishes a deps-* GitHub release.
 

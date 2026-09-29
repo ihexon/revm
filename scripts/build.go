@@ -341,7 +341,7 @@ func (b *builder) prepareRuntimeLibsDarwin(target string) error {
 	}
 	// libkrun loads the libkrunfw payload by soname at runtime. Keep that
 	// lookup inside the relocatable bundle instead of relying on DYLD paths.
-	// The dependency builder already adds this rpath to the shared GPU stack,
+	// The dependency builder already adds this rpath to the libkrun dylib,
 	// so make the application packaging step idempotent.
 	libkrunPath := filepath.Join(libDir, "libkrun.2.0.0.dylib")
 	if !strings.Contains(commandOutput("", "otool", "-l", libkrunPath), "@loader_path") {

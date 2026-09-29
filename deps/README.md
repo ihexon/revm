@@ -28,11 +28,8 @@ deps.lock 固定已经发布的资产名称、版本和 SHA-256。应用构建�
 在 GitHub Actions 中手动触发 build-deps，并提供形如 deps-v20260928.1 的 release tag。workflow 会：
 
 - 在 Linux amd64 和 arm64 runner 上构建 Alpine rootfs、libkrun 和 libkrunfw；
-- 在 macOS arm64 runner 上构建 libkrun、libkrunfw 及其图形/渲染依赖；
-- macOS Venus 构建方式与 [homebrew-krun](https://github.com/libkrun/homebrew-krun) 保持一致：使用 slp 的 virglrenderer fork，启用 Venus、关闭 render-server，并把共享的 virglrenderer、libepoxy 和 MoltenVK 动态库一起打进 libkrun 依赖包；
-- 将 Alpine rootfs 中预装 bash、ca-certificates、dropbear、iproute2、nftables、openntpd、podman、tar、util-linux、zstd、mesa-vulkan-virtio、vulkan-loader 和 vulkan-tools；
+- 在 macOS arm64 runner 上构建 libkrun 和 libkrunfw；
 - 为打包的 rootfs 写入 user.containers.override_stat 元数据；
-- 为 aarch64 libkrunfw 固定使用 4K guest pages，以匹配当前 macOS Venus 路径；
 - 生成 SHA256SUMS 和 manifest；
 - 发布 deps-* GitHub release。
 
