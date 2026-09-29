@@ -75,7 +75,6 @@ import (
 	"errors"
 	"fmt"
 	"linuxvm/pkg/define"
-	"os"
 	"unsafe"
 )
 
@@ -95,15 +94,6 @@ func (v *Libkrun) setupGPU() error {
 }
 
 func (v *Libkrun) setupVenusGPU() error {
-	// The macOS virglrenderer render server uses unlinked temporary files for
-	// shared metadata. macOS does not provide Linux's memfd_create, so give it a
-	// valid runtime directory when the caller has not configured one.
-	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir == "" {
-		if err := os.Setenv("XDG_RUNTIME_DIR", os.TempDir()); err != nil {
-			return fmt.Errorf("libkrun: configure XDG_RUNTIME_DIR for Venus: %w", err)
-		}
-	}
-
 	var errOut C.KrunError
 	backend := C.revm_gpu_new_headless_display(&errOut)
 	if err := checkKrunHandle("create headless GPU display backend", unsafe.Pointer(backend), errOut); err != nil {

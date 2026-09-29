@@ -80,13 +80,9 @@ build_virglrenderer_darwin() {
 
     cd "$src"
     patch -p1 < "$REPO_ROOT/deps/patches/virglrenderer-resource-map-fixed.patch"
-    # macOS has no Linux memfd seals. Keep the render-server metadata size
-    # validation, but omit the seal operations so Venus can run in-process.
+    # Keep the Darwin build on the in-process path. The fork's render-server
+    # protocol cannot carry macOS map_ptr resources yet.
     patch -p1 < "$REPO_ROOT/deps/patches/virglrenderer-darwin-render-server.patch"
-    # Darwin does not define MSG_CMSG_CLOEXEC; upstream virglrenderer uses a
-    # zero fallback for its Unix socket transport on this platform.
-    patch -p1 < "$REPO_ROOT/deps/patches/virglrenderer-darwin-socket.patch"
-    patch -p1 < "$REPO_ROOT/deps/patches/virglrenderer-darwin-render-socket.patch"
     perl -0pi -e "s|add_project_link_arguments\\('-lMoltenVK', language : 'c'\\)|add_project_link_arguments('$moltenvk_lib', '$spirv_cross_lib', '$spirv_tools_lib', language : 'c')|" meson.build
     perl -0pi -e "s|-I/opt/homebrew/opt/molten-vk/libexec/include|-I$MOLTENVK_PREFIX/libexec/include|" meson.build
     perl -0pi -e "s|if not with_host_windows\\n   subdir\\('vtest'\\)\\nendif\\n\\n||" meson.build
@@ -101,7 +97,7 @@ build_virglrenderer_darwin() {
             --buildtype=release \
             --default-library=static \
             -Dvenus=true \
-            -Drender-server=true \
+            -Drender-server=false \
             -Ddrm=disabled \
             '-Dplatforms=[]'
 
