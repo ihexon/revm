@@ -157,11 +157,9 @@ jobs:
           grep -Fx ./lib/libkrun_init.dylib contents.txt
           grep -Fx ./lib/libkrun_init.0.dylib contents.txt
           grep -Fx ./lib/libkrun_init.0.1.0.dylib contents.txt
-          grep -Fx ./lib/libvirglrenderer.a contents.txt
-          grep -Fx ./lib/libepoxy.a contents.txt
-          grep -Fx ./lib/libMoltenVK.a contents.txt
-          grep -Fx ./lib/libSPIRVCross.a contents.txt
-          grep -Fx ./lib/libSPIRVTools.a contents.txt
+          grep -E '^\./lib/libvirglrenderer\..*\.dylib$' contents.txt
+          grep -E '^\./lib/libepoxy\..*\.dylib$' contents.txt
+          grep -Fx ./lib/libMoltenVK.dylib contents.txt
       - uses: actions/upload-artifact@v7
         with:
           name: libkrun-Darwin-arm64.tar.zst

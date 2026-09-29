@@ -28,7 +28,7 @@ checkout_libkrun() {
     patch_ffier_generator "$LIBKRUN_SRC"
 }
 
-unpack_static_deps_darwin() {
+unpack_gpu_deps_darwin() {
     if [[ ! -f "$LIBEPOXY_TAR" ]]; then
         echo "prebuilt $LIBEPOXY_TAR not found" >&2
         exit 100
@@ -45,7 +45,7 @@ unpack_static_deps_darwin() {
     tar --zstd -xf "$VIRGLRENDERER_TAR" -C "$VIRGLRENDERER_PREFIX"
 }
 
-install_static_deps_darwin() {
+install_build_deps_darwin() {
     brew tap slp/krun
     brew trust slp/krun
     brew install pkg-config molten-vk lld
@@ -53,17 +53,16 @@ install_static_deps_darwin() {
     MOLTENVK_PREFIX="${MOLTENVK_PREFIX:-$(brew --prefix molten-vk)}"
     export MOLTENVK_PREFIX
 
-    unpack_static_deps_darwin
+    unpack_gpu_deps_darwin
 }
 
 build_libkrun_darwin() {
     export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-nightly}"
     install_rust_linux_musl_target
 
-    install_static_deps_darwin
+    install_build_deps_darwin
 
     export PKG_CONFIG_PATH="$VIRGLRENDERER_PREFIX/lib/pkgconfig:$LIBEPOXY_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-    export PKG_CONFIG_ALL_STATIC=1
     export LIBRARY_PATH="$VIRGLRENDERER_PREFIX/lib:$LIBEPOXY_PREFIX/lib:$MOLTENVK_PREFIX/lib:$MOLTENVK_PREFIX/libexec/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
     export CPATH="$VIRGLRENDERER_PREFIX/include:$LIBEPOXY_PREFIX/include:$MOLTENVK_PREFIX/libexec/include${CPATH:+:$CPATH}"
 
@@ -79,8 +78,45 @@ build_libkrun_darwin() {
     # consumers can relocate the bundled library.
     install_name_tool -id "libkrun_init.0.dylib" "$PREFIX/lib/libkrun_init.0.1.0.dylib"
     verify_libkrun_bundle "$PREFIX/lib"
-    install -m 644 "$VIRGLRENDERER_PREFIX/lib/libvirglrenderer.a" "$LIBEPOXY_PREFIX/lib/libepoxy.a" "$PREFIX/lib/"
-    install -m 644 "$MOLTENVK_PREFIX/lib/libMoltenVK.a" "$MOLTENVK_PREFIX/libexec/lib/libSPIRVCross.a" "$MOLTENVK_PREFIX/libexec/lib/libSPIRVTools.a" "$PREFIX/lib/"
+    # Homebrew's GPU stack is shared. Carry the transitive dylibs in the
+    # revm bundle and rewrite their install names below so the bundle does
+    # not depend on /opt/homebrew at runtime.
+    gpu_dylibs=()
+    for dep in "$VIRGLRENDERER_PREFIX"/lib/*.dylib \
+               "$LIBEPOXY_PREFIX"/lib/*.dylib \
+               "$MOLTENVK_PREFIX"/lib/libMoltenVK.dylib; do
+        [[ -e "$dep" ]] || continue
+        dest="$PREFIX/lib/$(basename "$dep")"
+        install -m 755 "$dep" "$dest"
+        gpu_dylibs+=("$dest")
+    done
+
+    for dylib in "${gpu_dylibs[@]}"; do
+        install_name_tool -id "@rpath/$(basename "$dylib")" "$dylib"
+    done
+
+    for dylib in "$PREFIX"/lib/*.dylib; do
+        [[ -f "$dylib" ]] || continue
+        install_name_tool -add_rpath "@loader_path" "$dylib" 2>/dev/null || true
+        install_name_tool -change "$MOLTENVK_PREFIX/lib/libMoltenVK.dylib" \
+            "@rpath/libMoltenVK.dylib" "$dylib" 2>/dev/null || true
+        install_name_tool -change "$LIBEPOXY_PREFIX/lib/libepoxy.0.dylib" \
+            "@rpath/libepoxy.0.dylib" "$dylib" 2>/dev/null || true
+        for dep in "$VIRGLRENDERER_PREFIX"/lib/libvirglrenderer*.dylib \
+                   "$LIBEPOXY_PREFIX"/lib/libepoxy*.dylib; do
+            [[ -e "$dep" ]] || continue
+            install_name_tool -change "$dep" "@rpath/$(basename "$dep")" "$dylib" 2>/dev/null || true
+        done
+    done
+
+    for dylib in "$PREFIX"/lib/*.dylib; do
+        [[ -f "$dylib" ]] || continue
+        if otool -L "$dylib" | grep -E '/opt/homebrew|/tmp/.deps' >/dev/null; then
+            echo "non-relocatable dependency in $dylib" >&2
+            otool -L "$dylib" >&2
+            exit 1
+        fi
+    done
 }
 
 release() {

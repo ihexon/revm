@@ -49,10 +49,6 @@ unpack_libepoxy_darwin() {
 build_virglrenderer_darwin() {
     local dist="$WORKSPACE/distfiles/virglrenderer-$VIRGLRENDERER_VERSION.tar.gz"
     local src="$WORKSPACE/build/virglrenderer-$VIRGLRENDERER_VERSION"
-    local moltenvk_lib
-    local spirv_cross_lib
-    local spirv_tools_lib
-
     brew tap slp/krun
     brew trust slp/krun
     brew install meson ninja pkg-config molten-vk
@@ -60,12 +56,8 @@ build_virglrenderer_darwin() {
     MOLTENVK_PREFIX="${MOLTENVK_PREFIX:-$(brew --prefix molten-vk)}"
     export MOLTENVK_PREFIX
 
-    moltenvk_lib="$MOLTENVK_PREFIX/lib/libMoltenVK.a"
-    spirv_cross_lib="$MOLTENVK_PREFIX/libexec/lib/libSPIRVCross.a"
-    spirv_tools_lib="$MOLTENVK_PREFIX/libexec/lib/libSPIRVTools.a"
-
-    if [[ ! -f "$moltenvk_lib" || ! -f "$spirv_cross_lib" || ! -f "$spirv_tools_lib" ]]; then
-        echo "MoltenVK static libraries were not found; install Homebrew molten-vk first." >&2
+    if [[ ! -f "$MOLTENVK_PREFIX/lib/libMoltenVK.dylib" ]]; then
+        echo "MoltenVK dynamic library was not found; install Homebrew molten-vk first." >&2
         exit 1
     fi
 
@@ -79,36 +71,24 @@ build_virglrenderer_darwin() {
     tar -xf "$dist" -C "$WORKSPACE/build"
 
     cd "$src"
-    patch -p1 < "$REPO_ROOT/deps/patches/virglrenderer-resource-map-fixed.patch"
-    # Keep the Darwin build on the in-process path. The fork's render-server
-    # protocol cannot carry macOS map_ptr resources yet.
-    patch -p1 < "$REPO_ROOT/deps/patches/virglrenderer-darwin-render-server.patch"
-    perl -0pi -e "s|add_project_link_arguments\\('-lMoltenVK', language : 'c'\\)|add_project_link_arguments('$moltenvk_lib', '$spirv_cross_lib', '$spirv_tools_lib', language : 'c')|" meson.build
-    perl -0pi -e "s|-I/opt/homebrew/opt/molten-vk/libexec/include|-I$MOLTENVK_PREFIX/libexec/include|" meson.build
     perl -0pi -e "s|if not with_host_windows\\n   subdir\\('vtest'\\)\\nendif\\n\\n||" meson.build
 
     PKG_CONFIG_PATH="$LIBEPOXY_PREFIX/lib/pkgconfig" \
-    PKG_CONFIG_ALL_STATIC=1 \
-    CPPFLAGS="-I$LIBEPOXY_PREFIX/include -I$MOLTENVK_PREFIX/libexec/include" \
+    CPPFLAGS="-I$LIBEPOXY_PREFIX/include" \
     LDFLAGS="-L$LIBEPOXY_PREFIX/lib" \
-        meson setup build-static \
+        meson setup build \
             --prefix="$PREFIX" \
             --libdir=lib \
             --buildtype=release \
-            --default-library=static \
+            --default-library=shared \
             -Dvenus=true \
             -Drender-server=false \
             -Ddrm=disabled \
             '-Dplatforms=[]'
 
     PKG_CONFIG_PATH="$LIBEPOXY_PREFIX/lib/pkgconfig" \
-    PKG_CONFIG_ALL_STATIC=1 \
-        meson compile -C build-static
-    meson install -C build-static
-
-    cat >> "$PREFIX/lib/pkgconfig/virglrenderer.pc" <<EOF
-Libs.private: $moltenvk_lib $spirv_cross_lib $spirv_tools_lib -framework Metal -framework Foundation -framework QuartzCore -framework CoreGraphics -framework IOSurface -framework IOKit -framework AppKit -lc++ -lobjc
-EOF
+    meson compile -C build
+    meson install -C build
     # The krunkit fork contains the virgl APIs required by current rutabaga,
     # but retains the historical 0.10.x Meson project version. Current
     # libkrun checks the pkg-config compatibility version at build time.

@@ -45,17 +45,17 @@ build_libepoxy_darwin() {
     tar -xf "$dist" -C "$WORKSPACE/build"
 
     cd "$src"
-    meson setup build-static \
+    meson setup build \
         --prefix="$PREFIX" \
         --libdir=lib \
         --buildtype=release \
-        --default-library=static \
+        --default-library=shared \
         -Dglx=no \
         -Degl=no \
         -Dx11=false \
         -Dtests=false
-    meson compile -C build-static
-    meson install -C build-static
+    meson compile -C build
+    meson install -C build
 }
 
 release() {
