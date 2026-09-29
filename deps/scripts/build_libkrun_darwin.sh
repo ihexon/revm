@@ -23,7 +23,10 @@ checkout_libkrun() {
 build_libkrun_darwin() {
     export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-nightly}"
     install_rust_linux_musl_target
-    brew install lld
+    # libkrun's input-device bindings use bindgen and load libclang at build
+    # time. Keep this dependency explicit now that the GPU toolchain is gone.
+    brew install llvm lld
+    export LIBCLANG_PATH="${LIBCLANG_PATH:-$(brew --prefix llvm)/lib}"
 
     cd "$LIBKRUN_SRC"
     make clean
