@@ -16,6 +16,8 @@ VIRGLRENDERER_TAR="$DEPS_DIST_DIR/virglrenderer-Darwin-arm64.tar.zst"
 RELEASE_TAR="$DEPS_DIST_DIR/$PKG_NAME-$PLT-$ARCH.tar.zst"
 
 MOLTENVK_PREFIX="${MOLTENVK_PREFIX:-}"
+RUTABAGA_VERSION="0.1.85"
+RUTABAGA_TAR="$DEPS_DIST_DIR/rutabaga_gfx-$RUTABAGA_VERSION.crate"
 
 checkout_libkrun() {
     rm -rf "$LIBKRUN_SRC"
@@ -26,6 +28,30 @@ checkout_libkrun() {
         bindings/libkrun-via-cdylib-weak/Cargo.toml \
         bindings/init-blob-via-cdylib/Cargo.toml
     patch_ffier_generator "$LIBKRUN_SRC"
+}
+
+patch_rutabaga_macos_venus() {
+    local vendor_dir="$LIBKRUN_SRC/third_party/rutabaga_gfx"
+    local crate_root="$vendor_dir/rutabaga_gfx-$RUTABAGA_VERSION"
+
+    # libkrun 2.0 still consumes rutabaga 0.1.85. Its macOS Venus resource
+    # export predates virglrenderer's pointer-backed Apple blob type, so keep a
+    # small local patch until the matching rutabaga release is available.
+    if [[ ! -f "$RUTABAGA_TAR" ]]; then
+        curl -fL --retry 3 -o "$RUTABAGA_TAR" \
+            "https://crates.io/api/v1/crates/rutabaga_gfx/$RUTABAGA_VERSION/download"
+    fi
+    rm -rf "$vendor_dir"
+    mkdir -p "$vendor_dir"
+    tar -xf "$RUTABAGA_TAR" -C "$vendor_dir"
+    patch -p1 -d "$crate_root" < "$REPO_ROOT/deps/patches/rutabaga-macos-venus-map.patch"
+    mkdir -p "$LIBKRUN_SRC/third_party"
+    cat >> "$LIBKRUN_SRC/Cargo.toml" <<'EOF'
+
+[patch.crates-io]
+rutabaga_gfx = { path = "third_party/rutabaga_gfx/rutabaga_gfx-0.1.85" }
+EOF
+    patch -p1 -d "$LIBKRUN_SRC" < "$REPO_ROOT/deps/patches/libkrun-macos-venus-map.patch"
 }
 
 unpack_gpu_deps_darwin() {
@@ -67,6 +93,7 @@ build_libkrun_darwin() {
     export CPATH="$VIRGLRENDERER_PREFIX/include:$LIBEPOXY_PREFIX/include:$MOLTENVK_PREFIX/libexec/include${CPATH:+:$CPATH}"
 
     cd "$LIBKRUN_SRC"
+    patch_rutabaga_macos_venus
     make clean
     TIMESYNC=1 make PREFIX="$PREFIX" BLK=1 NET=1 GPU=1 FFI=1
     verify_libkrun_bundle "$LIBKRUN_SRC/target/release"

@@ -78,10 +78,13 @@ import (
 	"unsafe"
 )
 
-// Match current krunkit/libkrun main: Venus is exposed without the legacy
-// EGL or render-server paths, and the classic VirGL capsets are disabled.
-const venusGPUFlags = C.KRUN_VIRGL_RENDERER_FLAGS_VENUS |
-	128 // VIRGLRENDERER_NO_VIRGL is not exported by the current C header.
+// Match the GPU configuration used by libkrun's current GUI example. Venus
+// uses virglrenderer for the host-side protocol, while EGL and the fence
+// options keep the macOS path asynchronous and headless-safe.
+const venusGPUFlags = C.KRUN_VIRGL_RENDERER_FLAGS_USE_EGL |
+	C.KRUN_VIRGL_RENDERER_FLAGS_VENUS |
+	C.KRUN_VIRGL_RENDERER_FLAGS_THREAD_SYNC |
+	C.KRUN_VIRGL_RENDERER_FLAGS_USE_ASYNC_FENCE_CB
 
 func (v *Libkrun) setupGPU() error {
 	switch v.cfg.GPUBackend {
