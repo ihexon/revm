@@ -35,6 +35,9 @@ build_libkrun_darwin() {
     TIMESYNC=1 make PREFIX="$PREFIX" BLK=1 NET=1 FFI=1 install
 
     rm -rf "$PREFIX/lib/pkgconfig"
+    # revm does not expose a display device. Do not ship libkrun's optional
+    # display/GPU callback header in the otherwise headless dependency bundle.
+    rm -f "$PREFIX/include/libkrun_display.h"
     install_name_tool -id "libkrun_init.0.dylib" "$PREFIX/lib/libkrun_init.0.1.0.dylib"
     for dylib in "$PREFIX"/lib/*.dylib; do
         [[ -f "$dylib" ]] || continue
