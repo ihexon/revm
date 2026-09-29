@@ -75,7 +75,7 @@ build_virglrenderer_darwin() {
 
     PKG_CONFIG_PATH="$LIBEPOXY_PREFIX/lib/pkgconfig" \
     CPPFLAGS="-I$LIBEPOXY_PREFIX/include" \
-    LDFLAGS="-L$LIBEPOXY_PREFIX/lib" \
+    LDFLAGS="-L$LIBEPOXY_PREFIX/lib -L$MOLTENVK_PREFIX/lib" \
         meson setup build \
             --prefix="$PREFIX" \
             --libdir=lib \
