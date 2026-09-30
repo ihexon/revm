@@ -53,8 +53,8 @@ func (v *machineBuilder) setupWorkspace(workspacePath string) error {
 		return err
 	}
 
-	underTmp := strings.HasPrefix(workspacePath, "/tmp")
-	underHome := strings.HasPrefix(workspacePath, homeDir)
+	underTmp := pathWithin("/tmp", workspacePath)
+	underHome := pathWithin(homeDir, workspacePath)
 	if !underTmp && !underHome {
 		return fmt.Errorf("workspace must be under /tmp or home directory (%s), got %q", homeDir, workspacePath)
 	}
@@ -119,13 +119,6 @@ func (v *machineBuilder) setupCmdLine(workdir, bin string, args, envs []string) 
 
 	if bin == "" {
 		return fmt.Errorf("bin path is empty")
-	}
-
-	for _, arg := range args {
-		if strings.Contains(arg, ";") || strings.Contains(arg, "|") ||
-			strings.Contains(arg, "&") || strings.Contains(arg, "`") {
-			return fmt.Errorf("dangerous shell metacharacters in argument: %s", arg)
-		}
 	}
 
 	if v.ProxySetting.Use {
@@ -350,8 +343,9 @@ func (v *machineBuilder) applySystemProxy() error {
 		return nil
 	}
 
-	if v.VirtualNetworkMode == define.GVISOR && (strings.Contains(httpProxy.String(), "127.0.0.1") ||
-		strings.Contains(httpProxy.String(), "localhost")) {
+	proxyHost := strings.ToLower(strings.Trim(httpProxy.Host, "[]"))
+	if v.VirtualNetworkMode == define.GVISOR &&
+		(proxyHost == "127.0.0.1" || proxyHost == "localhost" || proxyHost == "::1") {
 		logrus.Debugf("in gvisor network mode, reset proxy to %s", define.HostDomainInGVPNet)
 		httpProxy.Host = define.HostDomainInGVPNet
 	}
@@ -363,6 +357,22 @@ func (v *machineBuilder) applySystemProxy() error {
 		HTTPSProxy: httpProxy.String(),
 	}
 	return nil
+}
+
+func pathWithin(base, candidate string) bool {
+	base, err := filepath.Abs(filepath.Clean(base))
+	if err != nil {
+		return false
+	}
+	candidate, err = filepath.Abs(filepath.Clean(candidate))
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(base, candidate)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // --- Machine assembly (from Config) ----------------------------------------

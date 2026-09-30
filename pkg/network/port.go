@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/url"
 	"strconv"
-	"strings"
 )
 
 func GetAvailablePort(preferredPort uint16) (uint64, error) {
@@ -47,16 +46,15 @@ type Addr struct {
 }
 
 func ParseUnixAddr(raw string) (*Addr, error) {
-	if !strings.Contains(raw, "unix://") && !strings.Contains(raw, "unixgram://") {
-		return nil, fmt.Errorf("scheme missing, expected format: unix://")
-	}
-
 	u, err := url.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
-	if u.Scheme == "" {
-		return nil, fmt.Errorf("missing scheme")
+	if u.Scheme != "unix" && u.Scheme != "unixgram" {
+		return nil, fmt.Errorf("invalid scheme %q, expected unix:// or unixgram://", u.Scheme)
+	}
+	if u.Host != "" {
+		return nil, fmt.Errorf("unix socket address must not contain a host")
 	}
 	if u.Path == "" {
 		return nil, fmt.Errorf("missing path")
@@ -69,16 +67,12 @@ func ParseUnixAddr(raw string) (*Addr, error) {
 }
 
 func ParseTcpAddr(raw string) (*Addr, error) {
-	if !strings.Contains(raw, "tcp://") {
-		return nil, fmt.Errorf("scheme missing, expected format: tcp://<host>:<port>")
-	}
-
 	u, err := url.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
-	if u.Scheme == "" {
-		return nil, fmt.Errorf("missing scheme")
+	if u.Scheme != "tcp" {
+		return nil, fmt.Errorf("invalid scheme %q, expected tcp://<host>:<port>", u.Scheme)
 	}
 	if u.Host == "" {
 		return nil, fmt.Errorf("missing host:port")
@@ -91,6 +85,9 @@ func ParseTcpAddr(raw string) (*Addr, error) {
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid port %q: %w", portStr, err)
+	}
+	if port < 1 || port > 65535 {
+		return nil, fmt.Errorf("port %d is outside range 1-65535", port)
 	}
 
 	return &Addr{

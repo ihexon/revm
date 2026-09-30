@@ -4,6 +4,7 @@ package revm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -22,8 +23,9 @@ func Run(ctx context.Context, cfg *Config) error {
 		if err != nil {
 			return err
 		}
-		defer vm.Release()
-		return vm.Run(ctx)
+		runErr := vm.Run(ctx)
+		releaseErr := vm.Release()
+		return errors.Join(runErr, releaseErr)
 	default:
 		return fmt.Errorf("unsupported run mode %q", cfg.RunMode)
 	}

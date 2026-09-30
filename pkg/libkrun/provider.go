@@ -130,6 +130,14 @@ func (p *Provider) Resume(ctx context.Context) error {
 }
 
 func (p *Provider) ForceStop(ctx context.Context) error {
+	p.mu.Lock()
+	started := p.started
+	p.mu.Unlock()
+	if !started {
+		// A host service can fail before the VMM goroutine has entered Start.
+		// There is no guest to stop yet; Release will close the created handle.
+		return nil
+	}
 	if err := p.RequestShutdown(ctx); err != nil {
 		return err
 	}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/sirupsen/logrus"
@@ -329,6 +330,10 @@ func NormalizeConfig(cfg Config) (Config, error) {
 }
 
 func validateConfig(cfg Config) error {
+	if err := validateSessionID(cfg.SessionID); err != nil {
+		return err
+	}
+
 	if cfg.SessionID == "" {
 		return fmt.Errorf("session name must not be empty, flag --id is required")
 	}
@@ -347,6 +352,33 @@ func validateConfig(cfg Config) error {
 	default:
 		return fmt.Errorf("invalid run mode %q", cfg.RunMode)
 	}
+}
+
+// validateSessionID keeps the session directory below ~/.cache/revm. Session
+// IDs are also used in socket and lock file names, so accepting path syntax
+// here would let a caller escape the managed workspace.
+func validateSessionID(id string) error {
+	if id == "" {
+		return fmt.Errorf("session name must not be empty, flag --id is required")
+	}
+	if id == "." || id == ".." {
+		return fmt.Errorf("session name %q is reserved", id)
+	}
+	if strings.TrimSpace(id) != id {
+		return fmt.Errorf("session name must not contain leading or trailing whitespace")
+	}
+	if len(id) > 64 {
+		return fmt.Errorf("session name must be at most 64 characters")
+	}
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-' {
+			continue
+		}
+		return fmt.Errorf("session name %q contains invalid character %q; use letters, numbers, '.', '_' or '-'", id, c)
+	}
+	return nil
 }
 
 func validateAttachConfig(cfg Config) error {

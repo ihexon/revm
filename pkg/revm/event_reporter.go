@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/network"
+	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,7 +44,7 @@ func newEventReporterClient(endpoint string) *network.Client {
 			logrus.Warnf("event sink: invalid tcp endpoint %q: %v", endpoint, err)
 			return nil
 		}
-		hostPort := fmt.Sprintf("%s:%d", addr.Host, addr.Port)
+		hostPort := net.JoinHostPort(addr.Host, strconv.Itoa(addr.Port))
 		return network.NewTCPClient(hostPort, network.WithTimeout(1*time.Second))
 	default:
 		logrus.Warnf("event sink: unsupported endpoint scheme %q", endpoint)

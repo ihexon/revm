@@ -278,24 +278,34 @@ func (vm *VM) Run(ctx context.Context) error {
 		abortVMWait(cause)
 		stopHostServices(cause)
 	}
+	var forceStopOnce sync.Once
+	var forceStopErr error
+	forceVMRunWithStop := func(cause error) {
+		forceStopOnce.Do(func() {
+			forceStopErr = vm.forceVirtualMachine()
+		})
+		if forceStopErr != nil {
+			cause = errors.Join(cause, forceStopErr)
+		}
+		forceVMRun(cause)
+	}
 
 	networkReady, signalNetworkReady := vm.newNetworkReadySignal()
 
 	var g errgroup.Group
 
-	vm.startHostService(&g, hostServicesCtx, forceVMRun, vm.startIgnitionService)
-	vm.startHostService(&g, hostServicesCtx, forceVMRun, func(ctx context.Context) error {
+	vm.startHostService(&g, hostServicesCtx, forceVMRunWithStop, vm.startIgnitionService)
+	vm.startHostService(&g, hostServicesCtx, forceVMRunWithStop, func(ctx context.Context) error {
 		return vm.startHostNetworkStack(ctx, signalNetworkReady)
 	})
-	vm.startHostService(&g, hostServicesCtx, forceVMRun, vm.startMachineManagementAPI)
+	vm.startHostService(&g, hostServicesCtx, forceVMRunWithStop, vm.startMachineManagementAPI)
 
-	if err := vm.startModeServices(&g, hostServicesCtx, forceVMRun, networkReady); err != nil {
+	if err := vm.startModeServices(&g, hostServicesCtx, forceVMRunWithStop, networkReady); err != nil {
 		return err
 	}
 
 	forceHostShutdown := func() {
-		vm.forceVirtualMachine()
-		forceVMRun(context.Canceled)
+		forceVMRunWithStop(context.Canceled)
 	}
 	go func() {
 		select {
@@ -353,16 +363,18 @@ func (vm *VM) Resume(ctx context.Context) error {
 	return vm.runtime.backend.Resume(ctx)
 }
 
-func (vm *VM) forceVirtualMachine() {
+func (vm *VM) forceVirtualMachine() error {
 	if vm.runtime.backend == nil {
-		return
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), defaultForceStopTimeout)
 	defer cancel()
 
 	if err := vm.runtime.backend.ForceStop(ctx); err != nil {
 		logrus.Warnf("force stop virtual machine failed: %v", err)
+		return err
 	}
+	return nil
 }
 
 func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, forceVMRun func(error), networkReady <-chan struct{}) error {
@@ -422,7 +434,6 @@ func (vm *VM) startHostService(g *errgroup.Group, ctx context.Context, forceVMRu
 			return err
 		}
 
-		vm.forceVirtualMachine()
 		forceVMRun(err)
 		return err
 	})

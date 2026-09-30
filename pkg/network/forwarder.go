@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net"
-	"net/url"
 	"os"
 	"sync"
 	"time"
@@ -18,7 +17,7 @@ type LocalForwarder struct {
 }
 
 func (s *LocalForwarder) Run(ctx context.Context) error {
-	parse, err := url.Parse(s.UnixSockAddr)
+	parse, err := ParseUnixAddr(s.UnixSockAddr)
 	if err != nil {
 		return err
 	}
@@ -29,12 +28,12 @@ func (s *LocalForwarder) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer l.Close()
+	defer os.Remove(parse.Path)
 
 	if err := os.Chmod(parse.Path, 0600); err != nil {
 		return err
 	}
-
-	defer l.Close()
 
 	go func() {
 		<-ctx.Done()
@@ -47,8 +46,11 @@ func (s *LocalForwarder) Run(ctx context.Context) error {
 			if errors.Is(err, net.ErrClosed) {
 				return nil
 			}
-			time.Sleep(100 * time.Millisecond)
-			continue
+			if netErr, ok := err.(net.Error); ok && netErr.Temporary() {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+			return err
 		}
 
 		go s.handleConn(ctx, conn)
@@ -73,6 +75,8 @@ func (s *LocalForwarder) handleConn(ctx context.Context, uconn net.Conn) {
 
 func proxy(ctx context.Context, a, b net.Conn) {
 	var wg sync.WaitGroup
+	done := make(chan struct{})
+	defer close(done)
 	wg.Add(2)
 
 	copyConn := func(dst, src net.Conn) {
@@ -92,9 +96,12 @@ func proxy(ctx context.Context, a, b net.Conn) {
 	go copyConn(a, b)
 
 	go func() {
-		<-ctx.Done()
-		a.Close()
-		b.Close()
+		select {
+		case <-ctx.Done():
+			_ = a.Close()
+			_ = b.Close()
+		case <-done:
+		}
 	}()
 
 	wg.Wait()

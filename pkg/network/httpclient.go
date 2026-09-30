@@ -130,23 +130,30 @@ func NewVSockClient(cid, port uint32, opts ...ClientOption) *Client {
 	applyOptions(cfg, opts)
 
 	dialFunc := func(ctx context.Context, _, _ string) (net.Conn, error) {
-		result := make(chan struct {
+		resultCh := make(chan struct {
 			c   net.Conn
 			err error
 		}, 1)
 
 		go func() {
 			c, err := vsock.Dial(cid, port, nil)
-			result <- struct {
+			result := struct {
 				c   net.Conn
 				err error
 			}{c, err}
+			select {
+			case resultCh <- result:
+			case <-ctx.Done():
+				if c != nil {
+					_ = c.Close()
+				}
+			}
 		}()
 
 		select {
 		case <-ctx.Done():
 			return nil, context.Cause(ctx)
-		case r := <-result:
+		case r := <-resultCh:
 			return r.c, r.err
 		}
 	}

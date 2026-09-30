@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 	"time"
 
@@ -31,8 +32,11 @@ type Config struct {
 
 type Supervisor struct {
 	cfg Config
-	cmd *exec.Cmd
 
+	mu       sync.Mutex
+	cmd      *exec.Cmd
+	done     chan struct{}
+	stopping bool
 	running  bool
 	restarts int
 }
@@ -50,6 +54,9 @@ func (s *Supervisor) Run(ctx context.Context) {
 
 func (s *Supervisor) loop(ctx context.Context) {
 	for {
+		if s.isStopping() {
+			return
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -61,7 +68,7 @@ func (s *Supervisor) loop(ctx context.Context) {
 			logrus.Infof("[supervisor:%s] process exited: %s", s.cfg.Name, err)
 		}
 
-		if !s.cfg.Restart {
+		if !s.cfg.Restart || s.isStopping() {
 			return
 		}
 
@@ -106,35 +113,76 @@ func (s *Supervisor) runOnce(ctx context.Context) error {
 		return fmt.Errorf("start %s: %w", s.cfg.Name, err)
 	}
 
+	done := make(chan struct{})
+	s.mu.Lock()
+	if s.stopping {
+		s.mu.Unlock()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return context.Canceled
+	}
 	s.cmd = cmd
+	s.done = done
 	s.running = true
+	s.mu.Unlock()
 
 	err := cmd.Wait()
 
-	s.running = false
+	s.mu.Lock()
+	if s.cmd == cmd {
+		s.cmd = nil
+		s.done = nil
+		s.running = false
+		close(done)
+	}
+	s.mu.Unlock()
 	return err
 }
 
 func (s *Supervisor) Stop() {
-	if s.cmd == nil || s.cmd.Process == nil {
+	s.mu.Lock()
+	s.stopping = true
+	cmd, done := s.cmd, s.done
+	s.mu.Unlock()
+	if cmd == nil || cmd.Process == nil {
 		return
 	}
 
 	// 优雅退出
-	pgid, _ := syscall.Getpgid(s.cmd.Process.Pid)
+	pgid, err := syscall.Getpgid(cmd.Process.Pid)
+	killGroup := err == nil && pgid > 0
+	kill := func(sig syscall.Signal) {
+		if killGroup {
+			_ = syscall.Kill(-pgid, sig)
+			return
+		}
+		_ = syscall.Kill(cmd.Process.Pid, sig)
+	}
 
-	_ = syscall.Kill(-pgid, syscall.SIGTERM)
+	kill(syscall.SIGTERM)
 
-	done := make(chan error, 1)
-	go func() {
-		done <- s.cmd.Wait()
-	}()
-
+	timeout := s.cfg.StopTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	select {
 	case <-done:
 		return
-	case <-time.After(s.cfg.StopTimeout):
-		_ = syscall.Kill(-pgid, syscall.SIGKILL)
-		return
+	case <-timer.C:
+		kill(syscall.SIGKILL)
+		// runOnce owns cmd.Wait. Give it a short bounded window to reap the
+		// process after the hard kill, without calling Wait a second time.
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+		}
 	}
+}
+
+func (s *Supervisor) isStopping() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stopping
 }

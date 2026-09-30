@@ -3,10 +3,10 @@
 package management
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	httpv2 "linuxvm/pkg/http"
 	"linuxvm/pkg/protocol"
 	guestcontrol "linuxvm/pkg/service/guestcontrol"
@@ -153,29 +153,47 @@ func (s *Server) executeCommand(ctx context.Context, cancel context.CancelFunc, 
 		return
 	}
 	var wg sync.WaitGroup
+	streamErrCh := make(chan error, 2)
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		sc := bufio.NewScanner(proc.StdoutPipeReader)
-		sc.Buffer(make([]byte, 64*1024), 1<<20)
-		for sc.Scan() {
-			publish(sess, ssev2.Stdout, sc.Text())
-		}
+		streamErrCh <- streamOutput(proc.StdoutPipeReader, ssev2.Stdout, sess)
 	}()
 	go func() {
 		defer wg.Done()
-		sc := bufio.NewScanner(proc.StderrPipeReader)
-		sc.Buffer(make([]byte, 64*1024), 1<<20)
-		for sc.Scan() {
-			publish(sess, ssev2.Stderr, sc.Text())
-		}
+		streamErrCh <- streamOutput(proc.StderrPipeReader, ssev2.Stderr, sess)
 	}()
 	wg.Wait()
+	var streamErr error
+	for i := 0; i < 2; i++ {
+		if err := <-streamErrCh; err != nil && streamErr == nil {
+			streamErr = err
+		}
+	}
+	if streamErr != nil {
+		publish(sess, ssev2.Stderr, "stream output failed: "+streamErr.Error())
+	}
 	if err := <-proc.ErrChan; err != nil {
 		publish(sess, ssev2.Stderr, "wait: "+err.Error())
 		return
 	}
 	publish(sess, ssev2.Done, "done")
+}
+
+func streamOutput(r io.Reader, typ ssev2.EventType, sess *ssev2.Session) error {
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			publish(sess, typ, string(buf[:n]))
+		}
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+	}
 }
 
 func publish(sess *ssev2.Session, typ ssev2.EventType, data string) {

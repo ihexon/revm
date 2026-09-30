@@ -112,11 +112,24 @@ func GuestExecRequest(ctx context.Context, target Target, request protocol.Guest
 	stdoutReader, stdoutWriter := io.Pipe()
 	stderrReader, stderrWriter := io.Pipe()
 	errChan := make(chan error, 1)
+	streamDone := make(chan struct{})
 	go func() {
+		select {
+		case <-ctx.Done():
+			_ = stdoutReader.CloseWithError(context.Cause(ctx))
+			_ = stderrReader.CloseWithError(context.Cause(ctx))
+		case <-streamDone:
+		}
+	}()
+	go func() {
+		defer close(streamDone)
 		defer client.Close()
 		defer resp.Body.Close()
 		defer stdoutWriter.Close()
 		defer stderrWriter.Close()
+		sendErr := func(err error) {
+			errChan <- err
+		}
 		dec := json.NewDecoder(bufio.NewReader(resp.Body))
 		var exitCode *int
 		for {
@@ -124,28 +137,38 @@ func GuestExecRequest(ctx context.Context, target Target, request protocol.Guest
 			if err := dec.Decode(&frame); err != nil {
 				if err == io.EOF {
 					if exitCode == nil {
-						errChan <- errors.New("guest control stream ended without exit status")
+						sendErr(errors.New("guest control stream ended without exit status"))
 						return
 					}
 					if *exitCode != 0 {
-						errChan <- fmt.Errorf("guest command exited with code %d", *exitCode)
+						sendErr(fmt.Errorf("guest command exited with code %d", *exitCode))
 						return
 					}
-					errChan <- nil
+					sendErr(nil)
 					return
 				}
-				errChan <- err
+				sendErr(err)
 				return
 			}
 			switch frame.Type {
 			case protocol.GuestControlStdout:
-				_, _ = stdoutWriter.Write(frame.Data)
+				if _, err := stdoutWriter.Write(frame.Data); err != nil {
+					sendErr(err)
+					return
+				}
 			case protocol.GuestControlStderr:
-				_, _ = stderrWriter.Write(frame.Data)
+				if _, err := stderrWriter.Write(frame.Data); err != nil {
+					sendErr(err)
+					return
+				}
 			case protocol.GuestControlExit:
+				if frame.ExitCode == nil {
+					sendErr(errors.New("guest control exit frame has no exit code"))
+					return
+				}
 				exitCode = frame.ExitCode
 			case protocol.GuestControlError:
-				errChan <- fmt.Errorf("guest command failed: %s", frame.Error)
+				sendErr(fmt.Errorf("guest command failed: %s", frame.Error))
 				return
 			}
 		}

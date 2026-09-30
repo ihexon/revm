@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/mdlayher/vsock"
 	"github.com/sirupsen/logrus"
@@ -30,7 +31,9 @@ func StartGuestControlServer(ctx context.Context) error {
 	srv := &http.Server{Handler: http.HandlerFunc(handleGuestControl)}
 	go func() {
 		<-ctx.Done()
-		_ = srv.Shutdown(context.Background())
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
 		_ = listener.Close()
 	}()
 	logrus.Infof("guest control listening on vsock port %d", define.GuestControlPort)

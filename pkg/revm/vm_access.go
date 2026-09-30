@@ -220,20 +220,19 @@ func attachRun(ctx context.Context, controlTarget guestcontrol.Target, cmdline .
 	if err != nil {
 		return err
 	}
-	stderrDone := make(chan struct{})
-	go func() {
-		_, _ = io.Copy(os.Stderr, proc.StderrPipeReader)
-		close(stderrDone)
-	}()
-	_, copyErr := io.Copy(os.Stdout, proc.StdoutPipeReader)
-	if copyErr != nil {
-		return copyErr
+	copyErrCh := make(chan error, 2)
+	go func() { _, err := io.Copy(os.Stdout, proc.StdoutPipeReader); copyErrCh <- err }()
+	go func() { _, err := io.Copy(os.Stderr, proc.StderrPipeReader); copyErrCh <- err }()
+	var copyErr error
+	for i := 0; i < 2; i++ {
+		if err := <-copyErrCh; err != nil && copyErr == nil {
+			copyErr = err
+		}
 	}
-	<-stderrDone
-	if err := <-proc.ErrChan; err != nil {
-		return err
+	if err := <-proc.ErrChan; err != nil && copyErr == nil {
+		copyErr = err
 	}
-	return nil
+	return copyErr
 }
 
 // attachShell starts an interactive shell in the attached VM session over SSH
@@ -255,18 +254,22 @@ func (vm *VM) Exec(ctx context.Context, name string, args ...string) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	stderrDone := make(chan struct{})
+	stderrDone := make(chan error, 1)
 	go func() {
-		_, _ = io.Copy(io.Discard, proc.StderrPipeReader)
-		close(stderrDone)
+		_, err := io.Copy(io.Discard, proc.StderrPipeReader)
+		stderrDone <- err
 	}()
 	out, err := io.ReadAll(proc.StdoutPipeReader)
+	stderrErr := <-stderrDone
+	processErr := <-proc.ErrChan
 	if err != nil {
 		return nil, err
 	}
-	<-stderrDone
-	if err := <-proc.ErrChan; err != nil {
-		return nil, err
+	if stderrErr != nil {
+		return nil, stderrErr
+	}
+	if processErr != nil {
+		return nil, processErr
 	}
 	return out, nil
 }
