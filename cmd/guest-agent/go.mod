@@ -1,35 +1,31 @@
 module guestAgent
 
-go 1.25.5
+go 1.26.3
 
 require (
 	github.com/insomniacslk/dhcp v0.0.0-20260719225207-c76316d4aa82
+	github.com/mdlayher/vsock v1.3.0
 	github.com/moby/sys/mountinfo v0.7.3-0.20250407123443-8d553c09dc5e
-	github.com/sirupsen/logrus v1.9.5-0.20260121091959-524506f8912c
+	github.com/sirupsen/logrus v1.10.2
 	github.com/urfave/cli/v3 v3.6.1
 	github.com/vishvananda/netlink v1.3.1
-	golang.org/x/sync v0.20.0
+	golang.org/x/sync v0.23.0
 	linuxvm v0.0.0
 )
 
 require (
-	github.com/charmbracelet/keygen v0.5.4 // indirect
-	github.com/containers/gvisor-tap-vsock v0.8.9-0.20260429081332-4b4ee6f62b87 // indirect
+	github.com/cilium/ebpf v0.16.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/jsimonetti/rtnetlink v1.3.5 // indirect
-	github.com/linuxkit/virtsock v0.0.0-20241009230534-cb6a20cc0422 // indirect
 	github.com/mdlayher/netlink v1.7.2 // indirect
 	github.com/mdlayher/packet v1.1.2 // indirect
-	github.com/mdlayher/socket v0.5.1 // indirect
-	github.com/mdlayher/vsock v1.2.1 // indirect
+	github.com/mdlayher/socket v0.6.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.23 // indirect
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
-	golang.org/x/crypto v0.50.0 // indirect
-	golang.org/x/net v0.53.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
-	golang.org/x/term v0.42.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )
 
 replace linuxvm => ../../

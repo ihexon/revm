@@ -1,4 +1,4 @@
-FROM golang:1.25.5 AS go
+FROM golang:1.26.4 AS go
 
 FROM ubuntu:25.10
 
