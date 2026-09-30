@@ -161,7 +161,7 @@ func Build(ctx context.Context, cfg *Config) (retVM *VM, retErr error) {
 	}
 
 	if reporter := newEventReporter(normalizedCfg.ReportURL); reporter != nil {
-		vm.observability.events.addReporter(reporter)
+		vm.observability.events.start(reporter)
 	}
 
 	defer func() {
@@ -245,8 +245,8 @@ func (vm *VM) createUserSymlinks() error {
 // The run has two cooperating lifetimes:
 //   - hostServicesCtx controls services hosted by this process, such as the
 //     ignition server, management API, gvproxy stack, and Podman proxy.
-//   - vmWaitAbortCtx is passed to backend.Start and only controls whether the
-//     host keeps waiting for the VM exit path to return.
+//   - the backend owns the blocking VMM call and returns only after the guest
+//     exits; host cancellation is handled through ForceStop.
 //
 // Shutdown is intentionally two-phase. A graceful shutdown request, such as the
 // first Ctrl-C or a management API stop request, only asks the guest to exit.
@@ -268,14 +268,10 @@ func (vm *VM) Run(ctx context.Context) error {
 	hostServicesCtx, stopHostServices := context.WithCancelCause(ctx)
 	defer stopHostServices(context.Canceled)
 
-	vmWaitAbortCtx, abortVMWait := context.WithCancelCause(ctx)
-	defer abortVMWait(context.Canceled)
-
 	finishVMRun := func(cause error) {
 		stopHostServices(cause)
 	}
 	forceVMRun := func(cause error) {
-		abortVMWait(cause)
 		stopHostServices(cause)
 	}
 	var forceStopOnce sync.Once
@@ -326,7 +322,9 @@ func (vm *VM) Run(ctx context.Context) error {
 		logrus.Info(reason.Error())
 		vm.emit(EventVirtualMachineBooting, reason.Error())
 
-		err := vm.runtime.backend.Start(vmWaitAbortCtx)
+		// libkrun_vmm_run is a blocking C call. The backend intentionally owns
+		// that lifetime and returns only after the guest exits.
+		err := vm.runtime.backend.Start(context.Background())
 		if err != nil {
 			finishVMRun(err)
 		} else {
@@ -345,22 +343,6 @@ func (vm *VM) requestGuestShutdown() {
 	if err := vm.runtime.backend.RequestShutdown(context.Background()); err != nil {
 		logrus.Warnf("request guest shutdown failed: %v", err)
 	}
-}
-
-// Pause suspends guest execution through libkrun's thread-safe VMM handle.
-func (vm *VM) Pause(ctx context.Context) error {
-	if vm.runtime.backend == nil {
-		return errors.New("VM backend is unavailable")
-	}
-	return vm.runtime.backend.Pause(ctx)
-}
-
-// Resume resumes a VM previously paused with Pause.
-func (vm *VM) Resume(ctx context.Context) error {
-	if vm.runtime.backend == nil {
-		return errors.New("VM backend is unavailable")
-	}
-	return vm.runtime.backend.Resume(ctx)
 }
 
 func (vm *VM) forceVirtualMachine() error {

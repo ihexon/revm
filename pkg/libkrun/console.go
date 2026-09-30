@@ -50,10 +50,6 @@ func (v *Libkrun) setupConsole() (retErr error) {
 	if err := v.addGuestLogPort(builder, &files); err != nil {
 		return err
 	}
-	if err := v.addGuestSignalPort(builder, &files); err != nil {
-		return err
-	}
-
 	var errOut C.KrunError
 	v.console = C.krun_console_builder_build(builder, &errOut)
 	builder = nil
@@ -144,23 +140,6 @@ func (v *Libkrun) addGuestLogPort(builder C.KrunConsoleBuilder, files *libkrunFi
 	return nil
 }
 
-func (v *Libkrun) addGuestSignalPort(builder C.KrunConsoleBuilder, files *libkrunFiles) (retErr error) {
-	sig, err := newPipeFiles()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if retErr != nil {
-			sig.close()
-		}
-	}()
-	if err := addConsoleInOut(builder, consolePortInOut{name: define.GuestSignalConsolePort, in: sig.read.fd(), out: -1}); err != nil {
-		return err
-	}
-	files.signalPipe = sig
-	return nil
-}
-
 func addConsoleTTY(builder C.KrunConsoleBuilder, name string, fd int) error {
 	n := newKrunStr(name)
 	defer n.free()
@@ -211,7 +190,6 @@ type libkrunFiles struct {
 	consoleTTY *ownedFile
 	consolePTY *consolePTY
 	guestLog   *ownedFile
-	signalPipe pipeFiles
 }
 
 func newStdioPipes() (_ *stdioPipes, retErr error) {
@@ -270,7 +248,6 @@ func (files *libkrunFiles) close() {
 		files.consolePTY.close()
 	}
 	closeOwnedFile(files.guestLog)
-	files.signalPipe.close()
 	*files = libkrunFiles{}
 }
 

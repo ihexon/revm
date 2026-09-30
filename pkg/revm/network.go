@@ -3,7 +3,6 @@
 package revm
 
 import (
-	"context"
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
@@ -16,53 +15,35 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// networkConfigStrategy defines the interface for network configuration strategies.
-// Different network modes (GVISOR, TSI) implement this interface to configure
-// the VM's network stack in their specific way.
-type networkConfigStrategy interface {
-	// Configure sets up network configuration on the given VM.
-	Configure(ctx context.Context, vmc *define.MachineSpec, pathMgr *machinePathManager) error
-}
-
-// getNetworkStrategy returns the appropriate network strategy for the given network mode.
-// Returns nil if the mode is invalid/unknown.
-func getNetworkStrategy(mode define.VNetMode) networkConfigStrategy {
+// configureNetwork records the selected guest network and allocates the host
+// endpoints needed by that mode. There are only two supported modes, so a
+// switch is clearer than a strategy registry.
+func (v *machineBuilder) configureNetwork(mode define.VNetMode) error {
+	v.VirtualNetworkMode = mode
 	switch mode {
 	case define.GVISOR:
-		return &gVisorNetworkConfig{}
+		return v.configureGVisorNetwork()
 	case define.TSI:
-		return &tsiNetworkConfig{}
+		return v.configureTSINetwork()
 	default:
-		return nil
+		return fmt.Errorf("invalid network mode: %s", mode)
 	}
 }
 
-// gVisorNetworkConfig implements network configuration for gvisor-tap-vsock mode.
-// This mode uses gvisor's userspace network stack with vsock communication.
-type gVisorNetworkConfig struct{}
-
-// Configure sets up the gvisor-tap-vsock network configuration.
-// It creates Unix socket paths for GVProxy control and virtual network communication.
-func (g *gVisorNetworkConfig) Configure(ctx context.Context, vmc *define.MachineSpec, pathMgr *machinePathManager) error {
+func (v *machineBuilder) configureGVisorNetwork() error {
 	logrus.Infof("Configuring gvisor-tap-vsock network mode")
+	pathMgr := v.pathMgr
+	controlPath := pathMgr.GetGVPCtlSocketFile()
+	v.GVPCtlAddr = (&url.URL{Scheme: "unix", Path: controlPath}).String()
+	v.GVPVNetAddr = fmt.Sprintf("unixgram://%s", pathMgr.GetVNetSocketFile())
+	v.GVPNotifyAddr = fmt.Sprintf("unix://%s", pathMgr.GetGVPNotifySocketFile())
 
-	unixAddr := &url.URL{
-		Scheme: "unix",
-		Host:   "",
-		Path:   pathMgr.GetGVPCtlSocketFile(),
+	for _, path := range []string{controlPath, pathMgr.GetVNetSocketFile(), pathMgr.GetGVPNotifySocketFile()} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove stale network socket %q: %w", path, err)
+		}
 	}
-
-	vmc.GVPCtlAddr = unixAddr.String()
-	vmc.GVPVNetAddr = fmt.Sprintf("unixgram://%s", pathMgr.GetVNetSocketFile())
-	vmc.GVPNotifyAddr = fmt.Sprintf("unix://%s", pathMgr.GetGVPNotifySocketFile())
-
-	// Clean up any existing sockets
-	_ = os.Remove(pathMgr.GetGVPCtlSocketFile())
-	_ = os.Remove(pathMgr.GetVNetSocketFile())
-	_ = os.Remove(pathMgr.GetGVPNotifySocketFile())
-
-	// Ensure parent directory exists
-	if err := os.MkdirAll(filepath.Dir(unixAddr.Path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(controlPath), 0755); err != nil {
 		return err
 	}
 
@@ -70,40 +51,22 @@ func (g *gVisorNetworkConfig) Configure(ctx context.Context, vmc *define.Machine
 	if err != nil {
 		return err
 	}
-	vmc.SSHInfo.GuestSSHServerListenAddr = net.JoinHostPort(define.UnspecifiedAddress, strconv.FormatUint(port, 10))
-
+	v.SSHInfo.GuestSSHServerListenAddr = net.JoinHostPort(define.UnspecifiedAddress, strconv.FormatUint(port, 10))
 	forwardPort, err := network.GetAvailablePort(define.SSHLocalForwardListenPort)
 	if err != nil {
 		return fmt.Errorf("get available port for ssh forwarding: %w", err)
 	}
-	vmc.SSHInfo.HostSSHProxyListenAddr = net.JoinHostPort(define.LocalHost, strconv.FormatUint(forwardPort, 10))
+	v.SSHInfo.HostSSHProxyListenAddr = net.JoinHostPort(define.LocalHost, strconv.FormatUint(forwardPort, 10))
 	return nil
 }
 
-// tsiNetworkConfig implements network configuration for TSI (Transparent Socket Interception) mode.
-// TSI mode uses libkrun's built-in network capabilities without external network stack.
-type tsiNetworkConfig struct{}
-
-// Configure sets up TSI network mode.
-// TSI mode doesn't require gvisor network setup, but we record the host-accessible
-// SSH address since guest ports are directly reachable via libkrun.
-func (t *tsiNetworkConfig) Configure(ctx context.Context, vmc *define.MachineSpec, pathMgr *machinePathManager) error {
+func (v *machineBuilder) configureTSINetwork() error {
 	logrus.Infof("Using TSI network mode (libkrun built-in networking)")
-	// TSI: guest port is directly accessible on host via libkrun
 	port, err := network.GetAvailablePort(0)
 	if err != nil {
 		return err
 	}
-	vmc.SSHInfo.GuestSSHServerListenAddr = net.JoinHostPort(define.LocalHost, strconv.FormatUint(port, 10))
-	vmc.SSHInfo.HostSSHProxyListenAddr = vmc.SSHInfo.GuestSSHServerListenAddr
+	v.SSHInfo.GuestSSHServerListenAddr = net.JoinHostPort(define.LocalHost, strconv.FormatUint(port, 10))
+	v.SSHInfo.HostSSHProxyListenAddr = v.SSHInfo.GuestSSHServerListenAddr
 	return nil
-}
-
-func (v *machineBuilder) configureNetwork(ctx context.Context, mode define.VNetMode) error {
-	strategy := getNetworkStrategy(mode)
-	if strategy == nil {
-		return fmt.Errorf("invalid network mode: %s", mode)
-	}
-	v.VirtualNetworkMode = mode
-	return strategy.Configure(ctx, &v.MachineSpec, v.pathMgr)
 }

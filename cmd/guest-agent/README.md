@@ -14,7 +14,6 @@ The guest agent:
 - runs the command supplied to revm run;
 - starts the Podman API service for revm dockerd;
 - supervises the Podman and dropbear processes;
-- forwards host lifecycle signals to guest children;
 - flushes mounted disks and reboots the guest when the compatibility shutdown path is used.
 
 The Alpine rootfs is built separately and contains the runtime commands and apk packages. The guest agent is the only executable injected at runtime.
@@ -24,7 +23,7 @@ The Alpine rootfs is built separately and contains the runtime commands and apk 
 1. Initialize logging from LOG_LEVEL.
 2. Read the guest specification from the host.
 3. Mount pseudo filesystems and the configured storage.
-4. Attach the guest log and signal virtio ports when available.
+4. Attach the guest log virtio port when available.
 5. Start the guest-control server.
 6. Configure the selected network.
 7. Dispatch by mode:
@@ -34,7 +33,7 @@ The Alpine rootfs is built separately and contains the runtime commands and apk 
 9. Report readiness through the host-side management and Podman probes.
 10. On shutdown, stop child services, sync disks, and reboot.
 
-The host normally requests shutdown through libkrun's native shutdown API. Guest-control POST /v1/shutdown and the virtio signal path remain compatibility fallbacks for guests or older backends that do not complete native shutdown.
+The host normally requests shutdown through libkrun's native shutdown API. Guest-control POST /v1/shutdown remains the compatibility fallback for guests or older backends that do not complete native shutdown.
 
 ## Guest-control
 
@@ -54,7 +53,7 @@ gvisor mode obtains an address through gvisor-tap-vsock and configures the guest
 
 | Path | Responsibility |
 | --- | --- |
-| main.go | boot orchestration, signal ports, and mode dispatch |
+| main.go | boot orchestration and mode dispatch |
 | pkg/service/vmconfig.go | fetch and decode the host VM configuration |
 | pkg/service/mount.go | pseudo filesystems, block devices, and VirtIO-FS |
 | pkg/service/network.go | gvisor and tsi guest networking |

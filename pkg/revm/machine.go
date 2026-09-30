@@ -10,7 +10,6 @@ import (
 	"linuxvm/pkg/network"
 	ssh "linuxvm/pkg/ssh"
 	"linuxvm/pkg/static_resources"
-	"linuxvm/pkg/system"
 	"net"
 	"net/url"
 	"os"
@@ -386,21 +385,26 @@ func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *de
 	if err != nil {
 		return nil, nil, err
 	}
-	defer plan.cleanupCallbacks.CleanIfErr(&retErr)
+	defer func() {
+		if retErr != nil {
+			plan.cleanup()
+		}
+	}()
 
 	if err := plan.build(ctx); err != nil {
 		return nil, nil, err
 	}
 
-	return &plan.builder.MachineSpec, plan.cleanupCallbacks.DoClean, nil
+	return &plan.builder.MachineSpec, plan.cleanup, nil
 }
 
 type machineBuildPlan struct {
-	cfg              Config
-	workspacePath    string
-	runMode          define.RunMode
-	builder          *machineBuilder
-	cleanupCallbacks *system.CleanupCallback
+	cfg           Config
+	workspacePath string
+	runMode       define.RunMode
+	builder       *machineBuilder
+	cleanups      []func()
+	cleaned       bool
 }
 
 func newMachineBuildPlan(cfg Config, workspacePath string) (*machineBuildPlan, error) {
@@ -415,97 +419,85 @@ func newMachineBuildPlan(cfg Config, workspacePath string) (*machineBuildPlan, e
 	}
 
 	return &machineBuildPlan{
-		cfg:              cfg,
-		workspacePath:    workspacePath,
-		runMode:          runMode,
-		builder:          newMachineBuilder(runMode),
-		cleanupCallbacks: system.NewCleanUp(),
+		cfg:           cfg,
+		workspacePath: workspacePath,
+		runMode:       runMode,
+		builder:       newMachineBuilder(runMode),
 	}, nil
 }
 
 func (p *machineBuildPlan) build(ctx context.Context) error {
 	steps := []struct {
 		name string
-		run  func(context.Context) error
+		run  func() error
 	}{
-		{"workspace", p.setupWorkspace},
-		{"logging", p.configureLogFile},
-		{"ssh", p.configureSSH},
-		{"resources", p.configureResources},
-		{"network", p.configureNetwork},
-		{"port forwards", p.configurePortForwards},
-		{"proxy", p.configureProxy},
-		{"rootfs", p.prepareRootfs},
-		{"mode", p.configureMode},
-		{"storage", p.attachStorage},
-		{"guest agent", p.configureGuestAgent},
-		{"management API", p.configureManagementAPI},
-		{"tty", p.detectTTY},
+		{"workspace", func() error {
+			if err := p.builder.setupWorkspace(p.workspacePath); err != nil {
+				return err
+			}
+			p.cleanups = append(p.cleanups, func() {
+				_ = p.builder.fileLock.Unlock()
+				_ = os.Remove(p.workspacePath + ".lock")
+			})
+			return nil
+		}},
+		{"logging", func() error {
+			p.builder.LogFile = filepath.Join(p.builder.WorkspaceDir, "logs", "vm.log")
+			return nil
+		}},
+		{"ssh", p.builder.configureSSH},
+		{"resources", func() error {
+			return p.builder.withResources(p.cfg.MemoryMB, uint8(p.cfg.CPUs))
+		}},
+		{"network", func() error {
+			return p.builder.configureNetwork(define.VNetMode(p.cfg.Network))
+		}},
+		{"port forwards", func() error {
+			if len(p.cfg.PortForwards) == 0 {
+				return nil
+			}
+			if p.builder.VirtualNetworkMode != define.GVISOR {
+				return fmt.Errorf("port export requires %s network, got %s", define.GVISOR, p.builder.VirtualNetworkMode)
+			}
+			if err := validatePortForwardSet(p.cfg.PortForwards, p.builder.SSHInfo.HostSSHProxyListenAddr); err != nil {
+				return err
+			}
+			p.builder.PortForwards = append([]define.PortForward(nil), p.cfg.PortForwards...)
+			return nil
+		}},
+		{"proxy", func() error {
+			if !p.cfg.Proxy {
+				return nil
+			}
+			return p.builder.applySystemProxy()
+		}},
+		{"rootfs", func() error {
+			logrus.Info("preparing rootfs...")
+			if err := p.builder.withBuiltInAlpineRootfs(ctx); err != nil {
+				return err
+			}
+			logrus.Info("preparing rootfs completed")
+			return nil
+		}},
+		{"mode", func() error { return p.configureMode(ctx) }},
+		{"storage", func() error { return p.attachStorage(ctx) }},
+		{"guest agent", func() error { return p.builder.configureGuestAgent(ctx) }},
+		{"management API", p.builder.configureVMCtlAPI},
+		{"tty", func() error {
+			if p.runMode == define.ContainerMode {
+				p.builder.TTY = false
+				return nil
+			}
+			p.builder.detectTTY()
+			return nil
+		}},
 	}
 
 	for _, step := range steps {
-		if err := step.run(ctx); err != nil {
+		if err := step.run(); err != nil {
 			return fmt.Errorf("%s: %w", step.name, err)
 		}
 	}
-	return nil
-}
-
-func (p *machineBuildPlan) setupWorkspace(ctx context.Context) error {
-	if err := p.builder.setupWorkspace(p.workspacePath); err != nil {
-		return err
-	}
-	p.cleanupCallbacks.AddFunc(func() {
-		_ = p.builder.fileLock.Unlock()
-		_ = os.Remove(p.workspacePath + ".lock")
-	})
-	return nil
-}
-
-func (p *machineBuildPlan) configureLogFile(ctx context.Context) error {
-	p.builder.LogFile = filepath.Join(p.builder.WorkspaceDir, "logs", "vm.log")
-	return nil
-}
-
-func (p *machineBuildPlan) configureSSH(ctx context.Context) error {
-	return p.builder.configureSSH()
-}
-
-func (p *machineBuildPlan) configureResources(ctx context.Context) error {
-	return p.builder.withResources(p.cfg.MemoryMB, uint8(p.cfg.CPUs))
-}
-
-func (p *machineBuildPlan) configureNetwork(ctx context.Context) error {
-	return p.builder.configureNetwork(ctx, define.VNetMode(p.cfg.Network))
-}
-
-func (p *machineBuildPlan) configurePortForwards(ctx context.Context) error {
-	if len(p.cfg.PortForwards) == 0 {
-		return nil
-	}
-	if p.builder.VirtualNetworkMode != define.GVISOR {
-		return fmt.Errorf("port export requires %s network, got %s", define.GVISOR, p.builder.VirtualNetworkMode)
-	}
-	if err := validatePortForwardSet(p.cfg.PortForwards, p.builder.SSHInfo.HostSSHProxyListenAddr); err != nil {
-		return err
-	}
-	p.builder.PortForwards = append([]define.PortForward(nil), p.cfg.PortForwards...)
-	return nil
-}
-
-func (p *machineBuildPlan) configureProxy(ctx context.Context) error {
-	if !p.cfg.Proxy {
-		return nil
-	}
-	return p.builder.applySystemProxy()
-}
-
-func (p *machineBuildPlan) prepareRootfs(ctx context.Context) error {
-	logrus.Info("preparing rootfs...")
-	if err := p.builder.withBuiltInAlpineRootfs(ctx); err != nil {
-		return err
-	}
-	logrus.Info("preparing rootfs completed")
 	return nil
 }
 
@@ -569,21 +561,14 @@ func (p *machineBuildPlan) attachStorage(ctx context.Context) error {
 	return nil
 }
 
-func (p *machineBuildPlan) configureGuestAgent(ctx context.Context) error {
-	return p.builder.configureGuestAgent(ctx)
-}
-
-func (p *machineBuildPlan) configureManagementAPI(ctx context.Context) error {
-	return p.builder.configureVMCtlAPI()
-}
-
-func (p *machineBuildPlan) detectTTY(ctx context.Context) error {
-	if p.runMode == define.ContainerMode {
-		p.builder.TTY = false
-		return nil
+func (p *machineBuildPlan) cleanup() {
+	if p.cleaned {
+		return
 	}
-	p.builder.detectTTY()
-	return nil
+	p.cleaned = true
+	for i := len(p.cleanups) - 1; i >= 0; i-- {
+		p.cleanups[i]()
+	}
 }
 
 func (v *machineBuilder) detectTTY() {

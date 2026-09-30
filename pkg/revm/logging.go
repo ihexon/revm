@@ -22,16 +22,6 @@ func StopCommandLogging(file *os.File) {
 	releaseRunLog(file)
 }
 
-func (c *Config) WithLogging(level string) *Config {
-	if level == "" {
-		level = logrus.InfoLevel.String()
-	}
-
-	setupLogrus(level)
-	c.LogLevel = level
-	return c
-}
-
 func setupRunLogging(cfg Config) (*os.File, error) {
 	setupLogrus(cfg.LogLevel)
 	logFile, err := setupLogFile(cfg)

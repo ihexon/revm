@@ -11,7 +11,7 @@ import (
 
 const eventQueueSize = 32
 
-// Event represents a single VM lifecycle event.
+// Event represents a VM lifecycle event.
 type Event struct {
 	RunMode   RunMode   `json:"runMode"`
 	Kind      EventKind `json:"kind"`
@@ -27,57 +27,53 @@ type EventReporter interface {
 	Close()
 }
 
+// eventDispatcher keeps event reporting asynchronous so an unavailable sink
+// cannot hold up the VM. revm has one optional sink, so a single queue is
+// enough; supporting a reporter registry here only adds lifecycle states.
 type eventDispatcher struct {
-	mu        sync.RWMutex
-	reporters []EventReporter
-	closed    bool
-	events    chan Event
-	once      sync.Once
-	wg        sync.WaitGroup
+	mu       sync.RWMutex
+	reporter EventReporter
+	events   chan Event
+	done     chan struct{}
+	closed   bool
 }
 
-func (d *eventDispatcher) addReporter(r EventReporter) {
+func (d *eventDispatcher) start(r EventReporter) {
 	if d == nil || r == nil {
 		return
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-
-	if d.closed {
+	if d.closed || d.reporter != nil {
 		r.Close()
 		return
 	}
-	d.startLocked()
-	d.reporters = append(d.reporters, r)
+	d.reporter = r
+	d.events = make(chan Event, eventQueueSize)
+	d.done = make(chan struct{})
+	go d.run(d.events, d.reporter, d.done)
 }
 
 func (d *eventDispatcher) emit(sessionID string, runMode RunMode, kind EventKind, msg string, seq uint64) {
 	if d == nil {
 		return
 	}
-	evt := newEvent(sessionID, runMode, kind, msg, seq)
-	d.enqueue(evt)
-}
-
-func newEvent(sessionID string, runMode RunMode, kind EventKind, msg string, seq uint64) Event {
-	return Event{
+	d.enqueue(Event{
 		SessionID: sessionID,
 		RunMode:   runMode,
 		Kind:      kind,
 		Message:   msg,
 		Seq:       seq,
 		Time:      time.Now(),
-	}
+	})
 }
 
 func (d *eventDispatcher) enqueue(evt Event) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-
 	if d.closed || d.events == nil {
 		return
 	}
-
 	select {
 	case d.events <- evt:
 	default:
@@ -85,25 +81,10 @@ func (d *eventDispatcher) enqueue(evt Event) {
 	}
 }
 
-func (d *eventDispatcher) startLocked() {
-	d.once.Do(func() {
-		d.events = make(chan Event, eventQueueSize)
-		d.wg.Add(1)
-		go d.run()
-	})
-}
-
-func (d *eventDispatcher) run() {
-	defer d.wg.Done()
-	for evt := range d.events {
-		d.mu.RLock()
-		reporters := make([]EventReporter, len(d.reporters))
-		copy(reporters, d.reporters)
-		d.mu.RUnlock()
-
-		for _, r := range reporters {
-			r.Report(evt)
-		}
+func (d *eventDispatcher) run(events <-chan Event, reporter EventReporter, done chan<- struct{}) {
+	defer close(done)
+	for evt := range events {
+		reporter.Report(evt)
 	}
 }
 
@@ -111,26 +92,25 @@ func (d *eventDispatcher) close() {
 	if d == nil {
 		return
 	}
-
 	d.mu.Lock()
 	if d.closed {
 		d.mu.Unlock()
 		return
 	}
 	d.closed = true
-	events := d.events
+	events, done, reporter := d.events, d.done, d.reporter
 	d.events = nil
-	reporters := make([]EventReporter, len(d.reporters))
-	copy(reporters, d.reporters)
-	d.reporters = nil
+	d.done = nil
 	d.mu.Unlock()
 
 	if events != nil {
 		close(events)
-		d.wg.Wait()
+		<-done
 	}
-
-	for _, r := range reporters {
-		r.Close()
+	if reporter != nil {
+		reporter.Close()
 	}
+	d.mu.Lock()
+	d.reporter = nil
+	d.mu.Unlock()
 }

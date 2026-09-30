@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"guestAgent/pkg/service"
@@ -13,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
@@ -58,57 +55,6 @@ func setupGuestLogPort() {
 	logrus.SetOutput(f)
 	service.SetStderrWriter(f)
 	logrus.Infof("guest logs attached to virtio port %s", f.Name())
-}
-
-// setupGuestSignalPort opens the guest-signal port and listens for host signals.
-func setupGuestSignalPort() {
-	f, err := openVirtioPort(define.GuestSignalConsolePort, os.O_RDONLY)
-	if err != nil {
-		logrus.Debugf("guest-signal port not available: %v", err)
-		return
-	}
-
-	logrus.Infof("guest signal listener attached to virtio port %s", f.Name())
-
-	go func() {
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			var msg define.GuestSignal
-			if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
-				logrus.Warnf("invalid signal message: %v", err)
-				continue
-			}
-
-			logrus.Infof("received signal: %s", msg.SignalName)
-
-			// Parse signal name to syscall.Signal
-			var sig syscall.Signal
-			switch msg.SignalName {
-			case define.GuestSignalInterrupt:
-				sig = syscall.SIGINT
-			case define.GuestSignalTerminated:
-				sig = syscall.SIGTERM
-			case define.GuestSignalQuit:
-				sig = syscall.SIGQUIT
-			default:
-				logrus.Warnf("unknown signal name: %s", msg.SignalName)
-				continue
-			}
-
-			// Forward signal to all child processes.
-			if err := syscall.Kill(-1, sig); err != nil {
-				logrus.Errorf("failed to send %s to children: %v", msg.SignalName, err)
-			}
-
-			// Send signal to self to trigger WaitAndShutdown
-			if err := syscall.Kill(os.Getpid(), sig); err != nil {
-				logrus.Errorf("failed to send %s to self: %v", msg.SignalName, err)
-			}
-		}
-		if err := scanner.Err(); err != nil {
-			logrus.Warnf("guest signal port closed: %v", err)
-		}
-	}()
 }
 
 // openVirtioPort scans /sys/class/virtio-ports/*/name to find
@@ -173,9 +119,8 @@ func run(ctx context.Context, _ *cli.Command) error {
 		return fmt.Errorf("mount pseudo filesystems: %w", err)
 	}
 
-	// Now that /sys is available, wire up the dedicated guest log and signal ports.
+	// Now that /sys is available, wire up the dedicated guest log port.
 	setupGuestLogPort()
-	setupGuestSignalPort()
 	go func() {
 		if err := service.StartGuestControlServer(ctx); err != nil {
 			logrus.Warnf("guest control server stopped: %v", err)

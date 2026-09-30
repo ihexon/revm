@@ -12,7 +12,6 @@ import "C"
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"linuxvm/pkg/define"
@@ -109,22 +108,6 @@ func (v *Libkrun) Shutdown(_ context.Context) error {
 	return checkKrunResult("shutdown VMM", C.krun_vmm_handle_shutdown(v.vmmHandle, &errOut), errOut)
 }
 
-func (v *Libkrun) Pause(_ context.Context) error {
-	if v.vmmHandle == nil {
-		return errors.New("libkrun: VMM handle is unavailable")
-	}
-	var errOut C.KrunError
-	return checkKrunResult("pause VMM", C.krun_vmm_handle_pause(v.vmmHandle, &errOut), errOut)
-}
-
-func (v *Libkrun) Resume(_ context.Context) error {
-	if v.vmmHandle == nil {
-		return errors.New("libkrun: VMM handle is unavailable")
-	}
-	var errOut C.KrunError
-	return checkKrunResult("resume VMM", C.krun_vmm_handle_resume(v.vmmHandle, &errOut), errOut)
-}
-
 // Close releases handles and host file descriptors. It is idempotent and also
 // cleans up partially built graphs after a failed Create call.
 func (v *Libkrun) Close() error {
@@ -164,32 +147,6 @@ func (v *Libkrun) close() error {
 	v.files.close()
 	v.freeGuestAgentData()
 	return nil
-}
-
-// SendSignal writes a signal message to the guest-signal console port.
-func (v *Libkrun) SendSignal(ctx context.Context, name define.GuestSignalName) error {
-	if v.files.signalPipe.write == nil {
-		return nil
-	}
-	b, err := json.Marshal(define.GuestSignal{SignalName: name})
-	if err != nil {
-		return err
-	}
-	return writeSignalMessage(ctx, v.files.signalPipe.write.file, append(b, '\n'))
-}
-
-func writeSignalMessage(ctx context.Context, f *os.File, msg []byte) error {
-	errCh := make(chan error, 1)
-	go func() {
-		_, err := f.Write(msg)
-		errCh <- err
-	}()
-	select {
-	case err := <-errCh:
-		return err
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 }
 
 func (v *Libkrun) init() error {

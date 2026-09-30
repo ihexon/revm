@@ -19,8 +19,6 @@ type Provider struct {
 	mc                   *define.MachineSpec
 	libkrun              *Libkrun
 	mu                   sync.Mutex
-	running              bool
-	started              bool
 	runDone              chan struct{}
 	state                providerState
 	shutdownFallbackOnce sync.Once
@@ -45,18 +43,15 @@ func NewProvider(ctx context.Context, mc *define.MachineSpec) (*Provider, error)
 
 func (p *Provider) Start(_ context.Context) error {
 	p.mu.Lock()
-	if p.started || p.state == providerClosed {
+	if p.state != providerCreated {
 		p.mu.Unlock()
 		return errors.New("libkrun: VMM can only be started once")
 	}
-	p.started = true
-	p.running = true
 	p.state = providerRunning
 	p.mu.Unlock()
 
 	defer func() {
 		p.mu.Lock()
-		p.running = false
 		p.state = providerExited
 		close(p.runDone)
 		p.mu.Unlock()
@@ -85,10 +80,7 @@ func (p *Provider) RequestShutdown(ctx context.Context) error {
 	if guestErr == nil {
 		return nil
 	}
-	if err := p.libkrun.SendSignal(ctx, define.GuestSignalTerminated); err != nil {
-		return errors.Join(nativeErr, guestErr, err)
-	}
-	return nil
+	return errors.Join(nativeErr, guestErr)
 }
 
 func (p *Provider) requestGuestShutdown(ctx context.Context) error {
@@ -121,17 +113,9 @@ func (p *Provider) scheduleGuestShutdownFallback() {
 	})
 }
 
-func (p *Provider) Pause(ctx context.Context) error {
-	return p.libkrun.Pause(ctx)
-}
-
-func (p *Provider) Resume(ctx context.Context) error {
-	return p.libkrun.Resume(ctx)
-}
-
 func (p *Provider) ForceStop(ctx context.Context) error {
 	p.mu.Lock()
-	started := p.started
+	started := p.state != providerCreated && p.state != providerClosed
 	p.mu.Unlock()
 	if !started {
 		// A host service can fail before the VMM goroutine has entered Start.
@@ -151,10 +135,10 @@ func (p *Provider) ForceStop(ctx context.Context) error {
 
 func (p *Provider) Close() error {
 	p.mu.Lock()
-	running := p.running
-	if !running {
+	if p.state != providerRunning {
 		p.state = providerClosed
 	}
+	running := p.state == providerRunning
 	p.mu.Unlock()
 	if running {
 		return errors.New("libkrun: cannot close while VMM is running")

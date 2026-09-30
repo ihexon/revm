@@ -3,17 +3,12 @@
 package revm
 
 import (
-	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"linuxvm/pkg/define"
-	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/shirou/gopsutil/v4/mem"
-	"github.com/sirupsen/logrus"
 )
 
 // RunMode selects the VM run mode.
@@ -23,7 +18,7 @@ const (
 	// ModeRootfs boots the VM with a rootfs and executes a command.
 	ModeRootfs RunMode = "rootfs"
 	// ModeContainer boots the VM with the built-in container runtime (Podman).
-	ModeContainer RunMode = "docker"
+	ModeContainer RunMode = "container"
 	// ModeAttach connects to an existing VM session without building a VM.
 	ModeAttach RunMode = "attach"
 	// ModeControl performs control-plane operations against an existing VM.
@@ -69,227 +64,13 @@ type Config struct {
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.
 // Zero-value resource fields (CPUs, MemoryMB) are resolved at VM creation time.
-// Session identity must be supplied explicitly with WithSessionID.
+// Session identity must be supplied explicitly by the caller.
 func DefaultConfig() *Config {
 	return &Config{
 		Network:  "gvisor",
 		LogLevel: "info",
 		WorkDir:  "/",
 	}
-}
-
-// --- Chain (fluent) methods ------------------------------------------------
-
-func (c *Config) WithMode(m RunMode) *Config {
-	if m == "" {
-		return c
-	}
-	c.RunMode = m
-	return c
-}
-
-func (c *Config) WithSessionID(sessionID string) *Config {
-	c.SessionID = sessionID
-	return c
-}
-
-func (c *Config) WithAttach(cmdline ...string) *Config {
-	c.RunMode = ModeAttach
-	c.Command = nil
-	return c.WithCommandLine(cmdline...)
-}
-
-func (c *Config) WithControl(portForwards, portUnforwards []define.PortForward) *Config {
-	c.RunMode = ModeControl
-	c.Command = nil
-	c.PortList = false
-	c.PortForwards = append([]define.PortForward(nil), portForwards...)
-	c.PortUnforwards = append([]define.PortForward(nil), portUnforwards...)
-	return c
-}
-
-func (c *Config) WithPortList() *Config {
-	c.RunMode = ModeControl
-	c.Command = nil
-	c.PortList = true
-	c.PortForwards = nil
-	c.PortUnforwards = nil
-	return c
-}
-
-func (c *Config) WithCPUs(n int) *Config {
-	if n <= 0 {
-		c.CPUs = 0 // auto-detect in build vm
-		return c
-	}
-	c.CPUs = n
-	return c
-}
-
-func (c *Config) WithMemory(mb uint64) *Config {
-	if mb == 0 {
-		c.MemoryMB = 0 // auto-detect in build vm
-		return c
-	}
-	c.MemoryMB = mb
-	return c
-}
-
-func (c *Config) WithWorkDir(dir string) *Config {
-	if dir == "" {
-		return c
-	}
-	c.WorkDir = dir
-	return c
-}
-
-func (c *Config) WithNetwork(mode string) *Config {
-	if mode == "" {
-		return c
-	}
-	c.Network = mode
-	return c
-}
-
-func (c *Config) WithContainerDiskSpec(spec *ContainerDiskSpec) *Config {
-	if spec == nil {
-		return c
-	}
-	if spec.Path == "" {
-		return c
-	}
-	specCopy := *spec
-	c.ContainerDisk = &specCopy
-	return c
-}
-func (c *Config) WithPodmanProxyAPIFile(path string) *Config {
-	if path == "" {
-		return c
-	}
-	c.PodmanProxyAPIFile = path
-	return c
-}
-func (c *Config) WithManageAPIFile(path string) *Config {
-	if path == "" {
-		return c
-	}
-	c.ManageAPIFile = path
-	return c
-}
-
-func (c *Config) WithExportSSHKeyPrivateFile(path string) *Config {
-	if path == "" {
-		return c
-	}
-
-	c.SSHKeyFileSymbolPath = path
-	return c
-}
-
-func (c *Config) WithEventReporter(reportURL string) *Config {
-	if reportURL == "" {
-		return c
-	}
-	c.ReportURL = reportURL
-	return c
-}
-
-func (c *Config) WithPortForwards(forwards ...define.PortForward) *Config {
-	if len(forwards) == 0 {
-		return c
-	}
-	c.PortForwards = append(c.PortForwards, forwards...)
-	return c
-}
-
-func (c *Config) WithPortUnforwards(forwards ...define.PortForward) *Config {
-	if len(forwards) == 0 {
-		return c
-	}
-	c.PortUnforwards = append(c.PortUnforwards, forwards...)
-	return c
-}
-
-func (c *Config) WithProxy(enable bool) *Config {
-	logrus.Infof("get proxy setting from system: %v", enable)
-	c.Proxy = enable
-	return c
-}
-
-func (c *Config) WithCommand(bin string, args ...string) *Config {
-	if bin == "" {
-		return c
-	}
-	return c.WithCommandLine(append([]string{bin}, args...)...)
-}
-
-func (c *Config) WithCommandLine(cmdline ...string) *Config {
-	if len(cmdline) == 0 || cmdline[0] == "" {
-		return c
-	}
-	c.Command = append([]string(nil), cmdline...)
-	return c
-}
-
-func (c *Config) WithPTY(enable bool) *Config {
-	c.PTY = enable
-	return c
-}
-
-func (c *Config) WithEnv(kvs ...string) *Config {
-	if len(kvs) == 0 {
-		return c
-	}
-	for _, kv := range kvs {
-		if kv == "" {
-			continue
-		}
-		c.Env = append(c.Env, kv)
-	}
-	return c
-}
-
-func (c *Config) WithMount(specs ...string) *Config {
-	if len(specs) == 0 {
-		return c
-	}
-	for _, spec := range specs {
-		if spec == "" {
-			continue
-		}
-		c.Mounts = append(c.Mounts, spec)
-	}
-	return c
-}
-
-func (c *Config) WithRawDiskSpecs(specs ...RawDiskSpec) *Config {
-	if len(specs) == 0 {
-		return c
-	}
-	for _, spec := range specs {
-		if spec.Path == "" {
-			continue
-		}
-		c.Disks = append(c.Disks, spec)
-	}
-	return c
-}
-
-// --- Loading ---------------------------------------------------------------
-
-// WriteCfg marshals cfg as JSON and writes it to path.
-func (c *Config) WriteCfg(path string) error {
-	data, err := json.Marshal(c)
-	if err != nil {
-		return fmt.Errorf("marshal config: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return fmt.Errorf("create config directory: %w", err)
-	}
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		return fmt.Errorf("write config file: %w", err)
-	}
-	return nil
 }
 
 // --- Normalization & Validation --------------------------------------------
@@ -445,21 +226,4 @@ func validateBuildConfig(cfg Config) error {
 	}
 
 	return nil
-}
-
-const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-
-func RandomString() string {
-	b := make([]byte, 8)
-	randBytes := make([]byte, len(b))
-	if _, err := rand.Read(randBytes); err != nil {
-		for i := range b {
-			b[i] = base62[i%len(base62)]
-		}
-		return string(b)
-	}
-	for i := range b {
-		b[i] = base62[int(randBytes[i])%len(base62)]
-	}
-	return string(b)
 }

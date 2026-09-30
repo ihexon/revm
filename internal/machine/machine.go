@@ -52,10 +52,6 @@ func (m *Machine) IgnitionListenAddr() string {
 	return m.spec.IgnitionServerCfg.ListenSockAddr
 }
 
-func (m *Machine) ManagementAPIEndpoint() string {
-	return m.spec.VMCtlAddr
-}
-
 func (m *Machine) GuestSpec() protocol.GuestSpec {
 	return protocol.GuestSpec{
 		SchemaVersion: protocol.GuestSpecVersion,

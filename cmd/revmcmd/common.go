@@ -257,9 +257,10 @@ func runCtl(ctx context.Context, command *cli.Command) (retErr error) {
 
 func newPreflightConfig(command *cli.Command) *revm.Config {
 	logging := ParseLoggingOptions(command)
-	return revm.DefaultConfig().
-		WithLogging(logging.Level).
-		WithSessionID(command.String(define.FlagSessionID))
+	cfg := revm.DefaultConfig()
+	cfg.LogLevel = logging.Level
+	cfg.SessionID = command.String(define.FlagSessionID)
+	return cfg
 }
 
 func ParseLoggingOptions(command *cli.Command) LoggingOptions {
@@ -383,62 +384,42 @@ func ParsePortUpdates(command *cli.Command) (PortUpdates, error) {
 }
 
 func NewRunConfig(opts RunOptions) *revm.Config {
-	return revm.DefaultConfig().
-		WithLogging(opts.Logging.Level).
-		WithSessionID(opts.SessionID).
-		WithMode(revm.ModeRootfs).
-		WithCommandLine(opts.Command...).
-		WithCPUs(opts.CPUs).
-		WithMemory(opts.MemoryMB).
-		WithNetwork(opts.Network).
-		WithProxy(opts.UseProxy).
-		WithWorkDir(opts.WorkDir).
-		WithEnv(opts.Envs...).
-		WithManageAPIFile(opts.ManageAPIFile).
-		WithExportSSHKeyPrivateFile(opts.SSHKeyFile).
-		WithMount(opts.Mounts...).
-		WithRawDiskSpecs(opts.RawDisks...).
-		WithEventReporter(opts.ReportURL)
+	cfg := revm.DefaultConfig()
+	cfg.LogLevel, cfg.SessionID, cfg.RunMode = opts.Logging.Level, opts.SessionID, revm.ModeRootfs
+	cfg.Command, cfg.CPUs, cfg.MemoryMB = append([]string(nil), opts.Command...), opts.CPUs, opts.MemoryMB
+	cfg.Network, cfg.Proxy, cfg.WorkDir = opts.Network, opts.UseProxy, opts.WorkDir
+	cfg.Env, cfg.ManageAPIFile, cfg.SSHKeyFileSymbolPath = append([]string(nil), opts.Envs...), opts.ManageAPIFile, opts.SSHKeyFile
+	cfg.Mounts, cfg.Disks, cfg.ReportURL = append([]string(nil), opts.Mounts...), append([]revm.RawDiskSpec(nil), opts.RawDisks...), opts.ReportURL
+	return cfg
 }
 
 func NewDockerdConfig(opts DockerdOptions) *revm.Config {
-	return revm.DefaultConfig().
-		WithLogging(opts.Logging.Level).
-		WithSessionID(opts.SessionID).
-		WithMode(revm.ModeContainer).
-		WithCPUs(opts.CPUs).
-		WithMemory(opts.MemoryMB).
-		WithNetwork(string(define.GVISOR)).
-		WithProxy(opts.UseProxy).
-		WithEnv(opts.Envs...).
-		WithMount(opts.Mounts...).
-		WithContainerDiskSpec(opts.ContainerDisk).
-		WithPodmanProxyAPIFile(opts.PodmanProxyAPIFile).
-		WithManageAPIFile(opts.ManageAPIFile).
-		WithExportSSHKeyPrivateFile(opts.SSHKeyFile).
-		WithRawDiskSpecs(opts.RawDisks...).
-		WithEventReporter(opts.ReportURL)
+	cfg := revm.DefaultConfig()
+	cfg.LogLevel, cfg.SessionID, cfg.RunMode = opts.Logging.Level, opts.SessionID, revm.ModeContainer
+	cfg.CPUs, cfg.MemoryMB, cfg.Network, cfg.Proxy = opts.CPUs, opts.MemoryMB, string(define.GVISOR), opts.UseProxy
+	cfg.Env, cfg.Mounts, cfg.Disks = append([]string(nil), opts.Envs...), append([]string(nil), opts.Mounts...), append([]revm.RawDiskSpec(nil), opts.RawDisks...)
+	cfg.ContainerDisk, cfg.PodmanProxyAPIFile, cfg.ManageAPIFile = opts.ContainerDisk, opts.PodmanProxyAPIFile, opts.ManageAPIFile
+	cfg.SSHKeyFileSymbolPath, cfg.ReportURL = opts.SSHKeyFile, opts.ReportURL
+	return cfg
 }
 
 func NewAttachConfig(opts AttachOptions) *revm.Config {
-	return revm.DefaultConfig().
-		WithLogging(opts.Logging.Level).
-		WithSessionID(opts.SessionID).
-		WithPTY(opts.PTY).
-		WithAttach(opts.Command...)
+	cfg := revm.DefaultConfig()
+	cfg.LogLevel, cfg.SessionID, cfg.RunMode = opts.Logging.Level, opts.SessionID, revm.ModeAttach
+	cfg.PTY, cfg.Command = opts.PTY, append([]string(nil), opts.Command...)
+	return cfg
 }
 
 func NewCtlConfig(opts CtlOptions) *revm.Config {
+	cfg := revm.DefaultConfig()
+	cfg.LogLevel, cfg.SessionID, cfg.RunMode = opts.Logging.Level, opts.SessionID, revm.ModeControl
 	if opts.ListPort {
-		return revm.DefaultConfig().
-			WithLogging(opts.Logging.Level).
-			WithSessionID(opts.SessionID).
-			WithPortList()
+		cfg.PortList = true
+		return cfg
 	}
-	return revm.DefaultConfig().
-		WithLogging(opts.Logging.Level).
-		WithSessionID(opts.SessionID).
-		WithControl(opts.PortUpdates.Exports, opts.PortUpdates.Unexports)
+	cfg.PortForwards = append([]define.PortForward(nil), opts.PortUpdates.Exports...)
+	cfg.PortUnforwards = append([]define.PortForward(nil), opts.PortUpdates.Unexports...)
+	return cfg
 }
 
 func (p PortUpdates) HasUpdates() bool {
