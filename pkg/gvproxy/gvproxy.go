@@ -337,7 +337,8 @@ func httpServe(ctx context.Context, g *errgroup.Group, ln net.Listener, mux http
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		}
-		if err := s.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := s.Serve(ln); err != nil && ctx.Err() == nil &&
+			!errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
 			return err
 		}
 
