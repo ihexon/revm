@@ -1,7 +1,7 @@
 ALPINE_VERSION=3.24
 
 LIBKRUN_REPO=https://github.com/libkrun/libkrun.git
-LIBKRUN_COMMIT=main
+LIBKRUN_COMMIT=a4d501ef87f7456a8b6632859a8575c16ee20f6b
 
 LIBKRUNFW_REPO=https://github.com/libkrun/libkrunfw.git
-LIBKRUNFW_COMMIT=main
+LIBKRUNFW_COMMIT=f6a710faaa8cfe3b67a4bcdadb082c2183a914f1

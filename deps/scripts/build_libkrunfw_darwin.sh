@@ -30,10 +30,16 @@ build_libkrunfw_darwin() {
         echo "kernel.c not found; build libkrunfw on Linux first" >&2
         exit 100
     fi
+    # kernel.c must come from the pinned revision and our current configs.
+    # Do not label an older intermediate payload with a newer source pin.
+    grep -Fx "libkrunfw=$LIBKRUNFW_COMMIT" config-audit/source.txt
+    (cd "$DEPS_DIR/config" && shasum -a 256 -c "$LIBKRUNFW_SRC/config-audit/config.sha256")
 
-    make PREFIX="$PREFIX" -j8
+    make PREFIX="$PREFIX" -j"$DEPS_BUILD_JOBS"
     rm -rf "$PREFIX"
-    make PREFIX="$PREFIX" -j8 install
+    make PREFIX="$PREFIX" install
+    mkdir -p "$PREFIX/share/revm/kernel"
+    cp config-audit/* "$PREFIX/share/revm/kernel/"
 }
 
 release() {

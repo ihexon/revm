@@ -242,6 +242,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.validate.outputs.deps_version }}
+          target_commitish: ${{ github.sha }}
           name: ${{ needs.validate.outputs.deps_version }}
           body_path: deps/dist/deps.manifest.json
           files: |

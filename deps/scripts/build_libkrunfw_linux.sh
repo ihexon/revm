@@ -15,31 +15,47 @@ RELEASE_TAR="$DEPS_DIST_DIR/$PKG_NAME-$PLT-$ARCH.tar.zst"
 
 build_libkrunfw_linux() {
     rm -rf "$LIBKRUNFW_SRC"
-    git clone "$LIBKRUNFW_REPO" "$LIBKRUNFW_SRC"
-    cd "$LIBKRUNFW_SRC" && git checkout "$LIBKRUNFW_COMMIT"
+    checkout_source "$LIBKRUNFW_REPO" "$LIBKRUNFW_COMMIT" "$LIBKRUNFW_SRC"
+    cd "$LIBKRUNFW_SRC"
+
+    local config_arch="$ARCH" kernel_arch="$ARCH"
+    if [[ "$ARCH" == "aarch64" ]]; then
+        kernel_arch=arm64
+    fi
+    export ARCH="$kernel_arch"
+    local audit="$LIBKRUNFW_SRC/config-audit"
+    mkdir -p "$audit"
+    cp "config-libkrunfw_$config_arch" "$audit/upstream.config"
 
     cp -av "$DEPS_DIR/config/config-libkrunfw_aarch64" "$LIBKRUNFW_SRC/config-libkrunfw_aarch64"
     cp -av "$DEPS_DIR/config/config-libkrunfw_x86_64" "$LIBKRUNFW_SRC/config-libkrunfw_x86_64"
 
-    if [[ "$ARCH" == "aarch64" ]]; then
-        grep -Fx 'CONFIG_ARM64_4K_PAGES=y' "$LIBKRUNFW_SRC/config-libkrunfw_aarch64"
-        ! grep -Eq '^CONFIG_ARM64_(16K|64K)_PAGES=y' "$LIBKRUNFW_SRC/config-libkrunfw_aarch64"
-    fi
+    cp "config-libkrunfw_$config_arch" "$audit/revm.config"
+    local kernel
+    kernel="$(sed -n 's/^KERNEL_VERSION = //p' Makefile)"
+    [[ "$kernel" == linux-* ]] || { echo 'Cannot determine kernel version' >&2; exit 1; }
+    # Use upstream's patching and Linux's Kconfig resolver for both inputs.
+    make "$kernel"
+    make -C "$kernel" KCONFIG_CONFIG="$audit/upstream.config" olddefconfig
+    make -C "$kernel" olddefconfig
+    cp "$kernel/.config" "$audit/final.config"
+    "$DEPS_DIR/scripts/check_kernel_config.sh" "$LIBKRUNFW_SRC/$kernel" "$audit" "$config_arch"
+    printf 'libkrunfw=%s\nkernel=%s\n' "$LIBKRUNFW_COMMIT" "$kernel" > "$audit/source.txt"
+    (cd "$DEPS_DIR/config" && sha256sum config-libkrunfw_aarch64 config-libkrunfw_x86_64) > "$audit/config.sha256"
 
-    if [[ "$ARCH" == "aarch64" ]]; then
-        ARCH=arm64 make PREFIX="$PREFIX" -j8
-        rm -rf "$PREFIX"
-        ARCH=arm64 make PREFIX="$PREFIX" -j8 install
-    else
-        make PREFIX="$PREFIX" -j8
-        rm -rf "$PREFIX"
-        make PREFIX="$PREFIX" -j8 install
-    fi
+    make PREFIX="$PREFIX" -j"$DEPS_BUILD_JOBS"
+    rm -rf "$PREFIX"
+    make PREFIX="$PREFIX" LIBDIR_Linux=lib64 install
+    mkdir -p "$PREFIX/share/revm/kernel"
+    cp "$audit/"* "$PREFIX/share/revm/kernel/"
 }
 
 repack_libkrunfw_source() {
     cd "$WORKSPACE"
-    tar --zstd -cf "$SRC_ARCHIVE" -C "$(dirname "$LIBKRUNFW_SRC")" "$(basename "$LIBKRUNFW_SRC")"
+    # Darwin only consumes the generated kernel.c, build scripts and audit.
+    tar --zstd --exclude="$PKG_NAME/linux-*" --exclude="$PKG_NAME/.git" \
+        --exclude="$PKG_NAME/_install_" --exclude="$PKG_NAME/tarballs" \
+        -cf "$SRC_ARCHIVE" -C "$WORKSPACE" "$PKG_NAME"
 }
 
 release() {
