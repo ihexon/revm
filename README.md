@@ -35,12 +35,15 @@ The rootfs already contains the guest agent and the tools used to bring up the n
 ## Run containers
 
 ~~~bash
-revm dockerd --id containers --podman-api "$PWD/podman.sock"
-export DOCKER_HOST="unix://$PWD/podman.sock"
-docker run --rm alpine uname -a
+# Terminal 1: start the VM and Podman service.
+revm podman --id containers --podman-api "$PWD/podman.sock"
+
+# Terminal 2: use the host Podman client.
+export CONTAINER_HOST="unix://$PWD/podman.sock"
+podman run --rm alpine uname -a
 ~~~
 
-Podman clients can use the same socket through CONTAINER_HOST. The container storage disk lives in the session directory by default. Give --container-disk a path if the storage should survive removal of the session directory.
+The host Podman CLI connects through CONTAINER_HOST; integrations use the native Libpod API. The container storage disk lives in the session directory by default. Give --container-disk a path if the storage should survive removal of the session directory.
 
 The host home directory is shared into container sessions at the same path. Add more shares with --mount.
 
@@ -134,7 +137,7 @@ The dependency workflow in .github/workflows/build-deps.yml builds libkrun, libk
 ## More documentation
 
 - docs/run.md and docs/run.en.md
-- docs/dockerd.md and docs/dockerd.en.md
+- docs/podman.md and docs/podman.en.md
 - docs/attach.md and docs/attach.en.md
 - docs/ctl.md and docs/ctl.en.md
 - deps/README.md

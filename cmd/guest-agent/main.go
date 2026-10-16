@@ -143,7 +143,7 @@ func run(ctx context.Context, _ *cli.Command) error {
 	case define.RootFsMode.String():
 		return userRootfsMode(ctx, vmc)
 	case define.ContainerMode.String():
-		return dockerEngineMode(ctx, vmc)
+		return podmanEngineMode(ctx, vmc)
 	default:
 		return fmt.Errorf("unsupported mode %q", vmc.RunMode)
 	}
@@ -187,8 +187,8 @@ func userRootfsMode(ctx context.Context, vmc *protocol.GuestSpec) error {
 	}
 }
 
-func dockerEngineMode(ctx context.Context, vmc *protocol.GuestSpec) error {
-	logrus.Info("starting container engine")
+func podmanEngineMode(ctx context.Context, vmc *protocol.GuestSpec) error {
+	logrus.Info("starting Podman API service")
 
 	// Configure network before starting services — it's a prerequisite,
 	// not a parallel task. If DHCP fails (e.g. eth0 not yet created by VMM),

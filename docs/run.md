@@ -17,7 +17,7 @@ revm run --id shell -- sh -c 'uname -a; cat /etc/os-release'
 revm run --id build --mount "$PWD:/workspace" --workdir /workspace -- sh -c 'make test'
 ~~~
 
-命令退出后，revm 请求 guest 关闭并退出。要保持 session 存活，请在 guest 中运行长期进程，或使用 revm dockerd。
+命令退出后，revm 请求 guest 关闭并退出。要保持 session 存活，请在 guest 中运行长期进程，或使用 revm podman。
 
 ## rootfs 策略
 
@@ -29,7 +29,7 @@ VM rootfs 固定来自 release 内置的 Alpine 压缩包。它包括：
 - Podman、containers 配置和容器网络工具
 - 网络、挂载、日志和生命周期所需工具
 
-run 不支持 --rootfs，也不支持替换、导入或导出 VM rootfs。需要其他发行版或自定义用户空间时，应启动 revm dockerd，再通过 Podman 运行对应镜像；这样 workload 不会改变 VM 控制面。
+run 不支持 --rootfs，也不支持替换、导入或导出 VM rootfs。需要其他发行版或自定义用户空间时，应启动 revm podman，再通过 Podman 运行对应镜像；这样 workload 不会改变 VM 控制面。
 
 ## 资源和网络
 

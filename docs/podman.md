@@ -1,32 +1,31 @@
-# revm dockerd
+# revm podman
 
-[English](dockerd.en.md)
+[English](podman.en.md)
 
-revm dockerd 启动一个长期运行的 Alpine VM，在 guest 内启动 Podman API 服务，并在宿主机提供一个 Unix socket。Docker CLI 和 Podman CLI 可以通过这个 socket 使用容器运行时。
+revm podman 启动一个长期运行的 Alpine VM，在 guest 内启动 Podman API 服务，并在宿主机提供一个 Unix socket。宿主机 Podman CLI 通过这个 socket 使用容器运行时。
 
-dockerd 固定使用 gvisor 网络，因此支持容器端口发布和 revm ctl 端口控制。
+revm podman 固定使用 gvisor 网络，因此支持容器端口发布和 revm ctl 端口控制。
 
 
 ## 基本用法
 
 ~~~text
-revm dockerd --id <session-id> [options]
+revm podman --id <session-id> [options]
 ~~~
 
 ~~~bash
-revm dockerd --id dev --podman-api /tmp/revm-dev.sock
-export DOCKER_HOST=unix:///tmp/revm-dev.sock
-docker run --rm alpine uname -a
+# 终端 1：启动 VM 和 Podman 服务。
+revm podman --id dev --podman-api /tmp/revm-dev.sock
 ~~~
 
-Podman 客户端使用 CONTAINER_HOST：
+在另一个终端连接宿主机 Podman 客户端：
 
 ~~~bash
 export CONTAINER_HOST=unix:///tmp/revm-dev.sock
-podman run --rm alpine cat /etc/alpine-release
+podman run --rm alpine uname -a
 ~~~
 
-服务会一直运行，直到收到停止信号或 host service 失败。停止 dockerd 后，容器也会失去其 guest runtime。
+服务会一直运行，直到收到停止信号或 host service 失败。停止 revm podman 后，容器也会失去其 guest runtime。
 
 ## API socket
 
@@ -36,12 +35,16 @@ podman run --rm alpine cat /etc/alpine-release
 ~/.cache/revm/<session-id>/socks/podman-api.sock
 ~~~
 
-这个 socket 由 host-side proxy 转发到 guest 内 Podman system service。客户端不需要访问 guest IP、vsock 或 SSH。
+这个 socket 经私有 vsock 通道连接 guest 内 Podman system service，原样传递 Podman 原生 API。客户端不需要访问 guest IP、vsock 或 SSH。传输复用 `mdlayher/vsock`、`libp2p/go-yamux/v5` 和 `inetaf/tcpproxy`；Yamux 提供独立的流控和输入半关闭，支持 `exec -i`、attach、build、日志和文件传输。
+
+Podman 只监听 guest 内 `/run/revm/podman/podman.sock`，不开放 TCP 管理端口。目录权限为 `0700`，socket 为 `0600`。Podman 通道与 guest-control 都只接受来自宿主 CID 2 的连接，拒绝 guest 回环及使用宿主网络的普通容器。宿主端所有控制 socket 位于 `0700` 的 session 目录内，`--podman-api` 只是指向其中 socket 的符号链接。
+
+普通工作负载不挂载管理 socket。需要管理容器的可信 Supervisor 可显式挂载 guest 的 `/run/revm/podman` 目录；挂载整个目录可在服务重启、socket 重建后继续连接。此权限等同于管理整个 VM 的容器引擎；特权容器或能够访问 guest 根目录的容器不属于隔离边界。
 
 管理 API 可以单独导出：
 
 ~~~bash
-revm dockerd --id dev \
+revm podman --id dev \
   --podman-api /tmp/revm-dev.sock \
   --manage-api /tmp/revm-dev-vmctl.sock
 ~~~
@@ -51,12 +54,12 @@ revm dockerd --id dev \
 --mount 共享项目目录：
 
 ~~~bash
-revm dockerd --id app \
+revm podman --id app \
   --podman-api /tmp/revm-app.sock \
   --mount "$PWD:/workspace"
 ~~~
 
-dockerd 还会自动把宿主 home 目录挂载到 guest 中的相同路径，以便 Podman workload 使用项目、凭证和缓存。共享目录中的已有文件在 guest 中保留宿主机 UID、GID 和权限；revm 不预处理外部共享目录。
+revm podman 还会自动把宿主 home 目录挂载到 guest 中的相同路径，以便 Podman workload 使用项目、凭证和缓存。共享目录中的已有文件在 guest 中保留宿主机 UID、GID 和权限；revm 不预处理外部共享目录。
 
 挂载格式：
 
@@ -79,7 +82,7 @@ dockerd 还会自动把宿主 home 目录挂载到 guest 中的相同路径，�
 使用持久化路径：
 
 ~~~bash
-revm dockerd --id dev \
+revm podman --id dev \
   --podman-api /tmp/revm-dev.sock \
   --container-disk "$HOME/.cache/revm/container-storage.ext4,version=containers-v1"
 ~~~
@@ -94,12 +97,13 @@ revm dockerd --id dev \
 
 ## 端口发布
 
-容器端口使用 Docker 或 Podman 的标准 -p 选项：
+容器端口使用 Podman 的 -p 选项：
 
 ~~~bash
-export DOCKER_HOST=unix:///tmp/revm-dev.sock
-docker run --rm -p 8080:80 nginx
+export CONTAINER_HOST=unix:///tmp/revm-dev.sock
+podman run --rm -d --name revm-web -p 127.0.0.1:8080:80 nginx
 curl http://127.0.0.1:8080
+podman stop revm-web
 ~~~
 
 guest agent 为 Podman 配置 machine marker，使容器启动和停止时调用 gvisor forwarder 的 expose/unexpose。
@@ -117,7 +121,7 @@ ctl 端口格式只支持 TCP 和 IPv4；使用 tsi 的 run session 不支持这
 ## 资源、环境和代理
 
 ~~~bash
-revm dockerd --id dev \
+revm podman --id dev \
   --cpus 4 \
   --memory 4096 \
   --envs CI=true \
@@ -140,7 +144,7 @@ revm dockerd --id dev \
 | --report-events | 接收生命周期事件的 HTTP endpoint。 |
 | --log-level | 设置日志等级。日志始终写入 session 目录。 |
 
-dockerd 没有 --network 选项，始终使用 gvisor。
+revm podman 没有 --network 选项，始终使用 gvisor。
 
 ## Attach 和 ctl
 

@@ -44,6 +44,10 @@ github.com/insomniacslk/dhcp v0.0.0-20251020182700-175e84fbb167 h1:MEufgJohwIjFi
 github.com/insomniacslk/dhcp v0.0.0-20251020182700-175e84fbb167/go.mod h1:qfvBmyDNp+/liLEYWRvqny/PEz9hGe2Dz833eXILSmo=
 github.com/josharian/native v1.1.0 h1:uuaP0hAbW7Y4l0ZRQ6C9zfb7Mg1mbFKry/xzDAfmtLA=
 github.com/josharian/native v1.1.0/go.mod h1:7X/raswPFr05uY3HiLlYeyQntB6OO7E/d2Cu7qoaN2w=
+github.com/libp2p/go-buffer-pool v0.0.2 h1:QNK2iAFa8gjAe1SPz6mHSMuCcjs+X1wlHzeOSqcmlfs=
+github.com/libp2p/go-buffer-pool v0.0.2/go.mod h1:MvaB6xw5vOrDl8rYZGLFdKAuk/hRoRZd1Vi32+RXyFM=
+github.com/libp2p/go-yamux/v5 v5.1.0 h1:8Qlxj4E9JGJAQVW6+uj2o7mqkqsIVlSUGmTWhlXzoHE=
+github.com/libp2p/go-yamux/v5 v5.1.0/go.mod h1:tgIQ07ObtRR/I0IWsFOyQIL9/dR5UXgc2s8xKmNZv1o=
 github.com/linuxkit/virtsock v0.0.0-20241009230534-cb6a20cc0422 h1:XvRuyDDRvi+UDxHN/M4MW4HxjmNVMmUKQj/+AbgsYgk=
 github.com/linuxkit/virtsock v0.0.0-20241009230534-cb6a20cc0422/go.mod h1:JLgfq4XMVbvfNlAXla/41lZnp21O72a/wWHGJefAvgQ=
 github.com/lufia/plan9stats v0.0.0-20251013123823-9fd1530e3ec3 h1:PwQumkgq4/acIiZhtifTV5OUqqiP82UAl0h87xj/l9k=

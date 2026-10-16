@@ -7,7 +7,7 @@ revm is a small CLI that manages libkrun microVM sessions. Every session has one
 ## Start here
 
 - [Run a command](run.en.md)
-- [Run Podman workloads](dockerd.en.md)
+- [Run Podman workloads](podman.en.md)
 - [Attach to an existing session](attach.en.md)
 - [Control gvisor port mappings](ctl.en.md)
 
@@ -18,13 +18,13 @@ revm is a small CLI that manages libkrun microVM sessions. Every session has one
 - A different distribution or userspace should run as a Podman workload inside the Alpine VM.
 - Non-interactive commands use the guest-control vsock endpoint. SSH remains only as a PTY and compatibility entrypoint.
 - Existing files in VirtIO-FS shares retain the host UID, GID, and mode in the guest; revm does not pre-process external shared directories.
-- run and dockerd create VMs; attach and ctl only connect to existing sessions.
+- revm run and revm podman create VMs; attach and ctl only connect to existing sessions.
 
 ## Command relationships
 
 ~~~text
 run       -> boot Alpine and execute one command
-dockerd   -> boot Alpine with the Podman API and keep the container runtime alive
+podman    -> boot Alpine with the Podman API and keep the container runtime alive
 attach    -> connect to a session, execute a command, or open a PTY
 ctl       -> inspect or change gvisor TCP port mappings
 ~~~
@@ -49,6 +49,6 @@ The two network modes are gvisor and tsi. gvisor provides gvisor-tap-vsock, NAT,
 Chinese versions:
 
 - [run](run.md)
-- [dockerd](dockerd.md)
+- [podman](podman.md)
 - [attach](attach.md)
 - [ctl](ctl.md)

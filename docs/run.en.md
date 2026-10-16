@@ -15,7 +15,7 @@ revm run --id shell -- sh -c 'uname -a; cat /etc/os-release'
 revm run --id build --mount "$PWD:/workspace" --workdir /workspace -- sh -c 'make test'
 ~~~
 
-When the command exits, revm asks the guest to shut down and exits. Run a long-lived process in the guest, or use revm dockerd, when a session must stay available.
+When the command exits, revm asks the guest to shut down and exits. Run a long-lived process in the guest, or use revm podman, when a session must stay available.
 
 ## Rootfs policy
 
@@ -27,7 +27,7 @@ The VM rootfs always comes from the Alpine archive embedded in the release. It i
 - Podman, containers configuration, and container networking tools
 - tools required for networking, mounts, logging, and lifecycle control
 
-run does not accept --rootfs and does not replace, import, or export the VM rootfs. To use another distribution or userspace, start revm dockerd and run the image as a Podman workload. The workload then remains separate from the VM control plane.
+run does not accept --rootfs and does not replace, import, or export the VM rootfs. To use another distribution or userspace, start revm podman and run the image as a Podman workload. The workload then remains separate from the VM control plane.
 
 ## Resources and networking
 

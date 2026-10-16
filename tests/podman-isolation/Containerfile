@@ -1,0 +1,3 @@
+FROM docker.io/library/alpine:3.24
+COPY probe /usr/local/bin/probe
+CMD ["timeout", "20", "/usr/local/bin/probe"]

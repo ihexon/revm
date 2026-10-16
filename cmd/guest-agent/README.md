@@ -1,6 +1,6 @@
 # Guest agent
 
-cmd/guest-agent builds the process injected into the Alpine VM at /.bin/guest-agent. It is an internal component; users normally interact with it through revm run, revm dockerd, revm attach, or revm ctl.
+cmd/guest-agent builds the process injected into the Alpine VM at /.bin/guest-agent. It is an internal component; users normally interact with it through revm run, revm podman, revm attach, or revm ctl.
 
 ## Responsibilities
 
@@ -12,7 +12,7 @@ The guest agent:
 - starts the guest-control HTTP-over-vsock service;
 - starts the optional dropbear SSH compatibility endpoint;
 - runs the command supplied to revm run;
-- starts the Podman API service for revm dockerd;
+- starts the Podman API service for revm podman;
 - supervises the Podman and dropbear processes;
 - flushes mounted disks and reboots the guest when the compatibility shutdown path is used.
 
@@ -37,7 +37,7 @@ The host normally requests shutdown through libkrun's native shutdown API. Guest
 
 ## Guest-control
 
-The host-side attach path uses the guest-control endpoint for non-PTY commands. The endpoint streams stdout, stderr, and the final exit status. The shutdown endpoint is intentionally small and is not a general-purpose guest management API.
+The host-side attach path uses the guest-control endpoint for non-PTY commands. The endpoint streams stdout, stderr, and the final exit status. Its vsock listener accepts only host CID 2 and rejects guest-origin connections. The shutdown endpoint is intentionally small and is not a general-purpose guest management API.
 
 PTY support is separate. revm attach --pty uses the SSH compatibility service because terminal allocation and interactive terminal resize are not part of the guest-control stream.
 
@@ -47,7 +47,7 @@ The agent mounts VirtIO-FS shares at the configured target paths and mounts bloc
 
 ## Networking
 
-gvisor mode obtains an address through gvisor-tap-vsock and configures the guest route and DNS. tsi mode uses libkrun transparent socket interception and does not start gvproxy. Container mode is intentionally restricted to gvisor because Podman API proxying and container port publication use gvproxy.
+gvisor mode obtains an address through gvisor-tap-vsock and configures the guest route and DNS. tsi mode uses libkrun transparent socket interception and does not start gvproxy. Container mode uses gvisor for container networking and port publication. The Podman management API is separate: a root-only Unix socket, reached from the host over a CID-restricted vsock listener and Yamux streams. It has no TCP listener.
 
 ## Source map
 

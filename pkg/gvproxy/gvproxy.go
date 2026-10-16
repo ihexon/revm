@@ -109,7 +109,6 @@ func NewConfig(spec Spec) (*Config, error) {
 			GatewayMacAddress: gatewayMACAddress,
 			DNS: []types.Zone{
 				internalZone("containers.internal."),
-				internalZone("docker.internal."),
 				internalZone("revm.internal."),
 			},
 			Forwards: forwards,

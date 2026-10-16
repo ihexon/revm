@@ -47,6 +47,10 @@ func (s *Server) Serve(ctx context.Context) error {
 		return fmt.Errorf("failed to listen on %q: %w", addr.Path, err)
 	}
 	defer os.Remove(addr.Path)
+	if err := os.Chmod(addr.Path, 0600); err != nil {
+		_ = ln.Close()
+		return fmt.Errorf("restrict socket permissions: %w", err)
+	}
 
 	if s.OnListening != nil {
 		s.OnListening()

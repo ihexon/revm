@@ -42,7 +42,7 @@ type RunOptions struct {
 	Command       []string
 }
 
-type DockerdOptions struct {
+type PodmanOptions struct {
 	Logging            LoggingOptions
 	SessionID          string
 	CPUs               int
@@ -80,7 +80,7 @@ func NewApp(name string) *cli.Command {
 		DisableSliceFlagSeparator: true,
 		Commands: []*cli.Command{
 			newRunCommand(),
-			newDockerdCommand(),
+			newPodmanCommand(),
 			newAttachCommand(),
 			newCtlCommand(),
 		},
@@ -120,11 +120,11 @@ func newRunCommand() *cli.Command {
 	}
 }
 
-func newDockerdCommand() *cli.Command {
+func newPodmanCommand() *cli.Command {
 	return &cli.Command{
-		Name:                      "dockerd",
-		Usage:                     "start a Linux VM with the built-in container runtime",
-		UsageText:                 "dockerd [flags]",
+		Name:                      "podman",
+		Usage:                     "start a Linux VM running the Podman API service",
+		UsageText:                 "podman [flags]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
 			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to host CPU count if unset or less than 1"},
@@ -143,11 +143,11 @@ func newDockerdCommand() *cli.Command {
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
 			return runLogged(ctx, command, func() (*revm.Config, error) {
-				opts, err := ParseDockerdOptions(command)
+				opts, err := ParsePodmanOptions(command)
 				if err != nil {
 					return nil, err
 				}
-				return NewDockerdConfig(opts), nil
+				return NewPodmanConfig(opts), nil
 			})
 		},
 	}
@@ -293,18 +293,18 @@ func ParseRunOptions(command *cli.Command) (RunOptions, error) {
 	}, nil
 }
 
-func ParseDockerdOptions(command *cli.Command) (DockerdOptions, error) {
+func ParsePodmanOptions(command *cli.Command) (PodmanOptions, error) {
 	rawDisks, err := ParseRawDisks(command)
 	if err != nil {
-		return DockerdOptions{}, err
+		return PodmanOptions{}, err
 	}
 
 	containerDisk, err := ParseContainerDisk(command)
 	if err != nil {
-		return DockerdOptions{}, err
+		return PodmanOptions{}, err
 	}
 
-	return DockerdOptions{
+	return PodmanOptions{
 		Logging:            ParseLoggingOptions(command),
 		SessionID:          command.String(define.FlagSessionID),
 		CPUs:               int(command.Int8(define.FlagCPUS)),
@@ -393,7 +393,7 @@ func NewRunConfig(opts RunOptions) *revm.Config {
 	return cfg
 }
 
-func NewDockerdConfig(opts DockerdOptions) *revm.Config {
+func NewPodmanConfig(opts PodmanOptions) *revm.Config {
 	cfg := revm.DefaultConfig()
 	cfg.LogLevel, cfg.SessionID, cfg.RunMode = opts.Logging.Level, opts.SessionID, revm.ModeContainer
 	cfg.CPUs, cfg.MemoryMB, cfg.Network, cfg.Proxy = opts.CPUs, opts.MemoryMB, string(define.GVISOR), opts.UseProxy

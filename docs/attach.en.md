@@ -51,7 +51,7 @@ revm attach --id dev --pty
 Container session:
 
 ~~~bash
-revm dockerd --id containers --podman-api /tmp/revm-containers.sock
+revm podman --id containers --podman-api /tmp/revm-containers.sock
 revm attach --id containers -- sh -c 'podman ps'
 ~~~
 
@@ -62,7 +62,7 @@ attach only handles guest commands and terminals:
 - guest-control carries command stdin, stdout, stderr, and exit status.
 - --pty reads SSH metadata from the management API, then uses a gvisor tunnel or a direct tsi address.
 - attach does not change port mappings; use ctl for that.
-- attach does not stop the VM; run or dockerd owns VM shutdown.
+- attach does not stop the VM; revm run or revm podman owns VM shutdown.
 
 ## Logs and diagnostics
 

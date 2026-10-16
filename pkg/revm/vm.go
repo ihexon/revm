@@ -12,14 +12,13 @@ import (
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/network"
+	"linuxvm/pkg/podmanproxy"
 	"linuxvm/pkg/service/ignition"
 	"linuxvm/pkg/service/management"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	goruntime "runtime"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -365,12 +364,16 @@ func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, forceVMR
 		return nil
 	case define.ContainerMode.String():
 		vm.startHostService(g, ctx, forceVMRun, func(ctx context.Context) error {
-			if err := waitForNetworkReady(ctx, networkReady); err != nil {
+			socket, err := network.ParseUnixAddr(vm.runtime.view.PodmanHostProxyAddr())
+			if err != nil {
 				return err
 			}
-			return vm.startPodmanProxy(ctx)
+			transport, err := network.ParseUnixAddr(vm.runtime.view.PodmanHostTransportAddr())
+			if err != nil {
+				return err
+			}
+			return podmanproxy.ServeHost(ctx, socket.Path, transport.Path)
 		})
-
 		go func() {
 			if err := waitForNetworkReady(ctx, networkReady); err != nil {
 				return
@@ -429,35 +432,6 @@ func runError(ctx context.Context, err error) error {
 		return nil
 	}
 	return err
-}
-
-func (vm *VM) startPodmanProxy(ctx context.Context) error {
-	if vm.runtime.view.RunMode() != define.ContainerMode.String() {
-		return nil
-	}
-
-	switch vm.runtime.view.VirtualNetworkMode() {
-	case define.GVISOR:
-		guestAPIAddr := vm.runtime.view.PodmanGuestAPIListenAddr()
-		_, portStr, err := net.SplitHostPort(guestAPIAddr)
-		if err != nil {
-			return fmt.Errorf("invalid guest podman address %q: %w", guestAPIAddr, err)
-		}
-
-		port, err := strconv.ParseUint(portStr, 10, 16)
-		if err != nil {
-			return fmt.Errorf("invalid port in guest podman address %q: %w", portStr, err)
-		}
-
-		logrus.Infof("podman proxy listening in %s, forward to %s", vm.runtime.view.PodmanHostProxyAddr(), guestAPIAddr)
-		return gvproxy.TunnelHostUnixToGuest(ctx,
-			vm.runtime.view.GVPCtlAddr(),
-			vm.runtime.view.PodmanHostProxyAddr(),
-			define.GuestIP,
-			uint16(port))
-	default:
-		return fmt.Errorf("podman proxy requires %s network, got %s", define.GVISOR, vm.runtime.view.VirtualNetworkMode())
-	}
 }
 
 func (vm *VM) startHostNetworkStack(ctx context.Context, onReady func()) error {

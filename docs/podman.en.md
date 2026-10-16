@@ -1,30 +1,29 @@
-# revm dockerd
+# revm podman
 
-revm dockerd starts a long-lived Alpine VM, launches the Podman API service in the guest, and exposes a Unix socket on the host. Docker CLI and Podman CLI use that socket as their container endpoint.
+revm podman starts a long-lived Alpine VM, launches the Podman API service in the guest, and exposes a Unix socket on the host. The host Podman CLI uses that socket as its container endpoint.
 
-dockerd always uses gvisor networking, so container port publishing and revm ctl port control are available.
+revm podman always uses gvisor networking, so container port publishing and revm ctl port control are available.
 
 
 ## Usage
 
 ~~~text
-revm dockerd --id <session-id> [options]
+revm podman --id <session-id> [options]
 ~~~
 
 ~~~bash
-revm dockerd --id dev --podman-api /tmp/revm-dev.sock
-export DOCKER_HOST=unix:///tmp/revm-dev.sock
-docker run --rm alpine uname -a
+# Terminal 1: start the VM and Podman service.
+revm podman --id dev --podman-api /tmp/revm-dev.sock
 ~~~
 
-For a Podman client, use CONTAINER_HOST:
+Connect the host Podman client from another terminal:
 
 ~~~bash
 export CONTAINER_HOST=unix:///tmp/revm-dev.sock
-podman run --rm alpine cat /etc/alpine-release
+podman run --rm alpine uname -a
 ~~~
 
-The service stays alive until a stop signal or host-service failure. Stopping dockerd removes the guest runtime from the client.
+The service stays alive until a stop signal or host-service failure. Stopping revm podman removes the guest runtime from the client.
 
 ## API socket
 
@@ -34,12 +33,16 @@ The service stays alive until a stop signal or host-service failure. Stopping do
 ~/.cache/revm/<session-id>/socks/podman-api.sock
 ~~~
 
-A host-side proxy forwards this socket to the Podman system service in the guest. Clients do not need guest IP, vsock, or SSH details.
+This socket forwards the native Podman byte stream over a private vsock channel to the guest service. Clients do not need guest IP, vsock, or SSH details. Transport uses `mdlayher/vsock`, `libp2p/go-yamux/v5`, and `inetaf/tcpproxy`. Yamux supplies stream flow control and half-close for `exec -i`, attach, builds, logs, and file transfers.
+
+Podman listens only on `/run/revm/podman/podman.sock` in the guest, with directory mode `0700` and socket mode `0600`; there is no TCP management port. Both the Podman channel and guest-control accept only host CID 2, rejecting guest loopback and ordinary containers using host networking. Host control sockets reside inside the `0700` session directory; `--podman-api` creates a symlink to the API socket there.
+
+Ordinary workloads must not mount the management socket. A trusted Supervisor can explicitly mount the guest `/run/revm/podman` directory; mounting the directory survives socket replacement when the service restarts. This grants management of the whole VM container engine. Privileged containers and containers with access to the guest root filesystem are outside this isolation boundary.
 
 Export the management API separately:
 
 ~~~bash
-revm dockerd --id dev \
+revm podman --id dev \
   --podman-api /tmp/revm-dev.sock \
   --manage-api /tmp/revm-dev-vmctl.sock
 ~~~
@@ -49,12 +52,12 @@ revm dockerd --id dev \
 Share a project with --mount:
 
 ~~~bash
-revm dockerd --id app \
+revm podman --id app \
   --podman-api /tmp/revm-app.sock \
   --mount "$PWD:/workspace"
 ~~~
 
-dockerd also mounts the host home directory at the same path in the guest, which lets workloads use project files, credentials, and caches. Existing shared inodes retain the host UID, GID, and mode in the guest; revm does not pre-process external shared directories.
+revm podman also mounts the host home directory at the same path in the guest, which lets workloads use project files, credentials, and caches. Existing shared inodes retain the host UID, GID, and mode in the guest; revm does not pre-process external shared directories.
 
 Mount format:
 
@@ -77,7 +80,7 @@ Without --container-disk, the disk is stored in the session workspace:
 Use a persistent path:
 
 ~~~bash
-revm dockerd --id dev \
+revm podman --id dev \
   --podman-api /tmp/revm-dev.sock \
   --container-disk "$HOME/.cache/revm/container-storage.ext4,version=containers-v1"
 ~~~
@@ -92,12 +95,13 @@ Missing disks are created. An existing disk with no version xattr or a different
 
 ## Port publishing
 
-Use the standard Docker or Podman -p option:
+Use the Podman -p option:
 
 ~~~bash
-export DOCKER_HOST=unix:///tmp/revm-dev.sock
-docker run --rm -p 8080:80 nginx
+export CONTAINER_HOST=unix:///tmp/revm-dev.sock
+podman run --rm -d --name revm-web -p 127.0.0.1:8080:80 nginx
 curl http://127.0.0.1:8080
+podman stop revm-web
 ~~~
 
 The guest agent configures the Podman machine marker so container start and stop calls the gvisor forwarder's expose/unexpose operations.
@@ -115,7 +119,7 @@ ctl port formats support TCP and IPv4 only. A run session using tsi does not sup
 ## Resources, environment, and proxy
 
 ~~~bash
-revm dockerd --id dev \
+revm podman --id dev \
   --cpus 4 \
   --memory 4096 \
   --envs CI=true \
@@ -138,7 +142,7 @@ revm dockerd --id dev \
 | --report-events | HTTP endpoint for lifecycle events. |
 | --log-level | Set the log level. Logs always go to the session directory. |
 
-dockerd has no --network option; it always uses gvisor.
+revm podman has no --network option; it always uses gvisor.
 
 ## Attach and ctl
 

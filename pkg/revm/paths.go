@@ -21,6 +21,10 @@ func (p *machinePathManager) GetPodmanSocketFile() string {
 	return p.GetSocketFile("podman-api.sock")
 }
 
+func (p *machinePathManager) GetPodmanTransportSocketFile() string {
+	return p.GetSocketFile("podman-transport.sock")
+}
+
 func (p *machinePathManager) GetVNetSocketFile() string {
 	return p.GetSocketFile("vnet.sock")
 }

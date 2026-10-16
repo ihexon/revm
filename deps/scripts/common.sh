@@ -12,8 +12,17 @@ ARCH="$(uname -m)"
 
 DEPS_WORK_DIR="${DEPS_WORK_DIR:-$DEPS_DIR/.work}"
 DEPS_DIST_DIR="${DEPS_DIST_DIR:-$DEPS_DIR/dist}"
+DEPS_BUILD_JOBS="${DEPS_BUILD_JOBS:-4}"
 
 mkdir -p "$DEPS_WORK_DIR" "$DEPS_DIST_DIR"
+
+checkout_source() {
+    local repo="$1" commit="$2" dest="$3"
+    git init "$dest"
+    git -C "$dest" remote add origin "$repo"
+    git -C "$dest" fetch --depth=1 origin "$commit"
+    git -C "$dest" checkout --detach FETCH_HEAD
+}
 
 rust_linux_musl_target() {
     case "$(uname -m)" in

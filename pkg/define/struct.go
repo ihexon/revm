@@ -116,11 +116,11 @@ const (
 
 type PodmanInfo struct {
 	// HOST
-	HostPodmanProxyAddr string `json:"hostPodmanProxyAddr,omitempty"`
+	HostPodmanProxyAddr     string `json:"hostPodmanProxyAddr,omitempty"`
+	HostPodmanTransportAddr string `json:"hostPodmanTransportAddr,omitempty"`
 
 	// GUEST
-	GuestPodmanAPIListenAddr string   `json:"guestPodmanAPIListenAddr,omitempty"`
-	GuestPodmanRunWithEnvs   []string `json:"guestPodmanRunWithEnvs,omitempty"`
+	GuestPodmanRunWithEnvs []string `json:"guestPodmanRunWithEnvs,omitempty"`
 }
 
 type PortForward struct {

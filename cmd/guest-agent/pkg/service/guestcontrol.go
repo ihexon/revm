@@ -15,15 +15,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mdlayher/vsock"
 	"github.com/sirupsen/logrus"
+	guestvsock "guestAgent/pkg/vsock"
 )
 
 // StartGuestControlServer exposes the guest command runner over a dedicated
 // vsock port. SSH remains available for interactive compatibility, but all
 // host control operations use this endpoint.
 func StartGuestControlServer(ctx context.Context) error {
-	listener, err := vsock.Listen(define.GuestControlPort, nil)
+	listener, err := guestvsock.ListenHost(define.GuestControlPort)
 	if err != nil {
 		return fmt.Errorf("listen guest control vsock: %w", err)
 	}

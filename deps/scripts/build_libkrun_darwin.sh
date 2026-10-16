@@ -12,8 +12,8 @@ RELEASE_TAR="$DEPS_DIST_DIR/$PKG_NAME-$PLT-$ARCH.tar.zst"
 
 checkout_libkrun() {
     rm -rf "$LIBKRUN_SRC"
-    git clone "$LIBKRUN_REPO" "$LIBKRUN_SRC"
-    cd "$LIBKRUN_SRC" && git checkout "$LIBKRUN_COMMIT"
+    checkout_source "$LIBKRUN_REPO" "$LIBKRUN_COMMIT" "$LIBKRUN_SRC"
+    cd "$LIBKRUN_SRC"
     sed -i '' 's/tag = "0.2.0rc1"/tag = "v0.2.0-rc2"/g' \
         bindings/libkrun-via-cdylib-weak/Cargo.toml \
         bindings/init-blob-via-cdylib/Cargo.toml
@@ -25,7 +25,11 @@ build_libkrun_darwin() {
     install_rust_linux_musl_target
     # libkrun's input-device bindings use bindgen and load libclang at build
     # time. Keep this dependency explicit now that the GPU toolchain is gone.
-    brew install llvm lld
+    for formula in llvm lld; do
+        if ! brew list --versions "$formula" >/dev/null; then
+            brew install "$formula"
+        fi
+    done
     export LIBCLANG_PATH="${LIBCLANG_PATH:-$(brew --prefix llvm)/lib}"
 
     cd "$LIBKRUN_SRC"
@@ -48,6 +52,8 @@ build_libkrun_darwin() {
 }
 
 release() {
+    mkdir -p "$PREFIX/share/revm"
+    printf 'libkrun=%s\n' "$LIBKRUN_COMMIT" > "$PREFIX/share/revm/source.txt"
     tar --zstd -cvf "$RELEASE_TAR" -C "$PREFIX" .
 }
 

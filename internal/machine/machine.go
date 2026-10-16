@@ -40,8 +40,8 @@ func (m *Machine) PodmanHostProxyAddr() string {
 	return m.spec.PodmanInfo.HostPodmanProxyAddr
 }
 
-func (m *Machine) PodmanGuestAPIListenAddr() string {
-	return m.spec.PodmanInfo.GuestPodmanAPIListenAddr
+func (m *Machine) PodmanHostTransportAddr() string {
+	return m.spec.PodmanInfo.HostPodmanTransportAddr
 }
 
 func (m *Machine) GVPCtlAddr() string {
@@ -219,7 +219,6 @@ func guestSSHFromSpec(ssh define.SSHInfo) protocol.GuestSSH {
 
 func guestPodmanFromSpec(podman define.PodmanInfo) protocol.GuestPodman {
 	return protocol.GuestPodman{
-		GuestPodmanAPIListenAddr: podman.GuestPodmanAPIListenAddr,
-		GuestPodmanRunWithEnvs:   append([]string(nil), podman.GuestPodmanRunWithEnvs...),
+		GuestPodmanRunWithEnvs: append([]string(nil), podman.GuestPodmanRunWithEnvs...),
 	}
 }

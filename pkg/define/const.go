@@ -46,8 +46,10 @@ const (
 	GatewayIP          = "192.168.127.1"
 	GuestSubnet        = "192.168.127.0/24"
 
-	DefaultVSockPort = 25882
-	GuestControlPort = 25883
+	DefaultVSockPort  = 25882
+	GuestControlPort  = 25883
+	GuestPodmanPort   = 25884
+	GuestPodmanSocket = "/run/revm/podman/podman.sock"
 	// libkrun assigns the guest CID 3; CID 2 is the host and is used by the
 	// guest agent when it connects back to the ignition server.
 	GuestVSockCID = 3

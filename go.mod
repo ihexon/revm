@@ -9,6 +9,8 @@ require (
 	github.com/gofrs/flock v0.13.0
 	github.com/google/uuid v1.6.0
 	github.com/ihexon/getSysProxy v0.0.0-20260212161208-c7b7a282814a
+	github.com/inetaf/tcpproxy v0.0.0-20260515195445-c159a6051109
+	github.com/libp2p/go-yamux/v5 v5.1.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/pkg/errors v0.9.1
 	github.com/shirou/gopsutil/v4 v4.26.6
@@ -22,7 +24,7 @@ require (
 require (
 	github.com/ebitengine/purego v0.10.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/inetaf/tcpproxy v0.0.0-20260515195445-c159a6051109 // indirect
+	github.com/libp2p/go-buffer-pool v0.0.2 // indirect
 	github.com/lufia/plan9stats v0.0.0-20251013123823-9fd1530e3ec3 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect

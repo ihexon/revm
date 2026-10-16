@@ -36,6 +36,7 @@ type builder struct {
 	outDir     string
 	depsDir    string
 	archiveDir string
+	localDeps  string
 
 	staticDir  string
 	agentPath  string
@@ -49,6 +50,7 @@ func main() {
 	verbose := flag.Bool("v", false, "enable debug logging")
 	runLint := flag.Bool("lint", false, "run golangci-lint before building")
 	buildTarget := flag.String("build", "all", "target to build: all or revm")
+	localDeps := flag.String("deps-dir", "", "use locally built libkrun and libkrunfw archives from this directory")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: go run build.go [-v] [--lint] [--build all|revm]\n")
 		flag.PrintDefaults()
@@ -67,6 +69,12 @@ func main() {
 	b, err := newBuilder(targets, *runLint)
 	if err != nil {
 		logrus.Fatal(err)
+	}
+	if *localDeps != "" {
+		b.localDeps, err = filepath.Abs(*localDeps)
+		if err != nil {
+			logrus.Fatal(err)
+		}
 	}
 
 	var buildErr error
@@ -318,6 +326,18 @@ func (b *builder) buildGuestAgent() error {
 
 func (b *builder) prepareRuntimeLibsFor(target string) error {
 	logrus.Infof("preparing shared libraries for %s", target)
+	for _, dependency := range []string{"libkrun", "libkrunfw"} {
+		audit := filepath.Join(b.depsDir, dependency, "share", "revm")
+		if exists(audit) {
+			dest := filepath.Join(b.targetRoot(target), "share", dependency)
+			if err := mkdirAll(dest); err != nil {
+				return err
+			}
+			if err := copyWithCP(audit+"/.", dest+"/", nil); err != nil {
+				return err
+			}
+		}
+	}
 	if b.goos == "darwin" {
 		return b.prepareRuntimeLibsDarwin(target)
 	}
@@ -612,6 +632,15 @@ func (b *builder) depLibDir(name string) (string, error) {
 }
 
 func (b *builder) archivePath(name string) (string, error) {
+	if b.localDeps != "" && (strings.HasPrefix(name, "libkrun-") || strings.HasPrefix(name, "libkrunfw-")) {
+		path := filepath.Join(b.localDeps, name)
+		sum, err := sha256File(path)
+		if err != nil {
+			return "", fmt.Errorf("local dependency: %w", err)
+		}
+		logrus.Infof("using local dependency %s (sha256=%s)", path, sum)
+		return path, nil
+	}
 	archivePath := filepath.Join(b.archiveDir, name)
 	expected := strings.TrimSpace(b.deps.Assets[name])
 	if expected == "" {

@@ -15,8 +15,8 @@ This keeps runner-specific Docker, Rust, cross-architecture, and native library 
 
 deps/sources.lock pins the upstream inputs:
 
-- libkrun main
-- libkrunfw
+- a pinned commit from libkrun's 2.x development line (the application uses the 2.x API)
+- a pinned libkrunfw commit
 - gvisor-tap-vsock
 - the Alpine version and build inputs
 - libarchive and other native dependencies
@@ -57,6 +57,26 @@ go run ./scripts --build revm
 ~~~
 
 It downloads the current platform's dependency assets, embeds guest-agent and static resources, links revm, and writes a bundle under out/revm. It does not rebuild libkrun or libkrunfw locally.
+
+## Testing local dependencies
+
+Dependency scripts write archives to `deps/dist`. Consume them without publishing a release:
+
+~~~bash
+go run ./scripts --build revm --deps-dir deps/dist
+~~~
+
+Both native library archives for the current platform are required. Missing files fail the build instead of falling back to released libraries. The build logs each local archive's SHA-256; the Alpine rootfs still comes from the verified release lock. Without `--deps-dir`, the build uses released assets from `deps.lock`; changing source pins alone does not change that release.
+
+On Apple Silicon, an existing revm can run the Linux builder image from `deps/docker/linux.Dockerfile` using Podman. Run `build_libkrunfw_linux.sh` there with `DEPS_WORK_DIR` on a container disk or named volume (kernel sources need a case-sensitive filesystem), and mount this repository at the same path to export `deps/dist`. Then run `build_libkrun_darwin.sh` and `build_libkrunfw_darwin.sh` on macOS. `DEPS_BUILD_JOBS` controls kernel parallelism (default 4); use `CARGO_BUILD_JOBS` for Rust.
+
+## Kernel configuration
+
+The repository's `deps/config/config-libkrunfw_*` files remain the starting point. After upstream patches, Linux `olddefconfig` resolves new dependencies. `check_kernel_config.sh` compares against the normalized upstream configuration using `diffconfig`, and requires container storage, networking, namespaces, cgroups, seccomp, and vsock support. Unreviewed upstream omissions fail the build.
+
+Intentional exclusions are GPU display and its helpers, plus x86 32-bit compatibility. ARM64 retains 4 KB pages. Dependency archives include input/final configs and diffs under `share/revm/kernel`; application bundles copy them to `share/libkrunfw/kernel` along with source revision metadata.
+
+Test a running disposable session with `CONTAINER_HOST=unix:///path/to/podman-api.sock tests/podman-isolation/test.sh`.
 
 ## Dependency change checklist
 

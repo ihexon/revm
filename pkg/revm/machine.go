@@ -7,14 +7,11 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/filesystem"
-	"linuxvm/pkg/network"
 	ssh "linuxvm/pkg/ssh"
 	"linuxvm/pkg/static_resources"
-	"net"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/gofrs/flock"
@@ -60,9 +57,15 @@ func (v *machineBuilder) setupWorkspace(workspacePath string) error {
 
 	v.WorkspaceDir = workspacePath
 
-	if err = os.MkdirAll(v.WorkspaceDir, 0755); err != nil {
+	if err = os.MkdirAll(v.WorkspaceDir, 0700); err != nil {
 		return err
 	}
+
+	if err := os.Chmod(v.WorkspaceDir, 0700); err != nil {
+		return err
+	}
+	// libkrun creates its Unix listeners after the VM starts. A private
+	// parent protects them from creation onward, including custom symlinks.
 
 	v.pathMgr = newMachinePathManager(v.WorkspaceDir)
 
@@ -244,23 +247,19 @@ func (v *machineBuilder) configurePodman(ctx context.Context, userEnv []string) 
 		Path:   apiPath,
 	}
 
-	port, err := network.GetAvailablePort(0)
-	if err != nil {
-		return err
-	}
-
-	listenIP := define.UnspecifiedAddress
-	if v.VirtualNetworkMode == define.TSI {
-		listenIP = define.LocalHost
-	}
-
 	v.PodmanInfo = define.PodmanInfo{
-		HostPodmanProxyAddr:      podmanProxyAddr.String(),
-		GuestPodmanAPIListenAddr: net.JoinHostPort(listenIP, strconv.FormatUint(port, 10)),
-		GuestPodmanRunWithEnvs:   envs,
+		HostPodmanProxyAddr:     podmanProxyAddr.String(),
+		HostPodmanTransportAddr: (&url.URL{Scheme: "unix", Path: v.pathMgr.GetPodmanTransportSocketFile()}).String(),
+		GuestPodmanRunWithEnvs:  envs,
 	}
 
 	if err := os.MkdirAll(filepath.Dir(podmanProxyAddr.Path), 0755); err != nil {
+		return err
+	}
+	if err := os.Remove(podmanProxyAddr.Path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Remove(v.pathMgr.GetPodmanTransportSocketFile()); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 

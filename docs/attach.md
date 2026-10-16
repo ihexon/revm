@@ -53,7 +53,7 @@ revm attach --id dev --pty
 容器 session：
 
 ~~~bash
-revm dockerd --id containers --podman-api /tmp/revm-containers.sock
+revm podman --id containers --podman-api /tmp/revm-containers.sock
 revm attach --id containers -- sh -c 'podman ps'
 ~~~
 
@@ -64,7 +64,7 @@ attach 只处理 guest 命令和终端：
 - guest-control endpoint 负责普通命令的 stdin、stdout、stderr 和退出码。
 - --pty 通过管理 API 读取 SSH metadata，再通过 gvisor tunnel 或 tsi 直连 guest SSH。
 - attach 不负责端口映射；端口映射使用 ctl。
-- attach 不负责关闭 VM；停止由 run 或 dockerd 的宿主进程处理。
+- attach 不负责关闭 VM；停止由 revm run 或 revm podman 的宿主进程处理。
 
 ## 日志和诊断
 
