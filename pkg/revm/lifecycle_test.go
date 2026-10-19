@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
@@ -197,38 +196,6 @@ func TestInheritedLockSurvivesOwnerClose(t *testing.T) {
 	}
 	lock.Close()
 }
-func TestSparseMigrationPreservesDataAndSource(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "source")
-	dst := filepath.Join(dir, "target")
-	f, err := os.Create(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.Write([]byte("begin"))
-	f.WriteAt([]byte("end"), 16*1024*1024)
-	f.Close()
-	if err := copySparseVerified(context.Background(), src, dst); err != nil {
-		t.Fatal(err)
-	}
-	a, _ := os.ReadFile(src)
-	b, _ := os.ReadFile(dst)
-	if !bytes.Equal(a, b) {
-		t.Fatal("copy mismatch")
-	}
-	if err := copySparseVerified(context.Background(), src, dst); !os.IsExist(err) {
-		t.Fatal("existing target was replaced", err)
-	}
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
-	defer cancel()
-	if err := copySparseVerified(ctx, src, filepath.Join(dir, "canceled")); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatal(err)
-	}
-	after, _ := os.ReadFile(src)
-	if !bytes.Equal(a, after) {
-		t.Fatal("source changed")
-	}
-}
 func TestDiskVersionNeverAuthorizesReplacement(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "data.ext4")
 	original := []byte("existing data, not an ext4 disk")
@@ -255,17 +222,5 @@ func TestDiskVersionNeverAuthorizesReplacement(t *testing.T) {
 	got, _ = os.ReadFile(unknown)
 	if !bytes.Equal(got, original) {
 		t.Fatal("disk with missing version was replaced")
-	}
-}
-
-func TestNewCacheLayoutIsNotALegacySession(t *testing.T) {
-	dir := t.TempDir()
-	os.Mkdir(filepath.Join(dir, uuid.NewString()), 0700)
-	if legacy, err := legacyResources(dir); err != nil || legacy {
-		t.Fatal("instance cache mistaken for a legacy session", err)
-	}
-	os.Mkdir(filepath.Join(dir, "raw-disk"), 0700)
-	if legacy, err := legacyResources(dir); err != nil || !legacy {
-		t.Fatal("legacy persistent storage not detected", err)
 	}
 }

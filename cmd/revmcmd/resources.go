@@ -60,16 +60,5 @@ func resourceCommands() []*cli.Command {
 				return err
 			}},
 		}},
-		{Name: "migrate", Usage: "copy and verify a stopped legacy session into the current layout; keep the source", Action: func(ctx context.Context, c *cli.Command) error {
-			name, err := oneArg(c)
-			if err != nil {
-				return err
-			}
-			s, err := revm.MigrateSession(ctx, name)
-			if err != nil {
-				return err
-			}
-			return json.NewEncoder(c.Writer).Encode(s)
-		}},
 	}
 }

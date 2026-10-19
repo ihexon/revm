@@ -85,7 +85,7 @@ revm run --id disk --raw-disk "$HOME/data.ext4,mnt=/data,version=v1" -- df -h /d
 
 Bind mounts keep host UID, GID and permissions. External disks remain user-owned, including disks created on first use. Existing disks are inspected; mismatched versions return an error without deleting data. Changes to the guest system rootfs are discarded after each instance.
 
-Old `~/.cache/revm/<id>` directories require `revm migrate ID`. Migration copies and verifies the default disk and retains the legacy source; it never silently substitutes empty storage.
+Old cache layouts are not imported or used. Existing external disks can be selected explicitly with `--container-disk`.
 
 ## Networking
 
@@ -110,7 +110,6 @@ python3 tests/smoke.py
 python3 tests/sessions.py
 python3 tests/volumes.py
 python3 tests/terminal.py
-python3 tests/migration.py
 ```
 
 The build downloads dependencies pinned by `deps.lock`, compiles the guest agent, signs the macOS executable, and creates a relocatable bundle and checksum. `go run ./scripts --lint` also runs lint. The dependency workflow builds libkrun, libkrunfw and Alpine from `deps/sources.lock`.

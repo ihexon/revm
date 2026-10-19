@@ -93,7 +93,7 @@ revm podman --id dev \
 --container-disk <path>[,version=<string>]
 ~~~
 
-外部磁盘不存在时自动创建，之后仍由用户持有。已有磁盘缺少版本属性时检查原盘；版本不一致时报错并保留数据。停止或删除 session 不删除默认 volume，同名启动会重新连接原卷。显式删除使用 `revm volume rm NAME`，运行中的卷不可删除。旧布局需 `revm migrate ID`。
+外部磁盘不存在时自动创建，之后仍由用户持有。已有磁盘缺少版本属性时检查原盘；版本不一致时报错并保留数据。停止或删除 session 不删除默认 volume，同名启动会重新连接原卷。显式删除使用 `revm volume rm NAME`，运行中的卷不可删除。旧布局不会被自动导入；已有磁盘可通过 `--container-disk` 显式使用。
 
 ## 端口发布
 

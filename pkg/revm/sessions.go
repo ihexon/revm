@@ -276,7 +276,7 @@ func SessionLogs(ctx context.Context, id, instance string, guest, follow bool, w
 		s.InstanceID = instance
 	}
 	if s.InstanceID == "" {
-		return fmt.Errorf("session has no run logs; migrated logs are in %s", filepath.Join(r.sessionDir(id), "legacy-logs"))
+		return fmt.Errorf("session has no run logs")
 	}
 	if _, err = loadRun(r, s); err != nil {
 		return err

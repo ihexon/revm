@@ -33,16 +33,6 @@ CLI cannot release storage still being used by its child. `cache prune` skips
 active instances and only removes resources with matching ownership records.
 Unclassified legacy directories and all persistent data are preserved.
 
-Old `~/.cache/revm/<id>` sessions must be stopped and explicitly migrated:
-
-```sh
-revm migrate dev
-```
-
-Migration acquires both layouts' locks, copies allocated disk ranges, verifies
-them, copies old logs, then commits the new volume/session references atomically.
-The old disk and logs remain intact. An interrupted copy can be retried; a
-published volume has a receipt so retries reuse it without overwriting data.
-Hidden partial migration directories are retained after a process crash for
-manual inspection; `cache prune` never traverses the data directory. Filesystems
-without sparse extent support return an error while preserving the source.
+Old cache layouts are not imported or used. They remain untouched. Select an
+existing external disk explicitly with `--container-disk`; revm does not maintain
+migration records or reconnect disks through legacy session names.

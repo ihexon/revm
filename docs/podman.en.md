@@ -91,7 +91,7 @@ Format:
 --container-disk <path>[,version=<string>]
 ~~~
 
-Missing external disks are created and remain user-owned. Existing disks are inspected; mismatched versions return an error without replacing data. Stopping or removing a session preserves its managed volume. A same-name restart reconnects it. Use `volume rm NAME` for explicit deletion; active volumes cannot be deleted. Legacy sessions require `revm migrate ID`.
+Missing external disks are created and remain user-owned. Existing disks are inspected; mismatched versions return an error without replacing data. Stopping or removing a session preserves its managed volume. A same-name restart reconnects it. Use `volume rm NAME` for explicit deletion; active volumes cannot be deleted. Legacy layouts are not imported; select an existing disk explicitly with `--container-disk`.
 
 ## Port publishing
 

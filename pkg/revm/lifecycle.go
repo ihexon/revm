@@ -303,15 +303,7 @@ func beginRun(ctx context.Context, cfg *Config) (lease *sessionRun, retErr error
 			return nil, fmt.Errorf("session %q is incomplete; remove it with revm rm first", cfg.SessionID)
 		}
 		s = Session{Version: 1, ID: cfg.SessionID}
-		if legacy, e := legacyResources(legacySessionDir(cfg.SessionID)); e == nil && legacy {
-			var receipt migrationReceipt
-			if readJSON(filepath.Join(r.State, "migrations", cfg.SessionID+".json"), &receipt) != nil || receipt.Version != 1 || receipt.Source != legacySessionDir(cfg.SessionID) {
-				return nil, fmt.Errorf("legacy session %q exists; run revm migrate %s before starting it", cfg.SessionID, cfg.SessionID)
-			}
-			s.VolumeID = receipt.VolumeID
-		} else if e != nil {
-			return nil, e
-		}
+
 	}
 
 	original := *cfg
@@ -533,10 +525,6 @@ func (l *sessionRun) close(prior ...error) error {
 	return err
 }
 
-func legacySessionDir(id string) string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".cache", "revm", id)
-}
 func sessionWorkspace(id string) (string, error) {
 	r, err := ResolveRoots()
 	if err != nil {
@@ -558,15 +546,4 @@ func sessionWorkspace(id string) (string, error) {
 		return "", err
 	}
 	return rec.RuntimeDir, nil
-}
-
-func legacyResources(dir string) (bool, error) {
-	for _, name := range []string{"rootfs", "raw-disk", "logs", "socks", "ssh"} {
-		if _, err := os.Lstat(filepath.Join(dir, name)); err == nil {
-			return true, nil
-		} else if !os.IsNotExist(err) {
-			return false, err
-		}
-	}
-	return false, nil
 }

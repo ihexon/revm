@@ -12,7 +12,7 @@ revm \- run Linux commands in a libkrun microVM
 [--tty=auto|always|never] -- command [args...]
 .br
 .B revm
-ls | inspect | stop | wait | logs | rm | volume | cache | migrate | completion
+ls | inspect | stop | wait | logs | rm | volume | cache | completion
 .SH DESCRIPTION
 revm runs the supplied argv in a fresh Alpine system environment. Input and
 output stream without waiting for EOF. Without a PTY, stdout and stderr remain
@@ -60,7 +60,7 @@ requests shutdown and waits for resource release.
 reads instance logs.
 .B rm NAME
 removes a stopped session, preserving volumes.
-.SH DATA AND MIGRATION
+.SH DATA
 Runtime sockets and keys use XDG_RUNTIME_DIR, with a short private /tmp fallback.
 Private rootfs copies use XDG_CACHE_HOME/revm/instances.
 Logs and results use XDG_STATE_HOME/revm/sessions.
@@ -74,8 +74,6 @@ lists managed volumes.
 explicitly deletes an unused volume.
 .B cache prune
 removes inactive resources with verified ownership, preserving legacy data.
-.B migrate NAME
-copies and verifies a stopped legacy session; its source is retained.
 .SH EXIT STATUS
 0 means success; 2 means invalid invocation; 1 means an operational failure.
 Guest exit codes are preserved, including 126 and 127. Signals return 128 plus
