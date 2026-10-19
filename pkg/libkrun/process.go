@@ -42,6 +42,11 @@ func NewProcessProvider(ctx context.Context, spec *define.MachineSpec, locks ...
 		writer.Close()
 		return nil, err
 	}
+	// A Linux release starts through its bundled ELF loader. Re-enter its
+	// launcher so the child uses the same loader and library search path.
+	if launcher := os.Getenv("REVM_BUNDLE_LAUNCHER"); launcher != "" && runtime.GOOS == "linux" {
+		exe = launcher
+	}
 	cmd := exec.Command(exe, "_vmm")
 	cmd.ExtraFiles = append([]*os.File{reader, statusWriter}, locks...)
 	logFile, err := os.OpenFile(spec.LogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)

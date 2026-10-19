@@ -38,7 +38,7 @@ tcp       127.0.0.1:8080  192.168.127.2:8000
 
 列表可能包括：
 
-- revm 为 attach 建立的内部 SSH forwarding；
+- revm 的内部兼容 SSH forwarding；
 - Podman 容器通过 -p 发布的端口；
 - ctl 手动创建的端口。
 
@@ -90,7 +90,7 @@ revm ctl --id web \
 ctl 通过 session 管理 API 读取 VM view：
 
 ~~~text
-~/.cache/revm/<session-id>/socks/vmctl.sock
+$XDG_RUNTIME_DIR/revm/<instance>/socks/vmctl.sock
 ~~~
 
 管理 API 返回 gvproxy control endpoint。ctl 随后调用 gvproxy forwarder 的 expose 或 unexpose API。guest 不需要运行额外的控制命令。
@@ -131,3 +131,5 @@ revm ctl --id light --list-port
 | --port-export | 创建 TCP/IPv4 映射，可重复。 |
 | --port-unexport | 删除 TCP/IPv4 映射，可重复。 |
 | --log-level | 日志等级。 |
+
+Use `revm ctl --id ID --list-port --json` for a machine-readable array. Session records resolve the current instance socket; runtime paths may use the short `/tmp/revm-<uid>` fallback.

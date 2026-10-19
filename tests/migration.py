@@ -31,4 +31,5 @@ try:
  print('PASS verified sparse migration, logs, conflict retry and source retention')
 finally:
  shutil.rmtree(legacy,ignore_errors=True)
+ subprocess.run([binary, "cache", "prune"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
  root.cleanup()

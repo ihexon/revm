@@ -48,3 +48,26 @@ func TestHelpSucceeds(t *testing.T) {
 		t.Fatal("missing help")
 	}
 }
+
+func TestReleaseInterfaces(t *testing.T) {
+	for _, args := range [][]string{{"--version"}, {"completion", "bash"}, {"completion", "zsh"}, {"completion", "fish"}, {"run", "--generate-shell-completion"}} {
+		app := NewApp("revm")
+		var out bytes.Buffer
+		app.Writer = &out
+		if err := app.Run(context.Background(), append([]string{"revm"}, args...)); err != nil {
+			t.Fatal(args, err)
+		}
+		if out.Len() == 0 {
+			t.Fatal("missing release output", args)
+		}
+	}
+	for _, args := range [][]string{{"completion"}, {"completion", "unknown"}, {"completion", "bash", "extra"}} {
+		app := NewApp("revm")
+		var out bytes.Buffer
+		app.Writer = &out
+		err := app.Run(context.Background(), append([]string{"revm"}, args...))
+		if commanderr.ExitCode(err) != 2 {
+			t.Fatal(args, err)
+		}
+	}
+}

@@ -1,144 +1,118 @@
 # revm
 
-revm runs Linux commands in a small libkrun VM. It works on Apple Silicon macOS and on Linux amd64/arm64.
+revm runs Linux commands in a libkrun VM on Apple Silicon macOS and Linux amd64/arm64. Commands use the built-in Alpine environment; Podman provides other container userspaces.
 
-Each VM has a name. The name is used for its sockets, logs, keys, and disks, so you can come back to the same VM with attach or ctl.
+```sh
+printf 'hello\n' | revm run --id pipe -- cat
+revm run --rm --id build --mount "$PWD:/workspace" --workdir /workspace -- make test
+revm run --id shell -- sh
+```
 
-The VM always boots the Alpine rootfs shipped with revm. If you need a different userspace, start the container mode and run it with Podman. The VM rootfs itself is fixed.
+Arguments after `--` reach the guest unchanged. Stdin, stdout and stderr stream immediately. Guest exit codes propagate to the shell. A terminal is allocated automatically when stdin and stdout are terminals and revm is in the foreground; `--tty=always|never` overrides this. `--pty` aliases `--tty=always` for run and attach.
 
 ## Install
 
-Download a release for your platform, unpack it, and run bin/revm. Linux bundles include the loader and libraries they need; keep the directory layout from the archive.
+Download the release archive and its `.sha256` file for your platform. Verify the archive before unpacking:
 
-To build the application from a checkout:
+```sh
+# macOS
+shasum -a 256 -c revm-darwin-arm64.tar.zst.sha256
+mkdir revm-release
+tar -xf revm-darwin-arm64.tar.zst -C revm-release
+./revm-release/bin/revm --version
 
-~~~bash
-go run ./scripts --build revm
-~~~
+# Linux: use revm-linux-x86_64 or revm-linux-aarch64
+sha256sum -c revm-linux-x86_64.tar.zst.sha256
+```
 
-libkrun, libkrunfw, and the Alpine rootfs are built by the GitHub Actions dependency workflow. The application build downloads the versions recorded in deps.lock; it does not rebuild those projects on the local machine.
+Keep the entire extracted bundle together. Its executable uses the sibling `lib` directory; Linux also uses the bundled loader. Add the bundle's `bin` directory to `PATH`. To upgrade, unpack into a new directory and switch `PATH` after existing sessions stop. Session state and volumes live outside the bundle.
 
-## Run a command
+```sh
+export PATH="$PWD/revm-release/bin:$PATH"
+# Bash requires bash-completion; zsh requires compinit.
+source <(revm completion bash)
+# or: source <(revm completion zsh)
+# fish: revm completion fish > ~/.config/fish/completions/revm.fish
+man ./revm-release/share/man/man1/revm.1
+```
 
-~~~bash
-revm run --id shell -- sh
-revm run --id build \
-  --mount "$PWD:/workspace" \
-  --workdir /workspace \
-  -- sh -c 'make test'
-~~~
+Releases include completion scripts, the manual, documentation and archive checksums. Linux needs accessible KVM; macOS uses Hypervisor.framework.
 
-Everything after the double dash is run in the guest. The default network is gvisor. Use --network tsi when you want libkrun's transparent socket interception and do not need ctl port forwarding.
+## Sessions
 
-The rootfs already contains the guest agent and the tools used to bring up the network, mount filesystems, and run commands. It also includes Podman and the packages installed by the Alpine rootfs build. There is no custom rootfs option and no rootfs import/export command.
+```sh
+revm ls --json
+revm inspect shell
+revm attach --id shell -- sh -c 'uname -a'
+revm attach --id shell --tty=always -- sh
+revm wait --ready --timeout 30s shell
+revm logs --guest -f shell
+revm stop shell
+revm wait shell                    # returns this instance's recorded exit status
+revm rm shell                      # stopped sessions only; volumes remain
+```
 
-## Run containers
+One session name has at most one active instance. Each start gets a new instance ID, a private writable rootfs, separate logs and a result record. A crash with no result is reported as `unknown`. `run --rm` removes session records and logs after success or failure.
 
-~~~bash
-# Terminal 1: start the VM and Podman service.
-revm podman --id containers --podman-api "$PWD/podman.sock"
+The first INT, TERM, HUP or QUIT cancels the command with a shared shutdown budget (`--stop-timeout`, default 10s). A second signal accelerates cleanup. Attach cancellation affects its own command and descendants. The native VMM is a child whose lifetime follows a control pipe from its owner; losing the CLI also terminates the VMM.
 
-# Terminal 2: use the host Podman client.
-export CONTAINER_HOST="unix://$PWD/podman.sock"
+## Containers
+
+```sh
+# Terminal 1
+revm podman --id containers --podman-api /tmp/revm-containers.sock
+# Terminal 2
+export CONTAINER_HOST=unix:///tmp/revm-containers.sock
 podman run --rm alpine uname -a
-~~~
+```
 
-The host Podman CLI connects through CONTAINER_HOST; integrations use the native Libpod API. The container storage disk lives in the session directory by default. Give --container-disk a path if the storage should survive removal of the session directory.
+The default `podman-containers` volume persists independently of the session. Stop, restart and session removal preserve it; starting the same name reconnects it. `--container-disk PATH` uses a user-owned external disk. Podman sessions share the host home at the same path; add project shares with `--mount`.
 
-The host home directory is shared into container sessions at the same path. Add more shares with --mount.
+```sh
+revm volume ls --json
+revm volume rm podman-containers   # explicit deletion; refuses an active volume
+revm cache prune                  # only inactive resources with known ownership
+```
 
-## Attach to a running VM
+## Files and storage
 
-~~~bash
-revm attach --id shell
-revm attach --id shell --pty
-revm attach --id containers -- podman ps
-~~~
+Runtime sockets and keys use a short private runtime directory. Rootfs copies use `${XDG_CACHE_HOME:-~/.cache}/revm/instances`; logs and results use `${XDG_STATE_HOME:-~/.local/state}/revm/sessions`; persistent volumes use `${XDG_DATA_HOME:-~/.local/share}/revm/volumes`. Roots cannot overlap. See [resource ownership](docs/resources.md).
 
-A normal attach uses the guest-control vsock service. The PTY form uses the SSH compatibility service because it needs terminal allocation. SSH is not required for ordinary command execution.
+```sh
+revm run --id files --mount "$PWD:/workspace" -- sh
+revm run --id disk --raw-disk "$HOME/data.ext4,mnt=/data,version=v1" -- df -h /data
+```
 
-## Forward a port
+Bind mounts keep host UID, GID and permissions. External disks remain user-owned, including disks created on first use. Existing disks are inspected; mismatched versions return an error without deleting data. Changes to the guest system rootfs are discarded after each instance.
 
-Port forwarding is available for sessions using gvisor:
+Old `~/.cache/revm/<id>` directories require `revm migrate ID`. Migration copies and verifies the default disk and retains the legacy source; it never silently substitutes empty storage.
 
-~~~bash
-revm ctl --id web --list-port
+## Networking
+
+`run` defaults to gvisor with DNS, NAT and port forwarding. `--network tsi` uses libkrun transparent socket interception. Podman always uses gvisor.
+
+```sh
+revm ctl --id web --list-port --json
 revm ctl --id web --port-export 127.0.0.1:8080:8000
 revm ctl --id web --port-unexport 127.0.0.1:8080
-~~~
+```
 
-Forward specifications are TCP and IPv4:
-
-~~~text
-[host-ip:]host-port:guest-port
-~~~
-
-If the host address is omitted, revm uses 127.0.0.1. The SSH port used by revm is reserved.
-
-## Files and disks
-
-The default session directory is:
-
-~~~text
-~/.cache/revm/<id>/
-~~~
-
-It contains the log, management sockets, generated SSH key, extracted Alpine rootfs, and any session-local disks. A normal exit leaves the directory in place.
-
-Share a host directory with VirtIO-FS:
-
-~~~bash
-revm run --id files --mount "$PWD:/workspace" -- sh
-~~~
-
-Existing shared files retain the host UID, GID, and mode in the guest. revm does not pre-process external VirtIO-FS directories.
-
-Attach a raw disk when a command needs persistent data:
-
-~~~bash
-revm run --id disk \
-  --raw-disk "$HOME/.cache/revm/data.ext4,mnt=/data,version=v1" \
-  -- sh -c 'df -h /data'
-~~~
-
-Images that do not exist are created. Changing a disk version recreates the image.
-
-## Stopping
-
-The first Ctrl-C asks libkrun to shut the guest down. The host keeps the management and network services alive until the guest exits. A second Ctrl-C, a lost launcher, or a failed host service uses the bounded force-stop path.
-
-## Logs
-
-Logs are kept in the session directory. The terminal is reserved for guest command output, so host lifecycle messages do not scramble an interactive command.
-
-~~~text
-~/.cache/revm/<id>/logs/revm.log  host lifecycle and control-plane logs
-~/.cache/revm/<id>/logs/vm.log    guest-agent and compatibility-service logs
-~~~
-
-~~~bash
-revm run --id build --log-level debug -- sh -c 'make test'
-tail -f ~/.cache/revm/build/logs/revm.log
-tail -f ~/.cache/revm/build/logs/vm.log
-~~~
-
-Use --manage-api, --podman-api, or --ssh-key when another program needs a socket or key at a known path.
+Manual forwards support TCP/IPv4 and default to `127.0.0.1`. The internal SSH port is reserved. `--manage-api`, `--podman-api` and `--ssh-key` expose convenient symlinks; unrelated existing paths are never overwritten.
 
 ## Development
 
-Build the application from a checkout:
-
-~~~bash
+```sh
 go run ./scripts --build revm
-~~~
+# Unit checks after dependencies are prepared by the build:
+./scripts/test.sh
+# Real VM checks on a host with virtualization support:
+python3 tests/smoke.py
+python3 tests/sessions.py
+python3 tests/volumes.py
+python3 tests/terminal.py
+python3 tests/migration.py
+```
 
-The dependency workflow in .github/workflows/build-deps.yml builds libkrun, libkrunfw, and the Alpine rootfs. Their source revisions are in deps/sources.lock and the released archives are pinned in deps.lock.
+The build downloads dependencies pinned by `deps.lock`, compiles the guest agent, signs the macOS executable, and creates a relocatable bundle and checksum. `go run ./scripts --lint` also runs lint. The dependency workflow builds libkrun, libkrunfw and Alpine from `deps/sources.lock`.
 
-## More documentation
-
-- docs/run.md and docs/run.en.md
-- docs/podman.md and docs/podman.en.md
-- docs/attach.md and docs/attach.en.md
-- docs/ctl.md and docs/ctl.en.md
-- deps/README.md
-- cmd/guest-agent/README.md
+See [session commands](docs/sessions.md), [exit status](docs/exit-status.md), [execution and signals](docs/execution-protocol.md), and the [command reference](docs/README.md).

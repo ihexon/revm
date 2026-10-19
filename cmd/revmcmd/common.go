@@ -78,9 +78,12 @@ type CtlOptions struct {
 
 func NewApp(name string) *cli.Command {
 	app := &cli.Command{
-		Name:                      name,
-		Usage:                     "run and control revm Linux microVM sessions",
-		DisableSliceFlagSeparator: true,
+		Name:                            name,
+		Version:                         versionString(),
+		EnableShellCompletion:           true,
+		ConfigureShellCompletionCommand: configureCompletion,
+		Usage:                           "run and control revm Linux microVM sessions",
+		DisableSliceFlagSeparator:       true,
 		Commands: []*cli.Command{
 			newRunCommand(),
 			newPodmanCommand(),

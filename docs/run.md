@@ -43,8 +43,8 @@ revm run --id light --network tsi -- sh
 
 | 选项 | 说明 |
 | --- | --- |
-| --cpus | vCPU 数量。未设置或小于 1 时使用主机 CPU 数量；最大 32。 |
-| --memory | 内存 MB。未设置时使用主机总内存；最小 512。 |
+| --cpus | vCPU 数量。默认 min(主机 CPU 数量, 4)；最大 32。 |
+| --memory | 内存 MB。默认可用内存的四分之一，限制在 512–2048 MB；最小 512。 |
 | --network | gvisor 或 tsi，默认 gvisor。 |
 | --workdir | guest 命令的工作目录，默认 /。 |
 | --envs KEY=VALUE | 传入 guest 命令的环境变量，可重复。 |
@@ -89,42 +89,33 @@ revm run --id disk \
 说明：
 
 - mnt 必须是绝对 guest 路径；省略时使用磁盘自身的默认挂载目标。
-- version 写入并校验 user.vm.rawdisk.version；版本不一致时会重建镜像。
+- version 写入并校验 user.vm.rawdisk.version；版本不一致时报错并保留镜像；缺少版本属性时检查原盘，不自动删除。
 - readonly、directio 接受 true 或 false。
 - sync 支持 none、relaxed、full。
 - uuid 只在新建镜像时用于指定文件系统 UUID；已存在镜像不会强制改 UUID。
 
-## 日志、socket 和 SSH key
+## 终端、流和退出状态
 
-默认 session 目录：
+stdin 按流传输，不等待输入全部结束。非 PTY 模式分别保留 stdout、stderr；guest 退出码直接返回。`--tty=auto` 在前台且 stdin/stdout 都是终端时分配 PTY；`always`、`never` 可覆盖，`--pty` 是 `always` 的别名。PTY 的 stdin EOF 不注入 Ctrl-D。
 
-~~~text
-~/.cache/revm/<session-id>/
-~~~
+## 日志与资源
 
-日志始终写入 session 目录：
+每次运行使用独立 rootfs 和临时 socket/key 目录。日志和结果位于 `${XDG_STATE_HOME:-~/.local/state}/revm/sessions/<id>/runs/<instance>/`。使用 `revm logs ID`、`revm logs --guest -f ID` 读取日志，`revm inspect ID` 查看路径和结果。
 
-~~~text
-~/.cache/revm/<session-id>/logs/revm.log  宿主生命周期和控制面
-~/.cache/revm/<session-id>/logs/vm.log    guest-agent 和兼容服务
-~~~
-
-~~~bash
-revm run --id build --log-level debug -- sh -c 'make test'
-revm run --id build --manage-api /tmp/revm-build-vmctl.sock -- sh
-revm run --id build --ssh-key /tmp/revm-build-ssh-key -- sh
-~~~
-
---manage-api 和 --ssh-key 创建指向 session 内部文件的符号链接。管理 API 供 attach 和 ctl 使用；普通命令通过 guest-control vsock 执行，SSH 主要保留给 --pty 和兼容场景。
+`--manage-api`、`--ssh-key` 可导出连接符号链接，退出时只清理仍指向本实例的链接，不覆盖已有文件。`--rm` 在退出后删除 session 记录和日志；外部磁盘、volume、bind mount 数据保留。详见 [资源所有权](resources.md) 和 [session 命令](sessions.md)。
 
 ## 停止行为
 
-第一次 SIGINT 或 SIGTERM 使用 libkrun 原生 shutdown 请求 guest 关闭。第二次信号、宿主 launcher 消失或 host service 失败会进入有界 force-stop，最长等待三秒。命令正常结束返回 guest 的退出结果；无法在有界时间内停止时返回错误。
+第一次 INT、TERM、HUP、QUIT 保留原始取消原因并开始 `--stop-timeout` 宽限期（默认 10s）。第二次信号加速清理。run 命令和 VM 关闭共用宽限预算，强制回收再最多等待 3s；信号状态按 Linux 的 `128+signal` 返回。VMM 子进程监听父进程控制管道，父进程消失后退出。
 
 ## 全部选项
 
 ~~~text
 --id
+--tty
+--pty
+--stop-timeout
+--rm
 --cpus
 --memory
 --envs

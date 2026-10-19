@@ -12,3 +12,5 @@ task.md
 ANALYSIS.md
 test_20runs.sh
 .qoder
+
+/revm-*.tar.zst.sha256

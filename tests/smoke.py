@@ -22,10 +22,10 @@ def start(argv, stdin=subprocess.DEVNULL):
     processes.append(p)
     return p
 
-def run(argv, **kw):
+def run(argv, extra=(), **kw):
     sid = 'audit-'+uuid.uuid4().hex[:10]
     sessions.append(sid)
-    return start(['run', '--id', sid, '--cpus', '1', '--memory', '512', '--stop-timeout', '1s', '--']+argv, **kw), sid
+    return start(['run', '--id', sid, '--cpus', '1', '--memory', '512', '--stop-timeout', '1s']+list(extra)+['--']+argv, **kw), sid
 
 def line(p):
     assert select.select([p.stdout], [], [], 20)[0], 'timed out waiting for output'
@@ -55,7 +55,14 @@ try:
 
     for argv, code in [(['revm-command-does-not-exist'],127), (['sh','-c','kill -TERM $$'],143)]:
         p, _ = run(argv); finish(p, code)
-    print('PASS exec failure and guest signals', flush=True)
+    with tempfile.TemporaryDirectory(prefix='revm-exec-format-', dir='/tmp') as fixture:
+        script=fixture+'/script'
+        with open(script,'w') as f: f.write('echo missing interpreter header\n')
+        for mode in [0o644,0o755]:
+            os.chmod(script,mode)
+            p,_=run(['/work/script'],extra=['--mount',fixture+':/work'])
+            finish(p,126)
+    print('PASS exec failure, permission/format status 126 and guest signals', flush=True)
 
     owner, sid = run(['sh','-c','echo ready; sleep 100'])
     assert line(owner) == b'ready\n'
@@ -105,4 +112,5 @@ finally:
     # Before the XDG layout upgrade, these uniquely named sessions live here.
     for sid in sessions:
         shutil.rmtree(os.path.expanduser('~/.cache/revm/'+sid), ignore_errors=True)
+    subprocess.run([binary, "cache", "prune"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
     root.cleanup()

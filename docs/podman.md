@@ -32,12 +32,12 @@ podman run --rm alpine uname -a
 --podman-api 是宿主机上暴露的 Unix socket 路径。未指定时：
 
 ~~~text
-~/.cache/revm/<session-id>/socks/podman-api.sock
+$XDG_RUNTIME_DIR/revm/<instance>/socks/podman-api.sock
 ~~~
 
 这个 socket 经私有 vsock 通道连接 guest 内 Podman system service，原样传递 Podman 原生 API。客户端不需要访问 guest IP、vsock 或 SSH。传输复用 `mdlayher/vsock`、`libp2p/go-yamux/v5` 和 `inetaf/tcpproxy`；Yamux 提供独立的流控和输入半关闭，支持 `exec -i`、attach、build、日志和文件传输。
 
-Podman 只监听 guest 内 `/run/revm/podman/podman.sock`，不开放 TCP 管理端口。目录权限为 `0700`，socket 为 `0600`。Podman 通道与 guest-control 都只接受来自宿主 CID 2 的连接，拒绝 guest 回环及使用宿主网络的普通容器。宿主端所有控制 socket 位于 `0700` 的 session 目录内，`--podman-api` 只是指向其中 socket 的符号链接。
+Podman 只监听 guest 内 `/run/revm/podman/podman.sock`，不开放 TCP 管理端口。目录权限为 `0700`，socket 为 `0600`。Podman 通道与 guest-control 都只接受来自宿主 CID 2 的连接，拒绝 guest 回环及使用宿主网络的普通容器。宿主端所有控制 socket 位于 `0700` 的实例 runtime 目录内，`--podman-api` 只是指向其中 socket 的符号链接。
 
 普通工作负载不挂载管理 socket。需要管理容器的可信 Supervisor 可显式挂载 guest 的 `/run/revm/podman` 目录；挂载整个目录可在服务重启、socket 重建后继续连接。此权限等同于管理整个 VM 的容器引擎；特权容器或能够访问 guest 根目录的容器不属于隔离边界。
 
@@ -73,10 +73,10 @@ revm podman 还会自动把宿主 home 目录挂载到 guest 中的相同路径�
 
 容器存储位于 guest 的 /var/lib/containers，并由一个 ext4 raw disk 提供。
 
-未指定 --container-disk 时，磁盘放在 session workspace：
+未指定 --container-disk 时，使用独立的 `podman-<session-id>` 持久卷：
 
 ~~~text
-~/.cache/revm/<session-id>/raw-disk/container-storage.ext4
+${XDG_DATA_HOME:-~/.local/share}/revm/volumes/<volume-id>/disk.ext4
 ~~~
 
 使用持久化路径：
@@ -93,7 +93,7 @@ revm podman --id dev \
 --container-disk <path>[,version=<string>]
 ~~~
 
-磁盘不存在时自动创建。已有磁盘缺少版本 xattr 或版本不一致时会重建；重建会删除旧容器镜像和容器数据。需要保留数据时不要改变 version，也不要删除磁盘。
+外部磁盘不存在时自动创建，之后仍由用户持有。已有磁盘缺少版本属性时检查原盘；版本不一致时报错并保留数据。停止或删除 session 不删除默认 volume，同名启动会重新连接原卷。显式删除使用 `revm volume rm NAME`，运行中的卷不可删除。旧布局需 `revm migrate ID`。
 
 ## 端口发布
 
@@ -131,8 +131,8 @@ revm podman --id dev \
 
 | 选项 | 说明 |
 | --- | --- |
-| --cpus | vCPU 数量，默认使用主机 CPU 数量，最大 32。 |
-| --memory | 内存 MB，默认使用主机总内存，最小 512。 |
+| --cpus | vCPU 数量，默认 min(主机 CPU 数量, 4)，最大 32。 |
+| --memory | 内存 MB，默认可用内存四分之一，限制在 512–2048 MB，最小 512。 |
 | --envs KEY=VALUE | 传给 Podman service 和容器运行环境的环境变量，可重复。 |
 | --system-proxy | 将 macOS 系统代理传入 guest。 |
 | --raw-disk | 添加额外 raw/ext4 磁盘，可重复。 |
@@ -154,8 +154,10 @@ revm attach --id dev -- sh -c 'podman ps'
 revm ctl --id dev --list-port
 ~~~
 
-attach 使用 guest-control 执行普通命令，--pty 使用 SSH 兼容入口。ctl 只处理端口映射，不执行 guest 命令。
+attach 使用 guest-control v2 执行普通命令和 PTY。ctl 只处理端口映射，不执行 guest 命令。
 
 ## 停止行为
 
 第一次 SIGINT 或 SIGTERM 请求 libkrun 原生 shutdown；第二次信号或 host service 失败触发最长三秒的 force-stop。容器存储磁盘在正常停止时会同步。
+
+See [resource ownership](resources.md) and [session management](sessions.md). Runtime paths may use the private `/tmp/revm-<uid>` fallback; logs and results are stored under XDG_STATE_HOME.

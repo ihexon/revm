@@ -36,7 +36,7 @@ tcp       127.0.0.1:8080  192.168.127.2:8000
 
 The list can include:
 
-- revm's internal SSH forwarding used by attach;
+- revm's internal SSH compatibility forwarding;
 - ports published by Podman containers with -p;
 - ports created manually with ctl.
 
@@ -88,7 +88,7 @@ Only TCP and IPv4 are accepted today. Ports must be 1 through 65535. A host port
 ctl reads the VM view from the session management API:
 
 ~~~text
-~/.cache/revm/<session-id>/socks/vmctl.sock
+$XDG_RUNTIME_DIR/revm/<instance>/socks/vmctl.sock
 ~~~
 
 The management API returns the gvproxy control endpoint. ctl then calls gvproxy's expose or unexpose forwarder API. No guest command is needed.
@@ -129,3 +129,5 @@ revm ctl --id light --list-port
 | --port-export | Create a TCP/IPv4 mapping; repeatable. |
 | --port-unexport | Remove a TCP/IPv4 mapping; repeatable. |
 | --log-level | Log level. |
+
+Use `revm ctl --id ID --list-port --json` for a machine-readable array. Session records resolve the current instance socket; runtime paths may use the short `/tmp/revm-<uid>` fallback.

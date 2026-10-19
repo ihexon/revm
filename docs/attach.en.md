@@ -1,82 +1,35 @@
 # revm attach
 
-revm attach connects to a running session. It does not build a VM, start a VM, or change boot options.
+[中文](attach.md)
 
-Normal commands use the guest-control vsock endpoint. An interactive PTY uses the SSH compatibility path because guest-control currently provides streaming command execution rather than terminal allocation.
+Execute a command in a running session without starting another VM. The default command is `/bin/sh`.
 
-## Syntax
-
-~~~text
-revm attach --id <session-id> [--pty] [-- <command> [args...]]
-~~~
-
-Run a command:
-
-~~~bash
+```sh
 revm attach --id dev -- sh -c 'uname -a'
-revm attach --id dev -- podman ps
-~~~
+printf 'stream\n' | revm attach --id dev -- cat
+revm attach --id dev --tty=always -- sh
+revm attach --id dev --pty -- printf hello
+```
 
-With no command and no --pty, attach runs /bin/sh:
+Commands and PTYs both use guest-control v2 and preserve argv. Input streams
+immediately; stdout and stderr stay separate without a PTY. Guest exit codes
+propagate, with signals mapped to 128 plus the Linux signal number.
 
-~~~bash
-revm attach --id dev
-~~~
+`--tty=auto` requires revm in the foreground with terminal stdin and stdout.
+`always` and `never` override this; `--pty` aliases `always`. PTY input EOF never
+injects Ctrl-D. Terminal state is restored on exit and suspend; resize is forwarded.
 
-Open an interactive shell:
+Session records resolve the current instance's management socket. A stopped
+session cannot be attached; inspect it with `revm ls` or `revm inspect ID`.
+INT, TERM, HUP and QUIT cancel only this execution and its descendants, preserving
+the VM. `--stop-timeout` defaults to 10s; a second signal accelerates cleanup.
 
-~~~bash
-revm attach --id dev --pty
-~~~
+```sh
+revm wait --ready --timeout 30s dev
+revm logs --guest -f dev
+revm stop dev
+```
 
---pty does not take a guest command after it; it opens an interactive root SSH shell.
-
-## Session lookup
-
-attach uses --id to locate:
-
-~~~text
-~/.cache/revm/<session-id>/socks/vmctl.sock
-~~~
-
-The target session must still be running. A stopped session retains logs and resources but cannot be attached.
-
-Start and attach:
-
-~~~bash
-revm run --id dev -- sh
-revm attach --id dev --pty
-~~~
-
-Container session:
-
-~~~bash
-revm podman --id containers --podman-api /tmp/revm-containers.sock
-revm attach --id containers -- sh -c 'podman ps'
-~~~
-
-## Control-plane relationship
-
-attach only handles guest commands and terminals:
-
-- guest-control carries command stdin, stdout, stderr, and exit status.
-- --pty reads SSH metadata from the management API, then uses a gvisor tunnel or a direct tsi address.
-- attach does not change port mappings; use ctl for that.
-- attach does not stop the VM; revm run or revm podman owns VM shutdown.
-
-## Logs and diagnostics
-
-~~~bash
-revm attach --id dev --log-level debug -- date
-tail -f ~/.cache/revm/dev/logs/revm.log
-~~~
-
-When attach reports a missing session, verify that --id exactly matches the command that started it and check that the management socket exists. Guest command failures are returned with the guest exit error and stderr.
-
-## Options
-
-| Option | Description |
-| --- | --- |
-| --id | Required session name. |
-| --pty | Open an interactive terminal through the SSH compatibility path. |
-| --log-level | trace, debug, info, warn, error, fatal, or panic. |
+Older guests without v2 return a capability error and must be restarted. Use
+`ctl` for ports and [session commands](sessions.md) for lifecycle management.
+Run `revm attach --help` for all options.

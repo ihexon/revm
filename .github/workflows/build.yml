@@ -39,7 +39,10 @@ jobs:
         run: brew install golangci-lint libarchive e2fsprogs bzip2 zlib
 
       - name: Build release archive
-        run: go run scripts/build.go
+        run: go run ./scripts --build revm
+
+      - name: Test
+        run: ./scripts/test.sh
 
       - name: Upload artifact
         uses: 'actions/upload-artifact@v7'
@@ -47,6 +50,7 @@ jobs:
           name: revm-darwin
           path: |
             revm-*.tar.zst
+            revm-*.tar.zst.sha256
           if-no-files-found: error
           overwrite: true
 
@@ -80,7 +84,8 @@ jobs:
             "$LINUX_BUILDER_IMAGE" \
             bash -c '
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          go run scripts/build.go
+          go run ./scripts --build revm
+          ./scripts/test.sh
           '
 
       - name: Upload artifact
@@ -89,6 +94,7 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: |
             revm-*.tar.zst
+            revm-*.tar.zst.sha256
           if-no-files-found: error
           overwrite: true
 
@@ -109,6 +115,7 @@ jobs:
           generate_release_notes: true
           files: |
             revm-*.tar.zst
+            revm-*.tar.zst.sha256
           append_body: true
           draft: false
           prerelease: false

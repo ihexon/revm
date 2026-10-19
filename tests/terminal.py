@@ -59,4 +59,5 @@ finally:
  if child:
   try:os.kill(child,signal.SIGKILL);os.waitpid(child,0)
   except ProcessLookupError:pass
+ subprocess.run([binary, "cache", "prune"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
  root.cleanup()

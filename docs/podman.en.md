@@ -30,7 +30,7 @@ The service stays alive until a stop signal or host-service failure. Stopping re
 --podman-api is the host Unix socket path. When omitted:
 
 ~~~text
-~/.cache/revm/<session-id>/socks/podman-api.sock
+$XDG_RUNTIME_DIR/revm/<instance>/socks/podman-api.sock
 ~~~
 
 This socket forwards the native Podman byte stream over a private vsock channel to the guest service. Clients do not need guest IP, vsock, or SSH details. Transport uses `mdlayher/vsock`, `libp2p/go-yamux/v5`, and `inetaf/tcpproxy`. Yamux supplies stream flow control and half-close for `exec -i`, attach, builds, logs, and file transfers.
@@ -71,10 +71,10 @@ A workload rootfs comes from the Podman image. revm --rootfs cannot replace the 
 
 Container storage is mounted at /var/lib/containers from an ext4 raw disk.
 
-Without --container-disk, the disk is stored in the session workspace:
+Without --container-disk, storage uses the independent persistent `podman-<session-id>` volume:
 
 ~~~text
-~/.cache/revm/<session-id>/raw-disk/container-storage.ext4
+${XDG_DATA_HOME:-~/.local/share}/revm/volumes/<volume-id>/disk.ext4
 ~~~
 
 Use a persistent path:
@@ -91,7 +91,7 @@ Format:
 --container-disk <path>[,version=<string>]
 ~~~
 
-Missing disks are created. An existing disk with no version xattr or a different version is recreated; recreation deletes its old images and containers. Keep the same version and file when data must survive.
+Missing external disks are created and remain user-owned. Existing disks are inspected; mismatched versions return an error without replacing data. Stopping or removing a session preserves its managed volume. A same-name restart reconnects it. Use `volume rm NAME` for explicit deletion; active volumes cannot be deleted. Legacy sessions require `revm migrate ID`.
 
 ## Port publishing
 
@@ -129,8 +129,8 @@ revm podman --id dev \
 
 | Option | Description |
 | --- | --- |
-| --cpus | vCPU count, host CPU count by default, maximum 32. |
-| --memory | Memory in MB, host total by default, minimum 512. |
+| --cpus | vCPU count, min(host CPU count, 4) by default, maximum 32. |
+| --memory | Memory in MB, one quarter of available memory bounded to 512–2048 MB by default, minimum 512. |
 | --envs KEY=VALUE | Environment passed to the Podman service and container runtime; repeatable. |
 | --system-proxy | Pass the macOS system proxy into the guest. |
 | --raw-disk | Add extra raw/ext4 disks; repeatable. |
@@ -152,8 +152,10 @@ revm attach --id dev -- sh -c 'podman ps'
 revm ctl --id dev --list-port
 ~~~
 
-attach uses guest-control for normal commands and SSH for --pty compatibility. ctl only changes port mappings; it does not execute guest commands.
+attach uses guest-control v2 for both ordinary commands and PTYs. ctl only changes port mappings; it does not execute guest commands.
 
 ## Stop behavior
 
 The first SIGINT or SIGTERM requests native libkrun shutdown. A second signal or host-service failure triggers the bounded force-stop path, which waits at most three seconds. The container storage disk is synced during a normal stop.
+
+See [resource ownership](resources.md) and [session management](sessions.md). Runtime paths may use the private `/tmp/revm-<uid>` fallback; logs and results are stored under XDG_STATE_HOME.

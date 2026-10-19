@@ -2,83 +2,27 @@
 
 [English](attach.en.md)
 
-revm attach 连接到一个正在运行的 session。它不构建、不启动新 VM，也不修改启动参数。
+连接正在运行的 session，执行一条命令；不启动新 VM。不指定命令时执行 `/bin/sh`。
 
-普通命令通过 guest-control vsock 执行。交互式 PTY 使用 SSH 兼容入口，因为 guest-control 当前提供的是流式命令执行而不是终端分配。
-
-## 语法
-
-~~~text
-revm attach --id <session-id> [--pty] [-- <command> [args...]]
-~~~
-
-执行命令：
-
-~~~bash
+```sh
 revm attach --id dev -- sh -c 'uname -a'
-revm attach --id dev -- podman ps
-~~~
+printf 'stream\n' | revm attach --id dev -- cat
+revm attach --id dev --tty=always -- sh
+revm attach --id dev --pty -- printf hello
+```
 
-不指定命令且不使用 --pty 时，默认执行 /bin/sh：
+普通命令和 PTY 均使用 guest-control v2，参数原样传递。stdin 按流传输；非 PTY 模式下 stdout、stderr 分开。guest 退出码被直接传递，guest 信号映射为 Linux 的 `128+signal`。
 
-~~~bash
-revm attach --id dev
-~~~
+`--tty=auto` 默认只在 revm 位于前台，且 stdin/stdout 都是终端时分配 PTY。`--tty=always` 和 `never` 覆盖此判断；`--pty` 是 `always` 的兼容别名。PTY 的输入 EOF 不自动发送 Ctrl-D。
 
-打开交互式 shell：
+attach 通过状态记录将 session ID 解析到本次实例的管理 socket。停止的 session 不可 attach；`revm ls` 和 `revm inspect ID` 可查看状态。
 
-~~~bash
-revm attach --id dev --pty
-~~~
+收到 INT、TERM、HUP、QUIT 时，只取消本次 attach 命令及其后代，不关闭整个 VM。`--stop-timeout` 默认 10s，第二次信号加速清理。终端模式在退出和暂停前恢复，resize 会传到 guest。
 
---pty 不接受后续 guest 命令参数；它直接打开 root 用户的交互式 SSH shell。
+```sh
+revm wait --ready --timeout 30s dev
+revm logs --guest -f dev
+revm stop dev
+```
 
-## session 查找
-
-attach 使用 --id 定位：
-
-~~~text
-~/.cache/revm/<session-id>/socks/vmctl.sock
-~~~
-
-目标 session 必须正在运行。停止后的 session 只有日志和资源文件，不可以 attach。
-
-启动与连接示例：
-
-~~~bash
-revm run --id dev -- sh
-revm attach --id dev --pty
-~~~
-
-容器 session：
-
-~~~bash
-revm podman --id containers --podman-api /tmp/revm-containers.sock
-revm attach --id containers -- sh -c 'podman ps'
-~~~
-
-## 控制面关系
-
-attach 只处理 guest 命令和终端：
-
-- guest-control endpoint 负责普通命令的 stdin、stdout、stderr 和退出码。
-- --pty 通过管理 API 读取 SSH metadata，再通过 gvisor tunnel 或 tsi 直连 guest SSH。
-- attach 不负责端口映射；端口映射使用 ctl。
-- attach 不负责关闭 VM；停止由 revm run 或 revm podman 的宿主进程处理。
-
-## 日志和诊断
-
-~~~bash
-revm attach --id dev --log-level debug -- date
-tail -f ~/.cache/revm/dev/logs/revm.log
-~~~
-
-如果 attach 报 session 不存在，先确认 --id 与启动命令完全一致，并检查管理 socket 是否存在。如果 guest 命令失败，attach 会转发 guest 的退出错误和 stderr。
-
-## 选项
-
-| 选项 | 说明 |
-| --- | --- |
-| --id | 必填 session 名称。 |
-| --pty | 通过 SSH 兼容入口打开交互终端。 |
-| --log-level | trace、debug、info、warn、error、fatal 或 panic。 |
+旧 guest 缺少 v2 能力时会明确报错，需要重启 session。端口管理使用 `ctl`，生命周期管理见 [session 命令](sessions.md)。运行 `revm attach --help` 查看全部选项。

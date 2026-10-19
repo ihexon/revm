@@ -41,8 +41,8 @@ Options:
 
 | Option | Description |
 | --- | --- |
-| --cpus | vCPU count. Host CPU count when unset or less than 1; maximum 32. |
-| --memory | Memory in MB. Host total memory when unset; minimum 512. |
+| --cpus | vCPU count. Defaults to min(host CPU count, 4); maximum 32. |
+| --memory | Memory in MB. Defaults to one quarter of available memory, bounded to 512–2048 MB; minimum 512. |
 | --network | gvisor or tsi, default gvisor. |
 | --workdir | Guest command working directory, default /. |
 | --envs KEY=VALUE | Environment for the guest command; repeatable. |
@@ -87,54 +87,27 @@ revm run --id disk \
 Details:
 
 - mnt must be an absolute guest path. When omitted, the disk's default mount target is used.
-- version is stored and checked through user.vm.rawdisk.version; a mismatch recreates the image.
+- version is stored and checked through user.vm.rawdisk.version; a mismatch returns an error and preserves the image.
 - readonly and directio accept true or false.
 - sync accepts none, relaxed, or full.
 - uuid selects the filesystem UUID when a new image is created; an existing image is not rewritten.
 
-## Logs, sockets, and SSH keys
+## Terminals, streams and results
 
-The default session directory is:
+Input streams immediately. Without a PTY, stdout and stderr remain separate.
+Guest exit codes propagate. `--tty=auto` requires foreground terminal stdin and
+terminal stdout; `always` and `never` override this. `--pty` aliases `always`.
+PTY input EOF never injects Ctrl-D.
 
-~~~text
-~/.cache/revm/<session-id>/
-~~~
+Each run has a private rootfs and temporary sockets/keys. Logs and results live
+under `${XDG_STATE_HOME:-~/.local/state}/revm/sessions/<id>/runs/<instance>`.
+Use `revm logs ID`, `revm logs --guest -f ID`, and `revm inspect ID`.
+`--rm` removes records after success or failure, preserving persistent data.
+See [resource ownership](resources.md) and [session commands](sessions.md).
 
-Logs always go to the session directory:
+INT, TERM, HUP and QUIT retain the first cancellation cause. `--stop-timeout`
+defaults to 10s, shared by command cleanup and VM shutdown. A second signal
+accelerates cleanup, followed by at most 3s for forced shutdown. The VMM child
+exits on loss of its owner's control pipe.
 
-~~~text
-~/.cache/revm/<session-id>/logs/revm.log  host lifecycle and control plane
-~/.cache/revm/<session-id>/logs/vm.log    guest-agent and compatibility services
-~~~
-
-~~~bash
-revm run --id build --log-level debug -- sh -c 'make test'
-revm run --id build --manage-api /tmp/revm-build-vmctl.sock -- sh
-revm run --id build --ssh-key /tmp/revm-build-ssh-key -- sh
-~~~
-
---manage-api and --ssh-key create symlinks to files inside the session. The management API is used by attach and ctl. Normal commands use guest-control over vsock; SSH remains mainly for --pty and compatibility.
-
-## Stop behavior
-
-The first SIGINT or SIGTERM requests the native libkrun shutdown. A second signal, launcher loss, or host-service failure enters the bounded force-stop path, which waits at most three seconds. A normal command exit returns the guest command result; failure to stop within the bound returns an error.
-
-## Complete option list
-
-~~~text
---id
---cpus
---memory
---envs
---raw-disk
---mount
---system-proxy
---workdir
---network
---manage-api
---ssh-key
---report-events
---log-level
-~~~
-
-Run revm run --help for the complete help text from the current binary.
+Run `revm run --help` for all options.

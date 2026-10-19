@@ -53,4 +53,5 @@ try:
 finally:
  for p in processes:
   if p.poll() is None:p.kill();p.communicate(timeout=5)
+ subprocess.run([binary, "cache", "prune"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
  root.cleanup()

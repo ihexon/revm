@@ -1,0 +1,92 @@
+.TH REVM 1 "October 2026" "revm" "User Commands"
+.SH NAME
+revm \- run Linux commands in a libkrun microVM
+.SH SYNOPSIS
+.B revm run --id NAME
+[options] -- command [args...]
+.br
+.B revm podman --id NAME
+[options]
+.br
+.B revm attach --id NAME
+[--tty=auto|always|never] -- command [args...]
+.br
+.B revm
+ls | inspect | stop | wait | logs | rm | volume | cache | migrate | completion
+.SH DESCRIPTION
+revm runs the supplied argv in a fresh Alpine system environment. Input and
+output stream without waiting for EOF. Without a PTY, stdout and stderr remain
+separate. Each session name permits one running instance.
+.SH OPTIONS
+.TP
+.B --version
+Print version, source commit and build date.
+.TP
+.B --cpus N, --memory MB
+CPU and memory allocation. Defaults: up to four CPUs, one quarter of available
+memory bounded to 512-2048 MiB. Minimum memory: 512 MiB.
+.TP
+.B --tty=auto|always|never
+Allocate a PTY. Auto requires foreground terminal stdin and terminal stdout.
+--pty is an alias for always. Input EOF does not inject Ctrl-D.
+.TP
+.B --stop-timeout DURATION
+Grace period for cancellation, default 10s. A second signal accelerates cleanup.
+.TP
+.B --rm
+Remove run session records and logs after exit, preserving persistent data.
+.TP
+.B --mount HOST:GUEST[,ro]
+Share a host directory. Writes persist on the host.
+.TP
+.B --raw-disk PATH[,mnt=GUEST][,version=LABEL]
+Attach an external persistent raw/ext4 disk. Existing disks are never replaced
+because a version is missing or mismatched.
+.TP
+.B --container-disk PATH[,version=LABEL]
+Use an external Podman storage disk instead of the managed podman-NAME volume.
+.SH SESSION MANAGEMENT
+.B ls --json
+lists sessions; 
+.B inspect NAME
+prints configuration and last result as JSON.
+.B wait NAME
+returns the selected instance's recorded exit status;
+.B wait --ready --timeout 30s NAME
+waits for guest readiness.
+.B stop NAME
+requests shutdown and waits for resource release.
+.B logs [--guest] [-f] NAME
+reads instance logs.
+.B rm NAME
+removes a stopped session, preserving volumes.
+.SH DATA AND MIGRATION
+Runtime sockets and keys use XDG_RUNTIME_DIR, with a short private /tmp fallback.
+Private rootfs copies use XDG_CACHE_HOME/revm/instances.
+Logs and results use XDG_STATE_HOME/revm/sessions.
+Volumes use XDG_DATA_HOME/revm/volumes.
+Unset cache, state and data roots default to ~/.cache, ~/.local/state and
+~/.local/share. Roots may not overlap.
+.PP
+.B volume ls --json
+lists managed volumes.
+.B volume rm NAME
+explicitly deletes an unused volume.
+.B cache prune
+removes inactive resources with verified ownership, preserving legacy data.
+.B migrate NAME
+copies and verifies a stopped legacy session; its source is retained.
+.SH EXIT STATUS
+0 means success; 2 means invalid invocation; 1 means an operational failure.
+Guest exit codes are preserved, including 126 and 127. Signals return 128 plus
+the Linux signal number. A host cancellation retains its first signal. Unknown
+results never count as success. Diagnostics go to stderr; structured command
+output goes to stdout.
+.SH EXAMPLES
+printf 'hello\en' | revm run --id pipe -- cat
+.br
+revm run --rm --id build --mount "$PWD:/work" --workdir /work -- make test
+.br
+revm completion zsh
+.SH SEE ALSO
+Use revm COMMAND --help for all flags and share/doc/revm for detailed contracts.

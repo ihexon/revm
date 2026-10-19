@@ -110,6 +110,9 @@ func (b *builder) run() error {
 	if err := b.buildBundles(); err != nil {
 		return err
 	}
+	if err := b.packageSupportFiles(); err != nil {
+		return err
+	}
 	return b.packageTargets()
 }
 
@@ -512,6 +515,13 @@ func (b *builder) packageTarget(target string) error {
 	if err := command(nil, "bsdtar", "--zstd", "-cf", tarPath, "-C", b.targetRoot(target), "."); err != nil {
 		return err
 	}
+	sum, err := sha256File(tarPath)
+	if err != nil {
+		return err
+	}
+	if err = os.WriteFile(tarPath+".sha256", []byte(sum+"  "+tarName+"\n"), 0644); err != nil {
+		return err
+	}
 	logrus.Infof("build complete: %s", tarPath)
 	return nil
 }
@@ -519,7 +529,7 @@ func (b *builder) packageTarget(target string) error {
 func (b *builder) writeLinuxLauncher(path, target string) error {
 	realName := target + ".real"
 	command := fmt.Sprintf("exec \"$DIR/../lib/%s\" --library-path \"$DIR/../lib\" \"$DIR/%s\" \"$@\"", b.linuxDynLinkerName(), realName)
-	script := fmt.Sprintf("#!/bin/sh\nDIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\n%s\n", command)
+	script := fmt.Sprintf("#!/bin/sh\nDIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\nREVM_BUNDLE_LAUNCHER=\"$DIR/%s\"\nexport REVM_BUNDLE_LAUNCHER\n%s\n", target, command)
 	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
@@ -858,6 +868,47 @@ func readDir(path string) ([]os.DirEntry, error) {
 func symlink(target, path string) error {
 	if err := os.Symlink(target, path); err != nil {
 		return fmt.Errorf("symlink %s -> %s: %w", path, target, err)
+	}
+	return nil
+}
+
+func (b *builder) packageSupportFiles() error {
+	for _, target := range b.targets {
+		for _, name := range []string{"README.md", "LICENSE"} {
+			if !exists(filepath.Join(b.workspace, name)) {
+				continue
+			}
+			if err := copyWithCP(filepath.Join(b.workspace, name), filepath.Join(b.targetRoot(target), name), nil); err != nil {
+				return err
+			}
+		}
+		doc := filepath.Join(b.targetRoot(target), "share", "doc", "revm")
+		if err := mkdirAll(doc); err != nil {
+			return err
+		}
+		if err := copyWithCP(filepath.Join(b.workspace, "docs")+"/.", doc+"/", nil); err != nil {
+			return err
+		}
+		man := filepath.Join(b.targetRoot(target), "share", "man", "man1")
+		if err := mkdirAll(man); err != nil {
+			return err
+		}
+		if err := copyWithCP(filepath.Join(b.workspace, "docs", "revm.1"), filepath.Join(man, "revm.1"), nil); err != nil {
+			return err
+		}
+		for _, shell := range []string{"bash", "zsh", "fish"} {
+			output, err := exec.Command(filepath.Join(b.binDir(target), target), "completion", shell).Output()
+			if err != nil {
+				return fmt.Errorf("generate %s completion: %w", shell, err)
+			}
+			path := filepath.Join(b.targetRoot(target), "share", "completions", target+"."+shell)
+			if err = mkdirAll(filepath.Dir(path)); err != nil {
+				return err
+			}
+			if err = os.WriteFile(path, output, 0644); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
