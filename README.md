@@ -104,15 +104,20 @@ Manual forwards support TCP/IPv4 and default to `127.0.0.1`. `--manage-api` and 
 
 ```sh
 go run ./scripts --build revm
-# Unit checks after dependencies are prepared by the build:
+# Unit and race tests (prepares pinned native dependencies automatically):
 ./scripts/test.sh
 # Real VM checks on a host with virtualization support:
 python3 tests/smoke.py
 python3 tests/sessions.py
 python3 tests/volumes.py
 python3 tests/terminal.py
+python3 tests/guest.py
 ```
 
+Builds use a private source copy under `out/.build-*`; embedded files in the checkout are never modified. Dependencies are verified and cached by SHA-256 under `$XDG_CACHE_HOME/revm-build/v1` (or the OS cache directory). Different checkouts share immutable cache objects; concurrent builds in the same checkout are rejected. A failed build preserves the previous bundle. `--deps-dir PATH` uses local native archives with the same isolation.
+
 The build downloads dependencies pinned by `deps.lock`, compiles the guest agent, signs the macOS executable, and creates a relocatable bundle and checksum. `go run ./scripts --lint` also runs lint. The dependency workflow builds libkrun, libkrunfw and Alpine from `deps/sources.lock`.
+
+The manual `VM integration tests` workflow uses a dedicated self-hosted runner labeled `revm-vm`, with Go, Python, native build dependencies and access to KVM or Apple Hypervisor. Hosted build CI runs unit tests; the dedicated runner executes the real VM checks above.
 
 See [session commands](docs/sessions.md), [exit status](docs/exit-status.md), [execution and signals](docs/execution-protocol.md), and the [command reference](docs/README.md).

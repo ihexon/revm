@@ -56,6 +56,8 @@ deps/.work 和 deps/dist 是生成目录，已加入 gitignore。
 go run ./scripts --build revm
 ~~~
 
+应用构建只在 `out/.build-*` 副本中写入 rootfs 和 guest-agent，不修改源码中的嵌入文件。下载归档按校验和缓存，解压目录以 SHA-256 命名并在完成后发布；不同 checkout 可以共用缓存，同一 checkout 的构建由锁串行保护（重复启动直接报错）。缓存位于 `$XDG_CACHE_HOME/revm-build/v1`，未设置时使用系统缓存目录。构建失败保留上一次成功的 bundle。`./scripts/test.sh` 自行准备相同的原生依赖，无需先构建，也不依赖全局 `/tmp/.deps`。
+
 它会下载当前平台的依赖资产，嵌入 guest-agent 和静态资源，链接 revm，并在 out/revm 生成 bundle。这个流程不会在本机重新编译 libkrun 或 libkrunfw。
 
 ## 本地验证新依赖

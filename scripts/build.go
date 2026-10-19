@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,10 +13,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
 )
 
 var defaultBuildTargets = []string{"revm"}
@@ -32,6 +35,9 @@ type builder struct {
 	targets []string
 	lint    bool
 
+	sourceDir  string
+	cacheDir   string
+	test       bool
 	workspace  string
 	outDir     string
 	depsDir    string
@@ -41,13 +47,13 @@ type builder struct {
 	staticDir  string
 	agentPath  string
 	pkgCfgPath string
-	homebrew   string
 
 	deps depsLock
 }
 
 func main() {
 	verbose := flag.Bool("v", false, "enable debug logging")
+	runTests := flag.Bool("test", false, "run unit and race tests with the pinned native dependencies")
 	runLint := flag.Bool("lint", false, "run golangci-lint before building")
 	buildTarget := flag.String("build", "all", "target to build: all or revm")
 	localDeps := flag.String("deps-dir", "", "use locally built libkrun and libkrunfw archives from this directory")
@@ -70,6 +76,7 @@ func main() {
 	if err != nil {
 		logrus.Fatal(err)
 	}
+	b.test = *runTests
 	if *localDeps != "" {
 		b.localDeps, err = filepath.Abs(*localDeps)
 		if err != nil {
@@ -77,35 +84,58 @@ func main() {
 		}
 	}
 
-	var buildErr error
 	if err := b.run(); err != nil {
-		buildErr = err
-	}
-	if err := b.restorePlaceholders(); err != nil && buildErr == nil {
-		buildErr = err
-	}
-	if buildErr != nil {
-		logrus.Fatal(buildErr)
+		logrus.Fatal(err)
 	}
 }
 
 func (b *builder) run() error {
+	// One checkout has one output publisher. Other checkouts share only immutable
+	// dependency objects; no build writes into another build's source or aliases.
+	output := filepath.Join(b.sourceDir, "out")
+	if err := mkdirAll(output); err != nil {
+		return err
+	}
+	lock, err := os.OpenFile(filepath.Join(output, ".build.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		return fmt.Errorf("another build is using %s: %w", output, err)
+	}
+	stage, err := os.MkdirTemp(output, ".build-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	b.workspace = stage
+	b.outDir = filepath.Join(stage, "out")
+	b.depsDir = filepath.Join(stage, ".deps")
+	b.staticDir = filepath.Join(stage, "pkg", "static_resources")
+	b.agentPath = filepath.Join(b.staticDir, "guest_agent", "guest-agent")
+	for _, name := range []string{"cmd", "pkg", "include", "scripts", "docs", "tests", "go.mod", "go.sum", "deps.lock", "revm.entitlements", "README.md", "LICENSE", ".golangci.yml"} {
+		src := filepath.Join(b.sourceDir, name)
+		if !exists(src) {
+			continue
+		}
+		if err := command(nil, "cp", "-a", src, filepath.Join(stage, name)); err != nil {
+			return err
+		}
+	}
 	if err := b.prepareWorkspace(); err != nil {
 		return err
+	}
+	if err := b.prepareDeps(); err != nil {
+		return err
+	}
+	if b.test {
+		return b.runTests()
 	}
 	if b.lint {
 		if err := b.runLint(); err != nil {
 			return err
 		}
-	}
-	if err := b.removePlaceholders(); err != nil {
-		return err
-	}
-	if err := b.prepareGuestAssets(); err != nil {
-		return err
-	}
-	if err := b.prepareDeps(); err != nil {
-		return err
 	}
 	if err := b.buildBundles(); err != nil {
 		return err
@@ -113,7 +143,10 @@ func (b *builder) run() error {
 	if err := b.packageSupportFiles(); err != nil {
 		return err
 	}
-	return b.packageTargets()
+	if err := b.packageTargets(); err != nil {
+		return err
+	}
+	return b.publish()
 }
 
 func newBuilder(targets []string, lint bool) (*builder, error) {
@@ -123,30 +156,33 @@ func newBuilder(targets []string, lint bool) (*builder, error) {
 	}
 
 	arch := commandOutput(runtime.GOARCH, "uname", "-m")
-	homebrew := os.Getenv("HOMEBREW_PREFIX")
-	if homebrew == "" {
-		homebrew = "/opt/homebrew"
-	}
 	deps, err := loadDepsLock(filepath.Join(workspace, "deps.lock"))
 	if err != nil {
 		return nil, err
 	}
 
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
+	}
+	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
+		if !filepath.IsAbs(xdg) {
+			return nil, fmt.Errorf("XDG_CACHE_HOME must be absolute")
+		}
+		cache = xdg
+	}
+	cache = filepath.Join(cache, "revm-build", "v1")
 	b := &builder{
-		goos:       runtime.GOOS,
-		goarch:     arch,
-		targets:    append([]string(nil), targets...),
-		lint:       lint,
-		workspace:  workspace,
-		outDir:     filepath.Join(workspace, "out"),
-		depsDir:    "/tmp/.deps",
-		archiveDir: filepath.Join("/tmp/.deps", "archives"),
-		staticDir:  filepath.Join(workspace, "pkg", "static_resources"),
-		homebrew:   homebrew,
+		goos:      runtime.GOOS,
+		goarch:    arch,
+		targets:   append([]string(nil), targets...),
+		lint:      lint,
+		sourceDir: workspace,
+		cacheDir:  cache,
+
+		archiveDir: filepath.Join(cache, "archives"),
 		deps:       deps,
 	}
-	b.agentPath = filepath.Join(b.staticDir, "guest_agent", "guest-agent")
-
 	if b.goos == "darwin" {
 		libarchive := commandOutput("", "brew", "--prefix", "libarchive")
 		e2fsprogs := commandOutput("", "brew", "--prefix", "e2fsprogs")
@@ -192,7 +228,7 @@ func parseBuildTargets(target string) ([]string, error) {
 
 func (b *builder) prepareWorkspace() error {
 	logrus.Infof("targets=%s lint=%t os=%s arch=%s workspace=%s", strings.Join(b.targets, ","), b.lint, b.goos, b.goarch, b.workspace)
-	if err := removeAll(b.outDir); err != nil {
+	if err := mkdirAll(b.depsDir); err != nil {
 		return err
 	}
 	for _, target := range b.targets {
@@ -212,71 +248,41 @@ func (b *builder) prepareWorkspace() error {
 	return nil
 }
 
-func (b *builder) prepareGuestAssets() error {
-	// The built-in Alpine rootfs contains all runtime utilities installed by
-	// apk. Only the guest-agent binary is injected into the VM overlay.
-	return nil
-}
-
 func (b *builder) prepareDeps() error {
 	assetOS, assetArch, err := b.depAssetPlatform()
 	if err != nil {
 		return err
 	}
-	for _, name := range []string{
-		fmt.Sprintf("libkrun-%s-%s.tar.zst", assetOS, assetArch),
-		fmt.Sprintf("libkrunfw-%s-%s.tar.zst", assetOS, assetArch),
-	} {
-		extractDir := filepath.Join(b.depsDir, strings.TrimSuffix(name, ".tar.zst"))
-		if err := b.extractArchive(name, extractDir); err != nil {
+	for _, name := range []string{"libkrun", "libkrunfw"} {
+		archive, err := b.archivePath(fmt.Sprintf("%s-%s-%s.tar.zst", name, assetOS, assetArch))
+		if err != nil {
+			return err
+		}
+		extracted, err := b.extractArchive(archive)
+		if err != nil {
+			return err
+		}
+		if err := symlink(extracted, filepath.Join(b.depsDir, name)); err != nil {
 			return err
 		}
 	}
-
-	for _, name := range []string{"libkrun", "libkrunfw"} {
-		alias := filepath.Join(b.depsDir, name)
-		if !exists(alias) {
-			if err := symlink(fmt.Sprintf("%s-%s-%s", name, assetOS, assetArch), alias); err != nil {
-				return err
-			}
-		}
+	if b.test {
+		return nil
 	}
-
-	if b.goos == "linux" {
-		for _, name := range []string{"libkrun", "libkrunfw"} {
-			lib64 := filepath.Join(b.depsDir, name, "lib64")
-			lib := filepath.Join(b.depsDir, name, "lib")
-			if exists(lib64) && !exists(lib) {
-				if err := symlink("lib64", lib); err != nil {
-					return err
-				}
-			}
-		}
-	}
-
 	linuxArch, err := b.linuxAssetArch()
 	if err != nil {
 		return err
 	}
-	rootfs := fmt.Sprintf("alpine-rootfs-Linux-%s.tar.zst", linuxArch)
-	rootfsCache := filepath.Join(b.depsDir, "rootfs", "rootfs.tar.zst")
-	rootfsDest := filepath.Join(b.staticDir, "rootfs", "rootfs.tar.zst")
-	if err := mkdirAll(filepath.Dir(rootfsCache)); err != nil {
-		return err
-	}
-	rootfsArchive, err := b.archivePath(rootfs)
+	archive, err := b.archivePath(fmt.Sprintf("alpine-rootfs-Linux-%s.tar.zst", linuxArch))
 	if err != nil {
 		return err
 	}
-	if err := copyWithCP(rootfsArchive, rootfsCache, nil); err != nil {
-		return err
-	}
-	return copyWithCP(rootfsCache, rootfsDest, nil)
+	return copyWithCP(archive, filepath.Join(b.staticDir, "rootfs", "rootfs.tar.zst"), nil)
 }
 
 func (b *builder) buildBundles() error {
-	version := commandOutput("unknown", "git", "-C", b.workspace, "describe", "--tags", "--abbrev=0")
-	commit := commandOutput("unknown", "git", "-C", b.workspace, "rev-parse", "--short", "HEAD")
+	version := commandOutput("unknown", "git", "-C", b.sourceDir, "describe", "--tags", "--match", "v[0-9]*", "--abbrev=0")
+	commit := commandOutput("unknown", "git", "-C", b.sourceDir, "rev-parse", "--short", "HEAD")
 	buildDate := time.Now().UTC().Format("20060102T150405Z")
 	ldflags := fmt.Sprintf(
 		"-X linuxvm/pkg/define.Version=%s -X linuxvm/pkg/define.CommitID=%s -X linuxvm/pkg/define.BuildDate=%s",
@@ -293,15 +299,14 @@ func (b *builder) buildBundles() error {
 	for _, target := range b.targets {
 		logrus.Infof("building bundle for %s in %s", target, b.targetRoot(target))
 
-		env := []string{}
-		if b.goos == "darwin" {
-			env = append(env, "PKG_CONFIG_PATH="+b.pkgCfgPath)
-		} else {
-			env = append(env, "CGO_ENABLED=1")
-		}
-		if err := command(env, "go", "build", "-ldflags="+ldflags, "-o", b.executablePath(target), filepath.Join(b.workspace, "cmd", target)); err != nil {
+		env, err := b.nativeEnv()
+		if err != nil {
 			return err
 		}
+		if err := commandIn(b.workspace, env, "go", "build", "-trimpath", "-ldflags="+ldflags, "-o", b.executablePath(target), "./cmd/"+target); err != nil {
+			return err
+		}
+
 		if err := b.prepareRuntimeLibsFor(target); err != nil {
 			return err
 		}
@@ -320,6 +325,10 @@ func (b *builder) buildGuestAgent() error {
 		return err
 	}
 	logrus.Infof("building embedded guest-agent: %s", b.agentPath)
+	// Only the staged placeholder is replaced; the checkout stays untouched.
+	if err := os.Remove(b.agentPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	return commandIn(
 		filepath.Join(b.workspace, "cmd", "guest-agent"),
 		[]string{"CGO_ENABLED=0", "GOOS=linux", "GOARCH=" + guestArch},
@@ -410,7 +419,7 @@ func (b *builder) prepareRuntimeLibsLinux(target string) error {
 		return err
 	}
 
-	deps, err := linuxRuntimeLibs(append([]string{b.executablePath(target)}, linuxSharedLibraries(libDir)...)...)
+	deps, err := linuxRuntimeLibs(libDir, append([]string{b.executablePath(target)}, linuxSharedLibraries(libDir)...)...)
 	if err != nil {
 		return err
 	}
@@ -443,10 +452,12 @@ func linuxSharedLibraries(dir string) []string {
 	return paths
 }
 
-func linuxRuntimeLibs(paths ...string) ([]string, error) {
+func linuxRuntimeLibs(libDir string, paths ...string) ([]string, error) {
 	seen := map[string]bool{}
 	for _, path := range paths {
-		out, err := exec.Command("ldd", path).CombinedOutput()
+		cmd := exec.Command("ldd", path)
+		cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+libDir)
+		out, err := cmd.CombinedOutput()
 		text := string(out)
 		if err != nil {
 			return nil, fmt.Errorf("ldd %s: %w\n%s", path, err, text)
@@ -490,13 +501,96 @@ func lddLibraryPath(line string) string {
 	return ""
 }
 
-func (b *builder) runLint() error {
-	logrus.Info("running golangci-lint")
-	env := []string{}
-	if b.goos == "darwin" {
-		env = append(env, "PKG_CONFIG_PATH="+b.pkgCfgPath)
+func (b *builder) nativeEnv() ([]string, error) {
+	dirs := []string{}
+	for _, name := range []string{"libkrun", "libkrunfw"} {
+		dir, err := b.depLibDir(name)
+		if err != nil {
+			return nil, err
+		}
+		dirs = append(dirs, dir)
 	}
-	return command(env, "golangci-lint", "run", "./...")
+	flags := os.Getenv("CGO_LDFLAGS")
+	for _, dir := range dirs {
+		flags += " " + strconv.Quote("-L"+dir)
+	}
+	env := []string{"CGO_ENABLED=1", "CGO_LDFLAGS=" + flags}
+	libraryPath := strings.Join(dirs, string(os.PathListSeparator))
+	if b.goos == "darwin" {
+		env = append(env, "PKG_CONFIG_PATH="+b.pkgCfgPath, "DYLD_LIBRARY_PATH="+libraryPath)
+	} else {
+		env = append(env, "LD_LIBRARY_PATH="+libraryPath)
+	}
+	return env, nil
+}
+
+func (b *builder) runLint() error {
+	env, err := b.nativeEnv()
+	if err != nil {
+		return err
+	}
+	return commandIn(b.workspace, env, "golangci-lint", "run", "./...")
+}
+
+func (b *builder) runTests() error {
+	env, err := b.nativeEnv()
+	if err != nil {
+		return err
+	}
+	if err := commandIn(b.workspace, env, "go", "test", "-race", "./..."); err != nil {
+		return err
+	}
+	guest := filepath.Join(b.workspace, "cmd", "guest-agent")
+	if b.goos == "linux" {
+		return commandIn(guest, nil, "go", "test", "-race", "./...")
+	}
+	if err := commandIn(guest, nil, "go", "test", "-race", "./pkg/supervisor"); err != nil {
+		return err
+	}
+	// Compile every Linux-only guest package on macOS; VM checks execute the
+	// service tests and workload regressions on a virtualization-capable host.
+	logrus.Info("cross-compiling guest tests for Linux; use tests/guest.py to execute them in a VM")
+	return commandIn(guest, []string{"CGO_ENABLED=0", "GOOS=linux"}, "go", "test", "-exec=true", "./...")
+}
+
+func (b *builder) publish() error {
+	for _, target := range b.targets {
+		dest := filepath.Join(b.sourceDir, "out", target)
+		backup := dest + ".previous"
+		// Recover an interruption between the two renames without losing the last
+		// usable bundle. A failed build never reaches this publication step.
+		if !exists(dest) && exists(backup) {
+			if err := os.Rename(backup, dest); err != nil {
+				return err
+			}
+		}
+		if err := os.RemoveAll(backup); err != nil {
+			return err
+		}
+		hadOutput := exists(dest)
+		if hadOutput {
+			if err := os.Rename(dest, backup); err != nil {
+				return err
+			}
+		}
+		if err := os.Rename(b.targetRoot(target), dest); err != nil {
+			if hadOutput {
+				err = errors.Join(err, os.Rename(backup, dest))
+			}
+			return err
+		}
+		if err := os.RemoveAll(backup); err != nil {
+			return err
+		}
+		archive := fmt.Sprintf("%s-%s-%s.tar.zst", target, b.goos, b.goarch)
+		for _, name := range []string{archive, archive + ".sha256"} {
+			if err := os.Rename(filepath.Join(b.workspace, name), filepath.Join(b.sourceDir, name)); err != nil {
+				return err
+			}
+		}
+		logrus.Infof("published %s", dest)
+	}
+	return nil
 }
 
 func (b *builder) packageTargets() error {
@@ -567,37 +661,6 @@ func (b *builder) libDir(target string) string {
 	return filepath.Join(b.targetRoot(target), "lib")
 }
 
-func (b *builder) placeholderPaths() []string {
-	return []string{
-		filepath.Join(b.staticDir, "rootfs", "rootfs.tar.zst"),
-		b.agentPath,
-	}
-}
-
-func (b *builder) removePlaceholders() error {
-	for _, path := range b.placeholderPaths() {
-		if err := removeExistingFile(path); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (b *builder) restorePlaceholders() error {
-	var restoreErr error
-	for _, path := range b.placeholderPaths() {
-		data := []byte(nil)
-		if path == b.agentPath {
-			data = []byte("placeholder\n")
-		}
-		if err := os.WriteFile(path, data, 0644); err != nil {
-			logrus.Errorf("restore placeholder %s: %v", path, err)
-			restoreErr = err
-		}
-	}
-	return restoreErr
-}
-
 func (b *builder) depAssetPlatform() (string, string, error) {
 	if b.goos == "darwin" {
 		return "Darwin", "arm64", nil
@@ -635,7 +698,7 @@ func (b *builder) depLibDir(name string) (string, error) {
 	for _, dir := range []string{"lib64", "lib"} {
 		path := filepath.Join(b.depsDir, name, dir)
 		if exists(path) {
-			return path, nil
+			return filepath.EvalSymlinks(path)
 		}
 	}
 	return "", fmt.Errorf("missing shared library directory for %s", name)
@@ -651,12 +714,12 @@ func (b *builder) archivePath(name string) (string, error) {
 		logrus.Infof("using local dependency %s (sha256=%s)", path, sum)
 		return path, nil
 	}
-	archivePath := filepath.Join(b.archiveDir, name)
 	expected := strings.TrimSpace(b.deps.Assets[name])
 	if expected == "" {
 		return "", fmt.Errorf("deps lock %s: missing sha256 for asset %s", b.deps.Version, name)
 	}
 
+	archivePath := filepath.Join(b.archiveDir, expected+"-"+name)
 	if exists(archivePath) {
 		actual, err := sha256File(archivePath)
 		if err != nil {
@@ -669,8 +732,15 @@ func (b *builder) archivePath(name string) (string, error) {
 		logrus.Infof("cached archive %s failed checksum validation, downloading again", name)
 	}
 
-	tmpPath := archivePath + ".tmp"
-	_ = os.Remove(tmpPath)
+	tmp, err := os.CreateTemp(b.archiveDir, ".download-")
+	if err != nil {
+		return "", err
+	}
+	tmpPath := tmp.Name()
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	defer os.Remove(tmpPath)
 
 	logrus.Infof("downloading %s", name)
 	if err := downloadFile(strings.TrimRight(b.deps.BaseURL, "/")+"/"+name, tmpPath); err != nil {
@@ -692,18 +762,35 @@ func (b *builder) archivePath(name string) (string, error) {
 	return archivePath, nil
 }
 
-func (b *builder) extractArchive(name, dest string) error {
-	archivePath, err := b.archivePath(name)
+// Publish a fully extracted, content-addressed object. Concurrent builders may
+// prepare the same object, but neither modifies a published directory.
+func (b *builder) extractArchive(archive string) (string, error) {
+	sum, err := sha256File(archive)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if err := removeAll(dest); err != nil {
-		return err
+	base := filepath.Join(b.cacheDir, "extracted")
+	dest := filepath.Join(base, sum)
+	if info, err := os.Stat(dest); err == nil && info.IsDir() {
+		return dest, nil
 	}
-	if err := mkdirAll(dest); err != nil {
-		return err
+	if err := mkdirAll(base); err != nil {
+		return "", err
 	}
-	return command(nil, "bsdtar", "--zstd", "-xf", archivePath, "-C", dest)
+	temp, err := os.MkdirTemp(base, ".extract-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(temp)
+	if err := command(nil, "bsdtar", "--zstd", "-xf", archive, "-C", temp); err != nil {
+		return "", err
+	}
+	if err := os.Rename(temp, dest); err != nil {
+		if info, statErr := os.Stat(dest); statErr != nil || !info.IsDir() {
+			return "", err
+		}
+	}
+	return dest, nil
 }
 
 func command(env []string, args ...string) error {
@@ -802,21 +889,6 @@ func mkdirAll(path string) error {
 		return fmt.Errorf("mkdir %s: %w", path, err)
 	}
 	return nil
-}
-
-func removeAll(path string) error {
-	if err := os.RemoveAll(path); err != nil {
-		return fmt.Errorf("rm -rf %s: %w", path, err)
-	}
-	return nil
-}
-
-func removeExistingFile(path string) error {
-	if err := os.Remove(path); err == nil || os.IsNotExist(err) {
-		return nil
-	} else {
-		return fmt.Errorf("remove existing file %s: %w", path, err)
-	}
 }
 
 func copyWithCP(src, dst string, match func(name string) bool) error {

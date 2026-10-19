@@ -1,0 +1,29 @@
+name: VM integration tests
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  vm:
+    # Trusted, dedicated Apple Silicon or Linux KVM host with native build
+    # dependencies installed. Run manually; never execute untrusted PR code here.
+    runs-on: [self-hosted, revm-vm]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.4'
+      - name: Build and unit tests
+        run: |
+          go run ./scripts --build revm
+          ./scripts/test.sh
+      - name: Real VM regressions
+        run: |
+          python3 tests/smoke.py
+          python3 tests/terminal.py
+          python3 tests/sessions.py
+          python3 tests/volumes.py
+          python3 tests/guest.py

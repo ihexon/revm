@@ -4,6 +4,6 @@ package libkrun
 
 /*
 #cgo CFLAGS: -I ../../include
-#cgo LDFLAGS: -L/tmp/.deps/libkrun/lib64 -lkrun -lkrun_init -Wl,-rpath,$ORIGIN/../lib
+#cgo LDFLAGS: -lkrun -lkrun_init -Wl,-rpath,$ORIGIN/../lib
 */
 import "C"
