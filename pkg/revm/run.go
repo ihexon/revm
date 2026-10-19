@@ -24,8 +24,9 @@ func Run(ctx context.Context, cfg *Config) error {
 			return err
 		}
 		runErr := vm.Run(ctx)
+		recordErr := vm.lease.finish(vm.result, runErr)
 		releaseErr := vm.Release()
-		return errors.Join(runErr, releaseErr)
+		return errors.Join(runErr, recordErr, releaseErr)
 	default:
 		return fmt.Errorf("unsupported run mode %q", cfg.RunMode)
 	}

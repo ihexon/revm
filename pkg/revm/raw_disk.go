@@ -196,16 +196,8 @@ func (v *machineBuilder) prepareRawDisk(ctx context.Context, spec RawDiskSpec) (
 	if exists {
 		logrus.Infof("raw disk already exists: path=%q", spec.Path)
 
-		recreate, err := shouldRecreateRAWDisk(ctx, spec)
-		if err != nil {
+		if err := checkDiskVersion(ctx, spec); err != nil {
 			return define.BlockDeviceSpec{}, err
-		}
-		if recreate {
-			logrus.Infof("recreating raw disk: path=%q", spec.Path)
-			if err := os.Remove(spec.Path); err != nil && !os.IsNotExist(err) {
-				return define.BlockDeviceSpec{}, fmt.Errorf("remove stale raw disk %q: %w", spec.Path, err)
-			}
-			return createRAWDisk(ctx, spec)
 		}
 
 		if spec.UUID != "" {
@@ -250,16 +242,8 @@ func (v *machineBuilder) prepareContainerStorageDisk(ctx context.Context, spec *
 	if exists {
 		logrus.Infof("container disk already exists: path=%q", rawDiskSpec.Path)
 
-		recreate, err := shouldBumpContainerDisk(ctx, rawDiskSpec)
-		if err != nil {
+		if err := checkDiskVersion(ctx, rawDiskSpec); err != nil {
 			return define.BlockDeviceSpec{}, err
-		}
-		if recreate {
-			logrus.Infof("recreating container disk: path=%q", rawDiskSpec.Path)
-			if err := os.Remove(rawDiskSpec.Path); err != nil && !os.IsNotExist(err) {
-				return define.BlockDeviceSpec{}, fmt.Errorf("remove stale container disk %q: %w", rawDiskSpec.Path, err)
-			}
-			return createRAWDisk(ctx, rawDiskSpec)
 		}
 
 		dev, err := inspectRAWDisk(ctx, rawDiskSpec.Path, rawDiskSpec.MountTo)
@@ -345,55 +329,33 @@ func rawDiskExists(rawDiskPath string) (bool, error) {
 	return false, fmt.Errorf("stat raw disk %q: %w", rawDiskPath, err)
 }
 
-func shouldRecreateRAWDisk(ctx context.Context, spec RawDiskSpec) (bool, error) {
+func checkDiskVersion(ctx context.Context, spec RawDiskSpec) error {
 	if spec.Version == "" {
-		logrus.Infof("raw disk version not requested, skipping xattr comparison: path=%q", spec.Path)
-		return false, nil
+		return nil
 	}
-
-	logrus.Infof("checking raw disk version xattr: path=%q key=%q expected=%q", spec.Path, define.XattrDiskVersionKey, spec.Version)
 	stored, ok, err := newRawDiskXattrManager().LookupXattr(ctx, spec.Path, define.XattrDiskVersionKey)
 	if err != nil {
-		return false, fmt.Errorf("read raw disk version xattr from %q: %w", spec.Path, err)
+		return fmt.Errorf("read disk version %q: %w", spec.Path, err)
 	}
-	if !ok {
-		logrus.Infof("raw disk version xattr is missing, keeping existing disk: path=%q", spec.Path)
-		return false, nil
+	if ok && normalizeDiskVersionValue(stored) != normalizeDiskVersionValue(spec.Version) {
+		return fmt.Errorf("disk %q version is %q, requested %q; disk preserved, migrate it explicitly before use", spec.Path, stored, spec.Version)
 	}
-
-	normalizedStored := normalizeDiskVersionValue(stored)
-	normalizedExpected := normalizeDiskVersionValue(spec.Version)
-	if normalizedStored != normalizedExpected {
-		logrus.Infof("raw disk version mismatch: path=%q stored=%q normalized_stored=%q expected=%q", spec.Path, stored, normalizedStored, spec.Version)
-		return true, nil
-	}
-
-	logrus.Infof("raw disk version matches: path=%q stored=%q normalized=%q", spec.Path, stored, normalizedStored)
-	return false, nil
-}
-
-func shouldBumpContainerDisk(ctx context.Context, spec RawDiskSpec) (bool, error) {
-	logrus.Infof("checking container disk version xattr: path=%q key=%q expected=%q", spec.Path, define.XattrDiskVersionKey, spec.Version)
-	stored, ok, err := newRawDiskXattrManager().LookupXattr(ctx, spec.Path, define.XattrDiskVersionKey)
-	if err != nil {
-		return false, fmt.Errorf("read container disk version xattr from %q: %w", spec.Path, err)
-	}
-	if !ok {
-		logrus.Infof("container disk version xattr is missing, bumping disk: path=%q", spec.Path)
-		return true, nil
-	}
-	normalizedStored := normalizeDiskVersionValue(stored)
-	normalizedExpected := normalizeDiskVersionValue(spec.Version)
-	if normalizedStored != normalizedExpected {
-		logrus.Infof("container disk version mismatch: path=%q stored=%q normalized_stored=%q expected=%q", spec.Path, stored, normalizedStored, spec.Version)
-		return true, nil
-	}
-
-	logrus.Infof("container disk version matches: path=%q stored=%q normalized=%q", spec.Path, stored, normalizedStored)
-	return false, nil
+	// Unknown metadata authorizes inspection, never replacement.
+	return nil
 }
 
 func createRAWDisk(ctx context.Context, spec RawDiskSpec) (define.BlockDeviceSpec, error) {
+	target := spec.Path
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		return define.BlockDeviceSpec{}, err
+	}
+	temp, err := os.MkdirTemp(filepath.Dir(target), ".disk-")
+	if err != nil {
+		return define.BlockDeviceSpec{}, err
+	}
+	defer os.RemoveAll(temp)
+	spec.Path = filepath.Join(temp, "disk.ext4")
+
 	diskUUID := spec.UUID
 	if diskUUID == "" {
 		diskUUID = uuid.NewString()
@@ -423,7 +385,10 @@ func createRAWDisk(ctx context.Context, spec RawDiskSpec) (define.BlockDeviceSpe
 		}
 	}
 
-	return inspectRAWDisk(ctx, spec.Path, spec.MountTo)
+	if err := os.Link(spec.Path, target); err != nil {
+		return define.BlockDeviceSpec{}, fmt.Errorf("publish new disk without replacing existing data: %w", err)
+	}
+	return inspectRAWDisk(ctx, target, spec.MountTo)
 }
 
 func inspectRAWDisk(ctx context.Context, rawDiskPath string, mountOverride string) (define.BlockDeviceSpec, error) {

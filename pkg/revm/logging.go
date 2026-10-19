@@ -39,7 +39,11 @@ func setupRunLogging(cfg Config) (*os.File, error) {
 	// once makes log lines interleave with command output and corrupt the
 	// terminal layout. Callers can follow the session log when they need the
 	// lifecycle trace.
-	logrus.SetOutput(logFile)
+	if logFile != nil {
+		logrus.SetOutput(logFile)
+	} else {
+		logrus.SetOutput(io.Discard)
+	}
 	return logFile, nil
 }
 
@@ -62,7 +66,10 @@ func setupLogrus(level string) error {
 }
 
 func setupLogFile(cfg Config) (*os.File, error) {
-	logFilePath := filepath.Join(getSessionDir(cfg.SessionID), "logs", "revm.log")
+	if cfg.paths == nil {
+		return nil, nil
+	}
+	logFilePath := filepath.Join(cfg.paths.logDir, "revm.log")
 
 	if err := os.MkdirAll(filepath.Dir(logFilePath), 0755); err != nil {
 		return nil, fmt.Errorf("create log directory: %w", err)

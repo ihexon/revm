@@ -27,7 +27,7 @@ type ProcessProvider struct {
 	started bool
 }
 
-func NewProcessProvider(ctx context.Context, spec *define.MachineSpec) (*ProcessProvider, error) {
+func NewProcessProvider(ctx context.Context, spec *define.MachineSpec, locks ...*os.File) (*ProcessProvider, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -43,7 +43,7 @@ func NewProcessProvider(ctx context.Context, spec *define.MachineSpec) (*Process
 		return nil, err
 	}
 	cmd := exec.Command(exe, "_vmm")
-	cmd.ExtraFiles = []*os.File{reader, statusWriter}
+	cmd.ExtraFiles = append([]*os.File{reader, statusWriter}, locks...)
 	logFile, err := os.OpenFile(spec.LogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		reader.Close()

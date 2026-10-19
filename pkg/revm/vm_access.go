@@ -91,7 +91,11 @@ func ListPorts(ctx context.Context, cfg *Config) ([]define.PortMapping, error) {
 	if normalizedCfg.RunMode != ModeControl {
 		return nil, fmt.Errorf("port list requires run mode %q, got %q", ModeControl, normalizedCfg.RunMode)
 	}
-	view, err := fetchManagementView(ctx, getSessionDir(normalizedCfg.SessionID))
+	workspace, err := sessionWorkspace(normalizedCfg.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	view, err := fetchManagementView(ctx, workspace)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +109,11 @@ func ListPorts(ctx context.Context, cfg *Config) ([]define.PortMapping, error) {
 }
 
 func updatePortForwards(ctx context.Context, normalizedCfg Config) error {
-	view, err := fetchManagementView(ctx, getSessionDir(normalizedCfg.SessionID))
+	workspace, err := sessionWorkspace(normalizedCfg.SessionID)
+	if err != nil {
+		return err
+	}
+	view, err := fetchManagementView(ctx, workspace)
 	if err != nil {
 		return err
 	}
@@ -136,7 +144,11 @@ func updatePortForwards(ctx context.Context, normalizedCfg Config) error {
 }
 
 func attach(ctx context.Context, cfg Config) error {
-	attachSpec, err := fetchAttachSpec(ctx, getSessionDir(cfg.SessionID))
+	workspace, err := sessionWorkspace(cfg.SessionID)
+	if err != nil {
+		return err
+	}
+	attachSpec, err := fetchAttachSpec(ctx, workspace)
 	if err != nil {
 		return err
 	}

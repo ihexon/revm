@@ -38,6 +38,7 @@ func (m RunMode) IsValid() bool {
 }
 
 type Config struct {
+	paths     *sessionRun
 	RunMode   RunMode `json:"runMode,omitempty"`
 	SessionID string  `json:"sessionID,omitempty"` // session name
 	CPUs      int     `json:"cpus,omitempty"`      // 0 → host CPU count

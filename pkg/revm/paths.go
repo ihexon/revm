@@ -7,6 +7,7 @@ import "path/filepath"
 // machinePathManager handles all workspace-relative path calculations.
 type machinePathManager struct {
 	workspaceDir string
+	rootfsDir    string
 }
 
 func newMachinePathManager(workspaceDir string) *machinePathManager {
@@ -54,14 +55,4 @@ func (p *machinePathManager) GetSSHKeyFilePath() string {
 	return filepath.Clean(filepath.Join(p.workspaceDir, "ssh", "ssh-key"))
 }
 
-func (p *machinePathManager) GetLogsDir() string {
-	return filepath.Join(p.workspaceDir, "logs")
-}
-
-func (p *machinePathManager) GetRootfsDir() string {
-	return filepath.Join(p.workspaceDir, "rootfs")
-}
-
-func (p *machinePathManager) GetBuiltInContainerStorageDiskFile() string {
-	return filepath.Join(p.workspaceDir, "raw-disk", "container-storage.ext4")
-}
+func (p *machinePathManager) GetRootfsDir() string { return p.rootfsDir }

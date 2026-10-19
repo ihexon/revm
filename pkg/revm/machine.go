@@ -14,15 +14,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/gofrs/flock"
 	sysproxy "github.com/ihexon/getSysProxy"
 	"github.com/sirupsen/logrus"
 )
 
 type machineBuilder struct {
 	define.MachineSpec
-	fileLock *flock.Flock
-	pathMgr  *machinePathManager
+	pathMgr *machinePathManager
 }
 
 func newMachineBuilder(mode define.RunMode) *machineBuilder {
@@ -43,17 +41,6 @@ func (v *machineBuilder) setupWorkspace(workspacePath string) error {
 		return err
 	}
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-
-	underTmp := pathWithin("/tmp", workspacePath)
-	underHome := pathWithin(homeDir, workspacePath)
-	if !underTmp && !underHome {
-		return fmt.Errorf("workspace must be under /tmp or home directory (%s), got %q", homeDir, workspacePath)
-	}
-
 	v.WorkspaceDir = workspacePath
 
 	if err = os.MkdirAll(v.WorkspaceDir, 0700); err != nil {
@@ -68,25 +55,6 @@ func (v *machineBuilder) setupWorkspace(workspacePath string) error {
 
 	v.pathMgr = newMachinePathManager(v.WorkspaceDir)
 
-	return v.lock()
-}
-
-func (v *machineBuilder) lock() error {
-	// Lock file lives OUTSIDE the workspace so that the clean helper can
-	// acquire it after the workspace is deleted, preventing it from
-	// removing a workspace that belongs to a new session with the same name.
-	fileLock := flock.New(v.WorkspaceDir + ".lock")
-
-	locked, err := fileLock.TryLock()
-	if err != nil {
-		return fmt.Errorf("get lock failed: %w", err)
-	}
-
-	if !locked {
-		return fmt.Errorf("session %q is locked by another instance", v.WorkspaceDir)
-	}
-
-	v.fileLock = fileLock
 	return nil
 }
 
@@ -316,14 +284,17 @@ func (v *machineBuilder) configureVMCtlAPI() error {
 	return nil
 }
 
-// createSymlink creates a symlink at linkPath pointing to target.
-// It ensures the parent directory of linkPath exists and removes any
-// pre-existing file or symlink at linkPath.
+// createSymlink never replaces an unrelated file or connection endpoint.
 func createSymlink(target, linkPath string) error {
 	if err := os.MkdirAll(filepath.Dir(linkPath), 0755); err != nil {
 		return err
 	}
-	if err := os.Remove(linkPath); err != nil && !os.IsNotExist(err) {
+	if _, err := os.Lstat(linkPath); err == nil {
+		if existing, e := os.Readlink(linkPath); e == nil && existing == target {
+			return nil
+		}
+		return fmt.Errorf("path already exists: %s; remove the stale link explicitly", linkPath)
+	} else if !os.IsNotExist(err) {
 		return err
 	}
 	return os.Symlink(target, linkPath)
@@ -433,14 +404,11 @@ func (p *machineBuildPlan) build(ctx context.Context) error {
 			if err := p.builder.setupWorkspace(p.workspacePath); err != nil {
 				return err
 			}
-			p.cleanups = append(p.cleanups, func() {
-				_ = p.builder.fileLock.Unlock()
-				_ = os.Remove(p.workspacePath + ".lock")
-			})
+			p.builder.pathMgr.rootfsDir = filepath.Join(p.cfg.paths.record.CacheDir, "rootfs")
 			return nil
 		}},
 		{"logging", func() error {
-			p.builder.LogFile = filepath.Join(p.builder.WorkspaceDir, "logs", "vm.log")
+			p.builder.LogFile = filepath.Join(p.cfg.paths.logDir, "vm.log")
 			return nil
 		}},
 		{"ssh", p.builder.configureSSH},
@@ -538,7 +506,7 @@ func (p *machineBuildPlan) configureContainerMode(ctx context.Context) error {
 	}
 
 	logrus.Info("Preparing container storage disk...")
-	if err := p.builder.configureContainerRAWDisk(ctx, p.cfg.ContainerDisk, p.builder.pathMgr.GetBuiltInContainerStorageDiskFile()); err != nil {
+	if err := p.builder.configureContainerRAWDisk(ctx, p.cfg.ContainerDisk, ""); err != nil {
 		return fmt.Errorf("setup container disk: %w", err)
 	}
 
@@ -570,15 +538,3 @@ func (p *machineBuildPlan) cleanup() {
 }
 
 func (v *machineBuilder) detectTTY() { v.TTY = false }
-
-func getSessionDir(name string) string {
-	dir, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join("/tmp", "revm", name)
-	}
-	return filepath.Join(dir, ".cache", "revm", name)
-}
-
-func ignitionSockFile(workspace string) string {
-	return filepath.Clean(filepath.Join(workspace, "socks", "ign.sock"))
-}

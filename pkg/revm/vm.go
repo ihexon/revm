@@ -41,6 +41,7 @@ const defaultForceStopTimeout = 3 * time.Second
 // Release must always be called to release resources.
 type VM struct {
 	cfg            *Config
+	lease          *sessionRun
 	commandContext context.Context
 
 	runtime       vmRuntime
@@ -69,7 +70,7 @@ type vmObservability struct {
 }
 
 // newProvider creates a libkrun Provider for the current platform.
-func newProvider(ctx context.Context, mc *define.MachineSpec) (backend.Backend, error) {
+func newProvider(ctx context.Context, mc *define.MachineSpec, locks ...*os.File) (backend.Backend, error) {
 	switch {
 	case goruntime.GOOS == "darwin" && goruntime.GOARCH == "arm64":
 	case goruntime.GOOS == "linux" && (goruntime.GOARCH == "arm64" || goruntime.GOARCH == "amd64"):
@@ -79,7 +80,7 @@ func newProvider(ctx context.Context, mc *define.MachineSpec) (backend.Backend, 
 	if err := libkrun.CheckHostSupport(); err != nil {
 		return nil, err
 	}
-	p, err := libkrun.NewProcessProvider(ctx, mc)
+	p, err := libkrun.NewProcessProvider(ctx, mc, locks...)
 	if err != nil {
 		return nil, fmt.Errorf("create libkrun libkrun: %w", err)
 	}
@@ -100,6 +101,22 @@ func (vm *VM) Release() error {
 		vm.runtime.backend = nil
 	}
 	vm.runtime.view = nil
+	if vm.cfg != nil {
+		p := newMachinePathManager(vm.workspace.dir)
+		for link, target := range map[string]string{vm.cfg.ManageAPIFile: p.GetVMCtlSocketFile(), vm.cfg.PodmanProxyAPIFile: p.GetPodmanSocketFile(), vm.cfg.SSHKeyFileSymbolPath: p.GetSSHKeyFilePath()} {
+			if link == "" {
+				continue
+			}
+			if actual, err := os.Readlink(link); err == nil && actual == target {
+				retErr = errors.Join(retErr, os.Remove(link))
+			}
+			if link == vm.cfg.SSHKeyFileSymbolPath {
+				if actual, err := os.Readlink(link + ".pub"); err == nil && actual == target+".pub" {
+					retErr = errors.Join(retErr, os.Remove(link+".pub"))
+				}
+			}
+		}
+	}
 
 	if vm.observability.runLog != nil {
 		releaseRunLog(vm.observability.runLog)
@@ -110,6 +127,10 @@ func (vm *VM) Release() error {
 		vm.workspace.release = nil
 	}
 	vm.observability.events.close()
+	if vm.lease != nil {
+		retErr = errors.Join(retErr, vm.lease.close())
+		vm.lease = nil
+	}
 	return retErr
 }
 
@@ -144,8 +165,14 @@ func Build(ctx context.Context, cfg *Config) (retVM *VM, retErr error) {
 	if normalizedCfg.RunMode == ModeAttach || normalizedCfg.RunMode == ModeControl {
 		return nil, fmt.Errorf("%s mode does not build a VM", normalizedCfg.RunMode)
 	}
+	lease, err := beginRun(ctx, &normalizedCfg)
+	if err != nil {
+		return nil, err
+	}
 	logFile, err := setupRunLogging(normalizedCfg)
 	if err != nil {
+		lease.finish(nil, err)
+		lease.close()
 		return nil, fmt.Errorf("setup logging: %w", err)
 	}
 
@@ -153,9 +180,10 @@ func Build(ctx context.Context, cfg *Config) (retVM *VM, retErr error) {
 	logrus.Infof("start virtualMachine, full cmdline: %q", os.Args)
 
 	vm := &VM{
-		cfg: &normalizedCfg,
+		cfg:   &normalizedCfg,
+		lease: lease,
 		workspace: vmWorkspace{
-			dir: getSessionDir(normalizedCfg.SessionID),
+			dir: lease.record.RuntimeDir,
 		},
 		observability: vmObservability{
 			runLog: logFile,
@@ -168,7 +196,7 @@ func Build(ctx context.Context, cfg *Config) (retVM *VM, retErr error) {
 
 	defer func() {
 		if retErr != nil {
-			retErr = errors.Join(retErr, vm.Release())
+			retErr = errors.Join(retErr, lease.finish(nil, retErr), vm.Release())
 		}
 	}()
 
@@ -192,7 +220,7 @@ func (vm *VM) build(ctx context.Context) error {
 		return fmt.Errorf("create symlinks: %w", err)
 	}
 
-	vmp, err := newProvider(ctx, mc)
+	vmp, err := newProvider(ctx, mc, vm.lease.files...)
 	if err != nil {
 		return fmt.Errorf("create vm provider: %w", err)
 	}
@@ -266,6 +294,10 @@ func (vm *VM) createUserSymlinks() error {
 // returns nil; otherwise it returns the first meaningful failure cause.
 func (vm *VM) Run(ctx context.Context) error {
 	vm.commandContext = ctx
+	vm.lease.record.Status = "running"
+	if err := writeJSONAtomic(vm.lease.resultPath, vm.lease.record); err != nil {
+		return err
+	}
 	vm.runtime.done = make(chan struct{})
 	runFinished := make(chan struct{})
 	defer close(runFinished)
