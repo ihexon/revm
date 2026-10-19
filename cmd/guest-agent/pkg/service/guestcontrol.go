@@ -22,7 +22,6 @@ import (
 
 // StartGuestControlServer exposes the guest command runner over a dedicated
 // vsock port. Its context owns every upgraded execution until cleanup finishes.
-var execRegistry execution.Registry
 var guestInstance = uuid.NewString()
 
 func StartGuestControlServer(ctx context.Context, container bool) error {
@@ -117,7 +116,7 @@ func handleGuestControl(ctx context.Context, w http.ResponseWriter, r *http.Requ
 			conn.Close()
 			return
 		}
-		execution.Serve(ctx, conn, guestInstance, &execRegistry, commandEnv...)
+		execution.Serve(ctx, conn, guestInstance, commandEnv...)
 		return
 	}
 	if r.URL.Path == "/v1/shutdown" {

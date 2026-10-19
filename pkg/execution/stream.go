@@ -99,29 +99,9 @@ func Open(ctx context.Context, conn net.Conn, req Request) (*Streams, Message, e
 		s.Session.Close()
 		return nil, started, err
 	}
-	if started.Type != "started" || started.InstanceID != req.InstanceID {
+	if started.Type != "started" || started.InstanceID != req.InstanceID || started.ExecID != req.RequestID {
 		s.Session.Close()
 		return nil, started, fmt.Errorf("start execution: %s", started.Error)
 	}
 	return s, started, nil
-}
-
-// Registry retains request tombstones for the entire instance lifetime. Starts
-// are never retried automatically; a duplicate cannot run a command twice.
-type Registry struct {
-	mu   sync.Mutex
-	seen map[string]bool
-}
-
-func (r *Registry) Claim(id string) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.seen == nil {
-		r.seen = make(map[string]bool)
-	}
-	if id == "" || len(id) > 128 || r.seen[id] || len(r.seen) >= 100000 {
-		return false
-	}
-	r.seen[id] = true
-	return true
 }

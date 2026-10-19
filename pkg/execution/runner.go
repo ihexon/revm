@@ -13,7 +13,7 @@ import (
 )
 
 // Serve owns one execution, including cleanup when its transport disconnects.
-func Serve(ctx context.Context, conn net.Conn, instance string, registry *Registry, defaultEnv ...string) {
+func Serve(ctx context.Context, conn net.Conn, instance string, defaultEnv ...string) {
 	handshake, cancel := context.WithTimeout(ctx, 10*time.Second)
 	s, err := streams(handshake, conn, true)
 	cancel()
@@ -33,8 +33,8 @@ func Serve(ctx context.Context, conn net.Conn, instance string, registry *Regist
 		return
 	}
 	_ = s.Control.SetReadDeadline(time.Time{})
-	if req.Version != 2 || req.InstanceID != instance || len(req.Argv) == 0 || !registry.Claim(req.RequestID) {
-		_ = s.Send(Message{Type: "error", Error: "invalid, duplicate or stale execution request"})
+	if req.Version != 2 || req.InstanceID != instance || len(req.Argv) == 0 || req.RequestID == "" || len(req.RequestID) > 128 {
+		_ = s.Send(Message{Type: "error", Error: "invalid or stale execution request"})
 		return
 	}
 	controls := make(chan Message, 8)

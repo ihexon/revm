@@ -15,7 +15,7 @@ func runLocal(t *testing.T, argv []string, input io.Reader, tty bool) (Result, [
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	a, b := net.Pipe()
-	go Serve(ctx, b, "test-instance", &Registry{})
+	go Serve(ctx, b, "test-instance")
 	var out, diag bytes.Buffer
 	r, err := Execute(ctx, a, Request{Version: 2, InstanceID: "test-instance", RequestID: "request", Argv: argv, TTY: tty}, Options{IO: IO{Stdin: input, Stdout: &out, Stderr: &diag}, StopTimeout: 100 * time.Millisecond})
 	return r, out.Bytes(), diag.Bytes(), err
@@ -33,7 +33,7 @@ func TestStreamingBeforeEOF(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	a, b := net.Pipe()
-	go Serve(ctx, b, "instance", &Registry{})
+	go Serve(ctx, b, "instance")
 	input, writer := io.Pipe()
 	defer input.Close()
 	defer writer.Close()
@@ -118,7 +118,7 @@ func TestSlowOutputDrain(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	a, b := net.Pipe()
-	go Serve(ctx, b, "instance", &Registry{})
+	go Serve(ctx, b, "instance")
 	output, writer := io.Pipe()
 	defer output.Close()
 	defer writer.Close()
@@ -143,7 +143,7 @@ func TestAckIgnoresLateResize(t *testing.T) {
 	defer cancel()
 	a, b := net.Pipe()
 	done := make(chan struct{})
-	go func() { Serve(ctx, b, "instance", &Registry{}); close(done) }()
+	go func() { Serve(ctx, b, "instance"); close(done) }()
 	s, started, err := Open(ctx, a, Request{Version: 2, InstanceID: "instance", RequestID: "ack", Argv: []string{"true"}})
 	if err != nil {
 		t.Fatal(err)

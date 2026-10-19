@@ -10,9 +10,10 @@ queued behind command data. Stdin streams immediately and its write-side EOF
 does not close output. PTY mode combines output on stdout and does not translate
 input EOF into Ctrl-D. Commands are argv arrays, including when using a PTY.
 
-Execution requests carry an instance identifier and a unique request identifier.
-The guest rejects duplicate starts for that instance. The host never retries a
-start after an ambiguous transport failure. Results distinguish process exit
+Execution requests carry an instance identifier and a connection-local request
+identifier. One connection starts one execution; the guest keeps no request
+history or lifetime execution limit. The host never retries a start after an
+ambiguous transport failure. Results distinguish process exit
 from completed cleanup and output delivery; the client acknowledges completion
 after draining both output streams.
 
