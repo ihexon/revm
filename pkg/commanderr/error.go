@@ -43,7 +43,7 @@ func ExitCode(err error) int {
 // Diagnostic keeps joined errors readable without repeating the same cause.
 // Exit codes and typed results are the stable programmatic interface.
 func Diagnostic(err error) string {
-	if err == nil {
+	if err == nil || plainGuestExit(err) {
 		return ""
 	}
 	seen := map[string]bool{}
@@ -56,4 +56,29 @@ func Diagnostic(err error) string {
 		}
 	}
 	return strings.Join(messages, "; ")
+}
+
+// A guest's ordinary exit status is already the CLI status. Do not append host
+// diagnostics to its stderr unless execution or cleanup actually failed.
+func plainGuestExit(err error) bool {
+	if guest, ok := err.(*execution.ExitError); ok {
+		r := guest.Result
+		return (r.Code != nil || r.Signal != "") && r.Kind == "" && r.Message == "" && r.Cleanup != "failed" && r.Output != "truncated"
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		children := joined.Unwrap()
+		if len(children) == 0 {
+			return false
+		}
+		for _, child := range children {
+			if !plainGuestExit(child) {
+				return false
+			}
+		}
+		return true
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return plainGuestExit(wrapped.Unwrap())
+	}
+	return false
 }

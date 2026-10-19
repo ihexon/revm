@@ -52,7 +52,7 @@ revm wait shell                    # returns this instance's recorded exit statu
 revm rm shell                      # stopped sessions only; volumes remain
 ```
 
-One session name has at most one active instance. Each start gets a new instance ID, a private writable rootfs, separate logs and a result record. A crash with no result is reported as `unknown`. Omitting `--id` creates a disposable run: records and logs are removed after success or failure. Specifying `--id` retains them.
+One session name has at most one active instance. Each start gets a new instance ID, a private writable rootfs, separate logs and a result record. A crash with no result is reported as `unknown`. Omitting `--id` creates a disposable run: records and logs are removed only after success; failures, interruptions and crashes retain them until `revm rm`. Specifying `--id` retains them.
 
 The first INT, TERM, HUP or QUIT cancels the command with a shared shutdown budget (`--stop-timeout`, default 10s). A second signal accelerates cleanup. Exec cancellation affects its own command and descendants. The native VMM is a child whose lifetime follows a control pipe from its owner; losing the CLI also terminates the VMM.
 

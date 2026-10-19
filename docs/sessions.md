@@ -31,7 +31,11 @@ streamed to the caller and are not automatically copied into these logs.
 
 `rm` refuses a running session and removes its records, logs and owned stale
 runtime/cache directories. Persistent volumes, external disks and bind mounts
-remain. Runs without `--id` perform the same removal on success or failure. `--id NAME` retains records.
+remain. Runs without `--id` remove records only after successful execution and
+cleanup. Failures, signal interruptions and crashes retain their records under
+an automatically generated name, visible in `revm ls`. Use `inspect`, `logs` and
+`rm` with that name. `cache prune` preserves diagnostic records. `--id NAME`
+always retains records.
 
 `ctl --id dev --list-port --json` returns the current port mapping array.
 

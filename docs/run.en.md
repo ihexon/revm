@@ -8,7 +8,7 @@ revm run creates a session, boots the Alpine rootfs packaged with the release, a
 revm run [--id <session-id>] [options] -- <command> [args...]
 ~~~
 
-Omit `--id` for a disposable run; specify it to retain logs and results. Arguments after -- form the guest command. Use sh -c explicitly when a command needs shell syntax.
+Omit `--id` to discard successful run records; failures retain logs and results. Specify it to retain every run. Arguments after -- form the guest command. Use sh -c explicitly when a command needs shell syntax.
 
 ~~~bash
 revm run --id shell -- sh -c 'uname -a; cat /etc/os-release'
@@ -101,7 +101,7 @@ PTY input EOF never injects Ctrl-D.
 Each run has a private rootfs and temporary sockets. Logs and results live
 under `${XDG_STATE_HOME:-~/.local/state}/revm/sessions/<id>/runs/<instance>`.
 Use `revm logs ID`, `revm logs --guest -f ID`, and `revm inspect ID`.
-Omitting `--id` removes records after success or failure, preserving persistent data.
+Omitting `--id` removes records only after successful execution and cleanup. Failures and interruptions retain logs and results until `revm rm`; persistent data is always preserved.
 See [resource ownership](resources.md) and [session commands](sessions.md).
 
 INT, TERM, HUP and QUIT retain the first cancellation cause. `--stop-timeout`

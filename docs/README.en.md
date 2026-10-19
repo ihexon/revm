@@ -13,7 +13,7 @@ revm runs Linux commands in libkrun VMs. Every command and PTY uses the same str
 - [Exit status](exit-status.md)
 - [Execution and signals](execution-protocol.md)
 
-Omit `--id` for a disposable run or Podman session; use `--id NAME` to retain logs and results. `exec` and `ctl` require a running session name.
+Omit `--id` to discard successful run records; failures retain logs and results. Use `--id NAME` to retain every run. `exec` and `ctl` require a running session name.
 
 Volumes are independent: `volume create NAME` creates storage, `podman --volume NAME` uses it, and `volume rm NAME` deletes it. Sessions do not implicitly create or reconnect volumes. `--container-disk PATH` selects an external disk.
 

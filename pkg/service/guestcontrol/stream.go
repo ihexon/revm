@@ -19,6 +19,7 @@ import (
 func WaitReady(ctx context.Context, target Target) (protocol.ExecReady, error) {
 	client := newClient(target)
 	defer client.Close()
+	var lastErr error
 	for {
 		data, status, err := client.Get("/v2/ready").DoAndRead(ctx)
 		if err == nil {
@@ -35,10 +36,16 @@ func WaitReady(ctx context.Context, target Target) (protocol.ExecReady, error) {
 				}
 				return ready, nil
 			}
+			lastErr = fmt.Errorf("guest readiness returned HTTP %d", status)
+		} else if ctx.Err() == nil {
+			lastErr = err
 		}
 		select {
 		case <-ctx.Done():
-			return protocol.ExecReady{}, context.Cause(ctx)
+			if lastErr != nil {
+				return protocol.ExecReady{}, fmt.Errorf("wait for guest readiness: %w (last probe: %v)", context.Cause(ctx), lastErr)
+			}
+			return protocol.ExecReady{}, fmt.Errorf("wait for guest readiness: %w", context.Cause(ctx))
 		case <-time.After(100 * time.Millisecond):
 		}
 	}

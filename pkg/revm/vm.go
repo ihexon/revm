@@ -87,14 +87,14 @@ func newProvider(ctx context.Context, mc *define.MachineSpec, locks ...*os.File)
 
 // Release frees host-side resources such as the backend, file locks, logs, and event reporters.
 // It must always be called, even if Run has not been called. Release is idempotent.
-func (vm *VM) Release() error {
-	var retErr error
+func (vm *VM) Release(prior ...error) error {
+	retErr := errors.Join(prior...)
 	if vm.runtime.backend != nil {
 		if err := vm.runtime.backend.Close(); err != nil {
 			// Keep ownership when the VMM is still running. Dropping the backend
 			// here would make a later safe retry impossible and could release the
 			// workspace while libkrun still references it.
-			return err
+			return errors.Join(retErr, err)
 		}
 		vm.runtime.backend = nil
 	}
@@ -119,9 +119,6 @@ func (vm *VM) Release() error {
 
 	vm.observability.events.close()
 	if vm.lease != nil {
-		if vm.cfg.Remove {
-			retErr = errors.Join(retErr, os.RemoveAll(vm.lease.roots.sessionDir(vm.cfg.SessionID)))
-		}
 		retErr = vm.lease.close(retErr)
 		vm.lease = nil
 	}
@@ -162,9 +159,8 @@ func buildVM(ctx context.Context, cfg *Config) (retVM *VM, retErr error) {
 	}
 	logFile, err := setupRunLogging(normalizedCfg)
 	if err != nil {
-		lease.finish(nil, err)
-		lease.close()
-		return nil, fmt.Errorf("setup logging: %w", err)
+		err = fmt.Errorf("setup logging: %w", err)
+		return nil, lease.diagnose(errors.Join(err, lease.close(lease.finish(nil, err))))
 	}
 
 	logrus.Infof("revm build info: %s", buildTimeInfo())
@@ -187,7 +183,7 @@ func buildVM(ctx context.Context, cfg *Config) (retVM *VM, retErr error) {
 
 	defer func() {
 		if retErr != nil {
-			retErr = errors.Join(retErr, lease.finish(nil, retErr), vm.Release())
+			retErr = lease.diagnose(errors.Join(retErr, vm.Release(lease.finish(nil, retErr))))
 		}
 	}()
 

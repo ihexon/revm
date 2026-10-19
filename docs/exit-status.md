@@ -5,7 +5,11 @@ and one diagnostic on stderr; runtime failures return 1. Explicit help writes
 to stdout and succeeds. Invalid options never panic or create a session.
 
 Guest exit codes are preserved by run and exec, including 126 (not executable)
-and 127 (not found). Signal termination is recorded by name and mapped to 128
+and 127 (not found). Ordinary guest nonzero exits do not add revm diagnostics
+to stderr. Startup, transport and cleanup errors still report their cause.
+Failed temporary runs retain logs and results; revm failures include commands
+for inspecting them. Startup failures also include a bounded guest log tail
+when available. Signal termination is recorded by name and mapped to 128
 plus the Linux signal number, independently of the host platform. A missing
 guest result is an error, never an inferred success. A nonzero guest result
 takes precedence over a simultaneous cleanup failure; successful execution with

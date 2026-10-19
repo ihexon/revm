@@ -39,8 +39,16 @@ try:
 
  for code in [0,42]:
   cli(['run','--cpus','1','--memory','512','--','sh','-c','exit '+str(code)],code)
-  assert json.loads(cli(['ls','--json']).stdout)==[]
- print('PASS disposable default for successful and failed commands',flush=True)
+  views=json.loads(cli(['ls','--json']).stdout)
+  if code==0:
+   assert views==[]
+  else:
+   assert len(views)==1 and views[0]['lastRun']['exitCode']==code
+   sid=views[0]['id']
+   cli(['logs',sid]);cli(['logs','--guest',sid]);cli(['cache','prune'])
+   assert len(json.loads(cli(['ls','--json']).stdout))==1
+   cli(['rm',sid])
+ print('PASS successful temporary runs removed; failed runs retained',flush=True)
 
  sid='audit-'+uuid.uuid4().hex[:10]
  owner=subprocess.Popen([binary,'run','--id',sid,'--cpus','1','--memory','512','--','sh','-c','echo ready; sleep 100'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);processes.append(owner)
@@ -64,8 +72,9 @@ try:
   assert time.monotonic()<end
   time.sleep(.05)
  cli(['cache','prune'])
- assert json.loads(cli(['ls','--json']).stdout)==[]
- print('PASS pruning crashed disposable session records',flush=True)
+ assert json.loads(cli(['inspect',view['id']]).stdout)['status']=='unknown'
+ cli(['logs','--guest',view['id']]);cli(['rm',view['id']])
+ print('PASS pruning runtime resources preserves crash diagnostics',flush=True)
 finally:
  for p in processes:
   if p.poll() is None:p.kill();p.communicate(timeout=5)

@@ -29,6 +29,9 @@ func inspectSession(r Roots, id string) (SessionView, error) {
 	}
 	info, err := os.Lstat(r.sessionDir(id))
 	if err != nil {
+		if os.IsNotExist(err) {
+			return SessionView{}, fmt.Errorf("session %q not found: %w", id, os.ErrNotExist)
+		}
 		return SessionView{}, err
 	}
 	if !info.IsDir() {
@@ -219,6 +222,7 @@ func waitInstance(ctx context.Context, s Session, ready, stop bool) (*RunRecord,
 	if err != nil {
 		return nil, err
 	}
+	var lastProbe error
 	for {
 		rec, err := loadRun(r, s)
 		if err != nil {
@@ -252,9 +256,13 @@ func waitInstance(ctx context.Context, s Session, ready, stop bool) (*RunRecord,
 			if err == nil {
 				return &rec, nil
 			}
+			lastProbe = err
 		}
 		select {
 		case <-ctx.Done():
+			if lastProbe != nil {
+				return nil, fmt.Errorf("wait for session %q: %w (last readiness probe: %v)", s.ID, context.Cause(ctx), lastProbe)
+			}
 			return nil, context.Cause(ctx)
 		case <-time.After(100 * time.Millisecond):
 		}

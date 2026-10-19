@@ -22,9 +22,10 @@ inspection; that record never selects or recreates storage. Volumes have no
 session association. `volume ls --json` lists them; `volume rm NAME` deletes an
 unused volume. Deleting a session preserves all volumes.
 
-Omit `--id` for a disposable session whose records disappear at exit. Supply it
-to retain logs and results. After a host crash, `cache prune` also removes
-inactive disposable session records; named session records remain until `rm`.
+Omit `--id` to remove session records after successful execution and cleanup.
+Failures, interruptions and crashes retain logs and results until `rm`. Supply
+`--id NAME` to retain records even after success. `cache prune` removes only
+inactive runtime/cache resources, preserving all diagnostic records.
 
 `--raw-disk` and `--container-disk` paths remain user-owned even when revm creates
 them. Existing images are inspected; mismatched version labels return an error.

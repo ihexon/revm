@@ -214,6 +214,9 @@ func loadSession(r Roots, id string) (Session, error) {
 		return s, err
 	}
 	if err := readJSON(filepath.Join(r.sessionDir(id), "session.json"), &s); err != nil {
+		if os.IsNotExist(err) {
+			return s, fmt.Errorf("session %q not found: %w", id, os.ErrNotExist)
+		}
 		return s, fmt.Errorf("session %q: %w", id, err)
 	}
 	if s.Version != 1 || s.ID != id {
@@ -275,7 +278,7 @@ func beginRun(ctx context.Context, cfg *Config) (lease *sessionRun, retErr error
 	}
 	lock, err := acquireLock(r.sessionLock(cfg.SessionID))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("lock session %q (another instance may be running): %w", cfg.SessionID, err)
 	}
 	l := &sessionRun{roots: r, files: []*os.File{lock}}
 	var rollback []string
@@ -456,7 +459,10 @@ func (l *sessionRun) close(prior ...error) error {
 	err := errors.Join(append(prior, removeOwned(l.record.RuntimeDir, l.record.InstanceID), removeOwned(l.record.CacheDir, l.record.InstanceID))...)
 	// Commit cleanup failure before releasing the session lock, so wait cannot
 	// observe a successful record for a CLI which is about to fail cleanup.
-	if err != nil && l.record.FinishedAt != nil && !l.session.Config.Remove {
+	if err == nil && l.session.Config.Remove && l.record.FinishedAt != nil && l.record.ExitCode != nil && *l.record.ExitCode == 0 {
+		err = os.RemoveAll(l.roots.sessionDir(l.session.ID))
+	}
+	if err != nil && l.record.FinishedAt != nil {
 		if l.record.ExitCode == nil || *l.record.ExitCode == 0 {
 			code := 1
 			l.record.ExitCode = &code
@@ -472,6 +478,21 @@ func (l *sessionRun) close(prior ...error) error {
 	}
 	l.files = nil
 	return err
+}
+
+// Only a successful disposable run may discard its diagnostic records. Keep
+// failures discoverable through the same session commands as named runs.
+func (l *sessionRun) diagnose(err error) error {
+	if err == nil || commanderr.Diagnostic(err) == "" {
+		return err
+	}
+	var canceled *execution.Canceled
+	if l.record.Result == nil && !errors.As(err, &canceled) {
+		if tail := guestLogTail(filepath.Join(l.logDir, "vm.log")); tail != "" {
+			err = fmt.Errorf("%w; guest log tail:\n%s", err, tail)
+		}
+	}
+	return fmt.Errorf("%w; details: revm inspect %s; guest log: revm logs --guest %s", err, l.session.ID, l.session.ID)
 }
 
 func sessionWorkspace(id string) (string, error) {

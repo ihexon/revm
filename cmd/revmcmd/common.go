@@ -252,7 +252,7 @@ func writePortMappings(w io.Writer, ports []define.PortMapping) error {
 }
 
 func sessionFlag(required bool) cli.Flag {
-	return &cli.StringFlag{Name: define.FlagSessionID, Usage: "session name; run and podman retain records only when specified", Required: required}
+	return &cli.StringFlag{Name: define.FlagSessionID, Usage: "session name; retain successful runs too (failed runs are always retained)", Required: required}
 }
 
 func logLevelFlag() cli.Flag {

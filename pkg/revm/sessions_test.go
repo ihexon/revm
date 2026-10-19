@@ -218,3 +218,92 @@ func TestCreationFailureRollsBackUnpublishedResources(t *testing.T) {
 	}
 	l.close()
 }
+
+func TestTemporaryRunRetention(t *testing.T) {
+	for _, mode := range []string{"success", "guest", "signal", "startup", "cleanup", "record", "crash"} {
+		t.Run(mode, func(t *testing.T) {
+			r := testRoots(t)
+			cfg := testConfig()
+			cfg.Remove = true
+			l, err := beginRun(context.Background(), &cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.RemoveAll(l.record.CacheDir)
+			if err := os.WriteFile(filepath.Join(l.logDir, "vm.log"), []byte("boot failed\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			result := execution.FromProcess(nil)
+			var runErr, recordErr error
+			switch mode {
+			case "guest":
+				code := 42
+				result.Code = &code
+				runErr = result.Err()
+			case "signal":
+				runErr = &execution.Canceled{Signal: "SIGTERM"}
+			case "startup":
+				runErr = errors.New("VMM failed")
+			}
+			if mode != "crash" {
+				if err := l.finish(&result, runErr); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode == "record" {
+				recordErr = errors.New("cannot save result")
+			}
+			if mode == "cleanup" {
+				owner := l.record
+				owner.InstanceID = "different-owner"
+				if err := writeJSONAtomic(filepath.Join(l.record.CacheDir, "owner.json"), owner); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode == "crash" {
+				for _, f := range l.files {
+					f.Close()
+				}
+				l.files = nil
+			} else {
+				err = l.close(recordErr)
+				if (err != nil) != (mode == "cleanup" || mode == "record") {
+					t.Fatal(err)
+				}
+			}
+			if _, err := PruneCache(); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "success" {
+				if _, err := os.Stat(r.sessionDir(cfg.SessionID)); !os.IsNotExist(err) {
+					t.Fatal("successful temporary session retained", err)
+				}
+				return
+			}
+			view, err := InspectSession(cfg.SessionID)
+			if err != nil || view.Active {
+				t.Fatalf("lost failure records: %+v %v", view, err)
+			}
+			if _, err := os.Stat(filepath.Join(l.logDir, "vm.log")); err != nil {
+				t.Fatal("lost log", err)
+			}
+			if _, err := os.Stat(l.record.RuntimeDir); !os.IsNotExist(err) {
+				t.Fatal("runtime retained", err)
+			}
+			if mode != "cleanup" {
+				if _, err := os.Stat(l.record.CacheDir); !os.IsNotExist(err) {
+					t.Fatal("cache retained", err)
+				}
+			}
+			if mode == "guest" && *view.LastRun.ExitCode != 42 {
+				t.Fatal("lost guest status")
+			}
+			if mode == "signal" && *view.LastRun.ExitCode != 143 {
+				t.Fatal("lost signal status")
+			}
+			if err := RemoveSession(cfg.SessionID); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

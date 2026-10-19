@@ -7,11 +7,33 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 )
 
 const maxLogFileSize = 10 * 1024 * 1024
+
+// Bound automatic diagnostics even when a failing kernel is flooding its log.
+func guestLogTail(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return ""
+	}
+	start := max(int64(0), info.Size()-2048)
+	buf := make([]byte, info.Size()-start)
+	n, _ := f.ReadAt(buf, start)
+	lines := strings.Split(strings.TrimSpace(strings.ToValidUTF8(string(buf[:n]), "?")), "\n")
+	if start > 0 && len(lines) > 1 {
+		lines = lines[1:]
+	}
+	return strings.Join(lines[max(0, len(lines)-8):], "\n")
+}
 
 // StartCommandLogging configures logrus and opens the run log for CLI preflight work.
 func StartCommandLogging(cfg Config) (*os.File, error) {

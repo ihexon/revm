@@ -20,7 +20,9 @@ func main() {
 		return
 	}
 	if err := revmcmd.Execute(context.Background(), os.Args); err != nil {
-		fmt.Fprintln(os.Stderr, "revm:", commanderr.Diagnostic(err))
+		if message := commanderr.Diagnostic(err); message != "" {
+			fmt.Fprintln(os.Stderr, "revm:", message)
+		}
 		os.Exit(commanderr.ExitCode(err))
 	}
 }

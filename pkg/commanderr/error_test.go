@@ -17,3 +17,21 @@ func TestDiagnosticAndStatusPrecedence(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestGuestExitDoesNotPolluteStderr(t *testing.T) {
+	code := 42
+	guest := execution.Result{Code: &code, Cleanup: "complete", Output: "complete"}
+	if got := Diagnostic(errors.Join(guest.Err())); got != "" {
+		t.Fatal(got)
+	}
+	if ExitCode(guest.Err()) != 42 {
+		t.Fatal("lost exit status")
+	}
+	if got := Diagnostic(errors.Join(guest.Err(), errors.New("disk cleanup failed"))); got == "" {
+		t.Fatal("hidden cleanup failure")
+	}
+	guest.Kind, guest.Message = "start", "command not found"
+	if got := Diagnostic(guest.Err()); got != "command not found" {
+		t.Fatal(got)
+	}
+}

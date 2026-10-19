@@ -163,12 +163,6 @@ func PruneCache() ([]string, error) {
 				return removed, err
 			}
 			err = removeOwned(path, owner.InstanceID)
-			if err == nil {
-				session, loadErr := loadSession(r, owner.SessionID)
-				if loadErr == nil && session.Config.Remove && session.InstanceID == owner.InstanceID {
-					err = os.RemoveAll(r.sessionDir(session.ID))
-				}
-			}
 			lock.Close()
 			if err != nil {
 				return removed, err

@@ -40,7 +40,7 @@ func (m RunMode) IsValid() bool {
 }
 
 type Config struct {
-	Remove     bool   `json:"remove,omitempty"`
+	Remove     bool   `json:"remove,omitempty"` // remove records only after successful execution and cleanup
 	VolumeName string `json:"volumeName,omitempty"`
 	paths      *sessionRun
 	RunMode    RunMode `json:"runMode,omitempty"`

@@ -34,7 +34,8 @@ Input EOF does not inject Ctrl-D.
 Grace period for cancellation, default 10s. A second signal accelerates cleanup.
 .TP
 .B --id NAME
-Retain named session records and logs. Without it, run and podman are disposable.
+Retain named session records and logs. Without it, successful runs remove records;
+failures and interruptions retain them until revm rm.
 .TP
 .B --mount HOST:GUEST[,ro]
 Share a host directory. Writes persist on the host.

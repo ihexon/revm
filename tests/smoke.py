@@ -43,7 +43,7 @@ try:
     p, _ = run(['sh', '-c', 'cat; printf stderr >&2; exit 42'], stdin=subprocess.PIPE)
     data = bytes(range(256))*8192
     out, err = p.communicate(data, timeout=30)
-    assert p.returncode == 42 and out == data and err.startswith(b'stderr'), (p.returncode, len(out), err)
+    assert p.returncode == 42 and out == data and err == b'stderr', (p.returncode, len(out), err)
     print('PASS binary streaming and exit 42', flush=True)
 
     p, _ = run(['cat'], stdin=subprocess.PIPE)
