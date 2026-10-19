@@ -31,6 +31,21 @@ func Serve(ctx context.Context, conn net.Conn, instance string, registry *Regist
 		_ = s.Send(Message{Type: "error", Error: "invalid, duplicate or stale execution request"})
 		return
 	}
+	controls := make(chan Message, 8)
+	go func() {
+		defer close(controls)
+		for {
+			var m Message
+			if s.Decoder.Decode(&m) != nil {
+				return
+			}
+			select {
+			case controls <- m:
+			case <-s.Session.CloseChan():
+				return
+			}
+		}
+	}()
 	req.Env = append(append([]string(nil), defaultEnv...), req.Env...)
 	cmd, input, outR, errR, terminal, owned, startErr := startProcess(req)
 	if owned != nil {
@@ -57,7 +72,7 @@ func Serve(ctx context.Context, conn net.Conn, instance string, registry *Regist
 		r := FromProcess(startErr)
 		_ = s.Send(Message{Type: "exit", Result: &r})
 		_ = s.Send(Message{Type: "completed", Result: &r})
-		waitAck(s)
+		waitAck(ctx, s, controls, instance, execID)
 		return
 	}
 	go func() { _, _ = io.Copy(input, s.Stdin); input.Close() }()
@@ -69,21 +84,6 @@ func Serve(ctx context.Context, conn net.Conn, instance string, registry *Regist
 	go func() { copies.Wait(); close(outputDone) }()
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
-	controls := make(chan Message, 8)
-	go func() {
-		defer close(controls)
-		for {
-			var m Message
-			if s.Decoder.Decode(&m) != nil {
-				return
-			}
-			select {
-			case controls <- m:
-			case <-s.Session.CloseChan():
-				return
-			}
-		}
-	}()
 	var timer *time.Timer
 	var deadline <-chan time.Time
 	defer func() {
@@ -104,6 +104,7 @@ func Serve(ctx context.Context, conn net.Conn, instance string, registry *Regist
 		timer = time.NewTimer(max(0, grace))
 		deadline = timer.C
 	}
+	cancelCh := ctx.Done()
 	var waitErr error
 running:
 	for {
@@ -130,7 +131,8 @@ running:
 					owned.Signal(sig)
 				}
 			}
-		case <-ctx.Done():
+		case <-cancelCh:
+			cancelCh = nil
 			cancelExec("SIGTERM", 0)
 		case <-deadline:
 			_ = owned.Kill()
@@ -151,28 +153,60 @@ running:
 	exitResult := result
 	exitResult.Output = "pending"
 	_ = s.Send(Message{Type: "exit", Result: &exitResult})
-	select {
-	case <-outputDone:
-	case <-time.After(3 * time.Second):
-		result.Output = "truncated"
-		result.Kind = "output"
-		result.Message = "output drain timed out"
+	// Normal output follows downstream backpressure, regardless of duration.
+	// Only a cancellation or disconnect abandons the remaining output.
+	if timer != nil {
+		timer.Stop()
+		timer = time.NewTimer(3 * time.Second)
+		deadline = timer.C
+	}
+draining:
+	for {
+		select {
+		case <-outputDone:
+			break draining
+		case <-ctx.Done():
+			result.Output = "truncated"
+			break draining
+		case <-s.Session.CloseChan():
+			return
+		case <-deadline:
+			result.Output = "truncated"
+			break draining
+		case m, ok := <-controls:
+			if !ok {
+				return
+			}
+			if m.InstanceID == instance && m.ExecID == execID && m.Type == "cancel" {
+				result.Output = "truncated"
+				break draining
+			}
+		}
+	}
+	if result.Output == "truncated" {
 		outR.Close()
 		errR.Close()
 		s.Stdout.Close()
 		s.Stderr.Close()
 	}
 	_ = s.Send(Message{Type: "completed", Result: &result})
-	// The receiver acknowledges only after both streams have reached EOF.
-	select {
-	case <-controls:
-	case <-s.Session.CloseChan():
-	case <-time.After(3 * time.Second):
-	}
+	waitAck(ctx, s, controls, instance, execID)
 }
 
-func waitAck(s *Streams) {
-	_ = s.Control.SetReadDeadline(time.Now().Add(3 * time.Second))
-	var m Message
-	_ = s.Decoder.Decode(&m)
+func waitAck(ctx context.Context, s *Streams, controls <-chan Message, instance, execID string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.Session.CloseChan():
+			return
+		case m, ok := <-controls:
+			if !ok {
+				return
+			}
+			if m.InstanceID == instance && m.ExecID == execID && (m.Type == "ack" || m.Type == "cancel") {
+				return
+			}
+		}
+	}
 }

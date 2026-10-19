@@ -48,10 +48,15 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 	inputCtx, stopInput := context.WithCancel(context.Background())
 	defer stopInput()
 	inputDone := make(chan struct{})
+	inputErrors := make(chan error, 1)
 	go func() {
 		defer close(inputDone)
 		if opts.Stdin != nil {
-			_, _ = CopyContext(inputCtx, s.Stdin, opts.Stdin)
+			_, err := CopyContext(inputCtx, s.Stdin, opts.Stdin)
+			var readErr *inputReadError
+			if errors.As(err, &readErr) && !errors.Is(err, context.Canceled) {
+				inputErrors <- fmt.Errorf("read command input: %w", err)
+			}
 		}
 		_ = s.Stdin.CloseWrite()
 	}()
@@ -126,8 +131,49 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 		timer = time.NewTimer(grace + 3*time.Second)
 		deadline = timer.C
 	}
+	outputFailure := func(err error) {
+		failure := fmt.Errorf("write command output: %w", err)
+		if errors.Is(err, syscall.EPIPE) {
+			if opts.Controller != nil {
+				opts.Controller.Request("SIGPIPE")
+				if cause := opts.Controller.Cause(); cause != nil {
+					failure = errors.Join(cause, failure)
+				}
+			} else {
+				now := time.Now()
+				failure = errors.Join(&Canceled{Signal: "SIGPIPE", At: now, Deadline: now.Add(opts.StopTimeout)}, failure)
+			}
+		}
+		cancelExec(failure)
+	}
+	completed, drained := false, false
+	outputCh := outputDone
 	for {
+		if completed && drained {
+			// Copies publish their errors before closing outputDone.
+			for len(copyErrors) > 0 {
+				outputFailure(<-copyErrors)
+			}
+			stopInput()
+			_ = s.Stdin.Close()
+			select {
+			case <-inputDone:
+			case <-time.After(200 * time.Millisecond):
+			}
+			select {
+			case err := <-inputErrors:
+				cancelErr = errors.Join(cancelErr, err)
+			default:
+			}
+			_ = s.Send(Message{Type: "ack", InstanceID: started.InstanceID, ExecID: started.ExecID})
+			return result, cancelErr
+		}
 		select {
+		case <-outputCh:
+			drained = true
+			outputCh = nil
+		case err := <-inputErrors:
+			cancelExec(err)
 		case <-force:
 			force = nil
 			_ = s.Send(Message{Type: "cancel", InstanceID: started.InstanceID, ExecID: started.ExecID, Signal: "SIGKILL", GraceMillis: 0})
@@ -140,19 +186,7 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 			cancelCh = nil
 			cancelExec(context.Cause(ctx))
 		case err := <-copyErrors:
-			failure := fmt.Errorf("write command output: %w", err)
-			if errors.Is(err, syscall.EPIPE) {
-				if opts.Controller != nil {
-					opts.Controller.Request("SIGPIPE")
-					if cause := opts.Controller.Cause(); cause != nil {
-						failure = errors.Join(cause, failure)
-					}
-				} else {
-					now := time.Now()
-					failure = errors.Join(&Canceled{Signal: "SIGPIPE", At: now, Deadline: now.Add(opts.StopTimeout)}, failure)
-				}
-			}
-			cancelExec(failure)
+			outputFailure(err)
 		case <-deadline:
 			return result, errors.Join(cancelErr, errors.New("execution cleanup deadline exceeded"))
 		case err := <-readErrors:
@@ -168,30 +202,8 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 				}
 			}
 			if m.Type == "completed" {
+				completed = true
 				stopInput()
-				select {
-				case <-outputDone:
-				case <-deadline:
-					return result, errors.Join(cancelErr, errors.New("output drain deadline exceeded"))
-				case <-force:
-					return result, errors.Join(cancelErr, errors.New("output drain interrupted"))
-				case <-cancelCh:
-					return result, errors.Join(context.Cause(ctx), errors.New("output drain interrupted"))
-				case <-time.After(3 * time.Second):
-					return result, errors.Join(cancelErr, errors.New("output drain deadline exceeded"))
-				}
-				select {
-				case err := <-copyErrors:
-					cancelErr = errors.Join(cancelErr, err)
-				default:
-				}
-				_ = s.Send(Message{Type: "ack", InstanceID: started.InstanceID, ExecID: started.ExecID})
-				_ = s.Stdin.Close()
-				select {
-				case <-inputDone:
-				case <-time.After(200 * time.Millisecond):
-				}
-				return result, errors.Join(result.Err(), cancelErr)
 			}
 		}
 	}

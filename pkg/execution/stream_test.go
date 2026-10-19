@@ -92,3 +92,83 @@ func TestKnownExitSurvivesDisconnect(t *testing.T) {
 		t.Fatalf("%+v %v", result, err)
 	}
 }
+
+type failedInput struct{ err error }
+
+func (r failedInput) Read([]byte) (int, error) { return 0, r.err }
+
+func TestInputReadFailure(t *testing.T) {
+	failure := errors.New("input device failed")
+	_, _, _, err := runLocal(t, []string{"cat"}, failedInput{failure}, false)
+	if !errors.Is(err, failure) {
+		t.Fatalf("lost stdin error: %v", err)
+	}
+}
+
+func TestCommandMayStopReadingInput(t *testing.T) {
+	r, _, _, err := runLocal(t, []string{"true"}, bytes.NewReader(make([]byte, 2<<20)), false)
+	if err != nil || r.ExitCode() != 0 {
+		t.Fatalf("%+v %v", r, err)
+	}
+}
+
+// Delaying the downstream reader must neither truncate buffered output nor
+// terminate the transport after the command has already exited.
+func TestSlowOutputDrain(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	a, b := net.Pipe()
+	go Serve(ctx, b, "instance", &Registry{})
+	output, writer := io.Pipe()
+	defer output.Close()
+	defer writer.Close()
+	done := make(chan error, 1)
+	go func() {
+		_, err := Execute(ctx, a, Request{Version: 2, InstanceID: "instance", RequestID: "slow", Argv: []string{"head", "-c", "1048576", "/dev/zero"}}, Options{IO: IO{Stdout: writer}})
+		writer.CloseWithError(err)
+		done <- err
+	}()
+	time.Sleep(4 * time.Second)
+	n, err := io.Copy(io.Discard, output)
+	if err != nil || n != 1048576 {
+		t.Fatalf("read %d: %v", n, err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAckIgnoresLateResize(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	a, b := net.Pipe()
+	done := make(chan struct{})
+	go func() { Serve(ctx, b, "instance", &Registry{}); close(done) }()
+	s, started, err := Open(ctx, a, Request{Version: 2, InstanceID: "instance", RequestID: "ack", Argv: []string{"true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Session.Close()
+	for {
+		var m Message
+		if err := s.Decoder.Decode(&m); err != nil {
+			t.Fatal(err)
+		}
+		if m.Type == "completed" {
+			break
+		}
+	}
+	s.Send(Message{Type: "resize", InstanceID: started.InstanceID, ExecID: started.ExecID, Rows: 24, Cols: 80})
+	s.Send(Message{Type: "ack", InstanceID: "stale", ExecID: started.ExecID})
+	select {
+	case <-done:
+		t.Fatal("accepted unrelated control message as ack")
+	case <-time.After(100 * time.Millisecond):
+	}
+	s.Send(Message{Type: "ack", InstanceID: started.InstanceID, ExecID: started.ExecID})
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("ack did not complete execution")
+	}
+}

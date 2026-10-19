@@ -33,8 +33,9 @@ and forwards terminal resize. Stdin EOF never synthesizes terminal input.
 INT, TERM, HUP and QUIT retain the first cancellation cause and deadline.
 `--stop-timeout` defaults to 10s; a second signal accelerates cleanup. Attach
 cancels only its execution. Run shares one grace budget between command cleanup
-and VM shutdown, followed by at most 3s for forced shutdown. Output drain is
-bounded to 3s; incomplete output is an error.
+and VM shutdown, followed by at most 3s for forced shutdown. Normal output drain has no deadline: slow consumers apply backpressure. Only
+cancellation bounds draining to 3s; incomplete output and stdin read failures
+are errors. An early close by a command that no longer needs stdin is allowed.
 
 The native VMM lives in a child process on a separate session. An inherited
 control pipe ties its lifetime to its CLI owner, including during native

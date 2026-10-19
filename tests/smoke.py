@@ -53,6 +53,21 @@ try:
     finish(p)
     print('PASS output before stdin EOF', flush=True)
 
+    p, _ = run(['head', '-c', '1048576', '/dev/zero'])
+    assert select.select([p.stdout], [], [], 20)[0]
+    time.sleep(4)
+    assert len(finish(p)[0]) == 1048576
+    print('PASS slow output consumer without truncation', flush=True)
+
+    fd = os.open(root.name, os.O_RDONLY)
+    try:
+        p, _ = run(['cat'], stdin=fd)
+        out, err = p.communicate(timeout=20)
+        assert p.returncode != 0 and b'read command input' in err, (p.returncode, err)
+    finally:
+        os.close(fd)
+    print('PASS stdin read failure is reported', flush=True)
+
     for argv, code in [(['revm-command-does-not-exist'],127), (['sh','-c','kill -TERM $$'],143), (['sh','-c','kill -34 $$'],162)]:
         p, _ = run(argv); finish(p, code)
     with tempfile.TemporaryDirectory(prefix='revm-exec-format-', dir='/tmp') as fixture:

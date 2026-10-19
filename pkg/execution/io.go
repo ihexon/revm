@@ -17,12 +17,28 @@ func CopyContext(ctx context.Context, dst io.Writer, src io.Reader) (int64, erro
 	if file, ok := src.(*os.File); ok {
 		fd, err := unix.Dup(int(file.Fd()))
 		if err != nil {
-			return 0, err
+			return 0, &inputReadError{err}
 		}
 		defer unix.Close(fd)
 		src = &pollReader{ctx: ctx, fd: fd}
 	}
-	return io.Copy(dst, src)
+	return io.Copy(dst, &checkedReader{src})
+}
+
+// Only source failures are fatal input errors. A command may legitimately stop
+// consuming stdin early; its closed input stream is not a host read failure.
+type inputReadError struct{ error }
+
+func (e *inputReadError) Unwrap() error { return e.error }
+
+type checkedReader struct{ io.Reader }
+
+func (r *checkedReader) Read(b []byte) (int, error) {
+	n, err := r.Reader.Read(b)
+	if err != nil && err != io.EOF {
+		err = &inputReadError{err}
+	}
+	return n, err
 }
 
 type pollReader struct {
