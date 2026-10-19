@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"guestAgent/pkg/service"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/execution"
 	"linuxvm/pkg/protocol"
 	"os"
 	"os/exec"
@@ -86,6 +87,7 @@ func main() {
 		Description:               "setup the guest environment, and run the command specified by the user.",
 		Action:                    run,
 		DisableSliceFlagSeparator: true,
+		ExitErrHandler:            func(context.Context, *cli.Command, error) {},
 	}
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
@@ -96,7 +98,7 @@ func main() {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			logrus.Errorf("cmdline exit unexpected: %v", err)
-			os.Exit(exitErr.ExitCode())
+			os.Exit(execution.FromProcess(exitErr).ExitCode())
 		}
 		if errors.Is(err, exec.ErrNotFound) {
 			logrus.Errorf("cmdline exit unexpected: %v", err)
@@ -167,7 +169,11 @@ func userRootfsMode(ctx context.Context, vmc *protocol.GuestSpec) error {
 	})
 
 	g.Go(func() error {
-		if err := service.DoExecCmdLine(ctx, vmc); err != nil {
+		err := service.DoExecCmdLine(ctx, vmc)
+		if reportErr := service.ReportCommandResult(execution.FromProcess(err)); reportErr != nil {
+			return reportErr
+		}
+		if err != nil {
 			return err
 		}
 		return CmdlineExitNormal

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"linuxvm/pkg/execution"
 	http2 "linuxvm/pkg/http"
 	"linuxvm/pkg/protocol"
 	"net/http"
@@ -16,6 +17,7 @@ type Server struct {
 	srv     *http2.Server
 
 	Listening chan struct{}
+	OnResult  func(execution.Result)
 }
 
 type Machine interface {
@@ -41,16 +43,23 @@ func NewServer(machine Machine) (*Server, error) {
 func (s *Server) Start(ctx context.Context) error {
 	s.srv.Mux.HandleFunc("/healthz", s.handleHealth)
 	s.srv.Mux.HandleFunc("/vmconfig", s.handleVMConfig)
+	s.srv.Mux.HandleFunc("/v1/result", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", 405)
+			return
+		}
+		var result execution.Result
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536)).Decode(&result); err != nil {
+			http.Error(w, "invalid result", 400)
+			return
+		}
+		if s.OnResult != nil {
+			s.OnResult(result)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 
-	errChan := make(chan error, 2)
-	go func() { errChan <- s.srv.Serve(ctx) }()
-
-	select {
-	case err := <-errChan:
-		return fmt.Errorf("ignition server: %w", err)
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return s.srv.Serve(ctx)
 }
 
 func writeJSON(w http.ResponseWriter, code int, value interface{}) {

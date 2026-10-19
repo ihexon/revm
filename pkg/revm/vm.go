@@ -9,6 +9,7 @@ import (
 	runtimemachine "linuxvm/internal/machine"
 	"linuxvm/pkg/backend"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/execution"
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/network"
@@ -47,7 +48,9 @@ type VM struct {
 	workspace     vmWorkspace
 	observability vmObservability
 
-	seq atomic.Uint64
+	seq      atomic.Uint64
+	resultMu sync.Mutex
+	result   *execution.Result
 }
 
 type vmRuntime struct {
@@ -76,7 +79,7 @@ func newProvider(ctx context.Context, mc *define.MachineSpec) (backend.Backend, 
 	if err := libkrun.CheckHostSupport(); err != nil {
 		return nil, err
 	}
-	p, err := libkrun.NewProvider(ctx, mc)
+	p, err := libkrun.NewProcessProvider(ctx, mc)
 	if err != nil {
 		return nil, fmt.Errorf("create libkrun libkrun: %w", err)
 	}
@@ -332,7 +335,16 @@ func (vm *VM) Run(ctx context.Context) error {
 		return err
 	})
 
-	return runError(hostServicesCtx, g.Wait())
+	err := runError(hostServicesCtx, g.Wait())
+	if vm.cfg.RunMode == ModeRootfs {
+		vm.resultMu.Lock()
+		defer vm.resultMu.Unlock()
+		if vm.result == nil {
+			return errors.Join(err, fmt.Errorf("VM stopped without a command result; exit status unknown"))
+		}
+		return errors.Join(vm.result.Err(), err)
+	}
+	return err
 }
 
 func (vm *VM) requestGuestShutdown() {
@@ -448,6 +460,13 @@ func (vm *VM) startIgnitionService(ctx context.Context) error {
 	server, err := ignition.NewServer(vm.runtime.view)
 	if err != nil {
 		return fmt.Errorf("create ignition server: %w", err)
+	}
+	server.OnResult = func(result execution.Result) {
+		vm.resultMu.Lock()
+		defer vm.resultMu.Unlock()
+		if vm.result == nil {
+			vm.result = &result
+		}
 	}
 	return server.Start(ctx)
 }

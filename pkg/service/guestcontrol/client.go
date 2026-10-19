@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/execution"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/protocol"
 	"net/http"
@@ -132,16 +133,21 @@ func GuestExecRequest(ctx context.Context, target Target, request protocol.Guest
 		}
 		dec := json.NewDecoder(bufio.NewReader(resp.Body))
 		var exitCode *int
+		var result *execution.Result
 		for {
 			var frame protocol.GuestControlFrame
 			if err := dec.Decode(&frame); err != nil {
 				if err == io.EOF {
+					if result != nil {
+						sendErr(result.Err())
+						return
+					}
 					if exitCode == nil {
 						sendErr(errors.New("guest control stream ended without exit status"))
 						return
 					}
 					if *exitCode != 0 {
-						sendErr(fmt.Errorf("guest command exited with code %d", *exitCode))
+						sendErr((&execution.Result{Code: exitCode}).Err())
 						return
 					}
 					sendErr(nil)
@@ -162,6 +168,10 @@ func GuestExecRequest(ctx context.Context, target Target, request protocol.Guest
 					return
 				}
 			case protocol.GuestControlExit:
+				if frame.Result != nil {
+					result = frame.Result
+					continue
+				}
 				if frame.ExitCode == nil {
 					sendErr(errors.New("guest control exit frame has no exit code"))
 					return

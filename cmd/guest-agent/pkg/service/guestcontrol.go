@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/execution"
 	"linuxvm/pkg/protocol"
 	"net/http"
 	"os"
@@ -92,7 +93,7 @@ func handleGuestControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := cmd.Start(); err != nil {
-		writeControlFrame(w, nil, protocol.GuestControlFrame{Type: protocol.GuestControlError, Error: err.Error()})
+		writeControlFrame(w, nil, protocol.GuestControlFrame{Type: protocol.GuestControlExit, Result: resultPointer(execution.FromProcess(err))})
 		return
 	}
 
@@ -128,16 +129,8 @@ func handleGuestControl(w http.ResponseWriter, r *http.Request) {
 	go copyOutput(stderr, protocol.GuestControlStderr)
 	waitErr := cmd.Wait()
 	wg.Wait()
-	code := 0
-	if waitErr != nil {
-		if exitErr, ok := waitErr.(*exec.ExitError); ok {
-			code = exitErr.ExitCode()
-		} else {
-			write(protocol.GuestControlFrame{Type: protocol.GuestControlError, Error: waitErr.Error()})
-			code = 1
-		}
-	}
-	write(protocol.GuestControlFrame{Type: protocol.GuestControlExit, ExitCode: &code})
+	result := execution.FromProcess(waitErr)
+	write(protocol.GuestControlFrame{Type: protocol.GuestControlExit, ExitCode: result.Code, Result: &result})
 }
 
 func writeControlFrame(w http.ResponseWriter, flusher http.Flusher, frame protocol.GuestControlFrame) error {
@@ -149,3 +142,5 @@ func writeControlFrame(w http.ResponseWriter, flusher http.Flusher, frame protoc
 	}
 	return nil
 }
+
+func resultPointer(r execution.Result) *execution.Result { return &r }

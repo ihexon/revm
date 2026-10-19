@@ -1,5 +1,7 @@
 package protocol
 
+import "linuxvm/pkg/execution"
+
 // GuestControlRequest is the versioned host-to-guest command request.
 // Commands are sent as argv, never as shell-escaped strings.
 type GuestControlRequest struct {
@@ -14,10 +16,11 @@ type GuestControlRequest struct {
 const GuestControlVersion = 1
 
 type GuestControlFrame struct {
-	Type     string `json:"type"`
-	Data     []byte `json:"data,omitempty"`
-	ExitCode *int   `json:"exitCode,omitempty"`
-	Error    string `json:"error,omitempty"`
+	Type     string            `json:"type"`
+	Data     []byte            `json:"data,omitempty"`
+	ExitCode *int              `json:"exitCode,omitempty"`
+	Result   *execution.Result `json:"result,omitempty"`
+	Error    string            `json:"error,omitempty"`
 }
 
 const (

@@ -2,7 +2,10 @@
 // return errors; only the executable decides whether to terminate the process.
 package commanderr
 
-import "errors"
+import (
+	"errors"
+	"linuxvm/pkg/execution"
+)
 
 type UsageError struct{ Err error }
 
@@ -24,6 +27,10 @@ func ExitCode(err error) int {
 	var usage *UsageError
 	if errors.As(err, &usage) {
 		return 2
+	}
+	var guest *execution.ExitError
+	if errors.As(err, &guest) {
+		return guest.Result.ExitCode()
 	}
 	return 1
 }
