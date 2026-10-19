@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -89,7 +91,7 @@ func SignalName(sig syscall.Signal) string {
 			return name
 		}
 	}
-	return "UNKNOWN"
+	return fmt.Sprintf("SIG%d", sig)
 }
 func Signal(name string) (syscall.Signal, bool) { s, ok := signals[name]; return s, ok }
 
@@ -107,5 +109,8 @@ var signals = map[string]syscall.Signal{
 }
 
 func LinuxSignalNumber(name string) int {
+	if n, err := strconv.Atoi(strings.TrimPrefix(name, "SIG")); err == nil && strings.HasPrefix(name, "SIG") && n >= 1 && n <= 64 {
+		return n
+	}
 	return map[string]int{"SIGHUP": 1, "SIGINT": 2, "SIGQUIT": 3, "SIGILL": 4, "SIGTRAP": 5, "SIGABRT": 6, "SIGBUS": 7, "SIGFPE": 8, "SIGKILL": 9, "SIGUSR1": 10, "SIGSEGV": 11, "SIGUSR2": 12, "SIGPIPE": 13, "SIGALRM": 14, "SIGTERM": 15, "SIGCHLD": 17, "SIGCONT": 18, "SIGSTOP": 19, "SIGTSTP": 20, "SIGTTIN": 21, "SIGTTOU": 22, "SIGURG": 23, "SIGXCPU": 24, "SIGXFSZ": 25, "SIGVTALRM": 26, "SIGPROF": 27, "SIGWINCH": 28, "SIGIO": 29, "SIGSYS": 31}[name]
 }

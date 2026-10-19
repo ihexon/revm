@@ -53,7 +53,7 @@ try:
     finish(p)
     print('PASS output before stdin EOF', flush=True)
 
-    for argv, code in [(['revm-command-does-not-exist'],127), (['sh','-c','kill -TERM $$'],143)]:
+    for argv, code in [(['revm-command-does-not-exist'],127), (['sh','-c','kill -TERM $$'],143), (['sh','-c','kill -34 $$'],162)]:
         p, _ = run(argv); finish(p, code)
     with tempfile.TemporaryDirectory(prefix='revm-exec-format-', dir='/tmp') as fixture:
         script=fixture+'/script'

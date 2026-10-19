@@ -42,3 +42,12 @@ func TestProcessResults(t *testing.T) {
 		t.Fatal("unknown result reported success")
 	}
 }
+
+func TestRealtimeSignalStatus(t *testing.T) {
+	if name := SignalName(syscall.Signal(34)); name != "SIG34" {
+		t.Fatal(name)
+	}
+	if code := (Result{Signal: "SIG34"}).ExitCode(); code != 162 {
+		t.Fatal(code)
+	}
+}
