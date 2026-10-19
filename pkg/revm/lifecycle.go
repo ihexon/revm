@@ -150,7 +150,10 @@ func writeJSONAtomic(path string, value any) error {
 	if err = os.Rename(f.Name(), path); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(path))
+	return syncDir(filepath.Dir(path))
+}
+func syncDir(path string) error {
+	dir, err := os.Open(path)
 	if err != nil {
 		return err
 	}
@@ -276,18 +279,29 @@ func beginRun(ctx context.Context, cfg *Config) (lease *sessionRun, retErr error
 		return nil, err
 	}
 	l := &sessionRun{roots: r, files: []*os.File{lock}}
+	var rollback []string
 	defer func() {
 		if retErr != nil {
+			for i := len(rollback) - 1; i >= 0; i-- {
+				retErr = errors.Join(retErr, os.RemoveAll(rollback[i]))
+			}
 			for _, f := range l.files {
 				f.Close()
 			}
 		}
 	}()
+	if err := privateDir(filepath.Dir(r.sessionDir(cfg.SessionID))); err != nil {
+		return nil, err
+	}
 	s, err := loadSession(r, cfg.SessionID)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	if errors.Is(err, os.ErrNotExist) {
+	newSession := errors.Is(err, os.ErrNotExist)
+	if newSession {
+		if _, statErr := os.Lstat(r.sessionDir(cfg.SessionID)); !os.IsNotExist(statErr) {
+			return nil, fmt.Errorf("session %q is incomplete; remove it with revm rm first", cfg.SessionID)
+		}
 		s = Session{Version: 1, ID: cfg.SessionID}
 		if legacy, e := legacyResources(legacySessionDir(cfg.SessionID)); e == nil && legacy {
 			var receipt migrationReceipt
@@ -345,6 +359,24 @@ func beginRun(ctx context.Context, cfg *Config) (lease *sessionRun, retErr error
 		}
 		l.files = append(l.files, lock)
 	}
+	// Build the first session privately. Publishing the directory is the only
+	// point at which readers can observe it; later runs publish session.json last.
+	sessionDir := r.sessionDir(s.ID)
+	if newSession {
+		if err := privateDir(filepath.Dir(sessionDir)); err != nil {
+			return nil, err
+		}
+		sessionDir = filepath.Join(filepath.Dir(sessionDir), ".create-"+s.ID)
+		// The session lock also owns this staging name. Recover an interrupted
+		// initial publication without introducing a separate staging registry.
+		if err = os.RemoveAll(sessionDir); err != nil {
+			return nil, err
+		}
+		if err = os.Mkdir(sessionDir, 0700); err != nil {
+			return nil, err
+		}
+		rollback = append(rollback, sessionDir)
+	}
 	instance := uuid.NewString()
 	rec := RunRecord{StateRoot: r.State, Version: 1, SessionID: s.ID, InstanceID: instance, RuntimeDir: filepath.Join(r.Runtime, instance[:12]), CacheDir: filepath.Join(r.Cache, "instances", instance), StartedAt: time.Now().UTC(), Status: "starting"}
 	if err = privateDir(r.Runtime); err != nil {
@@ -357,11 +389,14 @@ func beginRun(ctx context.Context, cfg *Config) (lease *sessionRun, retErr error
 		if err = os.Mkdir(dir, 0700); err != nil {
 			return nil, err
 		}
+		rollback = append(rollback, dir)
 		if err = writeJSONAtomic(filepath.Join(dir, "owner.json"), rec); err != nil {
 			return nil, err
 		}
 	}
-	l.logDir = filepath.Join(r.sessionDir(s.ID), "runs", instance, "logs")
+	runDir := filepath.Join(sessionDir, "runs", instance)
+	rollback = append(rollback, runDir)
+	l.logDir = filepath.Join(runDir, "logs")
 	if err = privateDir(l.logDir); err != nil {
 		return nil, err
 	}
@@ -373,8 +408,19 @@ func beginRun(ctx context.Context, cfg *Config) (lease *sessionRun, retErr error
 	if err = writeJSONAtomic(l.resultPath, rec); err != nil {
 		return nil, err
 	}
-	if err = writeJSONAtomic(filepath.Join(r.sessionDir(s.ID), "session.json"), s); err != nil {
+	if err = writeJSONAtomic(filepath.Join(sessionDir, "session.json"), s); err != nil {
 		return nil, err
+	}
+	if newSession {
+		if err = os.Rename(sessionDir, r.sessionDir(s.ID)); err != nil {
+			return nil, err
+		}
+		rollback = append(rollback, r.sessionDir(s.ID))
+		l.logDir = filepath.Join(r.sessionDir(s.ID), "runs", instance, "logs")
+		l.resultPath = filepath.Join(filepath.Dir(l.logDir), "result.json")
+		if err = syncDir(filepath.Dir(sessionDir)); err != nil {
+			return nil, err
+		}
 	}
 	cfg.paths = l
 	return l, nil

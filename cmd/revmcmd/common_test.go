@@ -11,6 +11,7 @@ func TestInvalidInvocations(t *testing.T) {
 	for _, args := range [][]string{
 		{"unknown"}, {"--unknown"}, {"run"},
 		{"run", "--id", "../escape", "--", "true"},
+		{"run", "--id", ".create-session", "--", "true"},
 		{"run", "--id", "test", "--log-level", "bogus", "--", "true"},
 		{"run", "--id", "test", "--memory", "1", "--", "true"},
 		{"run", "--id", "test", "--network", "bogus", "--", "true"},

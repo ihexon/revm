@@ -2,7 +2,6 @@ package revm
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"linuxvm/pkg/execution"
@@ -10,6 +9,7 @@ import (
 	"linuxvm/pkg/service/guestcontrol"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,27 +17,41 @@ import (
 
 type SessionView struct {
 	Session
+	Error   string     `json:"error,omitempty"`
 	Status  string     `json:"status"`
 	Active  bool       `json:"active"`
 	LastRun *RunRecord `json:"lastRun,omitempty"`
 }
 
 func inspectSession(r Roots, id string) (SessionView, error) {
-	s, err := loadSession(r, id)
+	if err := validateSessionID(id); err != nil {
+		return SessionView{}, err
+	}
+	info, err := os.Lstat(r.sessionDir(id))
 	if err != nil {
 		return SessionView{}, err
+	}
+	if !info.IsDir() {
+		return SessionView{}, fmt.Errorf("session is not a directory: %s", id)
 	}
 	active, err := activeLock(r.sessionLock(id))
 	if err != nil {
 		return SessionView{}, err
 	}
+	s, err := loadSession(r, id)
 	view := SessionView{Session: s, Active: active, Status: "stopped"}
+	if err != nil {
+		view.Session = Session{ID: id}
+		view.Status, view.Error = "broken", err.Error()
+		return view, nil
+	}
 	if s.InstanceID == "" {
 		return view, nil
 	}
 	rec, err := loadRun(r, s)
 	if err != nil {
-		return view, err
+		view.Status, view.Error = "broken", err.Error()
+		return view, nil
 	}
 	view.LastRun = &rec
 	view.Status = rec.Status
@@ -68,12 +82,12 @@ func ListSessions() ([]SessionView, error) {
 	}
 	views := []SessionView{}
 	for _, e := range entries {
-		if !e.IsDir() {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		view, err := inspectSession(r, e.Name())
 		if err != nil {
-			return nil, err
+			view = SessionView{Session: Session{ID: e.Name()}, Status: "broken", Error: err.Error()}
 		}
 		views = append(views, view)
 	}
@@ -92,29 +106,51 @@ func RemoveSession(id string) error {
 		return err
 	}
 	defer lock.Close()
-	if _, err := loadSession(r, id); err != nil {
+	// Broken metadata must not prevent removing records. Scan only our known
+	// disposable roots; never follow paths from a damaged result.json.
+	if err := privateDir(filepath.Dir(r.sessionDir(id))); err != nil {
 		return err
 	}
-	runs, err := os.ReadDir(filepath.Join(r.sessionDir(id), "runs"))
-	if err != nil && !os.IsNotExist(err) {
+	info, err := os.Lstat(r.sessionDir(id))
+	if err != nil {
 		return err
 	}
-	for _, entry := range runs {
-		if !entry.IsDir() {
+	if !info.IsDir() {
+		return fmt.Errorf("session is not a directory: %s", id)
+	}
+	if err := privateDir(r.sessionDir(id)); err != nil {
+		return err
+	}
+	for _, base := range []string{r.Runtime, filepath.Join(r.Cache, "instances")} {
+		entries, err := os.ReadDir(base)
+		if os.IsNotExist(err) {
 			continue
 		}
-		if _, err := uuid.Parse(entry.Name()); err != nil {
-			return fmt.Errorf("unrecognized run record %s; retained", entry.Name())
-		}
-		rec, err := loadRun(r, Session{ID: id, InstanceID: entry.Name()})
 		if err != nil {
 			return err
 		}
-		if rec.StateRoot != r.State {
-			return fmt.Errorf("run belongs to another state root; retained")
-		}
-		if err = errors.Join(removeOwned(rec.RuntimeDir, rec.InstanceID), removeOwned(rec.CacheDir, rec.InstanceID)); err != nil {
-			return err
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			dir := filepath.Join(base, entry.Name())
+			var owner RunRecord
+			if readJSON(filepath.Join(dir, "owner.json"), &owner) != nil || owner.Version != 1 || owner.StateRoot != r.State || owner.SessionID != id {
+				continue
+			}
+			if _, err := uuid.Parse(owner.InstanceID); err != nil {
+				continue
+			}
+			expected := filepath.Join(r.Cache, "instances", owner.InstanceID)
+			if base == r.Runtime {
+				expected = filepath.Join(r.Runtime, owner.InstanceID[:12])
+			}
+			if dir != expected || (dir != owner.RuntimeDir && dir != owner.CacheDir) {
+				continue
+			}
+			if err := removeOwned(dir, owner.InstanceID); err != nil {
+				return err
+			}
 		}
 	}
 	return os.RemoveAll(r.sessionDir(id))

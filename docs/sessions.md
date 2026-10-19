@@ -34,3 +34,9 @@ runtime/cache directories. Persistent volumes, external disks and bind mounts
 remain. `run --rm` performs the same removal on command success or failure.
 
 `ctl --id dev --list-port --json` returns the current port mapping array.
+
+New sessions are published only after their initial records are complete.
+Incomplete or unreadable records appear as `broken` with an `error` in JSON;
+they do not block listing other sessions. `rm` can remove these records while
+preserving volumes and external disks. Session names beginning with `.` are
+reserved for internal staging.

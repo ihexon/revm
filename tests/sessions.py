@@ -10,6 +10,11 @@ def cli(args,code=0):
  assert p.returncode==code,(args,p.returncode,p.stdout,p.stderr)
  return p
 try:
+ os.makedirs(root.name+'/state/revm/sessions/broken/runs/incomplete')
+ views=json.loads(cli(['ls','--json']).stdout)
+ assert views[0]['id']=='broken' and views[0]['status']=='broken' and views[0]['error']
+ cli(['rm','broken'])
+ print('PASS incomplete session listing and removal',flush=True)
  sid='audit-'+uuid.uuid4().hex[:10]
  owner=subprocess.Popen([binary,'run','--id',sid,'--cpus','1','--memory','512','--stop-timeout','1s','--','sh','-c','echo ready; sleep 100'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);processes.append(owner)
  assert owner.stdout.readline()==b'ready\n'

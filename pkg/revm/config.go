@@ -172,7 +172,7 @@ func validateSessionID(id string) error {
 	if id == "" {
 		return fmt.Errorf("session name must not be empty, flag --id is required")
 	}
-	if id == "." || id == ".." {
+	if strings.HasPrefix(id, ".") {
 		return fmt.Errorf("session name %q is reserved", id)
 	}
 	if strings.TrimSpace(id) != id {
