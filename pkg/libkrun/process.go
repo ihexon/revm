@@ -120,7 +120,12 @@ func (p *ProcessProvider) Start(context.Context) error {
 	// Guest command status comes from the result protocol. A native process exit
 	// code is not a substitute for that result (including native exit(0)).
 	var exit *exec.ExitError
-	if errors.As(p.err, &exit) && !exit.ProcessState.Exited() && !p.forced {
+	if p.forced && errors.As(p.err, &exit) {
+		if status, ok := exit.Sys().(syscall.WaitStatus); ok && status.Signaled() && status.Signal() == syscall.SIGKILL {
+			return nil
+		}
+	}
+	if p.err != nil {
 		return fmt.Errorf("VMM terminated: %w", p.err)
 	}
 	return nil
@@ -141,16 +146,21 @@ func (p *ProcessProvider) RequestShutdown(ctx context.Context) error {
 
 func (p *ProcessProvider) ForceStop(ctx context.Context) error {
 	p.mu.Lock()
-	p.forced = true
-	p.mu.Unlock()
 	select {
 	case <-p.done:
+		p.mu.Unlock()
 		return nil
 	default:
 	}
-	if err := p.cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+	err := p.cmd.Process.Kill()
+	if err == nil {
+		p.forced = true
+	}
+	p.mu.Unlock()
+	if err != nil && !errors.Is(err, os.ErrProcessDone) {
 		return err
 	}
+
 	select {
 	case <-p.done:
 		return nil
