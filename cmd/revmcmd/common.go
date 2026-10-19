@@ -6,13 +6,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"linuxvm/pkg/commanderr"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/revm"
 	"os"
 	"sort"
 	"text/tabwriter"
 
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 )
 
@@ -74,7 +74,7 @@ type CtlOptions struct {
 }
 
 func NewApp(name string) *cli.Command {
-	return &cli.Command{
+	app := &cli.Command{
 		Name:                      name,
 		Usage:                     "run and control revm Linux microVM sessions",
 		DisableSliceFlagSeparator: true,
@@ -85,6 +85,22 @@ func NewApp(name string) *cli.Command {
 			newCtlCommand(),
 		},
 	}
+	app.Action = func(ctx context.Context, c *cli.Command) error {
+		if c.Args().Len() != 0 {
+			return commanderr.Usage(fmt.Errorf("unknown command %q; use revm --help", c.Args().First()))
+		}
+		return cli.ShowAppHelp(c)
+	}
+	configureErrors(app)
+	return app
+}
+
+func configureErrors(c *cli.Command) {
+	c.ExitErrHandler = func(context.Context, *cli.Command, error) {}
+	c.OnUsageError = func(_ context.Context, _ *cli.Command, err error, _ bool) error { return commanderr.Usage(err) }
+	for _, child := range c.Commands {
+		configureErrors(child)
+	}
 }
 
 func newRunCommand() *cli.Command {
@@ -94,8 +110,8 @@ func newRunCommand() *cli.Command {
 		UsageText:                 "run [flags] <command> [args...]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
-			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to host CPU count if unset or less than 1"},
-			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to host available memory if unset or less than 512"},
+			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to min(host CPU count, 4)"},
+			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to one quarter of available memory, between 512 and 2048 MB"},
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagRawDisk, Usage: "attach a raw disk (format: <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=relaxed|full|none]); auto-created if missing; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagMount, Usage: "share a host directory into the guest via VirtIO-FS (format: /host/path:/guest/path[,ro]); can be specified multiple times"},
@@ -127,8 +143,8 @@ func newPodmanCommand() *cli.Command {
 		UsageText:                 "podman [flags]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
-			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to host CPU count if unset or less than 1"},
-			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to host available memory if unset or less than 512"},
+			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to min(host CPU count, 4)"},
+			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to one quarter of available memory, between 512 and 2048 MB"},
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagRawDisk, Usage: "attach a raw disk (format: <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=relaxed|full|none]); auto-created if missing; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagMount, Usage: "share a host directory into the guest via VirtIO-FS (format: /host/path:/guest/path[,ro]); can be specified multiple times"},
@@ -192,75 +208,36 @@ func newCtlCommand() *cli.Command {
 	}
 }
 
-func runLogged(ctx context.Context, command *cli.Command, buildConfig func() (*revm.Config, error)) (retErr error) {
-	logFile, err := revm.StartCommandLogging(*newPreflightConfig(command))
-	if err != nil {
-		return err
-	}
-
-	preflight := true
-	defer func() {
-		if !preflight {
-			return
-		}
-		if retErr != nil {
-			logrus.Error(retErr)
-		}
-		revm.StopCommandLogging(logFile)
-	}()
-
+func runLogged(ctx context.Context, command *cli.Command, buildConfig func() (*revm.Config, error)) error {
 	cfg, err := buildConfig()
 	if err != nil {
-		return err
+		return commanderr.Usage(err)
 	}
-
-	revm.StopCommandLogging(logFile)
-	preflight = false
-	return revm.Run(ctx, cfg)
+	normalized, err := revm.NormalizeConfig(*cfg)
+	if err != nil {
+		return commanderr.Usage(err)
+	}
+	return revm.Run(ctx, &normalized)
 }
 
-func runCtl(ctx context.Context, command *cli.Command) (retErr error) {
-	logFile, err := revm.StartCommandLogging(*newPreflightConfig(command))
-	if err != nil {
-		return err
-	}
-
-	preflight := true
-	defer func() {
-		if !preflight {
-			return
-		}
-		if retErr != nil {
-			logrus.Error(retErr)
-		}
-		revm.StopCommandLogging(logFile)
-	}()
-
+func runCtl(ctx context.Context, command *cli.Command) error {
 	opts, err := ParseCtlOptions(command)
 	if err != nil {
-		return err
+		return commanderr.Usage(err)
 	}
 	cfg := NewCtlConfig(opts)
-
+	normalized, err := revm.NormalizeConfig(*cfg)
+	if err != nil {
+		return commanderr.Usage(err)
+	}
 	if opts.ListPort {
-		ports, err := revm.ListPorts(ctx, cfg)
+		ports, err := revm.ListPorts(ctx, &normalized)
 		if err != nil {
 			return err
 		}
 		return writePortMappings(command.Writer, ports)
 	}
-
-	revm.StopCommandLogging(logFile)
-	preflight = false
-	return revm.Run(ctx, cfg)
-}
-
-func newPreflightConfig(command *cli.Command) *revm.Config {
-	logging := ParseLoggingOptions(command)
-	cfg := revm.DefaultConfig()
-	cfg.LogLevel = logging.Level
-	cfg.SessionID = command.String(define.FlagSessionID)
-	return cfg
+	return revm.Run(ctx, &normalized)
 }
 
 func ParseLoggingOptions(command *cli.Command) LoggingOptions {

@@ -5,10 +5,12 @@ package revm
 import (
 	"fmt"
 	"linuxvm/pkg/define"
+	"path"
 	"runtime"
 	"strings"
 
 	"github.com/shirou/gopsutil/v4/mem"
+	"github.com/sirupsen/logrus"
 )
 
 // RunMode selects the VM run mode.
@@ -91,7 +93,7 @@ func NormalizeConfig(cfg Config) (Config, error) {
 
 	if cfg.RunMode != ModeAttach && cfg.RunMode != ModeControl {
 		if cfg.CPUs <= 0 {
-			cfg.CPUs = runtime.NumCPU()
+			cfg.CPUs = min(runtime.NumCPU(), 4)
 		}
 
 		if cfg.MemoryMB == 0 {
@@ -99,7 +101,7 @@ func NormalizeConfig(cfg Config) (Config, error) {
 			if err != nil {
 				return Config{}, fmt.Errorf("detect host memory: %w", err)
 			}
-			cfg.MemoryMB = m.Total / 1024 / 1024
+			cfg.MemoryMB = max(512, min(2048, m.Available/1024/1024/4))
 		}
 	}
 
@@ -111,6 +113,18 @@ func NormalizeConfig(cfg Config) (Config, error) {
 }
 
 func validateConfig(cfg Config) error {
+	if _, err := logrus.ParseLevel(cfg.LogLevel); err != nil {
+		return fmt.Errorf("invalid --log-level %q", cfg.LogLevel)
+	}
+	for _, env := range cfg.Env {
+		key, _, ok := strings.Cut(env, "=")
+		if !ok || key == "" || strings.ContainsAny(env, "\x00") {
+			return fmt.Errorf("invalid environment variable %q: expected KEY=VALUE", env)
+		}
+	}
+	if !path.IsAbs(cfg.WorkDir) {
+		return fmt.Errorf("--workdir must be an absolute guest path")
+	}
 	if err := validateSessionID(cfg.SessionID); err != nil {
 		return err
 	}

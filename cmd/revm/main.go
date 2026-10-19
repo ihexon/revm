@@ -4,15 +4,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"linuxvm/cmd/revmcmd"
+	"linuxvm/pkg/commanderr"
 	"os"
-
-	"github.com/sirupsen/logrus"
 )
 
 func main() {
 	if err := revmcmd.NewApp("revm").Run(context.Background(), os.Args); err != nil {
-		logrus.Error(err)
-		os.Exit(1)
+		fmt.Fprintln(os.Stderr, "revm:", err)
+		os.Exit(commanderr.ExitCode(err))
 	}
 }

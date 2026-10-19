@@ -23,7 +23,12 @@ func StopCommandLogging(file *os.File) {
 }
 
 func setupRunLogging(cfg Config) (*os.File, error) {
-	setupLogrus(cfg.LogLevel)
+	if err := validateSessionID(cfg.SessionID); err != nil {
+		return nil, err
+	}
+	if err := setupLogrus(cfg.LogLevel); err != nil {
+		return nil, err
+	}
 	logFile, err := setupLogFile(cfg)
 	if err != nil {
 		return nil, err
@@ -37,14 +42,14 @@ func setupRunLogging(cfg Config) (*os.File, error) {
 	return logFile, nil
 }
 
-func setupLogrus(level string) {
+func setupLogrus(level string) error {
 	if level == "" {
 		level = logrus.InfoLevel.String()
 	}
 
 	l, err := logrus.ParseLevel(level)
 	if err != nil {
-		panic(fmt.Errorf("parse log level %q: %w", level, err))
+		return fmt.Errorf("invalid --log-level %q: %w", level, err)
 	}
 
 	logrus.SetLevel(l)
@@ -52,6 +57,7 @@ func setupLogrus(level string) {
 		FullTimestamp:   true,
 		TimestampFormat: "2006-01-02 15:04:05.000",
 	})
+	return nil
 }
 
 func setupLogFile(cfg Config) (*os.File, error) {
