@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -21,7 +22,12 @@ type Options struct {
 	OnStarted   func(*Streams, Message) error
 }
 
-func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (Result, error) {
+func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (result Result, retErr error) {
+	defer func() {
+		if result.Code != nil || result.Signal != "" {
+			retErr = errors.Join(result.Err(), retErr)
+		}
+	}()
 	s, started, err := Open(ctx, conn, req)
 	if err != nil {
 		return Result{}, err
@@ -90,7 +96,6 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (Res
 			}
 		}
 	}()
-	var result Result
 	var cancelErr error
 	var force <-chan struct{}
 	if opts.Controller != nil {
@@ -135,7 +140,19 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (Res
 			cancelCh = nil
 			cancelExec(context.Cause(ctx))
 		case err := <-copyErrors:
-			cancelExec(fmt.Errorf("write command output: %w", err))
+			failure := fmt.Errorf("write command output: %w", err)
+			if errors.Is(err, syscall.EPIPE) {
+				if opts.Controller != nil {
+					opts.Controller.Request("SIGPIPE")
+					if cause := opts.Controller.Cause(); cause != nil {
+						failure = errors.Join(cause, failure)
+					}
+				} else {
+					now := time.Now()
+					failure = errors.Join(&Canceled{Signal: "SIGPIPE", At: now, Deadline: now.Add(opts.StopTimeout)}, failure)
+				}
+			}
+			cancelExec(failure)
 		case <-deadline:
 			return result, errors.Join(cancelErr, errors.New("execution cleanup deadline exceeded"))
 		case err := <-readErrors:

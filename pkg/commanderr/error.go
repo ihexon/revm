@@ -5,6 +5,7 @@ package commanderr
 import (
 	"errors"
 	"linuxvm/pkg/execution"
+	"strings"
 )
 
 type UsageError struct{ Err error }
@@ -37,4 +38,22 @@ func ExitCode(err error) int {
 		return guest.Result.ExitCode()
 	}
 	return 1
+}
+
+// Diagnostic keeps joined errors readable without repeating the same cause.
+// Exit codes and typed results are the stable programmatic interface.
+func Diagnostic(err error) string {
+	if err == nil {
+		return ""
+	}
+	seen := map[string]bool{}
+	var messages []string
+	for _, line := range strings.Split(err.Error(), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !seen[line] {
+			seen[line] = true
+			messages = append(messages, line)
+		}
+	}
+	return strings.Join(messages, "; ")
 }

@@ -3,6 +3,8 @@ package revmcmd
 import (
 	"context"
 	"errors"
+	"github.com/sirupsen/logrus"
+	"io"
 	"linuxvm/pkg/execution"
 	"os"
 	"os/signal"
@@ -10,6 +12,7 @@ import (
 )
 
 func Execute(ctx context.Context, args []string) error {
+	logrus.SetOutput(io.Discard)
 	ctx, controller := execution.WithController(ctx)
 	ch := make(chan os.Signal, 8)
 	signals := []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGPIPE, syscall.SIGWINCH, syscall.SIGTSTP, syscall.SIGCONT}

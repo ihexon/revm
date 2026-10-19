@@ -13,3 +13,10 @@ failed cleanup returns nonzero.
 
 The default VM allocation is up to four host CPUs and one quarter of available
 memory, bounded to 512–2048 MiB. Explicit memory values below 512 MiB are errors.
+
+The first host cancellation takes precedence over signals used later for cleanup.
+A downstream pipe closing while execution is active returns 141 (SIGPIPE), after
+bounded cleanup. Late signals accelerate cleanup without replacing a known
+command result. Joined error diagnostics are deduplicated onto one stderr line;
+human wording is not a parsing contract. Use exit status, `ls --json`, `inspect`,
+and `ctl --list-port --json` for automation.

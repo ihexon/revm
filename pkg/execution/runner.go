@@ -147,7 +147,9 @@ running:
 		result.Cleanup = "failed"
 		result.Message = cleanupErr.Error()
 	}
-	_ = s.Send(Message{Type: "exit", Result: &result})
+	exitResult := result
+	exitResult.Output = "pending"
+	_ = s.Send(Message{Type: "exit", Result: &exitResult})
 	select {
 	case <-outputDone:
 	case <-time.After(3 * time.Second):
