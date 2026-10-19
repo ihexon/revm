@@ -43,3 +43,10 @@ initialization. EOF exits the child even when a native thread is blocked; normal
 shutdown waits for it. Killing the CLI can leave a briefly reparented child, but
 must not leave a running orphan VMM. `tests/smoke.py` checks both startup and
 running owner death on a real VM.
+
+The guest agent owns required services and every upgraded execution. A service
+failure ends the VM; services are not automatically restarted. Shutdown stops
+accepting commands, sends TERM to executions, stops Podman containers, and waits
+for service cleanup before syncing disks. These steps share a five-second guest
+budget; the host timeout remains the final limit. The old `/v1/exec` endpoint is
+removed.

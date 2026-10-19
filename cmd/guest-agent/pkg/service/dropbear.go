@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -64,7 +63,7 @@ func (d *Dropbear) WriteAuthorizedKeys(publicKey string) error {
 }
 
 // Start starts the dropbear SSH server via supervisor. Blocks until ctx is cancelled.
-func (d *Dropbear) Start(ctx context.Context) {
+func (d *Dropbear) Start(ctx context.Context) error {
 	args := []string{
 		"-D", filepath.Dir(d.cfg.AuthorizedKeysFile),
 		"-p", d.cfg.ListenAddr,
@@ -79,15 +78,13 @@ func (d *Dropbear) Start(ctx context.Context) {
 	}
 
 	sv := supervisor.New(supervisor.Config{
-		Name:       "dropbear",
-		Cmd:        dropbearCommand,
-		Args:       args,
-		Stdout:     StderrWriter(),
-		Stderr:     StderrWriter(),
-		Restart:    true,
-		RetryDelay: 500 * time.Millisecond,
+		Name:   "dropbear",
+		Cmd:    dropbearCommand,
+		Args:   args,
+		Stdout: StderrWriter(),
+		Stderr: StderrWriter(),
 	})
-	sv.Run(ctx)
+	return sv.Run(ctx)
 }
 
 // StartGuestSSHServer support TSI/Gvisor network mode
@@ -124,6 +121,5 @@ func StartGuestSSHServer(ctx context.Context, vmc *protocol.GuestSpec) error {
 		return fmt.Errorf("write authorized_keys: %w", err)
 	}
 
-	dropbear.Start(ctx)
-	return nil
+	return dropbear.Start(ctx)
 }

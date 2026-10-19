@@ -21,9 +21,15 @@ func Serve(ctx context.Context, conn net.Conn, instance string, registry *Regist
 		return
 	}
 	defer s.Session.Close()
+	stopHandshake := context.AfterFunc(ctx, func() { s.Session.Close() })
+	defer stopHandshake()
 	_ = s.Control.SetReadDeadline(time.Now().Add(10 * time.Second))
 	var req Request
 	if s.Decoder.Decode(&req) != nil {
+		return
+	}
+	stopHandshake()
+	if ctx.Err() != nil {
 		return
 	}
 	_ = s.Control.SetReadDeadline(time.Time{})
@@ -133,7 +139,7 @@ running:
 			}
 		case <-cancelCh:
 			cancelCh = nil
-			cancelExec("SIGTERM", 0)
+			cancelExec("SIGTERM", 3*time.Second)
 		case <-deadline:
 			_ = owned.Kill()
 			deadline = nil

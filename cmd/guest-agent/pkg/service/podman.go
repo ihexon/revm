@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"guestAgent/pkg/supervisor"
 	guestvsock "guestAgent/pkg/vsock"
@@ -43,23 +42,30 @@ func StartGuestPodmanService(ctx context.Context, vmc *protocol.GuestSpec) error
 			"podman", "--log-level", logrus.GetLevel().String(), "system", "service",
 			"--time=0", "unix://" + define.GuestPodmanSocket,
 		},
-		Restart:     true,
-		MaxRetries:  5,
-		RetryDelay:  500 * time.Millisecond,
-		StopTimeout: 5 * time.Second,
+		StopTimeout: time.Second,
 		Env:         vmc.Podman.GuestPodmanRunWithEnvs,
 	})
 
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		s.Run(ctx)
-		if ctx.Err() != nil {
-			return ctx.Err()
+	// Stop containers while the engine is still available, then stop the API.
+	// Container state remains on the volume; no container survives VM shutdown.
+	engineCtx, stopEngine := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopEngine()
+	g, engineCtx := errgroup.WithContext(engineCtx)
+	g.Go(func() error { return s.Run(engineCtx) })
+	g.Go(func() error { return podmanproxy.ServeGuest(engineCtx, listener, define.GuestPodmanSocket) })
+	done := make(chan error, 1)
+	go func() { done <- g.Wait() }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		stopCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := ExecNoOutput(stopCtx, "podman", "--remote", "--url", "unix://"+define.GuestPodmanSocket, "stop", "--all", "--time", "2"); err != nil {
+			logrus.Warnf("stop containers: %v", err)
 		}
-		return errors.New("Podman service stopped after exhausting restarts")
-	})
-	g.Go(func() error {
-		return podmanproxy.ServeGuest(ctx, listener, define.GuestPodmanSocket)
-	})
-	return g.Wait()
+		stopEngine()
+		<-done
+		return ctx.Err()
+	}
 }

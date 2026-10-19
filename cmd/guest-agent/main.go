@@ -10,12 +10,13 @@ import (
 	"linuxvm/pkg/protocol"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
-	"golang.org/x/sync/errgroup"
 )
 
 func setupLogger() {
@@ -112,6 +113,8 @@ func main() {
 
 func run(ctx context.Context, _ *cli.Command) error {
 	setupLogger()
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	vmc, err := service.GetVMConfig(ctx)
 	if err != nil {
@@ -132,66 +135,12 @@ func run(ctx context.Context, _ *cli.Command) error {
 	if err := service.MountVirtiofs(ctx, vmc); err != nil {
 		return fmt.Errorf("mount virtiofs: %w", err)
 	}
-	go func() {
-		service.WaitAndShutdown()
-	}()
 
 	if err := service.ConfigureNetwork(ctx, virtualNetworkType(vmc)); err != nil {
 		return err
 	}
 	execution.RequireGuestIsolation()
-	go func() {
-		if err := service.StartGuestControlServer(ctx, vmc.RunMode == define.ContainerMode.String()); err != nil {
-			logrus.Error(err)
-		}
-	}()
-	// 5. Run mode-specific services
-	switch vmc.RunMode {
-	case define.RootFsMode.String():
-		return userRootfsMode(ctx, vmc)
-	case define.ContainerMode.String():
-		return podmanEngineMode(ctx, vmc)
-	default:
-		return fmt.Errorf("unsupported mode %q", vmc.RunMode)
-	}
-}
-
-func userRootfsMode(ctx context.Context, vmc *protocol.GuestSpec) error {
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error { return service.StartGuestSSHServer(ctx, vmc) })
-	g.Go(func() error { return service.SyncRTCTime(ctx) })
-	return g.Wait()
-}
-
-func podmanEngineMode(ctx context.Context, vmc *protocol.GuestSpec) error {
-	logrus.Info("starting Podman API service")
-
-	g, ctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		return service.StartGuestPodmanService(ctx, vmc)
-	})
-
-	g.Go(func() error {
-		return service.StartGuestSSHServer(ctx, vmc)
-	})
-
-	g.Go(func() error {
-		return service.SyncRTCTime(ctx)
-	})
-
-	errChan := make(chan error, 1)
-	go func() {
-		errChan <- g.Wait()
-		close(errChan)
-	}()
-
-	select {
-	case <-ctx.Done():
-		return context.Cause(ctx)
-	case err := <-errChan:
-		return err
-	}
+	return service.RunGuest(ctx, vmc)
 }
 
 func virtualNetworkType(vmc *protocol.GuestSpec) define.VNetMode {
