@@ -56,6 +56,7 @@ type VM struct {
 type vmRuntime struct {
 	view    *runtimemachine.Machine
 	backend backend.Backend
+	done    chan struct{}
 }
 
 type vmWorkspace struct {
@@ -265,6 +266,7 @@ func (vm *VM) createUserSymlinks() error {
 // the VM run to end. If the VM exits or the run is cancelled normally, Run
 // returns nil; otherwise it returns the first meaningful failure cause.
 func (vm *VM) Run(ctx context.Context) error {
+	vm.runtime.done = make(chan struct{})
 	runFinished := make(chan struct{})
 	defer close(runFinished)
 	hostServicesCtx, stopHostServices := context.WithCancelCause(ctx)
@@ -327,6 +329,7 @@ func (vm *VM) Run(ctx context.Context) error {
 		// libkrun_vmm_run is a blocking C call. The backend intentionally owns
 		// that lifetime and returns only after the guest exits.
 		err := vm.runtime.backend.Start(context.Background())
+		close(vm.runtime.done)
 		if err != nil {
 			finishVMRun(err)
 		} else {
@@ -341,6 +344,10 @@ func (vm *VM) Run(ctx context.Context) error {
 		defer vm.resultMu.Unlock()
 		if vm.result == nil {
 			return errors.Join(err, fmt.Errorf("VM stopped without a command result; exit status unknown"))
+		}
+		var exit *execution.ExitError
+		if errors.As(err, &exit) {
+			return err
 		}
 		return errors.Join(vm.result.Err(), err)
 	}
@@ -373,6 +380,19 @@ func (vm *VM) forceVirtualMachine() error {
 func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, forceVMRun func(error), networkReady <-chan struct{}) error {
 	switch vm.runtime.view.RunMode() {
 	case define.RootFsMode.String():
+		g.Go(func() error {
+			result, err := executeGuest(ctx, vm.runtime.view.GuestControlTarget(), *vm.cfg)
+			vm.resultMu.Lock()
+			vm.result = &result
+			vm.resultMu.Unlock()
+			vm.requestGuestShutdown()
+			select {
+			case <-vm.runtime.done:
+			case <-time.After(10 * time.Second):
+				err = errors.Join(err, vm.forceVirtualMachine())
+			}
+			return err
+		})
 		return nil
 	case define.ContainerMode.String():
 		vm.startHostService(g, ctx, forceVMRun, func(ctx context.Context) error {

@@ -3,6 +3,7 @@ module guestAgent
 go 1.26.3
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/insomniacslk/dhcp v0.0.0-20260719225207-c76316d4aa82
 	github.com/mdlayher/vsock v1.3.0
 	github.com/moby/sys/mountinfo v0.7.3-0.20250407123443-8d553c09dc5e
@@ -15,6 +16,7 @@ require (
 
 require (
 	github.com/cilium/ebpf v0.16.0 // indirect
+	github.com/creack/pty v1.1.24 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/inetaf/tcpproxy v0.0.0-20260515195445-c159a6051109 // indirect
 	github.com/josharian/native v1.1.0 // indirect

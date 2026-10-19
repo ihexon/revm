@@ -1,0 +1,127 @@
+package execution
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net"
+	"sync"
+	"time"
+
+	yamux "github.com/libp2p/go-yamux/v5"
+)
+
+type Request struct {
+	Version    int      `json:"version"`
+	InstanceID string   `json:"instance_id"`
+	RequestID  string   `json:"request_id"`
+	Argv       []string `json:"argv"`
+	Env        []string `json:"env,omitempty"`
+	WorkDir    string   `json:"cwd,omitempty"`
+	TTY        bool     `json:"tty"`
+	Term       string   `json:"term,omitempty"`
+	Rows       uint16   `json:"rows,omitempty"`
+	Cols       uint16   `json:"cols,omitempty"`
+}
+
+type Message struct {
+	Type        string  `json:"type"`
+	InstanceID  string  `json:"instance_id,omitempty"`
+	ExecID      string  `json:"exec_id,omitempty"`
+	Signal      string  `json:"signal,omitempty"`
+	GraceMillis int64   `json:"grace_ms,omitempty"`
+	Rows        uint16  `json:"rows,omitempty"`
+	Cols        uint16  `json:"cols,omitempty"`
+	Result      *Result `json:"result,omitempty"`
+	Error       string  `json:"error,omitempty"`
+}
+
+type Streams struct {
+	Session                        *yamux.Session
+	Control, Stdin, Stdout, Stderr *yamux.Stream
+	writeMu                        sync.Mutex
+	Decoder                        *json.Decoder
+}
+
+func streams(ctx context.Context, conn net.Conn, server bool) (*Streams, error) {
+	cfg := yamux.DefaultConfig()
+	cfg.MaxStreamWindowSize = 256 * 1024
+	var s *yamux.Session
+	var err error
+	if server {
+		s, err = yamux.Server(conn, cfg, nil)
+	} else {
+		s, err = yamux.Client(conn, cfg, nil)
+	}
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	stop := context.AfterFunc(ctx, func() { s.Close() })
+	defer stop()
+	out := &Streams{Session: s}
+	for _, slot := range []**yamux.Stream{&out.Control, &out.Stdin, &out.Stdout, &out.Stderr} {
+		if server {
+			*slot, err = s.AcceptStream()
+		} else {
+			*slot, err = s.OpenStream(ctx)
+		}
+		if err != nil {
+			s.Close()
+			return nil, err
+		}
+	}
+	out.Decoder = json.NewDecoder(out.Control)
+	return out, nil
+}
+
+func (s *Streams) Send(m Message) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	_ = s.Control.SetWriteDeadline(time.Now().Add(time.Second))
+	defer s.Control.SetWriteDeadline(time.Time{})
+	return json.NewEncoder(s.Control).Encode(m)
+}
+
+func Open(ctx context.Context, conn net.Conn, req Request) (*Streams, Message, error) {
+	s, err := streams(ctx, conn, false)
+	if err != nil {
+		return nil, Message{}, err
+	}
+	_ = s.Control.SetDeadline(time.Now().Add(10 * time.Second))
+	defer s.Control.SetDeadline(time.Time{})
+	if err := json.NewEncoder(s.Control).Encode(req); err != nil {
+		s.Session.Close()
+		return nil, Message{}, err
+	}
+	var started Message
+	if err := s.Decoder.Decode(&started); err != nil {
+		s.Session.Close()
+		return nil, started, err
+	}
+	if started.Type != "started" || started.InstanceID != req.InstanceID {
+		s.Session.Close()
+		return nil, started, fmt.Errorf("start execution: %s", started.Error)
+	}
+	return s, started, nil
+}
+
+// Registry retains request tombstones for the entire instance lifetime. Starts
+// are never retried automatically; a duplicate cannot run a command twice.
+type Registry struct {
+	mu   sync.Mutex
+	seen map[string]bool
+}
+
+func (r *Registry) Claim(id string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.seen == nil {
+		r.seen = make(map[string]bool)
+	}
+	if id == "" || len(id) > 128 || r.seen[id] || len(r.seen) >= 100000 {
+		return false
+	}
+	r.seen[id] = true
+	return true
+}

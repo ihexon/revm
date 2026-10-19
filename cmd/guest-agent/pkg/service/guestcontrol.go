@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	guestvsock "guestAgent/pkg/vsock"
 )
@@ -23,6 +24,9 @@ import (
 // StartGuestControlServer exposes the guest command runner over a dedicated
 // vsock port. SSH remains available for interactive compatibility, but all
 // host control operations use this endpoint.
+var execRegistry execution.Registry
+var guestInstance = uuid.NewString()
+
 func StartGuestControlServer(ctx context.Context) error {
 	listener, err := guestvsock.ListenHost(define.GuestControlPort)
 	if err != nil {
@@ -45,6 +49,32 @@ func StartGuestControlServer(ctx context.Context) error {
 }
 
 func handleGuestControl(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/v2/ready" {
+		_ = json.NewEncoder(w).Encode(protocol.ExecReady{Version: 2, InstanceID: guestInstance})
+		return
+	}
+	if r.URL.Path == "/v2/exec" {
+		if r.Header.Get("Upgrade") != "revm-exec-v2" {
+			http.Error(w, "exec v2 upgrade required", 400)
+			return
+		}
+		h, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "upgrade unavailable", 500)
+			return
+		}
+		conn, rw, err := h.Hijack()
+		if err != nil {
+			return
+		}
+		_, err = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: revm-exec-v2\r\n\r\n")
+		if err != nil || rw.Flush() != nil {
+			conn.Close()
+			return
+		}
+		execution.Serve(context.Background(), conn, guestInstance, &execRegistry)
+		return
+	}
 	if r.URL.Path == "/v1/shutdown" {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

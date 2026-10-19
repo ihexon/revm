@@ -17,7 +17,6 @@ import (
 	"github.com/gofrs/flock"
 	sysproxy "github.com/ihexon/getSysProxy"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/term"
 )
 
 type machineBuilder struct {
@@ -570,11 +569,7 @@ func (p *machineBuildPlan) cleanup() {
 	}
 }
 
-func (v *machineBuilder) detectTTY() {
-	v.TTY = term.IsTerminal(int(os.Stdin.Fd())) &&
-		term.IsTerminal(int(os.Stdout.Fd())) &&
-		term.IsTerminal(int(os.Stderr.Fd()))
-}
+func (v *machineBuilder) detectTTY() { v.TTY = false }
 
 func getSessionDir(name string) string {
 	dir, err := os.UserHomeDir()

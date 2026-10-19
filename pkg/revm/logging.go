@@ -4,6 +4,7 @@ package revm
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -82,7 +83,9 @@ func setupLogFile(cfg Config) (*os.File, error) {
 
 func releaseRunLog(file *os.File) {
 	if file != nil {
-		logrus.SetOutput(os.Stderr)
+		// CLI diagnostics have a separate writer. Late network callbacks must
+		// never escape into a workload's stderr after its log closes.
+		logrus.SetOutput(io.Discard)
 		_ = file.Close()
 	}
 }

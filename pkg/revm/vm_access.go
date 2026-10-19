@@ -6,8 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/execution"
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/protocol"
@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -157,10 +158,11 @@ func attach(ctx context.Context, cfg Config) error {
 		controlTarget.Port = defaults.Port
 	}
 
-	if cfg.PTY {
-		return attachShell(ctx, sshTargetFromAttachSpec(attachSpec))
+	if len(cfg.Command) == 0 {
+		cfg.Command = []string{"/bin/sh"}
 	}
-	return attachRun(ctx, controlTarget, cfg.Command...)
+	_, err = executeGuest(ctx, controlTarget, cfg)
+	return err
 }
 
 func fetchAttachSpec(ctx context.Context, workspaceDirPath string) (protocol.AttachSpec, error) {
@@ -215,23 +217,8 @@ func attachRun(ctx context.Context, controlTarget guestcontrol.Target, cmdline .
 		cmdline = []string{filepath.Join("/", "bin", "sh")}
 	}
 
-	proc, err := guestcontrol.GuestExec(ctx, controlTarget, cmdline[0], cmdline[1:]...)
-	if err != nil {
-		return err
-	}
-	copyErrCh := make(chan error, 2)
-	go func() { _, err := io.Copy(os.Stdout, proc.StdoutPipeReader); copyErrCh <- err }()
-	go func() { _, err := io.Copy(os.Stderr, proc.StderrPipeReader); copyErrCh <- err }()
-	var copyErr error
-	for i := 0; i < 2; i++ {
-		if err := <-copyErrCh; err != nil && copyErr == nil {
-			copyErr = err
-		}
-	}
-	if err := <-proc.ErrChan; err != nil && copyErr == nil {
-		copyErr = err
-	}
-	return copyErr
+	_, err := guestcontrol.StreamExec(ctx, controlTarget, execution.Request{Argv: cmdline}, execution.Options{IO: execution.IO{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}, StopTimeout: 10 * time.Second})
+	return err
 }
 
 // attachShell starts an interactive shell in the attached VM session over SSH

@@ -123,11 +123,6 @@ func run(ctx context.Context, _ *cli.Command) error {
 
 	// Now that /sys is available, wire up the dedicated guest log port.
 	setupGuestLogPort()
-	go func() {
-		if err := service.StartGuestControlServer(ctx); err != nil {
-			logrus.Warnf("guest control server stopped: %v", err)
-		}
-	}()
 
 	// 4. Mount block devices and virtiofs
 	if err := service.MountBlockDevices(ctx, vmc); err != nil {
@@ -140,6 +135,14 @@ func run(ctx context.Context, _ *cli.Command) error {
 		service.WaitAndShutdown()
 	}()
 
+	if err := service.ConfigureNetwork(ctx, virtualNetworkType(vmc)); err != nil {
+		return err
+	}
+	go func() {
+		if err := service.StartGuestControlServer(ctx); err != nil {
+			logrus.Error(err)
+		}
+	}()
 	// 5. Run mode-specific services
 	switch vmc.RunMode {
 	case define.RootFsMode.String():
@@ -152,56 +155,14 @@ func run(ctx context.Context, _ *cli.Command) error {
 }
 
 func userRootfsMode(ctx context.Context, vmc *protocol.GuestSpec) error {
-	logrus.Info("running in rootfs mode")
-
-	if err := service.ConfigureNetwork(ctx, virtualNetworkType(vmc)); err != nil {
-		return fmt.Errorf("configure network: %w", err)
-	}
-
 	g, ctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		return service.StartGuestSSHServer(ctx, vmc)
-	})
-
-	g.Go(func() error {
-		return service.SyncRTCTime(ctx)
-	})
-
-	g.Go(func() error {
-		err := service.DoExecCmdLine(ctx, vmc)
-		if reportErr := service.ReportCommandResult(execution.FromProcess(err)); reportErr != nil {
-			return reportErr
-		}
-		if err != nil {
-			return err
-		}
-		return CmdlineExitNormal
-	})
-
-	errChan := make(chan error, 1)
-	go func() {
-		errChan <- g.Wait()
-		close(errChan)
-	}()
-
-	select {
-	case <-ctx.Done():
-		return context.Cause(ctx)
-	case err := <-errChan:
-		return err
-	}
+	g.Go(func() error { return service.StartGuestSSHServer(ctx, vmc) })
+	g.Go(func() error { return service.SyncRTCTime(ctx) })
+	return g.Wait()
 }
 
 func podmanEngineMode(ctx context.Context, vmc *protocol.GuestSpec) error {
 	logrus.Info("starting Podman API service")
-
-	// Configure network before starting services — it's a prerequisite,
-	// not a parallel task. If DHCP fails (e.g. eth0 not yet created by VMM),
-	// we don't want to cancel already-running services.
-	if err := service.ConfigureNetwork(ctx, virtualNetworkType(vmc)); err != nil {
-		return fmt.Errorf("configure network: %w", err)
-	}
 
 	g, ctx := errgroup.WithContext(ctx)
 

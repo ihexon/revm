@@ -44,7 +44,16 @@ func NewProcessProvider(ctx context.Context, spec *define.MachineSpec) (*Process
 	}
 	cmd := exec.Command(exe, "_vmm")
 	cmd.ExtraFiles = []*os.File{reader, statusWriter}
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	logFile, err := os.OpenFile(spec.LogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		reader.Close()
+		writer.Close()
+		status.Close()
+		statusWriter.Close()
+		return nil, err
+	}
+	defer logFile.Close()
+	cmd.Stdout, cmd.Stderr = logFile, logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		reader.Close()
