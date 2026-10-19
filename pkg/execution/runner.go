@@ -13,7 +13,7 @@ import (
 )
 
 // Serve owns one execution, including cleanup when its transport disconnects.
-func Serve(ctx context.Context, conn net.Conn, instance string, registry *Registry) {
+func Serve(ctx context.Context, conn net.Conn, instance string, registry *Registry, defaultEnv ...string) {
 	handshake, cancel := context.WithTimeout(ctx, 10*time.Second)
 	s, err := streams(handshake, conn, true)
 	cancel()
@@ -31,6 +31,7 @@ func Serve(ctx context.Context, conn net.Conn, instance string, registry *Regist
 		_ = s.Send(Message{Type: "error", Error: "invalid, duplicate or stale execution request"})
 		return
 	}
+	req.Env = append(append([]string(nil), defaultEnv...), req.Env...)
 	cmd, input, outR, errR, terminal, owned, startErr := startProcess(req)
 	if owned != nil {
 		defer owned.Close()

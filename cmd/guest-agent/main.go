@@ -141,7 +141,7 @@ func run(ctx context.Context, _ *cli.Command) error {
 	}
 	execution.RequireGuestIsolation()
 	go func() {
-		if err := service.StartGuestControlServer(ctx); err != nil {
+		if err := service.StartGuestControlServer(ctx, vmc.RunMode == define.ContainerMode.String()); err != nil {
 			logrus.Error(err)
 		}
 	}()

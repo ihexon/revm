@@ -24,6 +24,7 @@ def start():
  return meta
 try:
  meta=start();vol=json.load(open(meta))['volumeID']
+ cli(['attach','--id',sid,'--','podman','ps'])
  cli(['attach','--id',sid,'--','sh','-c','echo keep-me > /var/lib/containers/revm-smoke-data'])
  assert cli(['volume','rm','podman-'+sid],False).returncode==1
  owner.send_signal(signal.SIGTERM);owner.communicate(timeout=10)
@@ -37,4 +38,5 @@ try:
  print('PASS real Podman volume reuse, active deletion refusal, preserved contents and missing references')
 finally:
  if owner and owner.poll() is None: owner.kill();owner.communicate(timeout=5)
+ subprocess.run([b, "cache", "prune"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
  root.cleanup()

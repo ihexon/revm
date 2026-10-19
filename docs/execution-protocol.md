@@ -21,6 +21,9 @@ and completion kill the whole subtree, including descendants using setsid. The
 command sees only a read-only cgroup mount and cannot regain mount/ptrace
 privileges. Commands therefore do not have unrestricted CAP_SYS_ADMIN inside
 the VM; the Podman service itself is managed separately by the guest agent.
+Executions in a Podman session default `CONTAINER_HOST` to that service's Unix
+socket. Guest readiness in this mode also waits for the engine to answer ping,
+so `attach -- podman ps` remains usable without local mount privileges.
 
 `--tty=auto` requires both stdin and stdout to be terminals, with revm in the
 foreground. `always` and `never` override allocation; `--pty` aliases `always`.

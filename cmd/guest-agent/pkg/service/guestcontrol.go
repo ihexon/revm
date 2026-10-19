@@ -8,6 +8,7 @@ import (
 	"io"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/execution"
+	"linuxvm/pkg/network"
 	"linuxvm/pkg/protocol"
 	"net/http"
 	"os"
@@ -27,13 +28,32 @@ import (
 var execRegistry execution.Registry
 var guestInstance = uuid.NewString()
 
-func StartGuestControlServer(ctx context.Context) error {
+func StartGuestControlServer(ctx context.Context, container bool) error {
+	var commandEnv []string
+	if container {
+		commandEnv = []string{"CONTAINER_HOST=unix://" + define.GuestPodmanSocket}
+		// Commands use the already supervised engine, with no mount privileges.
+		// Publish readiness only after that engine can answer requests.
+		client := network.NewUnixClient(define.GuestPodmanSocket, network.WithTimeout(time.Second))
+		defer client.Close()
+		for {
+			_, status, err := client.Get("/_ping").DoAndRead(ctx)
+			if err == nil && status == 200 {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+	}
 	listener, err := guestvsock.ListenHost(define.GuestControlPort)
 	if err != nil {
 		return fmt.Errorf("listen guest control vsock: %w", err)
 	}
 
-	srv := &http.Server{Handler: http.HandlerFunc(handleGuestControl)}
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handleGuestControl(w, r, commandEnv...) })}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -48,7 +68,7 @@ func StartGuestControlServer(ctx context.Context) error {
 	return nil
 }
 
-func handleGuestControl(w http.ResponseWriter, r *http.Request) {
+func handleGuestControl(w http.ResponseWriter, r *http.Request, commandEnv ...string) {
 	if r.URL.Path == "/v2/ready" {
 		_ = json.NewEncoder(w).Encode(protocol.ExecReady{Version: 2, InstanceID: guestInstance})
 		return
@@ -72,7 +92,7 @@ func handleGuestControl(w http.ResponseWriter, r *http.Request) {
 			conn.Close()
 			return
 		}
-		execution.Serve(context.Background(), conn, guestInstance, &execRegistry)
+		execution.Serve(context.Background(), conn, guestInstance, &execRegistry, commandEnv...)
 		return
 	}
 	if r.URL.Path == "/v1/shutdown" {
