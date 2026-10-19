@@ -82,25 +82,31 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 	outputDone := make(chan struct{})
 	go func() { copies.Wait(); close(outputDone) }()
 	defer func() { stopOutput(); s.Session.Close(); <-outputDone }()
-	messages := make(chan Message, 4)
-	readErrors := make(chan error, 1)
+	type controlEvent struct {
+		message Message
+		err     error
+	}
+	messages := make(chan controlEvent, 4)
+	readerDone := make(chan struct{})
+	defer close(readerDone)
 	go func() {
 		for {
 			var m Message
-			if err := s.Decoder.Decode(&m); err != nil {
-				readErrors <- err
-				return
-			}
+			err := s.Decoder.Decode(&m)
+			// Preserve wire order, including errors after an exit result. A peer may
+			// close immediately after its final message; only the consumer may stop
+			// delivery of a message that has already been decoded.
 			select {
-			case messages <- m:
-			case <-s.Session.CloseChan():
+			case messages <- controlEvent{message: m, err: err}:
+			case <-readerDone:
 				return
 			}
-			if m.Type == "completed" {
+			if err != nil || m.Type == "completed" {
 				return
 			}
 		}
 	}()
+
 	var cancelErr error
 	var force <-chan struct{}
 	if opts.Controller != nil {
@@ -189,9 +195,11 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 			outputFailure(err)
 		case <-deadline:
 			return result, errors.Join(cancelErr, errors.New("execution cleanup deadline exceeded"))
-		case err := <-readErrors:
-			return result, errors.Join(cancelErr, fmt.Errorf("execution disconnected before completion: %w", err))
-		case m := <-messages:
+		case event := <-messages:
+			if event.err != nil {
+				return result, errors.Join(cancelErr, fmt.Errorf("execution disconnected before completion: %w", event.err))
+			}
+			m := event.message
 			if m.Type == "error" {
 				return result, errors.New(m.Error)
 			}

@@ -172,3 +172,40 @@ func TestAckIgnoresLateResize(t *testing.T) {
 		t.Fatal("ack did not complete execution")
 	}
 }
+
+func TestServerShutdownAfterCommandReady(t *testing.T) {
+	serverCtx, stopServer := context.WithCancel(context.Background())
+	defer stopServer()
+	clientCtx, stopClient := context.WithTimeout(context.Background(), 10*time.Second)
+	defer stopClient()
+	a, b := net.Pipe()
+	served := make(chan struct{})
+	go func() { Serve(serverCtx, b, "instance"); close(served) }()
+	output, writer := io.Pipe()
+	defer output.Close()
+	defer writer.Close()
+	done := make(chan error, 1)
+	go func() {
+		_, err := Execute(clientCtx, a, Request{Version: 2, InstanceID: "instance", RequestID: "shutdown", Argv: []string{"sh", "-c", "trap '' TERM; printf ready; exec sleep 100"}}, Options{IO: IO{Stdout: writer}})
+		writer.CloseWithError(err)
+		done <- err
+	}()
+	ready := make([]byte, 5)
+	if _, err := io.ReadFull(output, ready); err != nil {
+		t.Fatal(err)
+	}
+	stopServer()
+	select {
+	case <-served:
+	case <-time.After(6 * time.Second):
+		t.Fatal("server retained execution")
+	}
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("canceled execution reported success")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("client retained execution after server shutdown")
+	}
+}

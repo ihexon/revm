@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"linuxvm/pkg/execution"
 	"net"
 	"net/http"
@@ -30,18 +31,20 @@ func TestServerOwnsUpgradedExecution(t *testing.T) {
 	if err != nil || response.StatusCode != 101 {
 		t.Fatalf("upgrade: %v %v", response, err)
 	}
-	started := make(chan struct{})
+	output, writer := io.Pipe()
+	defer output.Close()
+	defer writer.Close()
 	done := make(chan error, 1)
 	clientCtx, stop := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stop()
 	go func() {
-		_, err := execution.Execute(clientCtx, conn, execution.Request{Version: 2, InstanceID: guestInstance, RequestID: "shutdown", Argv: []string{"sh", "-c", "trap '' TERM; exec sleep 100"}}, execution.Options{OnStarted: func(*execution.Streams, execution.Message) error { close(started); return nil }})
+		_, err := execution.Execute(clientCtx, conn, execution.Request{Version: 2, InstanceID: guestInstance, RequestID: "shutdown", Argv: []string{"sh", "-c", "trap '' TERM; printf ready; exec sleep 100"}}, execution.Options{IO: execution.IO{Stdout: writer}})
+		writer.CloseWithError(err)
 		done <- err
 	}()
-	select {
-	case <-started:
-	case <-clientCtx.Done():
-		t.Fatal("execution did not start")
+	ready := make([]byte, 5)
+	if _, err := io.ReadFull(output, ready); err != nil {
+		t.Fatal(err)
 	}
 	cancel()
 	select {
