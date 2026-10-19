@@ -19,63 +19,6 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-type LoggingOptions struct {
-	Level string
-}
-
-type PortUpdates struct {
-	Exports   []define.PortForward
-	Unexports []define.PortForward
-}
-
-type RunOptions struct {
-	Logging       LoggingOptions
-	SessionID     string
-	CPUs          int
-	MemoryMB      uint64
-	Network       string
-	UseProxy      bool
-	WorkDir       string
-	Envs          []string
-	Mounts        []string
-	RawDisks      []revm.RawDiskSpec
-	ManageAPIFile string
-	SSHKeyFile    string
-	ReportURL     string
-	Command       []string
-}
-
-type PodmanOptions struct {
-	Logging            LoggingOptions
-	SessionID          string
-	CPUs               int
-	MemoryMB           uint64
-	UseProxy           bool
-	Envs               []string
-	Mounts             []string
-	RawDisks           []revm.RawDiskSpec
-	ContainerDisk      *revm.ContainerDiskSpec
-	PodmanProxyAPIFile string
-	ManageAPIFile      string
-	SSHKeyFile         string
-	ReportURL          string
-}
-
-type AttachOptions struct {
-	Logging   LoggingOptions
-	SessionID string
-	PTY       bool
-	Command   []string
-}
-
-type CtlOptions struct {
-	Logging     LoggingOptions
-	SessionID   string
-	ListPort    bool
-	PortUpdates PortUpdates
-	Command     []string
-}
-
 func NewApp(name string) *cli.Command {
 	app := &cli.Command{
 		Name:                            name,
@@ -145,13 +88,7 @@ func newRunCommand() *cli.Command {
 			logLevelFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
-			return runLogged(ctx, command, func() (*revm.Config, error) {
-				opts, err := ParseRunOptions(command)
-				if err != nil {
-					return nil, err
-				}
-				return NewRunConfig(opts), nil
-			})
+			return runLogged(ctx, command, revm.ModeRootfs)
 		},
 	}
 }
@@ -179,13 +116,7 @@ func newPodmanCommand() *cli.Command {
 			logLevelFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
-			return runLogged(ctx, command, func() (*revm.Config, error) {
-				opts, err := ParsePodmanOptions(command)
-				if err != nil {
-					return nil, err
-				}
-				return NewPodmanConfig(opts), nil
-			})
+			return runLogged(ctx, command, revm.ModeContainer)
 		},
 	}
 }
@@ -204,10 +135,7 @@ func newAttachCommand() *cli.Command {
 			logLevelFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
-			return runLogged(ctx, command, func() (*revm.Config, error) {
-				opts := ParseAttachOptions(command)
-				return NewAttachConfig(opts), nil
-			})
+			return runLogged(ctx, command, revm.ModeAttach)
 		},
 	}
 }
@@ -232,8 +160,8 @@ func newCtlCommand() *cli.Command {
 	}
 }
 
-func runLogged(ctx context.Context, command *cli.Command, buildConfig func() (*revm.Config, error)) error {
-	cfg, err := buildConfig()
+func runLogged(ctx context.Context, command *cli.Command, mode revm.RunMode) error {
+	cfg, err := parseConfig(command, mode)
 	if err != nil {
 		return commanderr.Usage(err)
 	}
@@ -249,28 +177,19 @@ func runLogged(ctx context.Context, command *cli.Command, buildConfig func() (*r
 	if controller := execution.ControllerFrom(ctx); controller != nil {
 		controller.SetTimeout(cfg.StopTimeout)
 	}
-	normalized, err := revm.NormalizeConfig(*cfg)
-	if err != nil {
-		return commanderr.Usage(err)
-	}
-	return revm.Run(ctx, &normalized)
+	return revm.Run(ctx, cfg)
 }
 
 func runCtl(ctx context.Context, command *cli.Command) error {
-	opts, err := ParseCtlOptions(command)
+	cfg, err := parseConfig(command, revm.ModeControl)
 	if err != nil {
 		return commanderr.Usage(err)
 	}
-	if command.Bool("json") && !opts.ListPort {
+	if command.Bool("json") && !cfg.PortList {
 		return commanderr.Usage(fmt.Errorf("--json requires --list-port"))
 	}
-	cfg := NewCtlConfig(opts)
-	normalized, err := revm.NormalizeConfig(*cfg)
-	if err != nil {
-		return commanderr.Usage(err)
-	}
-	if opts.ListPort {
-		ports, err := revm.ListPorts(ctx, &normalized)
+	if cfg.PortList {
+		ports, err := revm.ListPorts(ctx, cfg)
 		if err != nil {
 			return err
 		}
@@ -282,190 +201,39 @@ func runCtl(ctx context.Context, command *cli.Command) error {
 		}
 		return writePortMappings(command.Writer, ports)
 	}
-	return revm.Run(ctx, &normalized)
+	return revm.Run(ctx, cfg)
 }
 
-func ParseLoggingOptions(command *cli.Command) LoggingOptions {
-	return LoggingOptions{
-		Level: command.String(define.FlagLogLevel),
-	}
-}
-
-func ParseRunOptions(command *cli.Command) (RunOptions, error) {
-	rawDisks, err := ParseRawDisks(command)
-	if err != nil {
-		return RunOptions{}, err
-	}
-
-	return RunOptions{
-		Logging:       ParseLoggingOptions(command),
-		SessionID:     command.String(define.FlagSessionID),
-		CPUs:          int(command.Int8(define.FlagCPUS)),
-		MemoryMB:      command.Uint64(define.FlagMemoryInMB),
-		Network:       command.String(define.FlagVNetworkType),
-		UseProxy:      command.Bool(define.FlagUsingSystemProxy),
-		WorkDir:       command.String(define.FlagWorkDir),
-		Envs:          command.StringSlice(define.FlagEnvs),
-		Mounts:        command.StringSlice(define.FlagMount),
-		RawDisks:      rawDisks,
-		ManageAPIFile: command.String(define.FlagManageAPIFile),
-		SSHKeyFile:    command.String(define.FlagExportSSHKeyPrivateFile),
-		ReportURL:     command.String(define.FlagReportEvents),
-		Command:       command.Args().Slice(),
-	}, nil
-}
-
-func ParsePodmanOptions(command *cli.Command) (PodmanOptions, error) {
-	rawDisks, err := ParseRawDisks(command)
-	if err != nil {
-		return PodmanOptions{}, err
-	}
-
-	containerDisk, err := ParseContainerDisk(command)
-	if err != nil {
-		return PodmanOptions{}, err
-	}
-
-	return PodmanOptions{
-		Logging:            ParseLoggingOptions(command),
-		SessionID:          command.String(define.FlagSessionID),
-		CPUs:               int(command.Int8(define.FlagCPUS)),
-		MemoryMB:           command.Uint64(define.FlagMemoryInMB),
-		UseProxy:           command.Bool(define.FlagUsingSystemProxy),
-		Envs:               command.StringSlice(define.FlagEnvs),
-		Mounts:             command.StringSlice(define.FlagMount),
-		RawDisks:           rawDisks,
-		ContainerDisk:      containerDisk,
-		PodmanProxyAPIFile: command.String(define.FlagPodmanProxyAPIFile),
-		ManageAPIFile:      command.String(define.FlagManageAPIFile),
-		SSHKeyFile:         command.String(define.FlagExportSSHKeyPrivateFile),
-		ReportURL:          command.String(define.FlagReportEvents),
-	}, nil
-}
-
-func ParseAttachOptions(command *cli.Command) AttachOptions {
-	return AttachOptions{
-		Logging:   ParseLoggingOptions(command),
-		SessionID: command.String(define.FlagSessionID),
-		PTY:       command.Bool(define.FlagPTY),
-		Command:   command.Args().Slice(),
-	}
-}
-
-func ParseCtlOptions(command *cli.Command) (CtlOptions, error) {
-	portUpdates, err := ParsePortUpdates(command)
-	if err != nil {
-		return CtlOptions{}, err
-	}
-
-	opts := CtlOptions{
-		Logging:     ParseLoggingOptions(command),
-		SessionID:   command.String(define.FlagSessionID),
-		ListPort:    command.Bool(define.FlagListPort),
-		PortUpdates: portUpdates,
-		Command:     command.Args().Slice(),
-	}
-	if err := validateCtlOptions(opts); err != nil {
-		return CtlOptions{}, err
-	}
-	return opts, nil
-}
-
-func ParseRawDisks(command *cli.Command) ([]revm.RawDiskSpec, error) {
-	return revm.ParseRawDiskSpecs(command.StringSlice(define.FlagRawDisk))
-}
-
-func ParseContainerDisk(command *cli.Command) (*revm.ContainerDiskSpec, error) {
-	value := command.String(define.FlagContainerDisk)
-	if value == "" {
-		return nil, nil
-	}
-
-	spec, err := revm.ParseContainerDiskSpec(value)
-	if err != nil {
+// Parse directly into the one runtime input configuration. Validation and
+// default resolution happen once at the public Run/ListPorts entry points.
+func parseConfig(c *cli.Command, mode revm.RunMode) (*revm.Config, error) {
+	cfg := revm.DefaultConfig()
+	cfg.RunMode, cfg.SessionID, cfg.LogLevel = mode, c.String(define.FlagSessionID), c.String(define.FlagLogLevel)
+	cfg.CPUs, cfg.MemoryMB = int(c.Int8(define.FlagCPUS)), c.Uint64(define.FlagMemoryInMB)
+	cfg.Network, cfg.Proxy = c.String(define.FlagVNetworkType), c.Bool(define.FlagUsingSystemProxy)
+	cfg.Exec = execution.Request{Argv: c.Args().Slice(), Env: c.StringSlice(define.FlagEnvs), WorkDir: c.String(define.FlagWorkDir)}
+	cfg.Mounts = c.StringSlice(define.FlagMount)
+	cfg.ManageAPIFile, cfg.PodmanProxyAPIFile = c.String(define.FlagManageAPIFile), c.String(define.FlagPodmanProxyAPIFile)
+	cfg.SSHKeyFileSymbolPath, cfg.ReportURL = c.String(define.FlagExportSSHKeyPrivateFile), c.String(define.FlagReportEvents)
+	cfg.PortList = c.Bool(define.FlagListPort)
+	var err error
+	if cfg.Disks, err = revm.ParseRawDiskSpecs(c.StringSlice(define.FlagRawDisk)); err != nil {
 		return nil, err
 	}
-	return &spec, nil
-}
-
-func ParsePortUpdates(command *cli.Command) (PortUpdates, error) {
-	portExports, err := revm.ParsePortExportSpecs(command.StringSlice(define.FlagPortExport))
-	if err != nil {
-		return PortUpdates{}, err
+	if value := c.String(define.FlagContainerDisk); value != "" {
+		disk, err := revm.ParseContainerDiskSpec(value)
+		if err != nil {
+			return nil, err
+		}
+		cfg.ContainerDisk = &disk
 	}
-
-	portUnexports, err := revm.ParsePortUnexportSpecs(command.StringSlice(define.FlagPortUnexport))
-	if err != nil {
-		return PortUpdates{}, err
+	if cfg.PortForwards, err = revm.ParsePortExportSpecs(c.StringSlice(define.FlagPortExport)); err != nil {
+		return nil, err
 	}
-
-	return PortUpdates{
-		Exports:   portExports,
-		Unexports: portUnexports,
-	}, nil
-}
-
-func NewRunConfig(opts RunOptions) *revm.Config {
-	cfg := revm.DefaultConfig()
-	cfg.LogLevel, cfg.SessionID, cfg.RunMode = opts.Logging.Level, opts.SessionID, revm.ModeRootfs
-	cfg.Command, cfg.CPUs, cfg.MemoryMB = append([]string(nil), opts.Command...), opts.CPUs, opts.MemoryMB
-	cfg.Network, cfg.Proxy, cfg.WorkDir = opts.Network, opts.UseProxy, opts.WorkDir
-	cfg.Env, cfg.ManageAPIFile, cfg.SSHKeyFileSymbolPath = append([]string(nil), opts.Envs...), opts.ManageAPIFile, opts.SSHKeyFile
-	cfg.Mounts, cfg.Disks, cfg.ReportURL = append([]string(nil), opts.Mounts...), append([]revm.RawDiskSpec(nil), opts.RawDisks...), opts.ReportURL
-	return cfg
-}
-
-func NewPodmanConfig(opts PodmanOptions) *revm.Config {
-	cfg := revm.DefaultConfig()
-	cfg.LogLevel, cfg.SessionID, cfg.RunMode = opts.Logging.Level, opts.SessionID, revm.ModeContainer
-	cfg.CPUs, cfg.MemoryMB, cfg.Network, cfg.Proxy = opts.CPUs, opts.MemoryMB, string(define.GVISOR), opts.UseProxy
-	cfg.Env, cfg.Mounts, cfg.Disks = append([]string(nil), opts.Envs...), append([]string(nil), opts.Mounts...), append([]revm.RawDiskSpec(nil), opts.RawDisks...)
-	cfg.ContainerDisk, cfg.PodmanProxyAPIFile, cfg.ManageAPIFile = opts.ContainerDisk, opts.PodmanProxyAPIFile, opts.ManageAPIFile
-	cfg.SSHKeyFileSymbolPath, cfg.ReportURL = opts.SSHKeyFile, opts.ReportURL
-	return cfg
-}
-
-func NewAttachConfig(opts AttachOptions) *revm.Config {
-	cfg := revm.DefaultConfig()
-	cfg.LogLevel, cfg.SessionID, cfg.RunMode = opts.Logging.Level, opts.SessionID, revm.ModeAttach
-	cfg.PTY, cfg.Command = opts.PTY, append([]string(nil), opts.Command...)
-	return cfg
-}
-
-func NewCtlConfig(opts CtlOptions) *revm.Config {
-	cfg := revm.DefaultConfig()
-	cfg.LogLevel, cfg.SessionID, cfg.RunMode = opts.Logging.Level, opts.SessionID, revm.ModeControl
-	if opts.ListPort {
-		cfg.PortList = true
-		return cfg
+	if cfg.PortUnforwards, err = revm.ParsePortUnexportSpecs(c.StringSlice(define.FlagPortUnexport)); err != nil {
+		return nil, err
 	}
-	cfg.PortForwards = append([]define.PortForward(nil), opts.PortUpdates.Exports...)
-	cfg.PortUnforwards = append([]define.PortForward(nil), opts.PortUpdates.Unexports...)
-	return cfg
-}
-
-func (p PortUpdates) HasUpdates() bool {
-	return len(p.Exports) > 0 || len(p.Unexports) > 0
-}
-
-func validateCtlOptions(opts CtlOptions) error {
-	if len(opts.Command) > 0 {
-		return fmt.Errorf("ctl does not accept command arguments; use revm attach")
-	}
-	operationCount := 0
-	if opts.ListPort {
-		operationCount++
-	}
-	if opts.PortUpdates.HasUpdates() {
-		operationCount++
-	}
-	if operationCount > 1 {
-		return fmt.Errorf("ctl control operations cannot be combined")
-	}
-	if operationCount == 0 {
-		return fmt.Errorf("ctl requires --list-port, --port-export, or --port-unexport")
-	}
-	return nil
+	return cfg, nil
 }
 
 func writePortMappings(w io.Writer, ports []define.PortMapping) error {

@@ -9,7 +9,6 @@ type GuestSpec struct {
 	RunMode       string       `json:"runMode,omitempty"`
 	NetworkMode   string       `json:"networkMode,omitempty"`
 	TTY           bool         `json:"tty,omitempty"`
-	Cmdline       GuestCmdline `json:"cmdline,omitempty"`
 	Storage       GuestStorage `json:"storage,omitempty"`
 	SSH           GuestSSH     `json:"ssh,omitempty"`
 	Podman        GuestPodman  `json:"podman,omitempty"`
@@ -18,13 +17,6 @@ type GuestSpec struct {
 type GuestStorage struct {
 	VirtioFS []GuestMount    `json:"virtiofs,omitempty"`
 	Blocks   []GuestBlockDev `json:"blocks,omitempty"`
-}
-
-type GuestCmdline struct {
-	Envs    []string `json:"envs,omitempty"`
-	Bin     string   `json:"bin,omitempty"`
-	Args    []string `json:"args,omitempty"`
-	WorkDir string   `json:"workdir,omitempty"`
 }
 
 type GuestMount struct {

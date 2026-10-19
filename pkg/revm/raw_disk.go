@@ -60,7 +60,8 @@ func ParseRawDiskSpec(input string) (RawDiskSpec, error) {
 
 	parts := strings.Split(input, ",")
 	spec := RawDiskSpec{
-		Path: strings.TrimSpace(parts[0]),
+		Path:     strings.TrimSpace(parts[0]),
+		SyncMode: define.SyncModeRelaxed,
 	}
 	if spec.Path == "" {
 		return RawDiskSpec{}, fmt.Errorf("raw disk path cannot be empty")
@@ -300,10 +301,11 @@ func resolveContainerDiskSpec(spec *ContainerDiskSpec, defaultPath string) (RawD
 	}
 
 	return normalizeRawDiskSpec(RawDiskSpec{
-		Path:    resolved.Path,
-		UUID:    define.ContainerDiskUUID,
-		Version: resolved.Version,
-		MountTo: define.ContainerStorageMountPoint,
+		Path:     resolved.Path,
+		UUID:     define.ContainerDiskUUID,
+		Version:  resolved.Version,
+		MountTo:  define.ContainerStorageMountPoint,
+		SyncMode: define.SyncModeRelaxed,
 	})
 }
 

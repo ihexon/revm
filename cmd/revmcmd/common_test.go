@@ -12,6 +12,7 @@ func TestInvalidInvocations(t *testing.T) {
 		{"unknown"}, {"--unknown"}, {"run"},
 		{"run", "--id", "../escape", "--", "true"},
 		{"run", "--id", ".create-session", "--", "true"},
+		{"run", "--id", "bad-cpu", "--cpus", "-1", "--", "true"},
 		{"run", "--id", "test", "--log-level", "bogus", "--", "true"},
 		{"run", "--id", "test", "--memory", "1", "--", "true"},
 		{"run", "--id", "test", "--network", "bogus", "--", "true"},

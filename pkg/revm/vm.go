@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	runtimemachine "linuxvm/internal/machine"
 	"linuxvm/pkg/backend"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/execution"
@@ -36,8 +35,6 @@ const defaultForceStopTimeout = 3 * time.Second
 //   - workspace: host-side session files and their cleanup.
 //   - observability: logs and event reporting.
 //
-// runtimemachine.Machine is only a view derived from the resolved spec. It does
-// not start, stop, or mutate the VM; backend.Backend owns those operations.
 // Release must always be called to release resources.
 type VM struct {
 	cfg            *Config
@@ -56,14 +53,13 @@ type VM struct {
 }
 
 type vmRuntime struct {
-	view    *runtimemachine.Machine
+	spec    *define.MachineSpec
 	backend backend.Backend
 	done    chan struct{}
 }
 
 type vmWorkspace struct {
-	dir     string
-	release func()
+	dir string
 }
 
 type vmObservability struct {
@@ -102,7 +98,7 @@ func (vm *VM) Release() error {
 		}
 		vm.runtime.backend = nil
 	}
-	vm.runtime.view = nil
+	vm.runtime.spec = nil
 	if vm.cfg != nil {
 		p := newMachinePathManager(vm.workspace.dir)
 		for link, target := range map[string]string{vm.cfg.ManageAPIFile: p.GetVMCtlSocketFile(), vm.cfg.PodmanProxyAPIFile: p.GetPodmanSocketFile(), vm.cfg.SSHKeyFileSymbolPath: p.GetSSHKeyFilePath()} {
@@ -124,10 +120,7 @@ func (vm *VM) Release() error {
 		releaseRunLog(vm.observability.runLog)
 		vm.observability.runLog = nil
 	}
-	if vm.workspace.release != nil {
-		vm.workspace.release()
-		vm.workspace.release = nil
-	}
+
 	vm.observability.events.close()
 	if vm.lease != nil {
 		if vm.cfg.Remove {
@@ -156,17 +149,14 @@ func buildTimeInfo() string {
 	return fmt.Sprintf("%s-%s-%s", version, commit, buildDate)
 }
 
-// Build resolves configuration defaults and acquires the heavyweight resources
-// needed to run the VM: workspace lock, SSH keys, rootfs, disks, and provider.
-func Build(ctx context.Context, cfg *Config) (retVM *VM, retErr error) {
+// buildVM acquires the heavyweight resources for a validated configuration.
+// The session lease owns the workspace, rootfs, disks and provider.
+func buildVM(ctx context.Context, cfg *Config) (retVM *VM, retErr error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
 	}
 
-	normalizedCfg, err := NormalizeConfig(*cfg)
-	if err != nil {
-		return nil, fmt.Errorf("resolve defaults: %w", err)
-	}
+	normalizedCfg := *cfg
 	if normalizedCfg.RunMode == ModeAttach || normalizedCfg.RunMode == ModeControl {
 		return nil, fmt.Errorf("%s mode does not build a VM", normalizedCfg.RunMode)
 	}
@@ -213,13 +203,12 @@ func Build(ctx context.Context, cfg *Config) (retVM *VM, retErr error) {
 }
 
 // build acquires all heavyweight resources and attaches each one to vm as soon
-// as ownership transfers. Build's deferred Release handles failure rollback.
+// as ownership transfers. buildVM's deferred Release handles failure rollback.
 func (vm *VM) build(ctx context.Context) error {
-	mc, releaseWorkspace, err := buildMachine(ctx, *vm.cfg, vm.workspace.dir)
+	mc, err := buildMachine(ctx, *vm.cfg, vm.workspace.dir)
 	if err != nil {
 		return fmt.Errorf("build machine: %w", err)
 	}
-	vm.workspace.release = releaseWorkspace
 
 	if err := vm.createUserSymlinks(); err != nil {
 		return fmt.Errorf("create symlinks: %w", err)
@@ -231,11 +220,7 @@ func (vm *VM) build(ctx context.Context) error {
 	}
 	vm.runtime.backend = vmp
 
-	machine, err := runtimemachine.New(mc)
-	if err != nil {
-		return fmt.Errorf("create runtime machine: %w", err)
-	}
-	vm.runtime.view = machine
+	vm.runtime.spec = mc
 
 	return nil
 }
@@ -434,10 +419,10 @@ func (vm *VM) forceVirtualMachine() error {
 }
 
 func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, forceVMRun func(error), networkReady <-chan struct{}) error {
-	switch vm.runtime.view.RunMode() {
+	switch vm.runtime.spec.RunMode {
 	case define.RootFsMode.String():
 		g.Go(func() error {
-			result, err := executeGuest(vm.commandContext, vm.runtime.view.GuestControlTarget(), *vm.cfg)
+			result, err := executeGuest(vm.commandContext, vm.GuestControlTarget(), *vm.cfg)
 			vm.resultMu.Lock()
 			vm.result = &result
 			vm.resultMu.Unlock()
@@ -458,11 +443,11 @@ func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, forceVMR
 		return nil
 	case define.ContainerMode.String():
 		vm.startHostService(g, ctx, forceVMRun, func(ctx context.Context) error {
-			socket, err := network.ParseUnixAddr(vm.runtime.view.PodmanHostProxyAddr())
+			socket, err := network.ParseUnixAddr(vm.runtime.spec.PodmanInfo.HostPodmanProxyAddr)
 			if err != nil {
 				return err
 			}
-			transport, err := network.ParseUnixAddr(vm.runtime.view.PodmanHostTransportAddr())
+			transport, err := network.ParseUnixAddr(vm.runtime.spec.PodmanInfo.HostPodmanTransportAddr)
 			if err != nil {
 				return err
 			}
@@ -479,7 +464,7 @@ func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, forceVMR
 
 		return nil
 	default:
-		return fmt.Errorf("unsupported run mode: %s", vm.runtime.view.RunMode())
+		return fmt.Errorf("unsupported run mode: %s", vm.runtime.spec.RunMode)
 	}
 }
 
@@ -529,17 +514,17 @@ func runError(ctx context.Context, err error) error {
 }
 
 func (vm *VM) startHostNetworkStack(ctx context.Context, onReady func()) error {
-	if vm.runtime.view.VirtualNetworkMode() == define.TSI {
+	if vm.runtime.spec.VirtualNetworkMode == define.TSI {
 		onReady()
 		return nil
 	}
 
 	logrus.Info("starting gvisor-tap-vsock network stack")
-	return gvproxy.Run(ctx, vm.runtime.view.GVProxySpec(), onReady)
+	return gvproxy.Run(ctx, vm.GVProxySpec(), onReady)
 }
 
 func (vm *VM) startIgnitionService(ctx context.Context) error {
-	server, err := ignition.NewServer(vm.runtime.view)
+	server, err := ignition.NewServer(vm)
 	if err != nil {
 		return fmt.Errorf("create ignition server: %w", err)
 	}
@@ -547,23 +532,15 @@ func (vm *VM) startIgnitionService(ctx context.Context) error {
 }
 
 func (vm *VM) startMachineManagementAPI(ctx context.Context) error {
-	server, err := management.NewServer(managementMachine{
-		Machine: vm.runtime.view,
-		vm:      vm,
-	})
+	server, err := management.NewServer(vm)
 	if err != nil {
 		return fmt.Errorf("create management server: %w", err)
 	}
 	return server.Start(ctx)
 }
 
-type managementMachine struct {
-	*runtimemachine.Machine
-	vm *VM
-}
-
-func (m managementMachine) RequestShutdown(ctx context.Context) error {
-	m.vm.stopRequested(context.Canceled)
+func (vm *VM) RequestShutdown(ctx context.Context) error {
+	vm.stopRequested(context.Canceled)
 	return nil
 }
 
@@ -572,14 +549,14 @@ func (vm *VM) reportPodmanReady(ctx context.Context) error {
 		return err
 	}
 
-	msg := fmt.Sprintf("podman API proxy ready on %s", vm.runtime.view.PodmanHostProxyAddr())
+	msg := fmt.Sprintf("podman API proxy ready on %s", vm.runtime.spec.PodmanInfo.HostPodmanProxyAddr)
 	logrus.Info(msg)
 	vm.emit(EventPodmanReady, msg)
 	return nil
 }
 
 func (vm *VM) waitPodmanReady(ctx context.Context) error {
-	addr, err := network.ParseUnixAddr(vm.runtime.view.PodmanHostProxyAddr())
+	addr, err := network.ParseUnixAddr(vm.runtime.spec.PodmanInfo.HostPodmanProxyAddr)
 	if err != nil {
 		return fmt.Errorf("parse podman proxy address: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"linuxvm/pkg/commanderr"
 	"linuxvm/pkg/execution"
 )
 
@@ -14,13 +15,18 @@ func Run(ctx context.Context, cfg *Config) error {
 		return fmt.Errorf("config must not be nil")
 	}
 
+	normalized, err := NormalizeConfig(*cfg)
+	if err != nil {
+		return commanderr.Usage(err)
+	}
+	cfg = &normalized
 	switch cfg.RunMode {
 	case ModeAttach:
-		return Attach(ctx, cfg)
+		return attachSession(ctx, cfg)
 	case ModeControl:
-		return Control(ctx, cfg)
+		return controlSession(ctx, cfg)
 	case ModeRootfs, ModeContainer:
-		vm, err := Build(ctx, cfg)
+		vm, err := buildVM(ctx, cfg)
 		if err != nil {
 			return err
 		}

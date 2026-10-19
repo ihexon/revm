@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"linuxvm/pkg/commanderr"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/network"
@@ -20,14 +21,11 @@ import (
 
 // Attach resolves the attach configuration and connects to an existing VM
 // session without building or starting a virtual machine.
-func Attach(ctx context.Context, cfg *Config) error {
+func attachSession(ctx context.Context, cfg *Config) error {
 	if cfg == nil {
 		return fmt.Errorf("config must not be nil")
 	}
-	normalizedCfg, err := NormalizeConfig(*cfg)
-	if err != nil {
-		return fmt.Errorf("resolve defaults: %w", err)
-	}
+	normalizedCfg := *cfg
 	if normalizedCfg.RunMode != ModeAttach {
 		return fmt.Errorf("attach requires run mode %q, got %q", ModeAttach, normalizedCfg.RunMode)
 	}
@@ -40,15 +38,12 @@ func Attach(ctx context.Context, cfg *Config) error {
 	return attach(ctx, normalizedCfg)
 }
 
-func Control(ctx context.Context, cfg *Config) (retErr error) {
+func controlSession(ctx context.Context, cfg *Config) (retErr error) {
 	if cfg == nil {
 		return fmt.Errorf("config must not be nil")
 	}
 
-	normalizedCfg, err := NormalizeConfig(*cfg)
-	if err != nil {
-		return fmt.Errorf("resolve defaults: %w", err)
-	}
+	normalizedCfg := *cfg
 	if normalizedCfg.RunMode != ModeControl {
 		return fmt.Errorf("control operations require run mode %q, got %q", ModeControl, normalizedCfg.RunMode)
 	}
@@ -69,7 +64,7 @@ func Control(ctx context.Context, cfg *Config) (retErr error) {
 	if !normalizedCfg.PortList && len(normalizedCfg.PortForwards) == 0 && len(normalizedCfg.PortUnforwards) == 0 {
 		return fmt.Errorf("no control operation requested")
 	}
-	if len(normalizedCfg.Command) > 0 {
+	if len(normalizedCfg.Exec.Argv) > 0 {
 		return fmt.Errorf("control operations cannot be combined with an attach command")
 	}
 	if normalizedCfg.PortList {
@@ -86,7 +81,7 @@ func ListPorts(ctx context.Context, cfg *Config) ([]define.PortMapping, error) {
 
 	normalizedCfg, err := NormalizeConfig(*cfg)
 	if err != nil {
-		return nil, fmt.Errorf("resolve defaults: %w", err)
+		return nil, commanderr.Usage(err)
 	}
 	if normalizedCfg.RunMode != ModeControl {
 		return nil, fmt.Errorf("port list requires run mode %q, got %q", ModeControl, normalizedCfg.RunMode)
@@ -166,8 +161,8 @@ func attach(ctx context.Context, cfg Config) error {
 		controlTarget.Port = defaults.Port
 	}
 
-	if len(cfg.Command) == 0 {
-		cfg.Command = []string{"/bin/sh"}
+	if len(cfg.Exec.Argv) == 0 {
+		cfg.Exec.Argv = []string{"/bin/sh"}
 	}
 	_, err = executeGuest(ctx, controlTarget, cfg)
 	return err

@@ -14,7 +14,8 @@ func executeGuest(ctx context.Context, target guestcontrol.Target, cfg Config) (
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	useTTY := cfg.TTY == "always" || cfg.PTY || (cfg.TTY == "auto" && system.ForegroundTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())))
-	req := execution.Request{Argv: cfg.Command, Env: cfg.Env, WorkDir: cfg.WorkDir, TTY: useTTY, Term: system.GetTerminalType(), Rows: 24, Cols: 80}
+	req := cfg.Exec
+	req.TTY, req.Term, req.Rows, req.Cols = useTTY, system.GetTerminalType(), 24, 80
 	if w, h, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
 		req.Rows, req.Cols = uint16(h), uint16(w)
 	}

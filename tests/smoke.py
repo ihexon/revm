@@ -68,6 +68,10 @@ try:
         os.close(fd)
     print('PASS stdin read failure is reported', flush=True)
 
+    p, _ = run(['sh','-c','printf "%s:%s" "$CHECK" "$PWD"'], extra=['--envs','CHECK=propagated','--workdir','/tmp'])
+    assert finish(p)[0] == b'propagated:/tmp'
+    print('PASS execution environment and working directory', flush=True)
+
     for argv, code in [(['revm-command-does-not-exist'],127), (['sh','-c','kill -TERM $$'],143), (['sh','-c','kill -34 $$'],162)]:
         p, _ = run(argv); finish(p, code)
     with tempfile.TemporaryDirectory(prefix='revm-exec-format-', dir='/tmp') as fixture:

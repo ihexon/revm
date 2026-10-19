@@ -49,10 +49,7 @@ func (v *Libkrun) addDisk(spec define.BlockDeviceSpec) error {
 	if format == 0 {
 		format = define.DiskFormatRaw
 	}
-	syncMode := spec.SyncMode
-	if syncMode == 0 {
-		syncMode = define.SyncModeRelaxed
-	}
+
 	id := newKrunStr(idValue)
 	diskPath := newKrunStr(spec.Path)
 	defer id.free()
@@ -64,7 +61,7 @@ func (v *Libkrun) addDisk(spec define.BlockDeviceSpec) error {
 	}
 	C.krun_block_device_set_read_only(device, C.bool(spec.ReadOnly))
 	C.krun_block_device_set_direct_io(device, C.bool(spec.DirectIO))
-	C.krun_block_device_set_sync_mode(device, C.uint32_t(syncMode))
+	C.krun_block_device_set_sync_mode(device, C.uint32_t(spec.SyncMode))
 	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
 	return nil
 }

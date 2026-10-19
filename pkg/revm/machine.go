@@ -58,53 +58,6 @@ func (v *machineBuilder) setupWorkspace(workspacePath string) error {
 	return nil
 }
 
-func (v *machineBuilder) withResources(memoryInMB uint64, cpus uint8) error {
-	if cpus == 0 {
-		return fmt.Errorf("1 cpu cores is the minimum value")
-	}
-
-	if memoryInMB < 512 {
-		return fmt.Errorf("512MB of memory is the minimum value")
-	}
-
-	v.MemoryInMB = memoryInMB
-	v.Cpus = cpus
-
-	return nil
-}
-
-func (v *machineBuilder) setupCmdLine(workdir, bin string, args, envs []string) error {
-	if v.RunMode != define.RootFsMode.String() {
-		return fmt.Errorf("expect run mode %q, but got %q", define.RootFsMode.String(), v.RunMode)
-	}
-
-	if v.RootFS == "" {
-		return fmt.Errorf("rootfs path is empty")
-	}
-
-	if workdir == "" {
-		return fmt.Errorf("workdir path is empty")
-	}
-
-	if bin == "" {
-		return fmt.Errorf("bin path is empty")
-	}
-
-	if v.ProxySetting.Use {
-		envs = append(envs, "http_proxy="+v.ProxySetting.HTTPProxy)
-		envs = append(envs, "https_proxy="+v.ProxySetting.HTTPSProxy)
-	}
-
-	v.Cmdline = define.Cmdline{
-		Bin:     bin,
-		Args:    args,
-		Envs:    envs,
-		WorkDir: workdir,
-	}
-
-	return nil
-}
-
 func (v *machineBuilder) withBuiltInAlpineRootfs(ctx context.Context) error {
 	if v.WorkspaceDir == "" {
 		return fmt.Errorf("workspace path is empty")
@@ -201,11 +154,6 @@ func (v *machineBuilder) configureGuestAgent(ctx context.Context) error {
 func (v *machineBuilder) configurePodman(ctx context.Context, userEnv []string) error {
 	envs := append([]string{}, userEnv...)
 
-	if v.ProxySetting.Use {
-		envs = append(envs, "http_proxy="+v.ProxySetting.HTTPProxy)
-		envs = append(envs, "https_proxy="+v.ProxySetting.HTTPSProxy)
-	}
-
 	apiPath := v.pathMgr.GetPodmanSocketFile()
 
 	podmanProxyAddr := &url.URL{
@@ -300,31 +248,25 @@ func createSymlink(target, linkPath string) error {
 	return os.Symlink(target, linkPath)
 }
 
-func (v *machineBuilder) applySystemProxy() error {
-	httpProxy, err := sysproxy.GetHTTP()
+var getSystemHTTPProxy = sysproxy.GetHTTP
+
+func systemProxyEnv(network define.VNetMode) ([]string, error) {
+	httpProxy, err := getSystemHTTPProxy()
 	if err != nil {
-		return fmt.Errorf("get system proxy fail: %w", err)
+		return nil, fmt.Errorf("get system proxy fail: %w", err)
 	}
 
 	if httpProxy == nil {
-		logrus.Warnf("system proxy is not enabled, do nothing")
-		return nil
+		return nil, nil
 	}
 
 	proxyHost := strings.ToLower(strings.Trim(httpProxy.Host, "[]"))
-	if v.VirtualNetworkMode == define.GVISOR &&
+	if network == define.GVISOR &&
 		(proxyHost == "127.0.0.1" || proxyHost == "localhost" || proxyHost == "::1") {
-		logrus.Debugf("in gvisor network mode, reset proxy to %s", define.HostDomainInGVPNet)
 		httpProxy.Host = define.HostDomainInGVPNet
 	}
 
-	logrus.Infof("set http/https proxy to %s", httpProxy.String())
-	v.ProxySetting = define.ProxySetting{
-		Use:        true,
-		HTTPProxy:  httpProxy.String(),
-		HTTPSProxy: httpProxy.String(),
-	}
-	return nil
+	return []string{"http_proxy=" + httpProxy.String(), "https_proxy=" + httpProxy.String()}, nil
 }
 
 func pathWithin(base, candidate string) bool {
@@ -343,198 +285,54 @@ func pathWithin(base, candidate string) bool {
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
-// --- Machine assembly (from Config) ----------------------------------------
-
-// buildMachine converts Config directly into define.MachineSpec.
-// The returned cleanup func releases runtime resources (such as the session
-// lock), but intentionally keeps the session workspace on disk. Caller must
-// always invoke it.
-func buildMachine(ctx context.Context, cfg Config, workspacePath string) (mc *define.MachineSpec, cleanup func(), retErr error) {
-	plan, err := newMachineBuildPlan(cfg, workspacePath)
-	if err != nil {
-		return nil, nil, err
+// buildMachine prepares native devices; the session lease owns every file.
+func buildMachine(ctx context.Context, cfg Config, workspace string) (*define.MachineSpec, error) {
+	mode := define.RootFsMode
+	if cfg.RunMode == ModeContainer {
+		mode = define.ContainerMode
 	}
-	defer func() {
-		if retErr != nil {
-			plan.cleanup()
+	b := newMachineBuilder(mode)
+	if err := b.setupWorkspace(workspace); err != nil {
+		return nil, err
+	}
+	b.pathMgr.rootfsDir = filepath.Join(cfg.paths.record.CacheDir, "rootfs")
+	b.LogFile = filepath.Join(cfg.paths.logDir, "vm.log")
+	b.MemoryInMB, b.Cpus = cfg.MemoryMB, uint8(cfg.CPUs)
+	if err := b.configureSSH(); err != nil {
+		return nil, err
+	}
+	if err := b.configureNetwork(define.VNetMode(cfg.Network)); err != nil {
+		return nil, err
+	}
+	if err := validatePortForwardSet(cfg.PortForwards, b.SSHInfo.HostSSHProxyListenAddr); err != nil {
+		return nil, err
+	}
+	b.PortForwards = cfg.PortForwards
+	if err := b.withBuiltInAlpineRootfs(ctx); err != nil {
+		return nil, err
+	}
+	if cfg.RunMode == ModeContainer {
+		if err := b.withMountUserHome(ctx); err != nil {
+			return nil, err
 		}
-	}()
-
-	if err := plan.build(ctx); err != nil {
-		return nil, nil, err
-	}
-
-	return &plan.builder.MachineSpec, plan.cleanup, nil
-}
-
-type machineBuildPlan struct {
-	cfg           Config
-	workspacePath string
-	runMode       define.RunMode
-	builder       *machineBuilder
-	cleanups      []func()
-	cleaned       bool
-}
-
-func newMachineBuildPlan(cfg Config, workspacePath string) (*machineBuildPlan, error) {
-	var runMode define.RunMode
-	switch cfg.RunMode {
-	case ModeRootfs:
-		runMode = define.RootFsMode
-	case ModeContainer:
-		runMode = define.ContainerMode
-	default:
-		return nil, fmt.Errorf("unsupported run mode %q", cfg.RunMode)
-	}
-
-	return &machineBuildPlan{
-		cfg:           cfg,
-		workspacePath: workspacePath,
-		runMode:       runMode,
-		builder:       newMachineBuilder(runMode),
-	}, nil
-}
-
-func (p *machineBuildPlan) build(ctx context.Context) error {
-	steps := []struct {
-		name string
-		run  func() error
-	}{
-		{"workspace", func() error {
-			if err := p.builder.setupWorkspace(p.workspacePath); err != nil {
-				return err
-			}
-			p.builder.pathMgr.rootfsDir = filepath.Join(p.cfg.paths.record.CacheDir, "rootfs")
-			return nil
-		}},
-		{"logging", func() error {
-			p.builder.LogFile = filepath.Join(p.cfg.paths.logDir, "vm.log")
-			return nil
-		}},
-		{"ssh", p.builder.configureSSH},
-		{"resources", func() error {
-			return p.builder.withResources(p.cfg.MemoryMB, uint8(p.cfg.CPUs))
-		}},
-		{"network", func() error {
-			return p.builder.configureNetwork(define.VNetMode(p.cfg.Network))
-		}},
-		{"port forwards", func() error {
-			if len(p.cfg.PortForwards) == 0 {
-				return nil
-			}
-			if p.builder.VirtualNetworkMode != define.GVISOR {
-				return fmt.Errorf("port export requires %s network, got %s", define.GVISOR, p.builder.VirtualNetworkMode)
-			}
-			if err := validatePortForwardSet(p.cfg.PortForwards, p.builder.SSHInfo.HostSSHProxyListenAddr); err != nil {
-				return err
-			}
-			p.builder.PortForwards = append([]define.PortForward(nil), p.cfg.PortForwards...)
-			return nil
-		}},
-		{"proxy", func() error {
-			if !p.cfg.Proxy {
-				return nil
-			}
-			return p.builder.applySystemProxy()
-		}},
-		{"rootfs", func() error {
-			logrus.Info("preparing rootfs...")
-			if err := p.builder.withBuiltInAlpineRootfs(ctx); err != nil {
-				return err
-			}
-			logrus.Info("preparing rootfs completed")
-			return nil
-		}},
-		{"mode", func() error { return p.configureMode(ctx) }},
-		{"storage", func() error { return p.attachStorage(ctx) }},
-		{"guest agent", func() error { return p.builder.configureGuestAgent(ctx) }},
-		{"management API", p.builder.configureVMCtlAPI},
-		{"tty", func() error {
-			if p.runMode == define.ContainerMode {
-				p.builder.TTY = false
-				return nil
-			}
-			p.builder.detectTTY()
-			return nil
-		}},
-	}
-
-	for _, step := range steps {
-		if err := step.run(); err != nil {
-			return fmt.Errorf("%s: %w", step.name, err)
+		if err := b.configurePodman(ctx, cfg.Exec.Env); err != nil {
+			return nil, err
+		}
+		if err := b.configureContainerRAWDisk(ctx, cfg.ContainerDisk, ""); err != nil {
+			return nil, err
 		}
 	}
-	return nil
+	if err := b.withUserProvidedStorageRAWDisk(ctx, cfg.Disks); err != nil {
+		return nil, err
+	}
+	if err := b.withUserProvidedMounts(cfg.Mounts); err != nil {
+		return nil, err
+	}
+	if err := b.configureGuestAgent(ctx); err != nil {
+		return nil, err
+	}
+	if err := b.configureVMCtlAPI(); err != nil {
+		return nil, err
+	}
+	return &b.MachineSpec, nil
 }
-
-func (p *machineBuildPlan) configureMode(ctx context.Context) error {
-	switch p.runMode {
-	case define.RootFsMode:
-		return p.configureRootfsMode(ctx)
-	case define.ContainerMode:
-		return p.configureContainerMode(ctx)
-	default:
-		return fmt.Errorf("unsupported run mode %q", p.runMode)
-	}
-}
-
-func (p *machineBuildPlan) configureRootfsMode(ctx context.Context) error {
-	workDir := p.cfg.WorkDir
-	if workDir == "" {
-		workDir = "/"
-	}
-
-	bin := p.cfg.Command[0]
-	var args []string
-	if len(p.cfg.Command) > 1 {
-		args = p.cfg.Command[1:]
-	}
-	return p.builder.setupCmdLine(workDir, bin, args, p.cfg.Env)
-}
-
-func (p *machineBuildPlan) configureContainerMode(ctx context.Context) error {
-	if p.builder.VirtualNetworkMode != define.GVISOR {
-		return fmt.Errorf("container mode only supports %s network, got %s", define.GVISOR, p.builder.VirtualNetworkMode)
-	}
-
-	if err := p.builder.withMountUserHome(ctx); err != nil {
-		return fmt.Errorf("mount user home: %w", err)
-	}
-
-	if err := p.builder.configurePodman(ctx, p.cfg.Env); err != nil {
-		return fmt.Errorf("configure podman: %w", err)
-	}
-
-	logrus.Info("Preparing container storage disk...")
-	if err := p.builder.configureContainerRAWDisk(ctx, p.cfg.ContainerDisk, ""); err != nil {
-		return fmt.Errorf("setup container disk: %w", err)
-	}
-
-	return nil
-}
-
-func (p *machineBuildPlan) attachStorage(ctx context.Context) error {
-	if len(p.cfg.Disks) > 0 {
-		if err := p.builder.withUserProvidedStorageRAWDisk(ctx, p.cfg.Disks); err != nil {
-			return fmt.Errorf("attach raw disks: %w", err)
-		}
-	}
-	if len(p.cfg.Mounts) > 0 {
-		if err := p.builder.withUserProvidedMounts(p.cfg.Mounts); err != nil {
-			return fmt.Errorf("setup mounts: %w", err)
-		}
-	}
-	return nil
-}
-
-func (p *machineBuildPlan) cleanup() {
-	if p.cleaned {
-		return
-	}
-	p.cleaned = true
-	for i := len(p.cleanups) - 1; i >= 0; i-- {
-		p.cleanups[i]()
-	}
-}
-
-func (v *machineBuilder) detectTTY() { v.TTY = false }

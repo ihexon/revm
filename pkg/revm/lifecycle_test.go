@@ -29,7 +29,7 @@ func testConfig() Config {
 	c := *DefaultConfig()
 	c.RunMode = ModeRootfs
 	c.SessionID = "test-" + uuid.NewString()
-	c.Command = []string{"true"}
+	c.Exec.Argv = []string{"true"}
 	return c
 }
 func fakeVolume(t *testing.T, r Roots, id string) Volume {

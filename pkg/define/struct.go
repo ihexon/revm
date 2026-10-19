@@ -29,8 +29,6 @@ type MachineSpec struct {
 	IgnitionServerCfg IgnitionServerCfg `json:"ignitionServerCfg,omitempty"`
 	GuestControlAddr  string            `json:"guestControlAddr,omitempty"`
 	GuestAgentCfg     GuestAgentCfg     `json:"guestAgentCfg,omitempty"`
-	Cmdline           Cmdline           `json:"cmdline,omitempty"` // 仅仅在 rootfs mode 有意义
-	ProxySetting      ProxySetting      `json:"systemProxy,omitempty"`
 
 	TTY bool `json:"TTY"`
 }
@@ -38,13 +36,6 @@ type MachineSpec struct {
 const (
 	XattrDiskVersionKey = "user.vm.rawdisk.version"
 )
-
-type Cmdline struct {
-	Envs    []string `json:"envs,omitempty"`
-	Bin     string   `json:"bin,omitempty"`
-	Args    []string `json:"args,omitempty"`
-	WorkDir string   `json:"workdir,omitempty"`
-}
 
 type StorageSpec struct {
 	Blocks   []BlockDeviceSpec `json:"blocks,omitempty"`
@@ -74,12 +65,6 @@ type SSHInfo struct {
 	GuestSSHPrivateKeyFile   string `json:"guestSSHPrivateKeyFile,omitempty"`
 	GuestSSHAuthorizedKeys   string `json:"guestSSHAuthorizedKeys,omitempty"`
 	GuestSSHPidFile          string `json:"guestSSHPidFile,omitempty"`
-}
-
-type ProxySetting struct {
-	HTTPProxy  string `json:"httpProxy,omitempty"`
-	HTTPSProxy string `json:"httpsProxy,omitempty"`
-	Use        bool   `json:"use,omitempty"`
 }
 
 type IgnitionServerCfg struct {

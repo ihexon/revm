@@ -5,6 +5,7 @@ package revm
 import (
 	"fmt"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/execution"
 	"path"
 	"runtime"
 	"strings"
@@ -45,14 +46,10 @@ type Config struct {
 	CPUs      int     `json:"cpus,omitempty"`      // 0 → host CPU count
 	MemoryMB  uint64  `json:"memoryMB,omitempty"`  // 0 → host total RAM
 
-	// Command specifies the program to run inside the VM.
-	// It is required by run mode and optional in attach mode.
-	Command     []string      `json:"command,omitempty"`
-	WorkDir     string        `json:"workdir,omitempty"`
-	Env         []string      `json:"env,omitempty"`
-	PTY         bool          `json:"pty,omitempty"`
-	TTY         string        `json:"tty,omitempty"`
-	StopTimeout time.Duration `json:"stopTimeout"`
+	Exec        execution.Request `json:"exec"`
+	PTY         bool              `json:"pty,omitempty"`
+	TTY         string            `json:"tty,omitempty"`
+	StopTimeout time.Duration     `json:"stopTimeout"`
 
 	Network              string               `json:"network,omitempty"` // "gvisor" | "tsi"
 	Mounts               []string             `json:"mounts,omitempty"`  // "/host:/guest[,ro]"
@@ -76,7 +73,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Network:     "gvisor",
 		LogLevel:    "info",
-		WorkDir:     "/",
+		Exec:        execution.Request{WorkDir: "/"},
 		TTY:         "auto",
 		StopTimeout: 10 * time.Second,
 	}
@@ -97,12 +94,12 @@ func NormalizeConfig(cfg Config) (Config, error) {
 		cfg.LogLevel = "info"
 	}
 
-	if cfg.WorkDir == "" {
-		cfg.WorkDir = "/"
+	if cfg.Exec.WorkDir == "" {
+		cfg.Exec.WorkDir = "/"
 	}
 
 	if cfg.RunMode != ModeAttach && cfg.RunMode != ModeControl {
-		if cfg.CPUs <= 0 {
+		if cfg.CPUs == 0 {
 			cfg.CPUs = min(runtime.NumCPU(), 4)
 		}
 
@@ -119,6 +116,14 @@ func NormalizeConfig(cfg Config) (Config, error) {
 		return Config{}, err
 	}
 
+	if cfg.Proxy {
+		proxyEnv, err := systemProxyEnv(define.VNetMode(cfg.Network))
+		if err != nil {
+			return Config{}, err
+		}
+		// Explicit --env values take precedence over detected defaults.
+		cfg.Exec.Env = append(proxyEnv, cfg.Exec.Env...)
+	}
 	return cfg, nil
 }
 
@@ -132,13 +137,13 @@ func validateConfig(cfg Config) error {
 	if _, err := logrus.ParseLevel(cfg.LogLevel); err != nil {
 		return fmt.Errorf("invalid --log-level %q", cfg.LogLevel)
 	}
-	for _, env := range cfg.Env {
+	for _, env := range cfg.Exec.Env {
 		key, _, ok := strings.Cut(env, "=")
 		if !ok || key == "" || strings.ContainsAny(env, "\x00") {
 			return fmt.Errorf("invalid environment variable %q: expected KEY=VALUE", env)
 		}
 	}
-	if !path.IsAbs(cfg.WorkDir) {
+	if !path.IsAbs(cfg.Exec.WorkDir) {
 		return fmt.Errorf("--workdir must be an absolute guest path")
 	}
 	if err := validateSessionID(cfg.SessionID); err != nil {
@@ -193,17 +198,17 @@ func validateSessionID(id string) error {
 }
 
 func validateAttachConfig(cfg Config) error {
-	if len(cfg.PortUnforwards) > 0 && len(cfg.Command) > 0 {
+	if len(cfg.PortUnforwards) > 0 && len(cfg.Exec.Argv) > 0 {
 		return fmt.Errorf("port unexport cannot be combined with an attach command")
 	}
-	if len(cfg.PortForwards) > 0 && len(cfg.Command) > 0 {
+	if len(cfg.PortForwards) > 0 && len(cfg.Exec.Argv) > 0 {
 		return fmt.Errorf("port export cannot be combined with an attach command")
 	}
 	return nil
 }
 
 func validateControlConfig(cfg Config) error {
-	if len(cfg.Command) > 0 {
+	if len(cfg.Exec.Argv) > 0 {
 		return fmt.Errorf("control operations cannot be combined with an attach command")
 	}
 	hasPortUpdates := len(cfg.PortForwards) > 0 || len(cfg.PortUnforwards) > 0
@@ -229,7 +234,7 @@ func validateBuildConfig(cfg Config) error {
 	}
 
 	if cfg.RunMode == ModeRootfs {
-		if len(cfg.Command) == 0 || cfg.Command[0] == "" {
+		if len(cfg.Exec.Argv) == 0 || cfg.Exec.Argv[0] == "" {
 			return fmt.Errorf("rootfs mode requires a non-empty command")
 		}
 	}
@@ -250,6 +255,9 @@ func validateBuildConfig(cfg Config) error {
 		// ok
 	default:
 		return fmt.Errorf("network must be \"gvisor\" or \"tsi\", got %q", cfg.Network)
+	}
+	if cfg.RunMode == ModeContainer && cfg.Network != string(define.GVISOR) {
+		return fmt.Errorf("container mode requires gvisor network")
 	}
 	if len(cfg.PortForwards) > 0 && cfg.Network != string(define.GVISOR) {
 		return fmt.Errorf("port export requires network %q, got %q", define.GVISOR, cfg.Network)
