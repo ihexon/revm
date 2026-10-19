@@ -2,13 +2,13 @@
 .SH NAME
 revm \- run Linux commands in a libkrun microVM
 .SH SYNOPSIS
-.B revm run --id NAME
+.B revm run [--id NAME]
 [options] -- command [args...]
 .br
-.B revm podman --id NAME
+.B revm podman --volume NAME [--id NAME]
 [options]
 .br
-.B revm attach --id NAME
+.B revm exec --id NAME
 [--tty=auto|always|never] -- command [args...]
 .br
 .B revm
@@ -28,13 +28,13 @@ memory bounded to 512-2048 MiB. Minimum memory: 512 MiB.
 .TP
 .B --tty=auto|always|never
 Allocate a PTY. Auto requires foreground terminal stdin and terminal stdout.
---pty is an alias for always. Input EOF does not inject Ctrl-D.
+Input EOF does not inject Ctrl-D.
 .TP
 .B --stop-timeout DURATION
 Grace period for cancellation, default 10s. A second signal accelerates cleanup.
 .TP
-.B --rm
-Remove run session records and logs after exit, preserving persistent data.
+.B --id NAME
+Retain named session records and logs. Without it, run and podman are disposable.
 .TP
 .B --mount HOST:GUEST[,ro]
 Share a host directory. Writes persist on the host.
@@ -44,7 +44,7 @@ Attach an external persistent raw/ext4 disk. Existing disks are never replaced
 because a version is missing or mismatched.
 .TP
 .B --container-disk PATH[,version=LABEL]
-Use an external Podman storage disk instead of the managed podman-NAME volume.
+Use an external Podman storage disk; mutually exclusive with --volume NAME.
 .SH SESSION MANAGEMENT
 .B ls --json
 lists sessions; 
@@ -68,6 +68,8 @@ Volumes use XDG_DATA_HOME/revm/volumes.
 Unset cache, state and data roots default to ~/.cache, ~/.local/state and
 ~/.local/share. Roots may not overlap.
 .PP
+.B volume create NAME
+creates independent persistent storage, selected by podman --volume NAME.
 .B volume ls --json
 lists managed volumes.
 .B volume rm NAME
@@ -81,9 +83,9 @@ the Linux signal number. A host cancellation retains its first signal. Unknown
 results never count as success. Diagnostics go to stderr; structured command
 output goes to stdout.
 .SH EXAMPLES
-printf 'hello\en' | revm run --id pipe -- cat
+printf 'hello\en' | revm run -- cat
 .br
-revm run --rm --id build --mount "$PWD:/work" --workdir /work -- make test
+revm run --mount "$PWD:/work" --workdir /work -- make test
 .br
 revm completion zsh
 .SH SEE ALSO

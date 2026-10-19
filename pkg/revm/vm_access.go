@@ -18,15 +18,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Attach resolves the attach configuration and connects to an existing VM
+// execSession resolves the execution configuration and connects to an existing VM
 // session without building or starting a virtual machine.
-func attachSession(ctx context.Context, cfg *Config) error {
+func execSession(ctx context.Context, cfg *Config) error {
 	if cfg == nil {
 		return fmt.Errorf("config must not be nil")
 	}
 	normalizedCfg := *cfg
-	if normalizedCfg.RunMode != ModeAttach {
-		return fmt.Errorf("attach requires run mode %q, got %q", ModeAttach, normalizedCfg.RunMode)
+	if normalizedCfg.RunMode != ModeExec {
+		return fmt.Errorf("exec requires run mode %q, got %q", ModeExec, normalizedCfg.RunMode)
 	}
 	logFile, err := setupRunLogging(normalizedCfg)
 	if err != nil {
@@ -34,7 +34,7 @@ func attachSession(ctx context.Context, cfg *Config) error {
 	}
 	defer releaseRunLog(logFile)
 
-	return attach(ctx, normalizedCfg)
+	return execInSession(ctx, normalizedCfg)
 }
 
 func controlSession(ctx context.Context, cfg *Config) (retErr error) {
@@ -64,7 +64,7 @@ func controlSession(ctx context.Context, cfg *Config) (retErr error) {
 		return fmt.Errorf("no control operation requested")
 	}
 	if len(normalizedCfg.Exec.Argv) > 0 {
-		return fmt.Errorf("control operations cannot be combined with an attach command")
+		return fmt.Errorf("control operations cannot be combined with an exec command")
 	}
 	if normalizedCfg.PortList {
 		_, err := ListPorts(ctx, cfg)
@@ -137,7 +137,7 @@ func updatePortForwards(ctx context.Context, normalizedCfg Config) error {
 	return nil
 }
 
-func attach(ctx context.Context, cfg Config) error {
+func execInSession(ctx context.Context, cfg Config) error {
 	workspace, err := sessionWorkspace(cfg.SessionID)
 	if err != nil {
 		return err

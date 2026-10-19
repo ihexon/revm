@@ -10,12 +10,13 @@ revm podman 固定使用 gvisor 网络，因此支持容器端口发布和 revm 
 ## 基本用法
 
 ~~~text
-revm podman --id <session-id> [options]
+revm podman --volume data --id <session-id> [options]
 ~~~
 
 ~~~bash
-# 终端 1：启动 VM 和 Podman 服务。
-revm podman --id dev --podman-api /tmp/revm-dev.sock
+# 先创建独立持久卷，然后启动 VM。
+revm volume create data
+revm podman --volume data --id dev --podman-api /tmp/revm-dev.sock
 ~~~
 
 在另一个终端连接宿主机 Podman 客户端：
@@ -44,7 +45,7 @@ Podman 只监听 guest 内 `/run/revm/podman/podman.sock`，不开放 TCP 管理
 管理 API 可以单独导出：
 
 ~~~bash
-revm podman --id dev \
+revm podman --volume data --id dev \
   --podman-api /tmp/revm-dev.sock \
   --manage-api /tmp/revm-dev-vmctl.sock
 ~~~
@@ -54,7 +55,7 @@ revm podman --id dev \
 --mount 共享项目目录：
 
 ~~~bash
-revm podman --id app \
+revm podman --volume data --id app \
   --podman-api /tmp/revm-app.sock \
   --mount "$PWD:/workspace"
 ~~~
@@ -73,7 +74,7 @@ revm podman 只挂载显式指定的 `--mount`，不会自动共享宿主 home�
 
 容器存储位于 guest 的 /var/lib/containers，并由一个 ext4 raw disk 提供。
 
-未指定 --container-disk 时，使用独立的 `podman-<session-id>` 持久卷：
+必须显式选择 `--volume NAME` 或 `--container-disk PATH`，两者不能同时使用。`volume create NAME` 创建命名卷，其磁盘位于：
 
 ~~~text
 ${XDG_DATA_HOME:-~/.local/share}/revm/volumes/<volume-id>/disk.ext4
@@ -93,7 +94,7 @@ revm podman --id dev \
 --container-disk <path>[,version=<string>]
 ~~~
 
-外部磁盘不存在时自动创建，之后仍由用户持有。已有磁盘缺少版本属性时检查原盘；版本不一致时报错并保留数据。停止或删除 session 不删除默认 volume，同名启动会重新连接原卷。显式删除使用 `revm volume rm NAME`，运行中的卷不可删除。旧布局不会被自动导入；已有磁盘可通过 `--container-disk` 显式使用。
+外部磁盘不存在时自动创建，之后仍由用户持有。已有磁盘缺少版本属性时检查原盘；版本不一致时报错并保留数据。停止或删除 session 不删除 volume；每次启动都显式选择卷，不通过 session 名称恢复磁盘。省略 `--id` 时退出后清理 session 记录。显式删除使用 `revm volume rm NAME`，运行中的卷不可删除。旧布局不会被自动导入；已有磁盘可通过 `--container-disk` 显式使用。
 
 ## 端口发布
 
@@ -121,7 +122,7 @@ ctl 端口格式只支持 TCP 和 IPv4；使用 tsi 的 run session 不支持这
 ## 资源、环境和代理
 
 ~~~bash
-revm podman --id dev \
+revm podman --volume data --id dev \
   --cpus 4 \
   --memory 4096 \
   --envs CI=true \
@@ -136,6 +137,7 @@ revm podman --id dev \
 | --envs KEY=VALUE | 传给 Podman service 和容器运行环境的环境变量，可重复。 |
 | --system-proxy | 将 macOS 系统代理传入 guest。 |
 | --raw-disk | 添加额外 raw/ext4 磁盘，可重复。 |
+| --volume | 已有持久卷名称，与 --container-disk 互斥。 |
 | --container-disk | 设置 Podman 容器存储盘。 |
 | --mount | 添加 VirtIO-FS 共享目录，可重复。 |
 | --podman-api | 自定义 Podman API socket。 |
@@ -145,18 +147,18 @@ revm podman --id dev \
 
 revm podman 没有 --network 选项，始终使用 gvisor。
 
-## Attach 和 ctl
+## Exec 和 ctl
 
 ~~~bash
-revm attach --id dev --pty
-revm attach --id dev -- sh -c 'podman ps'
+revm exec --id dev --tty=always
+revm exec --id dev -- sh -c 'podman ps'
 revm ctl --id dev --list-port
 ~~~
 
-attach 使用 guest-control v2 执行普通命令和 PTY。ctl 只处理端口映射，不执行 guest 命令。
+exec 使用 guest-control v2 执行普通命令和 PTY。ctl 只处理端口映射，不执行 guest 命令。
 
 ## 停止行为
 
-第一次 SIGINT 或 SIGTERM 请求 libkrun 原生 shutdown；第二次信号或 host service 失败触发最长三秒的 force-stop。容器存储磁盘在正常停止时会同步。
+第一次停止信号通过 guest-control 请求关闭，等待 --stop-timeout 宽限期；第二次信号或超时进入强制回收。容器存储磁盘在正常停止时会同步。
 
 See [resource ownership](resources.md) and [session management](sessions.md). Runtime paths may use the private `/tmp/revm-<uid>` fallback; logs and results are stored under XDG_STATE_HOME.

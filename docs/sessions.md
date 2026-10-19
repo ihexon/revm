@@ -10,7 +10,7 @@ revm logs dev
 revm logs --guest -f dev
 revm stop --timeout 15s dev
 revm rm dev                 # stopped sessions only; volumes remain
-revm run --rm --id job -- sh -c 'echo temporary'
+revm run -- sh -c 'echo temporary'
 ```
 
 `wait` and `stop` bind to the instance selected when the command starts. They do
@@ -31,7 +31,7 @@ streamed to the caller and are not automatically copied into these logs.
 
 `rm` refuses a running session and removes its records, logs and owned stale
 runtime/cache directories. Persistent volumes, external disks and bind mounts
-remain. `run --rm` performs the same removal on command success or failure.
+remain. Runs without `--id` perform the same removal on success or failure. `--id NAME` retains records.
 
 `ctl --id dev --list-port --json` returns the current port mapping array.
 

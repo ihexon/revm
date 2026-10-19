@@ -9,7 +9,10 @@ import (
 
 func TestInvalidInvocations(t *testing.T) {
 	for _, args := range [][]string{
-		{"unknown"}, {"--unknown"}, {"run"},
+		{"unknown"}, {"attach"}, {"migrate"}, {"exec"}, {"podman"},
+		{"podman", "--volume", "data", "--container-disk", "/tmp/disk"},
+		{"run", "--rm", "--", "true"},
+		{"volume", "create", "../escape"}, {"--unknown"}, {"run"},
 		{"run", "--id", "../escape", "--", "true"},
 		{"run", "--id", ".create-session", "--", "true"},
 		{"run", "--id", "bad-cpu", "--cpus", "-1", "--", "true"},

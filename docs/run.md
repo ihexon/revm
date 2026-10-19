@@ -7,10 +7,10 @@ revm run 启动一个新的 session，使用程序内置的 Alpine rootfs，在 
 ## 语法
 
 ~~~text
-revm run --id <session-id> [options] -- <command> [args...]
+revm run [--id <session-id>] [options] -- <command> [args...]
 ~~~
 
---id 必填。-- 后面的参数原样组成 guest 命令；不应把宿主 shell 语法直接交给 revm，复杂逻辑请显式使用 sh -c。
+省略 `--id` 时临时运行，退出后清理记录；指定 `--id` 时保留日志和结果。-- 后面的参数原样组成 guest 命令；不应把宿主 shell 语法直接交给 revm，复杂逻辑请显式使用 sh -c。
 
 ~~~bash
 revm run --id shell -- sh -c 'uname -a; cat /etc/os-release'
@@ -95,13 +95,13 @@ revm run --id disk \
 
 ## 终端、流和退出状态
 
-stdin 按流传输，不等待输入全部结束。非 PTY 模式分别保留 stdout、stderr；guest 退出码直接返回。`--tty=auto` 在前台且 stdin/stdout 都是终端时分配 PTY；`always`、`never` 可覆盖，`--pty` 是 `always` 的别名。PTY 的 stdin EOF 不注入 Ctrl-D。
+stdin 按流传输，不等待输入全部结束。非 PTY 模式分别保留 stdout、stderr；guest 退出码直接返回。`--tty=auto` 在前台且 stdin/stdout 都是终端时分配 PTY；`always`、`never` 可覆盖。PTY 的 stdin EOF 不注入 Ctrl-D。
 
 ## 日志与资源
 
 每次运行使用独立 rootfs 和临时 socket 目录。日志和结果位于 `${XDG_STATE_HOME:-~/.local/state}/revm/sessions/<id>/runs/<instance>/`。使用 `revm logs ID`、`revm logs --guest -f ID` 读取日志，`revm inspect ID` 查看路径和结果。
 
-`--manage-api` 可导出连接符号链接，退出时只清理仍指向本实例的链接，不覆盖已有文件。`--rm` 在退出后删除 session 记录和日志；外部磁盘、volume、bind mount 数据保留。详见 [资源所有权](resources.md) 和 [session 命令](sessions.md)。
+`--manage-api` 可导出连接符号链接，退出时只清理仍指向本实例的链接，不覆盖已有文件。未指定 `--id` 时退出后删除 session 记录和日志；外部磁盘、volume、bind mount 数据保留。详见 [资源所有权](resources.md) 和 [session 命令](sessions.md)。
 
 ## 停止行为
 
@@ -112,9 +112,7 @@ stdin 按流传输，不等待输入全部结束。非 PTY 模式分别保留 st
 ~~~text
 --id
 --tty
---pty
 --stop-timeout
---rm
 --cpus
 --memory
 --envs

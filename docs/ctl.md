@@ -10,7 +10,7 @@ revm ctl 只控制一个正在运行 session 的 host-side 网络控制面。它
 - --port-export：将 guest TCP 端口暴露到 host。
 - --port-unexport：移除 host 端口暴露。
 
-连接 guest 使用 [revm attach](attach.md)。rootfs 不属于 ctl 的职责，rootfs 导入、导出和 --rootfs 参数已经删除。
+连接 guest 使用 [revm exec](exec.md)。rootfs 不属于 ctl 的职责，rootfs 导入、导出和 --rootfs 参数已经删除。
 
 ## 语法
 
@@ -110,7 +110,7 @@ revm ctl --id dev -- sh
 应该使用：
 
 ~~~bash
-revm attach --id dev -- sh
+revm exec --id dev -- sh
 ~~~
 
 tsi session 不支持 list 或 port update：

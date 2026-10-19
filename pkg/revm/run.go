@@ -21,8 +21,8 @@ func Run(ctx context.Context, cfg *Config) error {
 	}
 	cfg = &normalized
 	switch cfg.RunMode {
-	case ModeAttach:
-		return attachSession(ctx, cfg)
+	case ModeExec:
+		return execSession(ctx, cfg)
 	case ModeControl:
 		return controlSession(ctx, cfg)
 	case ModeRootfs, ModeContainer:

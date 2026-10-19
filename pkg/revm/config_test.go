@@ -17,6 +17,10 @@ func TestSystemProxyReachesExecutionRequest(t *testing.T) {
 	for _, mode := range []RunMode{ModeRootfs, ModeContainer} {
 		cfg := testConfig()
 		cfg.RunMode, cfg.Proxy = mode, true
+		if mode == ModeContainer {
+			cfg.VolumeName = "data"
+			cfg.Exec.Argv = nil
+		}
 		cfg.Exec.Env = []string{"https_proxy=http://explicit:9000"}
 		resolved, err := NormalizeConfig(cfg)
 		if err != nil {
@@ -48,5 +52,21 @@ func TestRawDiskSyncNoneSurvivesPreparation(t *testing.T) {
 		if dev.SyncMode != tc.want {
 			t.Fatalf("%s: sync=%d want %d", tc.option, dev.SyncMode, tc.want)
 		}
+	}
+}
+
+func TestOmittedSessionIsDisposable(t *testing.T) {
+	cfg := testConfig()
+	cfg.SessionID = ""
+	resolved, err := NormalizeConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.SessionID == "" || !resolved.Remove {
+		t.Fatal("unnamed run must be disposable")
+	}
+	named, err := NormalizeConfig(testConfig())
+	if err != nil || named.Remove {
+		t.Fatalf("named session must retain records: %v", err)
 	}
 }

@@ -4,7 +4,7 @@ Only the CLI entry point exits the host process. Invalid invocations return 2
 and one diagnostic on stderr; runtime failures return 1. Explicit help writes
 to stdout and succeeds. Invalid options never panic or create a session.
 
-Guest exit codes are preserved by run and attach, including 126 (not executable)
+Guest exit codes are preserved by run and exec, including 126 (not executable)
 and 127 (not found). Signal termination is recorded by name and mapped to 128
 plus the Linux signal number, independently of the host platform. A missing
 guest result is an error, never an inferred success. A nonzero guest result

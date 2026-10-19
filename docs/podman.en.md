@@ -8,12 +8,13 @@ revm podman always uses gvisor networking, so container port publishing and revm
 ## Usage
 
 ~~~text
-revm podman --id <session-id> [options]
+revm podman --volume data --id <session-id> [options]
 ~~~
 
 ~~~bash
-# Terminal 1: start the VM and Podman service.
-revm podman --id dev --podman-api /tmp/revm-dev.sock
+# Create independent storage, then start the VM.
+revm volume create data
+revm podman --volume data --id dev --podman-api /tmp/revm-dev.sock
 ~~~
 
 Connect the host Podman client from another terminal:
@@ -42,7 +43,7 @@ Ordinary workloads must not mount the management socket. A trusted Supervisor ca
 Export the management API separately:
 
 ~~~bash
-revm podman --id dev \
+revm podman --volume data --id dev \
   --podman-api /tmp/revm-dev.sock \
   --manage-api /tmp/revm-dev-vmctl.sock
 ~~~
@@ -52,7 +53,7 @@ revm podman --id dev \
 Share a project with --mount:
 
 ~~~bash
-revm podman --id app \
+revm podman --volume data --id app \
   --podman-api /tmp/revm-app.sock \
   --mount "$PWD:/workspace"
 ~~~
@@ -71,7 +72,8 @@ A workload rootfs comes from the Podman image. revm --rootfs cannot replace the 
 
 Container storage is mounted at /var/lib/containers from an ext4 raw disk.
 
-Without --container-disk, storage uses the independent persistent `podman-<session-id>` volume:
+Each launch requires `--volume NAME` or `--container-disk PATH`, never both.
+Create a named volume with `revm volume create NAME`. Its disk lives at:
 
 ~~~text
 ${XDG_DATA_HOME:-~/.local/share}/revm/volumes/<volume-id>/disk.ext4
@@ -91,7 +93,8 @@ Format:
 --container-disk <path>[,version=<string>]
 ~~~
 
-Missing external disks are created and remain user-owned. Existing disks are inspected; mismatched versions return an error without replacing data. Stopping or removing a session preserves its managed volume. A same-name restart reconnects it. Use `volume rm NAME` for explicit deletion; active volumes cannot be deleted. Legacy layouts are not imported; select an existing disk explicitly with `--container-disk`.
+Missing external disks are created and remain user-owned. Existing disks are inspected; mismatched versions return an error without replacing data. Stopping or removing a session preserves its managed volume. Every launch explicitly selects storage; session names do not reconnect disks.
+Omit `--id` to remove session records at exit. Use `volume rm NAME` for explicit deletion; active volumes cannot be deleted. Legacy layouts are not imported; select an existing disk explicitly with `--container-disk`.
 
 ## Port publishing
 
@@ -119,7 +122,7 @@ ctl port formats support TCP and IPv4 only. A run session using tsi does not sup
 ## Resources, environment, and proxy
 
 ~~~bash
-revm podman --id dev \
+revm podman --volume data --id dev \
   --cpus 4 \
   --memory 4096 \
   --envs CI=true \
@@ -143,18 +146,19 @@ revm podman --id dev \
 
 revm podman has no --network option; it always uses gvisor.
 
-## Attach and ctl
+## Exec and ctl
 
 ~~~bash
-revm attach --id dev --pty
-revm attach --id dev -- sh -c 'podman ps'
+revm exec --id dev --tty=always
+revm exec --id dev -- sh -c 'podman ps'
 revm ctl --id dev --list-port
 ~~~
 
-attach uses guest-control v2 for both ordinary commands and PTYs. ctl only changes port mappings; it does not execute guest commands.
+exec uses guest-control v2 for both ordinary commands and PTYs. ctl only changes port mappings; it does not execute guest commands.
 
 ## Stop behavior
 
-The first SIGINT or SIGTERM requests native libkrun shutdown. A second signal or host-service failure triggers the bounded force-stop path, which waits at most three seconds. The container storage disk is synced during a normal stop.
+The first stop signal requests guest shutdown over guest-control and waits for
+`--stop-timeout`. A second signal or timeout forces cleanup, bounded to three seconds. The container storage disk is synced during a normal stop.
 
 See [resource ownership](resources.md) and [session management](sessions.md). Runtime paths may use the private `/tmp/revm-<uid>` fallback; logs and results are stored under XDG_STATE_HOME.

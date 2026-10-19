@@ -30,7 +30,7 @@ func NewApp(name string) *cli.Command {
 		Commands: []*cli.Command{
 			newRunCommand(),
 			newPodmanCommand(),
-			newAttachCommand(),
+			newExecCommand(),
 			newCtlCommand(),
 		},
 	}
@@ -69,9 +69,7 @@ func newRunCommand() *cli.Command {
 		UsageText:                 "run [flags] <command> [args...]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
-			&cli.BoolFlag{Name: "rm", Usage: "remove session records and logs after exit; preserve persistent data"},
 			&cli.StringFlag{Name: "tty", Value: "auto", Usage: "terminal allocation: auto, always or never"},
-			&cli.BoolFlag{Name: "pty", Usage: "compatibility alias for --tty=always"},
 			&cli.DurationFlag{Name: "stop-timeout", Value: 10 * time.Second, Usage: "graceful cancellation budget"},
 			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to min(host CPU count, 4)"},
 			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to one quarter of available memory, between 512 and 2048 MB"},
@@ -83,7 +81,7 @@ func newRunCommand() *cli.Command {
 			&cli.StringFlag{Name: define.FlagVNetworkType, Usage: "virtual network stack: gvisor uses gvisor-tap-vsock (full TCP/UDP, DNS, NAT via 192.168.127.0/24); tsi uses libkrun transparent socket interception", Value: string(define.GVISOR)},
 			&cli.StringFlag{Name: define.FlagManageAPIFile, Usage: "custom Unix socket path for the host-side VM management API; defaults to the current instance runtime directory"},
 			&cli.StringFlag{Name: define.FlagReportEvents, Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888)"},
-			sessionFlag(),
+			sessionFlag(false),
 			logLevelFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
@@ -106,11 +104,12 @@ func newPodmanCommand() *cli.Command {
 			&cli.StringSliceFlag{Name: define.FlagRawDisk, Usage: "attach a raw disk (format: <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=relaxed|full|none]); auto-created if missing; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagMount, Usage: "share a host directory into the guest via VirtIO-FS (format: /host/path:/guest/path[,ro]); can be specified multiple times"},
 			&cli.BoolFlag{Name: define.FlagUsingSystemProxy, Usage: "read the macOS system HTTP/HTTPS proxy and forward it to the guest as http_proxy/https_proxy env vars; in gvisor mode, 127.0.0.1 is automatically rewritten to host.containers.internal"},
-			&cli.StringFlag{Name: define.FlagContainerDisk, Usage: "persistent ext4 raw disk image for container storage (format: <path>[,version=<string>]); auto-created if missing; existing disks are inspected and never replaced automatically; defaults to an independent managed volume"},
+			&cli.StringFlag{Name: "volume", Usage: "existing persistent volume name (create with revm volume create NAME)"},
+			&cli.StringFlag{Name: define.FlagContainerDisk, Usage: "persistent ext4 raw disk image for container storage (format: <path>[,version=<string>]); auto-created if missing; existing disks are inspected and never replaced automatically; mutually exclusive with --volume"},
 			&cli.StringFlag{Name: define.FlagPodmanProxyAPIFile, Usage: "custom Unix socket path for the host-side Podman API proxy; defaults to the current instance runtime directory"},
 			&cli.StringFlag{Name: define.FlagManageAPIFile, Usage: "custom Unix socket path for the host-side VM management API; defaults to the current instance runtime directory"},
 			&cli.StringFlag{Name: define.FlagReportEvents, Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888)"},
-			sessionFlag(),
+			sessionFlag(false),
 			logLevelFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
@@ -119,21 +118,22 @@ func newPodmanCommand() *cli.Command {
 	}
 }
 
-func newAttachCommand() *cli.Command {
+func newExecCommand() *cli.Command {
 	return &cli.Command{
-		Name:                      "attach",
-		Usage:                     "attach to an existing VM session",
-		UsageText:                 "attach --id <session-id> [--pty] [-- <command> [args...]]",
+		Name:                      "exec",
+		Usage:                     "execute a command in a running VM session",
+		UsageText:                 "exec --id <session-id> [flags] [-- <command> [args...]]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
-			&cli.BoolFlag{Name: define.FlagPTY, Usage: "compatibility alias for --tty=always"},
 			&cli.StringFlag{Name: "tty", Value: "auto", Usage: "terminal allocation: auto, always or never"},
 			&cli.DurationFlag{Name: "stop-timeout", Value: 10 * time.Second, Usage: "graceful cancellation budget"},
-			sessionFlag(),
+			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "guest environment (KEY=VALUE); repeatable"},
+			&cli.StringFlag{Name: define.FlagWorkDir, Value: "/", Usage: "absolute guest working directory"},
+			sessionFlag(true),
 			logLevelFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
-			return runLogged(ctx, command, revm.ModeAttach)
+			return runLogged(ctx, command, revm.ModeExec)
 		},
 	}
 }
@@ -149,7 +149,7 @@ func newCtlCommand() *cli.Command {
 			&cli.BoolFlag{Name: define.FlagListPort, Usage: "list current gvproxy port mappings for the running VM"},
 			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "expose a guest TCP port on the host (format: [tcp:]<host-port>:<guest-port> or [tcp:]<host-ip>:<host-port>:<guest-port>); updates the running VM and exits; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagPortUnexport, Usage: "stop exposing a host TCP port for a running VM (format: [tcp:]<host-port> or [tcp:]<host-ip>:<host-port>); can be specified multiple times"},
-			sessionFlag(),
+			sessionFlag(true),
 			logLevelFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
@@ -163,15 +163,8 @@ func runLogged(ctx context.Context, command *cli.Command, mode revm.RunMode) err
 	if err != nil {
 		return commanderr.Usage(err)
 	}
-	cfg.Remove = command.Bool("rm")
 	cfg.TTY = command.String("tty")
 	cfg.StopTimeout = command.Duration("stop-timeout")
-	if command.Bool("pty") {
-		if command.IsSet("tty") && cfg.TTY != "always" {
-			return commanderr.Usage(fmt.Errorf("--pty conflicts with --tty=%s", cfg.TTY))
-		}
-		cfg.TTY = "always"
-	}
 	if controller := execution.ControllerFrom(ctx); controller != nil {
 		controller.SetTimeout(cfg.StopTimeout)
 	}
@@ -210,6 +203,7 @@ func parseConfig(c *cli.Command, mode revm.RunMode) (*revm.Config, error) {
 	cfg.CPUs, cfg.MemoryMB = int(c.Int8(define.FlagCPUS)), c.Uint64(define.FlagMemoryInMB)
 	cfg.Network, cfg.Proxy = c.String(define.FlagVNetworkType), c.Bool(define.FlagUsingSystemProxy)
 	cfg.Exec = execution.Request{Argv: c.Args().Slice(), Env: c.StringSlice(define.FlagEnvs), WorkDir: c.String(define.FlagWorkDir)}
+	cfg.VolumeName = c.String("volume")
 	cfg.Mounts = c.StringSlice(define.FlagMount)
 	cfg.ManageAPIFile, cfg.PodmanProxyAPIFile = c.String(define.FlagManageAPIFile), c.String(define.FlagPodmanProxyAPIFile)
 	cfg.ReportURL = c.String(define.FlagReportEvents)
@@ -257,8 +251,8 @@ func writePortMappings(w io.Writer, ports []define.PortMapping) error {
 	return tw.Flush()
 }
 
-func sessionFlag() cli.Flag {
-	return &cli.StringFlag{Name: define.FlagSessionID, Usage: "required session name", Required: true}
+func sessionFlag(required bool) cli.Flag {
+	return &cli.StringFlag{Name: define.FlagSessionID, Usage: "session name; run and podman retain records only when specified", Required: required}
 }
 
 func logLevelFlag() cli.Flag {

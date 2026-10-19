@@ -193,12 +193,11 @@ type RunRecord struct {
 	Error      string            `json:"error,omitempty"`
 }
 type Volume struct {
-	Version        int    `json:"version"`
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Purpose        string `json:"purpose"`
-	Format         string `json:"format"`
-	DefaultSession string `json:"defaultSession,omitempty"`
+	Version int    `json:"version"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Purpose string `json:"purpose"`
+	Format  string `json:"format"`
 }
 type sessionRun struct {
 	roots      Roots
@@ -307,15 +306,20 @@ func beginRun(ctx context.Context, cfg *Config) (lease *sessionRun, retErr error
 	}
 
 	original := *cfg
-	if cfg.RunMode == ModeContainer && cfg.ContainerDisk == nil {
+	s.VolumeID = ""
+	if cfg.VolumeName != "" {
 		catalog, err := acquireLock(filepath.Join(r.Data, "locks", "catalog.lock"))
 		if err != nil {
 			return nil, err
 		}
-		v, err := ensureDefaultVolume(ctx, r, s)
+		v, err := findVolume(r, cfg.VolumeName)
 		if err != nil {
 			catalog.Close()
 			return nil, err
+		}
+		if _, err := os.Stat(filepath.Join(r.volumeDir(v.ID), "disk.ext4")); err != nil {
+			catalog.Close()
+			return nil, fmt.Errorf("volume disk missing (will not recreate): %w", err)
 		}
 		s.VolumeID = v.ID
 		lock, err := acquireLock(r.volumeLock(v.ID))
@@ -416,61 +420,6 @@ func beginRun(ctx context.Context, cfg *Config) (lease *sessionRun, retErr error
 	}
 	cfg.paths = l
 	return l, nil
-}
-func ensureDefaultVolume(ctx context.Context, r Roots, s Session) (Volume, error) {
-	if s.VolumeID != "" {
-		v, err := loadVolume(r, s.VolumeID)
-		if err != nil {
-			return v, err
-		}
-		_, err = os.Stat(filepath.Join(r.volumeDir(v.ID), "disk.ext4"))
-		if err != nil {
-			return v, fmt.Errorf("volume disk missing (will not recreate): %w", err)
-		}
-		return v, nil
-	}
-	list, err := volumes(r)
-	if err != nil {
-		return Volume{}, err
-	}
-	name := "podman-" + s.ID
-	for _, v := range list {
-		if v.DefaultSession == s.ID {
-			if v.Name != name {
-				return v, fmt.Errorf("default volume association conflict for %s", s.ID)
-			}
-			_, err = os.Stat(filepath.Join(r.volumeDir(v.ID), "disk.ext4"))
-			if err != nil {
-				return v, fmt.Errorf("volume disk missing (will not recreate): %w", err)
-			}
-			return v, nil
-		}
-		if v.Name == name {
-			return v, fmt.Errorf("volume name %s is already associated with another session", name)
-		}
-	}
-	v := Volume{Version: 1, ID: uuid.NewString(), Name: name, Purpose: "podman", Format: "ext4", DefaultSession: s.ID}
-	base := filepath.Join(r.Data, "volumes")
-	if err = privateDir(base); err != nil {
-		return v, err
-	}
-	temp, err := os.MkdirTemp(base, ".create-")
-	if err != nil {
-		return v, err
-	}
-	defer os.RemoveAll(temp)
-	spec, err := resolveContainerDiskSpec(nil, filepath.Join(temp, "disk.ext4"))
-	if err != nil {
-		return v, err
-	}
-	if _, err = createRAWDisk(ctx, spec); err != nil {
-		return v, err
-	}
-	if err = writeJSONAtomic(filepath.Join(temp, "volume.json"), v); err != nil {
-		return v, err
-	}
-	err = os.Rename(temp, r.volumeDir(v.ID))
-	return v, err
 }
 func (l *sessionRun) finish(result *execution.Result, runErr error) error {
 	now := time.Now().UTC()

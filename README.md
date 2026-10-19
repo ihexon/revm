@@ -3,12 +3,12 @@
 revm runs Linux commands in a libkrun VM on Apple Silicon macOS and Linux amd64/arm64. Commands use the built-in Alpine environment; Podman provides other container userspaces.
 
 ```sh
-printf 'hello\n' | revm run --id pipe -- cat
-revm run --rm --id build --mount "$PWD:/workspace" --workdir /workspace -- make test
+printf 'hello\n' | revm run -- cat
+revm run --mount "$PWD:/workspace" --workdir /workspace -- make test
 revm run --id shell -- sh
 ```
 
-Arguments after `--` reach the guest unchanged. Stdin, stdout and stderr stream immediately. Guest exit codes propagate to the shell. A terminal is allocated automatically when stdin and stdout are terminals and revm is in the foreground; `--tty=always|never` overrides this. `--pty` aliases `--tty=always` for run and attach.
+Arguments after `--` reach the guest unchanged. Stdin, stdout and stderr stream immediately. Guest exit codes propagate to the shell. A terminal is allocated automatically when stdin and stdout are terminals and revm is in the foreground; `--tty=always|never` overrides this.
 
 ## Install
 
@@ -43,8 +43,8 @@ Releases include completion scripts, the manual, documentation and archive check
 ```sh
 revm ls --json
 revm inspect shell
-revm attach --id shell -- sh -c 'uname -a'
-revm attach --id shell --tty=always -- sh
+revm exec --id shell -- sh -c 'uname -a'
+revm exec --id shell --tty=always -- sh
 revm wait --ready --timeout 30s shell
 revm logs --guest -f shell
 revm stop shell
@@ -52,25 +52,26 @@ revm wait shell                    # returns this instance's recorded exit statu
 revm rm shell                      # stopped sessions only; volumes remain
 ```
 
-One session name has at most one active instance. Each start gets a new instance ID, a private writable rootfs, separate logs and a result record. A crash with no result is reported as `unknown`. `run --rm` removes session records and logs after success or failure.
+One session name has at most one active instance. Each start gets a new instance ID, a private writable rootfs, separate logs and a result record. A crash with no result is reported as `unknown`. Omitting `--id` creates a disposable run: records and logs are removed after success or failure. Specifying `--id` retains them.
 
-The first INT, TERM, HUP or QUIT cancels the command with a shared shutdown budget (`--stop-timeout`, default 10s). A second signal accelerates cleanup. Attach cancellation affects its own command and descendants. The native VMM is a child whose lifetime follows a control pipe from its owner; losing the CLI also terminates the VMM.
+The first INT, TERM, HUP or QUIT cancels the command with a shared shutdown budget (`--stop-timeout`, default 10s). A second signal accelerates cleanup. Exec cancellation affects its own command and descendants. The native VMM is a child whose lifetime follows a control pipe from its owner; losing the CLI also terminates the VMM.
 
 ## Containers
 
 ```sh
 # Terminal 1
-revm podman --id containers --podman-api /tmp/revm-containers.sock
+revm volume create data
+revm podman --volume data --id containers --podman-api /tmp/revm-containers.sock
 # Terminal 2
 export CONTAINER_HOST=unix:///tmp/revm-containers.sock
 podman run --rm alpine uname -a
 ```
 
-The default `podman-containers` volume persists independently of the session. Stop, restart and session removal preserve it; starting the same name reconnects it. `--container-disk PATH` uses a user-owned external disk. Share host directories explicitly with `--mount`; home is not mounted automatically.
+Volumes persist independently of sessions. Each Podman launch must explicitly select an existing `--volume NAME` or an external disk. Stop and session removal preserve the data. `--container-disk PATH` uses a user-owned external disk. Share host directories explicitly with `--mount`; home is not mounted automatically.
 
 ```sh
 revm volume ls --json
-revm volume rm podman-containers   # explicit deletion; refuses an active volume
+revm volume rm data   # explicit deletion; refuses an active volume
 revm cache prune                  # only inactive resources with known ownership
 ```
 

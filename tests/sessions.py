@@ -38,10 +38,9 @@ try:
  print('PASS persisted exit status and wait',flush=True)
 
  for code in [0,42]:
-  sid='audit-'+uuid.uuid4().hex[:10]
-  cli(['run','--rm','--id',sid,'--cpus','1','--memory','512','--','sh','-c','exit '+str(code)],code)
-  cli(['inspect',sid],1)
- print('PASS --rm for successful and failed commands',flush=True)
+  cli(['run','--cpus','1','--memory','512','--','sh','-c','exit '+str(code)],code)
+  assert json.loads(cli(['ls','--json']).stdout)==[]
+ print('PASS disposable default for successful and failed commands',flush=True)
 
  sid='audit-'+uuid.uuid4().hex[:10]
  owner=subprocess.Popen([binary,'run','--id',sid,'--cpus','1','--memory','512','--','sh','-c','echo ready; sleep 100'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);processes.append(owner)
@@ -55,6 +54,18 @@ try:
   time.sleep(.05)
  assert view['status']=='unknown';cli(['wait',sid],1);cli(['cache','prune']);cli(['rm',sid])
  print('PASS crash is unknown and stale resources are reclaimable',flush=True)
+
+ owner=subprocess.Popen([binary,'run','--cpus','1','--memory','512','--','sh','-c','echo ready; sleep 100'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);processes.append(owner)
+ assert owner.stdout.readline()==b'ready\n'
+ view=json.loads(cli(['ls','--json']).stdout)[0]
+ owner.kill();owner.communicate(timeout=5)
+ end=time.monotonic()+5
+ while json.loads(cli(['inspect',view['id']]).stdout)['active']:
+  assert time.monotonic()<end
+  time.sleep(.05)
+ cli(['cache','prune'])
+ assert json.loads(cli(['ls','--json']).stdout)==[]
+ print('PASS pruning crashed disposable session records',flush=True)
 finally:
  for p in processes:
   if p.poll() is None:p.kill();p.communicate(timeout=5)

@@ -1,6 +1,7 @@
 package revm
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -18,6 +19,67 @@ func ListVolumes() ([]Volume, error) {
 	}
 	return volumes(r)
 }
+
+// CreateVolume creates independent persistent storage. It never replaces data.
+func CreateVolume(ctx context.Context, name string) (Volume, error) {
+	if err := validateSessionID(name); err != nil {
+		return Volume{}, err
+	}
+	r, err := ResolveRoots()
+	if err != nil {
+		return Volume{}, err
+	}
+	catalog, err := acquireLock(filepath.Join(r.Data, "locks", "catalog.lock"))
+	if err != nil {
+		return Volume{}, err
+	}
+	defer catalog.Close()
+	list, err := volumes(r)
+	if err != nil {
+		return Volume{}, err
+	}
+	for _, v := range list {
+		if v.Name == name {
+			return Volume{}, fmt.Errorf("volume %q already exists", name)
+		}
+	}
+	v := Volume{Version: 1, ID: uuid.NewString(), Name: name, Purpose: "podman", Format: "ext4"}
+	base := filepath.Join(r.Data, "volumes")
+	if err = privateDir(base); err != nil {
+		return v, err
+	}
+	temp, err := os.MkdirTemp(base, ".create-")
+	if err != nil {
+		return v, err
+	}
+	defer os.RemoveAll(temp)
+	spec, err := resolveContainerDiskSpec(nil, filepath.Join(temp, "disk.ext4"))
+	if err != nil {
+		return v, err
+	}
+	if _, err = createRAWDisk(ctx, spec); err != nil {
+		return v, err
+	}
+	if err = writeJSONAtomic(filepath.Join(temp, "volume.json"), v); err != nil {
+		return v, err
+	}
+	if err = os.Rename(temp, r.volumeDir(v.ID)); err != nil {
+		return v, err
+	}
+	return v, syncDir(base)
+}
+func findVolume(r Roots, name string) (Volume, error) {
+	list, err := volumes(r)
+	if err != nil {
+		return Volume{}, err
+	}
+	for _, v := range list {
+		if v.Name == name {
+			return v, nil
+		}
+	}
+	return Volume{}, fmt.Errorf("volume %q not found; create it with revm volume create", name)
+}
 func RemoveVolume(name string) error {
 	r, err := ResolveRoots()
 	if err != nil {
@@ -33,7 +95,7 @@ func RemoveVolume(name string) error {
 		return err
 	}
 	for _, v := range list {
-		if v.Name != name && v.ID != name {
+		if v.Name != name {
 			continue
 		}
 		lock, err := acquireLock(r.volumeLock(v.ID))
@@ -101,6 +163,12 @@ func PruneCache() ([]string, error) {
 				return removed, err
 			}
 			err = removeOwned(path, owner.InstanceID)
+			if err == nil {
+				session, loadErr := loadSession(r, owner.SessionID)
+				if loadErr == nil && session.Config.Remove && session.InstanceID == owner.InstanceID {
+					err = os.RemoveAll(r.sessionDir(session.ID))
+				}
+			}
 			lock.Close()
 			if err != nil {
 				return removed, err

@@ -8,7 +8,7 @@ The only operations are:
 - --port-export: expose a guest TCP port on the host.
 - --port-unexport: remove a host port exposure.
 
-Use [revm attach](attach.en.md) for guest commands. Rootfs is outside ctl's scope; rootfs import, export, and --rootfs were removed.
+Use [revm exec](exec.en.md) for guest commands. Rootfs is outside ctl's scope; rootfs import, export, and --rootfs were removed.
 
 ## Syntax
 
@@ -108,7 +108,7 @@ revm ctl --id dev -- sh
 Use:
 
 ~~~bash
-revm attach --id dev -- sh
+revm exec --id dev -- sh
 ~~~
 
 A tsi session does not support list or port updates:

@@ -34,7 +34,7 @@ func testConfig() Config {
 }
 func fakeVolume(t *testing.T, r Roots, id string) Volume {
 	t.Helper()
-	v := Volume{Version: 1, ID: uuid.NewString(), Name: "podman-" + id, DefaultSession: id, Purpose: "podman", Format: "ext4"}
+	v := Volume{Version: 1, ID: uuid.NewString(), Name: "podman-" + id, Purpose: "podman", Format: "ext4"}
 	if err := writeJSONAtomic(filepath.Join(r.volumeDir(v.ID), "volume.json"), v); err != nil {
 		t.Fatal(err)
 	}
@@ -95,6 +95,7 @@ func TestPersistentVolumeReuseAndMissingReference(t *testing.T) {
 	r := testRoots(t)
 	cfg := testConfig()
 	cfg.RunMode = ModeContainer
+	cfg.VolumeName = "podman-" + cfg.SessionID
 	v := fakeVolume(t, r, cfg.SessionID)
 	l, err := beginRun(context.Background(), &cfg)
 	if err != nil {
@@ -108,9 +109,10 @@ func TestPersistentVolumeReuseAndMissingReference(t *testing.T) {
 		t.Fatalf("active volume deletion: %v", err)
 	}
 	l.close()
-	// Removing session metadata must not lose the volume's default association.
+	// The same explicit volume can be reused by a different session.
 	os.RemoveAll(r.sessionDir(cfg.SessionID))
 	cfg.paths = nil
+	cfg.SessionID = "another-session"
 	cfg.ContainerDisk = nil
 	l2, err := beginRun(context.Background(), &cfg)
 	if err != nil {

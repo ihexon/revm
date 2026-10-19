@@ -15,11 +15,16 @@ start gets a new instance ID and a freshly extracted writable rootfs; changes to
 guest system directories never carry into another run. Bind mounts and external
 disks retain their normal host persistence.
 
-`revm podman --id dev` reuses the independent `podman-dev` volume. Deleting the
-session does not delete the volume or its association with `dev`. `volume ls`
-(and `--json`) lists volumes; `volume rm podman-dev` removes only that unused
-managed volume. Existing session references then report missing data, rather
-than silently constructing an empty replacement.
+Create storage with `revm volume create data`, then select it with
+`revm podman --volume data`. Every launch requires `--volume NAME` or an external
+`--container-disk PATH`. A session records the volume used by its latest run for
+inspection; that record never selects or recreates storage. Volumes have no
+session association. `volume ls --json` lists them; `volume rm NAME` deletes an
+unused volume. Deleting a session preserves all volumes.
+
+Omit `--id` for a disposable session whose records disappear at exit. Supply it
+to retain logs and results. After a host crash, `cache prune` also removes
+inactive disposable session records; named session records remain until `rm`.
 
 `--raw-disk` and `--container-disk` paths remain user-owned even when revm creates
 them. Existing images are inspected; mismatched version labels return an error.

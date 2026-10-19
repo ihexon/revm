@@ -8,7 +8,6 @@ const (
 	FlagUsingSystemProxy   = "system-proxy"
 	FlagWorkDir            = "workdir"
 	FlagMemoryInMB         = "memory"
-	FlagPTY                = "pty"
 	FlagEnvs               = "envs"
 	FlagVNetworkType       = "network"
 	FlagSessionID          = "id"

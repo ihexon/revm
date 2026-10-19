@@ -5,10 +5,10 @@ revm run creates a session, boots the Alpine rootfs packaged with the release, a
 ## Syntax
 
 ~~~text
-revm run --id <session-id> [options] -- <command> [args...]
+revm run [--id <session-id>] [options] -- <command> [args...]
 ~~~
 
---id is required. Arguments after -- form the guest command. Use sh -c explicitly when a command needs shell syntax.
+Omit `--id` for a disposable run; specify it to retain logs and results. Arguments after -- form the guest command. Use sh -c explicitly when a command needs shell syntax.
 
 ~~~bash
 revm run --id shell -- sh -c 'uname -a; cat /etc/os-release'
@@ -95,13 +95,13 @@ Details:
 
 Input streams immediately. Without a PTY, stdout and stderr remain separate.
 Guest exit codes propagate. `--tty=auto` requires foreground terminal stdin and
-terminal stdout; `always` and `never` override this. `--pty` aliases `always`.
+terminal stdout; `always` and `never` override this.
 PTY input EOF never injects Ctrl-D.
 
-Each run has a private rootfs and temporary sockets/keys. Logs and results live
+Each run has a private rootfs and temporary sockets. Logs and results live
 under `${XDG_STATE_HOME:-~/.local/state}/revm/sessions/<id>/runs/<instance>`.
 Use `revm logs ID`, `revm logs --guest -f ID`, and `revm inspect ID`.
-`--rm` removes records after success or failure, preserving persistent data.
+Omitting `--id` removes records after success or failure, preserving persistent data.
 See [resource ownership](resources.md) and [session commands](sessions.md).
 
 INT, TERM, HUP and QUIT retain the first cancellation cause. `--stop-timeout`

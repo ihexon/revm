@@ -1,54 +1,25 @@
 # revm 文档
 
-[English index](README.en.md)
+[English](README.en.md)
 
-revm 是一个以 session 为单位管理 libkrun microVM 的小型 CLI。每个 session 由一个稳定的 --id 标识，主机负责 VM 生命周期，Alpine guest 负责命令和容器工作负载。
+revm 在 libkrun VM 中执行 Linux 命令。所有命令和 PTY 共用 guest-control 流式协议。每次启动使用全新的 Alpine rootfs；需要保留的数据通过显式磁盘或目录挂载提供。
 
-## 先看这里
+- [run：运行命令](run.md)
+- [podman：容器服务](podman.md)
+- [exec：在已有 VM 中运行新命令](exec.md)
+- [ctl：端口映射](ctl.md)
+- [session 管理](sessions.md)
+- [资源所有权](resources.md)
+- [退出状态](exit-status.md)
+- [执行和信号协议](execution-protocol.md)
 
-- [快速运行命令](run.md)
-- [运行 Podman 容器工作负载](podman.md)
-- [连接已有 session](attach.md)
-- [控制 gvisor 端口映射](ctl.md)
+`run`、`podman` 省略 `--id` 时临时运行，退出后清理记录；指定 `--id NAME` 时保留日志和结果。`exec`、`ctl` 需要正在运行的 session 名称。
 
-## 设计约束
+持久卷独立管理：`volume create NAME` 创建，`podman --volume NAME` 使用，`volume rm NAME` 删除。session 不隐式创建或重新关联卷。`--container-disk PATH` 可直接使用外部磁盘。
 
-- VM 始终启动程序内置的 Alpine rootfs。
-- 不支持 --rootfs，也不再提供 rootfs 导入或导出命令。
-- 自定义发行版或 rootfs 应作为 Podman workload 运行在 Alpine VM 内。
-- 非交互命令通过 guest-control vsock 执行；SSH 只保留为 PTY 和内部兼容入口。
-- VirtIO-FS 共享目录中的已有文件在 guest 中保留宿主机 UID、GID 和权限；revm 不预处理外部共享目录。
-- revm run 和 revm podman 创建 VM；attach 和 ctl 只连接已有 VM。
+日志和结果位于 `${XDG_STATE_HOME:-~/.local/state}/revm/sessions/<id>/runs/<instance>/`。`logs` 读取宿主日志，`logs --guest` 读取 guest 日志。私有 rootfs 使用 XDG_CACHE_HOME，持久卷使用 XDG_DATA_HOME；`cache prune` 清理已停止实例的临时资源。
 
-## 命令关系
+## 构建说明
 
-~~~text
-run       -> 启动 Alpine，执行一次命令
-podman    -> 启动 Alpine + Podman API，持续提供容器运行时
-attach    -> 连接已有 session，执行命令或打开 PTY
-ctl       -> 查询或修改 gvisor TCP 端口映射
-~~~
-
-## 公共约定
-
-所有命令都需要 --id。默认 session 目录是：
-
-~~~text
-~/.cache/revm/<session-id>/
-~~~
-
-日志始终写入 session 目录中的两个文件：logs/revm.log 记录宿主生命周期和控制面，logs/vm.log 记录 guest-agent 及兼容服务。管理 socket、Podman socket 和 SSH key 仍可以通过对应命令的路径选项导出到自定义位置。
-
-网络模式有 gvisor 和 tsi 两种。gvisor 提供 gvisor-tap-vsock、NAT、DNS 和端口控制；tsi 使用 libkrun 的透明 socket interception，但不支持 ctl 的手动端口映射。
-
-## 构建文档
-
-- [依赖构建说明](../deps/README.md)
-- [guest agent 内部说明](../cmd/guest-agent/README.md)
-
-English versions:
-
-- [run](run.en.md)
-- [podman](podman.en.md)
-- [attach](attach.en.md)
-- [ctl](ctl.en.md)
+- [依赖构建](../deps/README.md)
+- [guest agent](../cmd/guest-agent/README.md)

@@ -85,17 +85,17 @@ try:
 
     owner, sid = run(['sh','-c','echo ready; sleep 100'])
     assert line(owner) == b'ready\n'
-    attached = start(['attach','--id',sid,'--stop-timeout','1s','--','sh','-c',
+    attached = start(['exec','--id',sid,'--stop-timeout','1s','--','sh','-c',
                       'setsid sh -c "exec sleep 123" & echo ready; wait'])
     assert line(attached) == b'ready\n'
     attached.send_signal(signal.SIGTERM); finish(attached,143)
     assert owner.poll() is None
-    probe = start(['attach','--id',sid,'--','sh','-c',"! ps -o args | grep '[s]leep 123'"])
+    probe = start(['exec','--id',sid,'--','sh','-c',"! ps -o args | grep '[s]leep 123'"])
     finish(probe)
-    probe = start(['attach','--id',sid,'--tty=always','--','sh','-c','test -t 0 && printf pty-ok'])
+    probe = start(['exec','--id',sid,'--tty=always','--','sh','-c','test -t 0 && printf pty-ok'])
     assert finish(probe)[0] == b'pty-ok'
     owner.send_signal(signal.SIGTERM); finish(owner,143)
-    print('PASS attach cancellation, setsid cleanup, PTY argv, owner survival', flush=True)
+    print('PASS exec cancellation, setsid cleanup, PTY argv, owner survival', flush=True)
 
     p, _ = run(['sh','-c','trap "" TERM; echo ready; while :; do sleep 1; done'])
     assert line(p) == b'ready\n'

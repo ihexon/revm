@@ -1,6 +1,6 @@
 # Execution protocol v2
 
-Run and attach start commands through the same guest-control service. The service
+Run and exec start commands through the same guest-control service. The service
 becomes ready after filesystem mounts and network configuration. Older guests
 without v2 return a capability error and must be restarted.
 
@@ -24,15 +24,15 @@ privileges. Commands therefore do not have unrestricted CAP_SYS_ADMIN inside
 the VM; the Podman service itself is managed separately by the guest agent.
 Executions in a Podman session default `CONTAINER_HOST` to that service's Unix
 socket. Guest readiness in this mode also waits for the engine to answer ping,
-so `attach -- podman ps` remains usable without local mount privileges.
+so `exec -- podman ps` remains usable without local mount privileges.
 
 `--tty=auto` requires both stdin and stdout to be terminals, with revm in the
-foreground. `always` and `never` override allocation; `--pty` aliases `always`.
+foreground. `always` and `never` override allocation.
 The host enters raw mode only after command startup, restores it on suspend/exit,
 and forwards terminal resize. Stdin EOF never synthesizes terminal input.
 
 INT, TERM, HUP and QUIT retain the first cancellation cause and deadline.
-`--stop-timeout` defaults to 10s; a second signal accelerates cleanup. Attach
+`--stop-timeout` defaults to 10s; a second signal accelerates cleanup. Exec
 cancels only its execution. Run shares one grace budget between command cleanup
 and VM shutdown, followed by at most 3s for forced shutdown. Normal output drain has no deadline: slow consumers apply backpressure. Only
 cancellation bounds draining to 3s; incomplete output and stdin read failures

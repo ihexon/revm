@@ -1,54 +1,25 @@
 # revm documentation
 
-[中文索引](README.md)
+[中文](README.md)
 
-revm is a small CLI that manages libkrun microVM sessions. Every session has one stable --id. The host owns the VM lifecycle, while the Alpine guest runs commands and container workloads.
+revm runs Linux commands in libkrun VMs. Every command and PTY uses the same streaming guest-control protocol. Each VM starts with a fresh Alpine rootfs; persistent data requires explicit disks or directory mounts.
 
-## Start here
+- [run: execute a command](run.en.md)
+- [podman: container service](podman.en.md)
+- [exec: start a command in an existing VM](exec.en.md)
+- [ctl: port mappings](ctl.en.md)
+- [Session management](sessions.md)
+- [Resource ownership](resources.md)
+- [Exit status](exit-status.md)
+- [Execution and signals](execution-protocol.md)
 
-- [Run a command](run.en.md)
-- [Run Podman workloads](podman.en.md)
-- [Attach to an existing session](attach.en.md)
-- [Control gvisor port mappings](ctl.en.md)
+Omit `--id` for a disposable run or Podman session; use `--id NAME` to retain logs and results. `exec` and `ctl` require a running session name.
 
-## Design boundaries
+Volumes are independent: `volume create NAME` creates storage, `podman --volume NAME` uses it, and `volume rm NAME` deletes it. Sessions do not implicitly create or reconnect volumes. `--container-disk PATH` selects an external disk.
 
-- Every VM boots the Alpine rootfs packaged with the revm release.
-- --rootfs and rootfs import/export commands are removed.
-- A different distribution or userspace should run as a Podman workload inside the Alpine VM.
-- All commands and PTYs use the streaming guest-control endpoint. The built-in SSH service has been removed.
-- Existing files in VirtIO-FS shares retain the host UID, GID, and mode in the guest; revm does not pre-process external shared directories.
-- revm run and revm podman create VMs; attach and ctl only connect to existing sessions.
-
-## Command relationships
-
-~~~text
-run       -> boot Alpine and execute one command
-podman    -> boot Alpine with the Podman API and keep the container runtime alive
-attach    -> connect to a session, execute a command, or open a PTY
-ctl       -> inspect or change gvisor TCP port mappings
-~~~
-
-## Common conventions
-
-Every command requires --id. The default session directory is:
-
-~~~text
-~/.cache/revm/<session-id>/
-~~~
-
-Logs always go to two files in the session directory: logs/revm.log for host lifecycle and control-plane messages, and logs/vm.log for the guest-agent and compatibility services. The management and Podman sockets can be exported to custom paths with command flags.
-
-The two network modes are gvisor and tsi. gvisor provides gvisor-tap-vsock, NAT, DNS, and port control. tsi uses libkrun transparent socket interception and does not support manual ctl port mappings.
+Logs and results live under `${XDG_STATE_HOME:-~/.local/state}/revm/sessions/<id>/runs/<instance>/`. Use `logs` for host logs and `logs --guest` for guest logs. Private rootfs copies use XDG_CACHE_HOME; volumes use XDG_DATA_HOME. `cache prune` removes inactive temporary resources.
 
 ## Build documentation
 
 - [Dependency builds](../deps/README.md)
 - [Guest agent internals](../cmd/guest-agent/README.md)
-
-Chinese versions:
-
-- [run](run.md)
-- [podman](podman.md)
-- [attach](attach.md)
-- [ctl](ctl.md)

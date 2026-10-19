@@ -153,7 +153,7 @@ func buildVM(ctx context.Context, cfg *Config) (retVM *VM, retErr error) {
 	}
 
 	normalizedCfg := *cfg
-	if normalizedCfg.RunMode == ModeAttach || normalizedCfg.RunMode == ModeControl {
+	if normalizedCfg.RunMode == ModeExec || normalizedCfg.RunMode == ModeControl {
 		return nil, fmt.Errorf("%s mode does not build a VM", normalizedCfg.RunMode)
 	}
 	lease, err := beginRun(ctx, &normalizedCfg)

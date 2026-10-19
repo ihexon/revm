@@ -24,6 +24,21 @@ func noArgs(c *cli.Command) error {
 func resourceCommands() []*cli.Command {
 	return []*cli.Command{
 		{Name: "volume", Usage: "manage persistent disks independently of sessions", Commands: []*cli.Command{
+			{Name: "create", Usage: "create a persistent Podman volume", Action: func(ctx context.Context, c *cli.Command) error {
+				name, err := oneArg(c)
+				if err != nil {
+					return err
+				}
+				if err := revm.ValidateSessionID(name); err != nil {
+					return commanderr.Usage(err)
+				}
+				v, err := revm.CreateVolume(ctx, name)
+				if err != nil {
+					return err
+				}
+				_, err = fmt.Fprintln(c.Writer, v.Name)
+				return err
+			}},
 			{Name: "ls", Usage: "list managed volumes", Flags: []cli.Flag{&cli.BoolFlag{Name: "json"}}, Action: func(ctx context.Context, c *cli.Command) error {
 				if err := noArgs(c); err != nil {
 					return err
@@ -36,11 +51,11 @@ func resourceCommands() []*cli.Command {
 					return json.NewEncoder(c.Writer).Encode(list)
 				}
 				for _, v := range list {
-					fmt.Fprintf(c.Writer, "%s\t%s\t%s\n", v.Name, v.ID, v.DefaultSession)
+					fmt.Fprintf(c.Writer, "%s\t%s\n", v.Name, v.ID)
 				}
 				return nil
 			}},
-			{Name: "rm", Usage: "delete one unused managed volume; retained session references become missing", Action: func(ctx context.Context, c *cli.Command) error {
+			{Name: "rm", Usage: "delete one unused managed volume", Action: func(ctx context.Context, c *cli.Command) error {
 				name, err := oneArg(c)
 				if err != nil {
 					return err

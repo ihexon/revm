@@ -13,7 +13,7 @@ import (
 func executeGuest(ctx context.Context, target guestcontrol.Target, cfg Config) (execution.Result, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	useTTY := cfg.TTY == "always" || cfg.PTY || (cfg.TTY == "auto" && system.ForegroundTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())))
+	useTTY := cfg.TTY == "always" || (cfg.TTY == "auto" && system.ForegroundTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())))
 	req := cfg.Exec
 	req.TTY, req.Term, req.Rows, req.Cols = useTTY, system.GetTerminalType(), 24, 80
 	if w, h, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
