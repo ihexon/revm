@@ -8,10 +8,15 @@ import (
 	"linuxvm/pkg/execution"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 )
 
 func Execute(ctx context.Context, args []string) error {
+	// Completion must never execute a guest command after the -- separator.
+	if len(args) > 1 && args[len(args)-1] == "--generate-shell-completion" && slices.Contains(args[1:len(args)-1], "--") {
+		return nil
+	}
 	logrus.SetOutput(io.Discard)
 	ctx, controller := execution.WithController(ctx)
 	ch := make(chan os.Signal, 8)

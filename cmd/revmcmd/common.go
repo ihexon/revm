@@ -42,6 +42,7 @@ func NewApp(name string) *cli.Command {
 		}
 		return cli.ShowAppHelp(c)
 	}
+	configureHelp(app)
 	configureErrors(app)
 	return app
 }
@@ -66,7 +67,7 @@ func newRunCommand() *cli.Command {
 	return &cli.Command{
 		Name:                      "run",
 		Usage:                     "boot the built-in Alpine Linux VM",
-		UsageText:                 "run [flags] <command> [args...]",
+		UsageText:                 "revm run [options] -- COMMAND [ARG...]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "tty", Value: "auto", Usage: "terminal allocation: auto, always or never"},
@@ -75,10 +76,10 @@ func newRunCommand() *cli.Command {
 			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to one quarter of available memory, between 512 and 2048 MB"},
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagRawDisk, Usage: "attach a raw disk (format: <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=relaxed|full|none]); auto-created if missing; can be specified multiple times"},
-			&cli.StringSliceFlag{Name: define.FlagMount, Usage: "share a host directory into the guest via VirtIO-FS (format: /host/path:/guest/path[,ro]); can be specified multiple times"},
+			&cli.StringSliceFlag{Name: define.FlagMount, Usage: "share a host directory with the guest (format: /host/path:/guest/path[,ro]); can be specified multiple times"},
 			&cli.BoolFlag{Name: define.FlagUsingSystemProxy, Usage: "read the macOS system HTTP/HTTPS proxy and forward it to the guest as http_proxy/https_proxy env vars; in gvisor mode, 127.0.0.1 is automatically rewritten to host.containers.internal"},
-			&cli.StringFlag{Name: define.FlagWorkDir, Usage: "working directory for command execution inside the guest; the guest-agent chdirs to this path before running the command", Value: "/"},
-			&cli.StringFlag{Name: define.FlagVNetworkType, Usage: "virtual network stack: gvisor uses gvisor-tap-vsock (full TCP/UDP, DNS, NAT via 192.168.127.0/24); tsi uses libkrun transparent socket interception", Value: string(define.GVISOR)},
+			&cli.StringFlag{Name: define.FlagWorkDir, Usage: "absolute working directory inside the guest", Value: "/"},
+			&cli.StringFlag{Name: define.FlagVNetworkType, Usage: "network mode: gvisor supports port forwarding; tsi uses host socket connections", Value: string(define.GVISOR)},
 			&cli.StringFlag{Name: define.FlagManageAPIFile, Usage: "custom Unix socket path for the host-side VM management API; defaults to the current instance runtime directory"},
 			&cli.StringFlag{Name: define.FlagReportEvents, Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888)"},
 			sessionFlag(false),
@@ -94,7 +95,7 @@ func newPodmanCommand() *cli.Command {
 	return &cli.Command{
 		Name:                      "podman",
 		Usage:                     "start a Linux VM running the Podman API service",
-		UsageText:                 "podman [flags]",
+		UsageText:                 "revm podman [options] (--volume NAME | --container-disk PATH)",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
 			&cli.DurationFlag{Name: "stop-timeout", Value: 10 * time.Second, Usage: "graceful cancellation budget"},
@@ -102,7 +103,7 @@ func newPodmanCommand() *cli.Command {
 			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to one quarter of available memory, between 512 and 2048 MB"},
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagRawDisk, Usage: "attach a raw disk (format: <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=relaxed|full|none]); auto-created if missing; can be specified multiple times"},
-			&cli.StringSliceFlag{Name: define.FlagMount, Usage: "share a host directory into the guest via VirtIO-FS (format: /host/path:/guest/path[,ro]); can be specified multiple times"},
+			&cli.StringSliceFlag{Name: define.FlagMount, Usage: "share a host directory with the guest (format: /host/path:/guest/path[,ro]); can be specified multiple times"},
 			&cli.BoolFlag{Name: define.FlagUsingSystemProxy, Usage: "read the macOS system HTTP/HTTPS proxy and forward it to the guest as http_proxy/https_proxy env vars; in gvisor mode, 127.0.0.1 is automatically rewritten to host.containers.internal"},
 			&cli.StringFlag{Name: "volume", Usage: "existing persistent volume name (create with revm volume create NAME)"},
 			&cli.StringFlag{Name: define.FlagContainerDisk, Usage: "persistent ext4 raw disk image for container storage (format: <path>[,version=<string>]); auto-created if missing; existing disks are inspected and never replaced automatically; mutually exclusive with --volume"},
@@ -122,7 +123,7 @@ func newExecCommand() *cli.Command {
 	return &cli.Command{
 		Name:                      "exec",
 		Usage:                     "execute a command in a running VM session",
-		UsageText:                 "exec --id <session-id> [flags] [-- <command> [args...]]",
+		UsageText:                 "revm exec --id SESSION [options] [-- COMMAND [ARG...]]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "tty", Value: "auto", Usage: "terminal allocation: auto, always or never"},
@@ -142,7 +143,7 @@ func newCtlCommand() *cli.Command {
 	return &cli.Command{
 		Name:                      "ctl",
 		Usage:                     "control an existing VM session",
-		UsageText:                 "ctl --id <session-id> --list-port\n   ctl --id <session-id> [--port-export spec | --port-unexport spec]",
+		UsageText:                 "revm ctl --id SESSION --list-port [--json]\n   revm ctl --id SESSION [--port-export SPEC] [--port-unexport SPEC]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "json", Usage: "print port mappings as JSON (requires --list-port)"},
@@ -252,9 +253,13 @@ func writePortMappings(w io.Writer, ports []define.PortMapping) error {
 }
 
 func sessionFlag(required bool) cli.Flag {
-	return &cli.StringFlag{Name: define.FlagSessionID, Usage: "session name; retain successful runs too (failed runs are always retained)", Required: required}
+	usage := "session name; retain successful runs too (failed runs are always retained)"
+	if required {
+		usage = "name of the running session (see revm ls)"
+	}
+	return &cli.StringFlag{Name: define.FlagSessionID, Usage: usage, Required: required}
 }
 
 func logLevelFlag() cli.Flag {
-	return &cli.StringFlag{Name: define.FlagLogLevel, Usage: "log verbosity level (trace, debug, info, warn, error, fatal, panic)", Value: "info"}
+	return &cli.StringFlag{Name: define.FlagLogLevel, Usage: "verbosity of saved logs; read with revm logs SESSION (trace, debug, info, warn, error, fatal, panic)", Value: "info"}
 }

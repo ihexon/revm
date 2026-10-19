@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"linuxvm/pkg/commanderr"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -74,5 +77,78 @@ func TestReleaseInterfaces(t *testing.T) {
 		if commanderr.ExitCode(err) != 2 {
 			t.Fatal(args, err)
 		}
+	}
+}
+
+func TestHelpDocumentsRequiredArgumentsAndSupportedShells(t *testing.T) {
+	for _, name := range []string{"inspect", "stop", "wait", "logs", "rm"} {
+		app := NewApp("revm")
+		var out bytes.Buffer
+		app.Writer = &out
+		if err := app.Run(context.Background(), []string{"revm", name, "--help"}); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out.String(), "SESSION") || !strings.Contains(out.String(), "Example") {
+			t.Fatalf("incomplete help: %s", out.String())
+		}
+	}
+	app := NewApp("revm")
+	var out bytes.Buffer
+	app.Writer = &out
+	if err := app.Run(context.Background(), []string{"revm", "completion", "--help"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.ToLower(out.String()), "powershell") || !strings.Contains(out.String(), "SHELL") {
+		t.Fatal(out.String())
+	}
+}
+
+func TestResourceNameCompletion(t *testing.T) {
+	root := t.TempDir()
+	for key, sub := range map[string]string{"XDG_STATE_HOME": "state", "XDG_DATA_HOME": "data", "XDG_CACHE_HOME": "cache", "XDG_RUNTIME_DIR": "runtime"} {
+		t.Setenv(key, filepath.Join(root, sub))
+	}
+	session := filepath.Join(root, "state/revm/sessions/dev")
+	volume := filepath.Join(root, "data/revm/volumes/4fe61727-80d4-4aef-a132-d04527086cdd")
+	for _, dir := range []string{session, volume} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(session, "session.json"), []byte(`{"version":1,"id":"dev","config":{}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(volume, "volume.json"), []byte(`{"version":1,"id":"4fe61727-80d4-4aef-a132-d04527086cdd","name":"data","format":"ext4"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(volume, "disk.ext4"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"logs"}, "dev\n"}, {[]string{"logs", "--guest"}, "--guest\ndev\n"},
+		{[]string{"exec", "--id"}, "dev\n"}, {[]string{"ctl", "--id=d"}, "--id=dev\n"},
+		{[]string{"podman", "--volume"}, "data\n"}, {[]string{"volume", "rm"}, "data\n"},
+		{[]string{"run", "--tt"}, "--tty\n"},
+	} {
+		app := NewApp("revm")
+		var out bytes.Buffer
+		app.Writer = &out
+		args := append(append([]string{"revm"}, tc.args...), "--generate-shell-completion")
+		if err := app.Run(context.Background(), args); err != nil {
+			t.Fatal(args, err)
+		}
+		if out.String() != tc.want {
+			t.Fatalf("%v: got %q, want %q", args, out.String(), tc.want)
+		}
+	}
+	// A completion request after -- must not launch the VM or create a session.
+	if err := Execute(context.Background(), []string{"revm", "run", "--id", "completion-must-not-run", "--", "false", "--generate-shell-completion"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "state/revm/sessions/completion-must-not-run")); !os.IsNotExist(err) {
+		t.Fatal("completion created a session", err)
 	}
 }
