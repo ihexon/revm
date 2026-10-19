@@ -18,11 +18,9 @@ import (
 	"linuxvm/pkg/service/management"
 	"net/http"
 	"os"
-	"os/signal"
 	goruntime "runtime"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -42,7 +40,8 @@ const defaultForceStopTimeout = 3 * time.Second
 // not start, stop, or mutate the VM; backend.Backend owns those operations.
 // Release must always be called to release resources.
 type VM struct {
-	cfg *Config
+	cfg            *Config
+	commandContext context.Context
 
 	runtime       vmRuntime
 	workspace     vmWorkspace
@@ -266,10 +265,11 @@ func (vm *VM) createUserSymlinks() error {
 // the VM run to end. If the VM exits or the run is cancelled normally, Run
 // returns nil; otherwise it returns the first meaningful failure cause.
 func (vm *VM) Run(ctx context.Context) error {
+	vm.commandContext = ctx
 	vm.runtime.done = make(chan struct{})
 	runFinished := make(chan struct{})
 	defer close(runFinished)
-	hostServicesCtx, stopHostServices := context.WithCancelCause(ctx)
+	hostServicesCtx, stopHostServices := context.WithCancelCause(context.WithoutCancel(ctx))
 	defer stopHostServices(context.Canceled)
 
 	finishVMRun := func(cause error) {
@@ -304,18 +304,32 @@ func (vm *VM) Run(ctx context.Context) error {
 		return err
 	}
 
-	forceHostShutdown := func() {
-		forceVMRunWithStop(context.Canceled)
-	}
 	go func() {
 		select {
 		case <-ctx.Done():
-			forceHostShutdown()
 		case <-runFinished:
+			return
 		}
+		if vm.cfg.RunMode == ModeContainer {
+			vm.requestGuestShutdown()
+		}
+		grace := vm.stopBudget(ctx)
+		timer := time.NewTimer(grace)
+		defer timer.Stop()
+		var force <-chan struct{}
+		if c := execution.ControllerFrom(ctx); c != nil {
+			force = c.Force()
+		}
+		select {
+		case <-vm.runtime.done:
+			return
+		case <-runFinished:
+			return
+		case <-timer.C:
+		case <-force:
+		}
+		forceVMRunWithStop(context.Cause(ctx))
 	}()
-
-	vm.startShutdownMonitors(hostServicesCtx, vm.requestGuestShutdown, forceHostShutdown)
 
 	g.Go(func() error {
 		if err := waitForNetworkReady(hostServicesCtx, networkReady); err != nil {
@@ -381,15 +395,15 @@ func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, forceVMR
 	switch vm.runtime.view.RunMode() {
 	case define.RootFsMode.String():
 		g.Go(func() error {
-			result, err := executeGuest(ctx, vm.runtime.view.GuestControlTarget(), *vm.cfg)
+			result, err := executeGuest(vm.commandContext, vm.runtime.view.GuestControlTarget(), *vm.cfg)
 			vm.resultMu.Lock()
 			vm.result = &result
 			vm.resultMu.Unlock()
 			vm.requestGuestShutdown()
 			select {
 			case <-vm.runtime.done:
-			case <-time.After(10 * time.Second):
-				err = errors.Join(err, vm.forceVirtualMachine())
+			case <-time.After(vm.stopBudget(vm.commandContext)):
+				err = errors.Join(err, fmt.Errorf("VM graceful shutdown timed out"), vm.forceVirtualMachine())
 			}
 			return err
 		})
@@ -481,13 +495,6 @@ func (vm *VM) startIgnitionService(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("create ignition server: %w", err)
 	}
-	server.OnResult = func(result execution.Result) {
-		vm.resultMu.Lock()
-		defer vm.resultMu.Unlock()
-		if vm.result == nil {
-			vm.result = &result
-		}
-	}
 	return server.Start(ctx)
 }
 
@@ -559,59 +566,13 @@ func pingPodman(ctx context.Context, client *network.Client) bool {
 	return status >= http.StatusOK && status < http.StatusMultipleChoices
 }
 
-func (vm *VM) startShutdownMonitors(ctx context.Context, requestGuestShutdown, forceHostShutdown func()) {
-	// Force shutdown if the launcher disappears and can no longer own cleanup.
-	go vm.monitorLauncherExit(ctx, forceHostShutdown)
-
-	go vm.monitorInterrupts(ctx, requestGuestShutdown, forceHostShutdown)
-}
-
-func (vm *VM) monitorLauncherExit(ctx context.Context, forceHostShutdown func()) {
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if os.Getppid() == 1 {
-				vm.emitStopping("parent process exited, shutting down machine")
-				forceHostShutdown()
-				return
-			}
+func (vm *VM) stopBudget(ctx context.Context) time.Duration {
+	if c := execution.ControllerFrom(ctx); c != nil {
+		if cause := c.Cause(); cause != nil {
+			return max(0, time.Until(cause.Deadline))
 		}
 	}
-}
-
-func (vm *VM) monitorInterrupts(ctx context.Context, requestGuestShutdown, forceHostShutdown func()) {
-	sigCh := make(chan os.Signal, 2)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(sigCh)
-
-	firstSignal, ok := waitForShutdownSignal(ctx, sigCh)
-	if !ok {
-		return
-	}
-	vm.emitStopping("received signal, shutting down")
-	requestGuestShutdown()
-	logrus.Warnf("waiting for guest shutdown after %s; press Ctrl-C again to force shutdown", firstSignal)
-
-	secondSignal, ok := waitForShutdownSignal(ctx, sigCh)
-	if !ok {
-		return
-	}
-	logrus.Warnf("received %s again, forcing shutdown", secondSignal)
-	forceHostShutdown()
-}
-
-func waitForShutdownSignal(ctx context.Context, sigCh <-chan os.Signal) (os.Signal, bool) {
-	select {
-	case <-ctx.Done():
-		return nil, false
-	case sig := <-sigCh:
-		return sig, true
-	}
+	return vm.cfg.StopTimeout
 }
 
 func (vm *VM) emitStopping(reason string) {

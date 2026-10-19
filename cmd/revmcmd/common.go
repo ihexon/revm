@@ -8,10 +8,12 @@ import (
 	"io"
 	"linuxvm/pkg/commanderr"
 	"linuxvm/pkg/define"
+	"linuxvm/pkg/execution"
 	"linuxvm/pkg/revm"
 	"os"
 	"sort"
 	"text/tabwriter"
+	"time"
 
 	"github.com/urfave/cli/v3"
 )
@@ -110,6 +112,9 @@ func newRunCommand() *cli.Command {
 		UsageText:                 "run [flags] <command> [args...]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "tty", Value: "auto", Usage: "terminal allocation: auto, always or never"},
+			&cli.BoolFlag{Name: "pty", Usage: "compatibility alias for --tty=always"},
+			&cli.DurationFlag{Name: "stop-timeout", Value: 10 * time.Second, Usage: "graceful cancellation budget"},
 			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to min(host CPU count, 4)"},
 			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to one quarter of available memory, between 512 and 2048 MB"},
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
@@ -143,6 +148,7 @@ func newPodmanCommand() *cli.Command {
 		UsageText:                 "podman [flags]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
+			&cli.DurationFlag{Name: "stop-timeout", Value: 10 * time.Second, Usage: "graceful cancellation budget"},
 			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to min(host CPU count, 4)"},
 			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to one quarter of available memory, between 512 and 2048 MB"},
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
@@ -176,7 +182,9 @@ func newAttachCommand() *cli.Command {
 		UsageText:                 "attach --id <session-id> [--pty] [-- <command> [args...]]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
-			&cli.BoolFlag{Name: define.FlagPTY, Usage: "allocate a pseudo-terminal and launch an interactive shell"},
+			&cli.BoolFlag{Name: define.FlagPTY, Usage: "compatibility alias for --tty=always"},
+			&cli.StringFlag{Name: "tty", Value: "auto", Usage: "terminal allocation: auto, always or never"},
+			&cli.DurationFlag{Name: "stop-timeout", Value: 10 * time.Second, Usage: "graceful cancellation budget"},
 			sessionFlag(),
 			logLevelFlag(),
 		},
@@ -212,6 +220,17 @@ func runLogged(ctx context.Context, command *cli.Command, buildConfig func() (*r
 	cfg, err := buildConfig()
 	if err != nil {
 		return commanderr.Usage(err)
+	}
+	cfg.TTY = command.String("tty")
+	cfg.StopTimeout = command.Duration("stop-timeout")
+	if command.Bool("pty") {
+		if command.IsSet("tty") && cfg.TTY != "always" {
+			return commanderr.Usage(fmt.Errorf("--pty conflicts with --tty=%s", cfg.TTY))
+		}
+		cfg.TTY = "always"
+	}
+	if controller := execution.ControllerFrom(ctx); controller != nil {
+		controller.SetTimeout(cfg.StopTimeout)
 	}
 	normalized, err := revm.NormalizeConfig(*cfg)
 	if err != nil {

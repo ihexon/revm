@@ -19,7 +19,7 @@ func main() {
 		}
 		return
 	}
-	if err := revmcmd.NewApp("revm").Run(context.Background(), os.Args); err != nil {
+	if err := revmcmd.Execute(context.Background(), os.Args); err != nil {
 		fmt.Fprintln(os.Stderr, "revm:", err)
 		os.Exit(commanderr.ExitCode(err))
 	}

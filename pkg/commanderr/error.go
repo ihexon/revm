@@ -24,6 +24,10 @@ func ExitCode(err error) int {
 	if err == nil {
 		return 0
 	}
+	var canceled *execution.Canceled
+	if errors.As(err, &canceled) {
+		return canceled.ExitCode()
+	}
 	var usage *UsageError
 	if errors.As(err, &usage) {
 		return 2

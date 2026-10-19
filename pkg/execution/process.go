@@ -20,7 +20,7 @@ type emptyOutput struct{ io.Reader }
 
 func (emptyOutput) Close() error { return nil }
 
-func startProcess(req Request) (cmd *exec.Cmd, input io.WriteCloser, stdout, stderr io.ReadCloser, terminal *os.File, err error) {
+func startProcess(req Request) (cmd *exec.Cmd, input io.WriteCloser, stdout, stderr io.ReadCloser, terminal *os.File, owned *boundary, err error) {
 	cmd = exec.Command(req.Argv[0], req.Argv[1:]...)
 	cmd.Env = append(os.Environ(), req.Env...)
 	cmd.Dir = req.WorkDir
@@ -30,6 +30,14 @@ func startProcess(req Request) (cmd *exec.Cmd, input io.WriteCloser, stdout, std
 	stdout = emptyOutput{strings.NewReader("")}
 	stderr = emptyOutput{strings.NewReader("")}
 	input = noClose{io.Discard}
+	cmd.SysProcAttr = &syscall.SysProcAttr{}
+	if !req.TTY {
+		cmd.SysProcAttr.Setpgid = true
+	}
+	owned, err = prepareBoundary(cmd)
+	if err != nil {
+		return
+	}
 	if req.TTY {
 		if req.Term == "" {
 			req.Term = "xterm-256color"
@@ -48,7 +56,6 @@ func startProcess(req Request) (cmd *exec.Cmd, input io.WriteCloser, stdout, std
 		}
 		return
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	input, err = cmd.StdinPipe()
 	if err != nil {
 		input = noClose{io.Discard}

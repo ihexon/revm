@@ -31,7 +31,10 @@ func Serve(ctx context.Context, conn net.Conn, instance string, registry *Regist
 		_ = s.Send(Message{Type: "error", Error: "invalid, duplicate or stale execution request"})
 		return
 	}
-	cmd, input, outR, errR, terminal, startErr := startProcess(req)
+	cmd, input, outR, errR, terminal, owned, startErr := startProcess(req)
+	if owned != nil {
+		defer owned.Close()
+	}
 	defer outR.Close()
 	defer errR.Close()
 	if terminal != nil {
@@ -40,7 +43,7 @@ func Serve(ctx context.Context, conn net.Conn, instance string, registry *Regist
 	execID := req.RequestID
 	if s.Send(Message{Type: "started", InstanceID: instance, ExecID: execID}) != nil {
 		if cmd.Process != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			_ = owned.Kill()
 			_ = cmd.Wait()
 		}
 		input.Close()
@@ -89,14 +92,14 @@ func Serve(ctx context.Context, conn net.Conn, instance string, registry *Regist
 	}()
 	cancelExec := func(sig string, grace time.Duration) {
 		if timer != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			_ = owned.Kill()
 			return
 		}
 		signal, ok := Signal(sig)
 		if !ok {
 			signal = syscall.SIGTERM
 		}
-		_ = syscall.Kill(-cmd.Process.Pid, signal)
+		owned.Signal(signal)
 		timer = time.NewTimer(max(0, grace))
 		deadline = timer.C
 	}
@@ -123,21 +126,27 @@ running:
 			}
 			if m.Type == "signal" {
 				if sig, ok := Signal(m.Signal); ok {
-					_ = syscall.Kill(-cmd.Process.Pid, sig)
+					owned.Signal(sig)
 				}
 			}
 		case <-ctx.Done():
 			cancelExec("SIGTERM", 0)
 		case <-deadline:
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			_ = owned.Kill()
 			deadline = nil
 		}
 	}
 	input.Close()
-	// The initial implementation owns the process group. The cgroup boundary
-	// added with signal/terminal support covers descendants which call setsid.
-	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	// Kill the entire execution boundary, including descendants using setsid.
+	cleanupErr := owned.Kill()
+	if closeErr := owned.Close(); cleanupErr == nil {
+		cleanupErr = closeErr
+	}
 	result := FromProcess(waitErr)
+	if cleanupErr != nil {
+		result.Cleanup = "failed"
+		result.Message = cleanupErr.Error()
+	}
 	_ = s.Send(Message{Type: "exit", Result: &result})
 	select {
 	case <-outputDone:

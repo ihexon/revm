@@ -16,6 +16,26 @@ start after an ambiguous transport failure. Results distinguish process exit
 from completed cleanup and output delivery; the client acknowledges completion
 after draining both output streams.
 
-The current execution supervisor kills the command process group on disconnect
-and completion. The signal/terminal implementation adds the guest cgroup boundary
-needed to cover descendants that leave the group with setsid.
+Each guest command starts atomically in its own cgroup v2 subtree. Cancellation
+and completion kill the whole subtree, including descendants using setsid. The
+command sees only a read-only cgroup mount and cannot regain mount/ptrace
+privileges. Commands therefore do not have unrestricted CAP_SYS_ADMIN inside
+the VM; the Podman service itself is managed separately by the guest agent.
+
+`--tty=auto` requires both stdin and stdout to be terminals, with revm in the
+foreground. `always` and `never` override allocation; `--pty` aliases `always`.
+The host enters raw mode only after command startup, restores it on suspend/exit,
+and forwards terminal resize. Stdin EOF never synthesizes terminal input.
+
+INT, TERM, HUP and QUIT retain the first cancellation cause and deadline.
+`--stop-timeout` defaults to 10s; a second signal accelerates cleanup. Attach
+cancels only its execution. Run shares one grace budget between command cleanup
+and VM shutdown, followed by at most 3s for forced shutdown. Output drain is
+bounded to 3s; incomplete output is an error.
+
+The native VMM lives in a child process on a separate session. An inherited
+control pipe ties its lifetime to its CLI owner, including during native
+initialization. EOF exits the child even when a native thread is blocked; normal
+shutdown waits for it. Killing the CLI can leave a briefly reparented child, but
+must not leave a running orphan VMM. `tests/smoke.py` checks both startup and
+running owner death on a real VM.

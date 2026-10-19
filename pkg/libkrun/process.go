@@ -178,28 +178,8 @@ func RunChild() error {
 		defer file.Close()
 		logrus.SetOutput(file)
 	}
-	p, err := NewProvider(context.Background(), &spec)
-	failure := ""
-	if err != nil {
-		failure = err.Error()
-	}
-	if sendErr := json.NewEncoder(status).Encode(failure); sendErr != nil {
-		return sendErr
-	}
-	if err != nil {
-		return err
-	}
-	var first string
-	if err := dec.Decode(&first); err != nil {
-		_ = p.Close()
-		return err
-	}
-	if first != "start" {
-		_ = p.Close()
-		return errors.New("expected VMM start")
-	}
-	done := make(chan error, 1)
-	go func() { runtime.LockOSThread(); defer runtime.UnlockOSThread(); done <- p.Start(context.Background()) }()
+	// Start reading before native initialization: it may block inside C. EOF
+	// must still return from this private entry point and terminate the child.
 	commands := make(chan string)
 	go func() {
 		defer close(commands)
@@ -211,6 +191,39 @@ func RunChild() error {
 			commands <- command
 		}
 	}()
+	type creation struct {
+		provider *Provider
+		err      error
+	}
+	created := make(chan creation, 1)
+	go func() {
+		p, err := NewProvider(context.Background(), &spec)
+		created <- creation{p, err}
+	}()
+	var p *Provider
+	var err error
+	select {
+	case result := <-created:
+		p, err = result.provider, result.err
+	case <-commands:
+		return errors.New("VMM owner disconnected during initialization")
+	}
+	failure := ""
+	if err != nil {
+		failure = err.Error()
+	}
+	if sendErr := json.NewEncoder(status).Encode(failure); sendErr != nil {
+		return sendErr
+	}
+	if err != nil {
+		return err
+	}
+	first := <-commands
+	if first != "start" {
+		return errors.New("expected VMM start")
+	}
+	done := make(chan error, 1)
+	go func() { runtime.LockOSThread(); defer runtime.UnlockOSThread(); done <- p.Start(context.Background()) }()
 	for {
 		select {
 		case err := <-done:

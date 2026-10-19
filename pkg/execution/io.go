@@ -56,3 +56,82 @@ func (r *pollReader) Read(b []byte) (int, error) {
 		return n, err
 	}
 }
+
+// outputWriters snapshots both descriptors before changing their shared flags
+// (stdout and stderr may refer to the same open file description).
+func outputWriters(ctx context.Context, writers ...io.Writer) ([]io.Writer, func(), error) {
+	type saved struct{ fd, flags int }
+	var files []saved
+	restore := func() {
+		for _, f := range files {
+			_, _ = unix.FcntlInt(uintptr(f.fd), unix.F_SETFL, f.flags)
+			_ = unix.Close(f.fd)
+		}
+	}
+	result := append([]io.Writer(nil), writers...)
+	for i, dst := range writers {
+		if dst == nil {
+			result[i] = io.Discard
+			continue
+		}
+		if f, ok := dst.(*os.File); ok {
+			fd, err := unix.Dup(int(f.Fd()))
+			if err != nil {
+				restore()
+				return nil, nil, err
+			}
+			flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFL, 0)
+			if err != nil {
+				unix.Close(fd)
+				restore()
+				return nil, nil, err
+			}
+			files = append(files, saved{fd, flags})
+			result[i] = &pollWriter{ctx: ctx, fd: fd}
+		}
+	}
+	for _, f := range files {
+		if err := unix.SetNonblock(f.fd, true); err != nil {
+			restore()
+			return nil, nil, err
+		}
+	}
+	return result, restore, nil
+}
+
+type pollWriter struct {
+	ctx context.Context
+	fd  int
+}
+
+func (w *pollWriter) Write(b []byte) (int, error) {
+	total := 0
+	for len(b) > 0 {
+		if err := w.ctx.Err(); err != nil {
+			return total, err
+		}
+		fds := []unix.PollFd{{Fd: int32(w.fd), Events: unix.POLLOUT}}
+		n, err := unix.Poll(fds, 100)
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+		if err != nil {
+			return total, err
+		}
+		if n == 0 {
+			continue
+		}
+		n, err = unix.Write(w.fd, b[:min(len(b), 4096)])
+		if n > 0 {
+			total += n
+			b = b[n:]
+		}
+		if errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EINTR) {
+			continue
+		}
+		if err != nil {
+			return total, err
+		}
+	}
+	return total, nil
+}

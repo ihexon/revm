@@ -17,6 +17,7 @@ type IO struct {
 type Options struct {
 	IO
 	StopTimeout time.Duration
+	Controller  *Controller
 	OnStarted   func(*Streams, Message) error
 }
 
@@ -26,6 +27,13 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (Res
 		return Result{}, err
 	}
 	defer s.Session.Close()
+	outputCtx, stopOutput := context.WithCancel(context.Background())
+	defer stopOutput()
+	outputs, restoreOutputs, err := outputWriters(outputCtx, opts.Stdout, opts.Stderr)
+	if err != nil {
+		return Result{}, err
+	}
+	defer restoreOutputs()
 	if opts.OnStarted != nil {
 		if err := opts.OnStarted(s, started); err != nil {
 			return Result{}, err
@@ -47,7 +55,7 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (Res
 	for _, pair := range []struct {
 		dst io.Writer
 		src io.Reader
-	}{{opts.Stdout, s.Stdout}, {opts.Stderr, s.Stderr}} {
+	}{{outputs[0], s.Stdout}, {outputs[1], s.Stderr}} {
 		go func() {
 			defer copies.Done()
 			dst := pair.dst
@@ -62,6 +70,7 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (Res
 	}
 	outputDone := make(chan struct{})
 	go func() { copies.Wait(); close(outputDone) }()
+	defer func() { stopOutput(); s.Session.Close(); <-outputDone }()
 	messages := make(chan Message, 4)
 	readErrors := make(chan error, 1)
 	go func() {
@@ -83,6 +92,10 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (Res
 	}()
 	var result Result
 	var cancelErr error
+	var force <-chan struct{}
+	if opts.Controller != nil {
+		force = opts.Controller.Force()
+	}
 	var timer *time.Timer
 	var deadline <-chan time.Time
 	cancelCh := ctx.Done()
@@ -97,12 +110,27 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (Res
 		}
 		cancelErr = err
 		stopInput()
-		_ = s.Send(Message{Type: "cancel", InstanceID: started.InstanceID, ExecID: started.ExecID, Signal: "SIGTERM", GraceMillis: opts.StopTimeout.Milliseconds()})
-		timer = time.NewTimer(opts.StopTimeout + 3*time.Second)
+		sig := "SIGTERM"
+		grace := opts.StopTimeout
+		var canceled *Canceled
+		if errors.As(err, &canceled) {
+			sig = canceled.Signal
+			grace = max(0, time.Until(canceled.Deadline))
+		}
+		_ = s.Send(Message{Type: "cancel", InstanceID: started.InstanceID, ExecID: started.ExecID, Signal: sig, GraceMillis: grace.Milliseconds()})
+		timer = time.NewTimer(grace + 3*time.Second)
 		deadline = timer.C
 	}
 	for {
 		select {
+		case <-force:
+			force = nil
+			_ = s.Send(Message{Type: "cancel", InstanceID: started.InstanceID, ExecID: started.ExecID, Signal: "SIGKILL", GraceMillis: 0})
+			if timer != nil {
+				timer.Stop()
+			}
+			timer = time.NewTimer(3 * time.Second)
+			deadline = timer.C
 		case <-cancelCh:
 			cancelCh = nil
 			cancelExec(context.Cause(ctx))
@@ -118,12 +146,21 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (Res
 			}
 			if m.Result != nil {
 				result = *m.Result
+				if m.Type == "exit" && opts.Controller != nil {
+					opts.Controller.Complete()
+				}
 			}
 			if m.Type == "completed" {
 				stopInput()
 				select {
 				case <-outputDone:
 				case <-deadline:
+					return result, errors.Join(cancelErr, errors.New("output drain deadline exceeded"))
+				case <-force:
+					return result, errors.Join(cancelErr, errors.New("output drain interrupted"))
+				case <-cancelCh:
+					return result, errors.Join(context.Cause(ctx), errors.New("output drain interrupted"))
+				case <-time.After(3 * time.Second):
 					return result, errors.Join(cancelErr, errors.New("output drain deadline exceeded"))
 				}
 				select {
@@ -132,6 +169,11 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (Res
 				default:
 				}
 				_ = s.Send(Message{Type: "ack", InstanceID: started.InstanceID, ExecID: started.ExecID})
+				_ = s.Stdin.Close()
+				select {
+				case <-inputDone:
+				case <-time.After(200 * time.Millisecond):
+				}
 				return result, errors.Join(result.Err(), cancelErr)
 			}
 		}

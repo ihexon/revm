@@ -8,6 +8,7 @@ import (
 	"path"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/sirupsen/logrus"
@@ -44,10 +45,12 @@ type Config struct {
 
 	// Command specifies the program to run inside the VM.
 	// It is required by run mode and optional in attach mode.
-	Command []string `json:"command,omitempty"`
-	WorkDir string   `json:"workdir,omitempty"`
-	Env     []string `json:"env,omitempty"`
-	PTY     bool     `json:"pty,omitempty"`
+	Command     []string      `json:"command,omitempty"`
+	WorkDir     string        `json:"workdir,omitempty"`
+	Env         []string      `json:"env,omitempty"`
+	PTY         bool          `json:"pty,omitempty"`
+	TTY         string        `json:"tty,omitempty"`
+	StopTimeout time.Duration `json:"stopTimeout"`
 
 	Network              string               `json:"network,omitempty"` // "gvisor" | "tsi"
 	Mounts               []string             `json:"mounts,omitempty"`  // "/host:/guest[,ro]"
@@ -69,9 +72,11 @@ type Config struct {
 // Session identity must be supplied explicitly by the caller.
 func DefaultConfig() *Config {
 	return &Config{
-		Network:  "gvisor",
-		LogLevel: "info",
-		WorkDir:  "/",
+		Network:     "gvisor",
+		LogLevel:    "info",
+		WorkDir:     "/",
+		TTY:         "auto",
+		StopTimeout: 10 * time.Second,
 	}
 }
 
@@ -79,6 +84,9 @@ func DefaultConfig() *Config {
 
 // NormalizeConfig returns a copy of cfg with defaults resolved.
 func NormalizeConfig(cfg Config) (Config, error) {
+	if cfg.TTY == "" {
+		cfg.TTY = "auto"
+	}
 	if cfg.Network == "" {
 		cfg.Network = "gvisor"
 	}
@@ -113,6 +121,12 @@ func NormalizeConfig(cfg Config) (Config, error) {
 }
 
 func validateConfig(cfg Config) error {
+	if cfg.StopTimeout < 0 {
+		return fmt.Errorf("--stop-timeout must not be negative")
+	}
+	if cfg.TTY != "auto" && cfg.TTY != "always" && cfg.TTY != "never" {
+		return fmt.Errorf("--tty must be auto, always or never")
+	}
 	if _, err := logrus.ParseLevel(cfg.LogLevel); err != nil {
 		return fmt.Errorf("invalid --log-level %q", cfg.LogLevel)
 	}

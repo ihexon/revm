@@ -18,10 +18,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// CmdlineExitNormal signals that the user command completed successfully.
-// Used as a non-nil error to cancel the errgroup.
-var CmdlineExitNormal = errors.New("command exited normally")
-
 func setupLogger() {
 	level := strings.ToLower(os.Getenv(define.EnvLogLevel))
 	if level == "" {
@@ -80,6 +76,15 @@ func openVirtioPort(name string, flag int) (*os.File, error) {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "_exec" {
+		err := execution.ExecIsolated(os.Args[2:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "revm exec:", err)
+			os.Exit(execution.FromProcess(err).ExitCode())
+		}
+		return
+	}
+
 	app := cli.Command{
 		Name:                      os.Args[0],
 		Usage:                     "rootfs guest agent",
@@ -91,10 +96,6 @@ func main() {
 	}
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
-		if errors.Is(err, CmdlineExitNormal) {
-			logrus.Infof("%v", CmdlineExitNormal)
-			return
-		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			logrus.Errorf("cmdline exit unexpected: %v", err)
@@ -138,6 +139,7 @@ func run(ctx context.Context, _ *cli.Command) error {
 	if err := service.ConfigureNetwork(ctx, virtualNetworkType(vmc)); err != nil {
 		return err
 	}
+	execution.RequireGuestIsolation()
 	go func() {
 		if err := service.StartGuestControlServer(ctx); err != nil {
 			logrus.Error(err)

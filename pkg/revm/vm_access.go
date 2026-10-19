@@ -7,17 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/execution"
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/protocol"
 	guestcontrol "linuxvm/pkg/service/guestcontrol"
 	"linuxvm/pkg/service/management"
-	sshsvc "linuxvm/pkg/service/ssh"
 	"net/http"
 	"os"
-	"path/filepath"
-	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -197,38 +193,4 @@ func fetchManagementJSON[T any](ctx context.Context, workspaceDirPath, path, lab
 		return value, fmt.Errorf("decode %s: %w", label, err)
 	}
 	return value, nil
-}
-
-func sshTargetFromAttachSpec(spec protocol.AttachSpec) sshsvc.Target {
-	return sshsvc.Target{
-		User:                     spec.User,
-		PrivateKeyFile:           spec.PrivateKeyFile,
-		UseGVProxyTunnel:         spec.UseGVProxyTunnel,
-		GVPCtlAddr:               spec.GVPCtlAddr,
-		GuestSSHServerListenAddr: spec.GuestSSHServerListenAddr,
-		GuestTunnelHost:          spec.GuestTunnelHost,
-	}
-}
-
-// attachRun executes a command in the attached VM session over GuestControl.
-// If cmdline is empty, it runs /bin/sh.
-func attachRun(ctx context.Context, controlTarget guestcontrol.Target, cmdline ...string) error {
-	if len(cmdline) == 0 {
-		cmdline = []string{filepath.Join("/", "bin", "sh")}
-	}
-
-	_, err := guestcontrol.StreamExec(ctx, controlTarget, execution.Request{Argv: cmdline}, execution.Options{IO: execution.IO{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}, StopTimeout: 10 * time.Second})
-	return err
-}
-
-// attachShell starts an interactive shell in the attached VM session over SSH
-// as the compatibility path because GuestControl PTY support is separate.
-func attachShell(ctx context.Context, sshTarget sshsvc.Target) error {
-	client, err := sshsvc.MakeSSHClient(ctx, sshTarget)
-	if err != nil {
-		return fmt.Errorf("ssh connect: %w", err)
-	}
-	defer client.Close()
-
-	return client.Shell(ctx)
 }
