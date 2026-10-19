@@ -1,4 +1,4 @@
-import os,subprocess,tempfile,time,json,signal,uuid
+import os,subprocess,tempfile,time,json,signal,uuid,socket,http.client,urllib.parse
 b=os.path.abspath('out/revm/bin/revm');root=tempfile.TemporaryDirectory(prefix='revm-volume-');sid='audit-'+uuid.uuid4().hex[:10];owner=None
 env=dict(os.environ,XDG_STATE_HOME=root.name+'/state',XDG_CACHE_HOME=root.name+'/cache',XDG_DATA_HOME=root.name+'/data')
 def cli(args,ok=True):
@@ -29,9 +29,23 @@ try:
  assert cli(['volume','create','data'],False).returncode==1
  meta=start();vol=json.load(open(meta))['volumeID']
  cli(['exec','--id',sid,'--','podman','ps'])
+ view=json.loads(cli(['inspect',sid]).stdout)
+ address=urllib.parse.urlparse(view['endpoints']['podman'])
+ connection=http.client.HTTPConnection('localhost',timeout=5)
+ connection.sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+ connection.sock.settimeout(5)
+ connection.sock.connect(urllib.parse.unquote(address.path))
+ connection.request('GET','/_ping')
+ assert connection.getresponse().status==200
+ connection.close()
+ storage=json.loads(cli(['volume','ls','--json']).stdout)[0]
+ assert storage['inUse'] and os.path.isfile(storage['path'])
+ assert storage['sizeBytes']>=storage['allocatedBytes']>0
+ assert b'ALLOCATED' in cli(['volume','ls']).stdout
  cli(['exec','--id',sid,'--','sh','-c','echo keep-me > /var/lib/containers/revm-smoke-data'])
  assert cli(['volume','rm','data'],False).returncode==1
  owner.send_signal(signal.SIGTERM);owner.communicate(timeout=10)
+ assert not json.loads(cli(['volume','ls','--json']).stdout)[0]['inUse']
  # Remove only the test session's records, retaining the independently owned volume.
  cli(['rm',sid])
  sid='audit-'+uuid.uuid4().hex[:10]

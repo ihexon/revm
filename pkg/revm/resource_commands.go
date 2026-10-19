@@ -12,12 +12,48 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func ListVolumes() ([]Volume, error) {
+type VolumeView struct {
+	Volume
+	Path           string `json:"path"`
+	SizeBytes      *int64 `json:"sizeBytes"`
+	AllocatedBytes *int64 `json:"allocatedBytes"`
+	InUse          bool   `json:"inUse"`
+	Error          string `json:"error,omitempty"`
+}
+
+func ListVolumes() ([]VolumeView, error) {
 	r, err := ResolveRoots()
 	if err != nil {
 		return nil, err
 	}
-	return volumes(r)
+	list, err := volumes(r)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]VolumeView, 0, len(list))
+	for _, v := range list {
+		view := VolumeView{Volume: v, Path: filepath.Join(r.volumeDir(v.ID), "disk.ext4")}
+		var stat unix.Stat_t
+		statErr := unix.Stat(view.Path, &stat)
+		if statErr == nil {
+			allocated := stat.Blocks * 512
+			view.SizeBytes, view.AllocatedBytes = &stat.Size, &allocated
+		}
+		active, lockErr := activeLock(r.volumeLock(v.ID))
+		diskLock, diskErr := lockDisk(view.Path)
+		if diskLock != nil {
+			diskLock.Close()
+		}
+		view.InUse = active || errors.Is(diskErr, unix.EWOULDBLOCK)
+		if errors.Is(diskErr, unix.EWOULDBLOCK) {
+			diskErr = nil
+		}
+		if err := errors.Join(statErr, lockErr, diskErr); err != nil {
+			view.Error = err.Error()
+		}
+		views = append(views, view)
+	}
+	return views, nil
 }
 
 // CreateVolume creates independent persistent storage. It never replaces data.

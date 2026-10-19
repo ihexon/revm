@@ -19,14 +19,19 @@ try:
  owner=subprocess.Popen([binary,'run','--id',sid,'--cpus','1','--memory','512','--stop-timeout','1s','--','sh','-c','echo ready; sleep 100'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);processes.append(owner)
  assert owner.stdout.readline()==b'ready\n'
  cli(['wait','--ready','--timeout','5s',sid])
- assert json.loads(cli(['inspect',sid]).stdout)['active'] is True
+ active=json.loads(cli(['inspect',sid]).stdout)
+ assert active['active'] is True and active['endpoints']['management'].startswith('unix:///')
+ assert os.path.isdir(active['logDir'])
  assert sid in cli(['ls','--json']).stdout.decode()
  cli(['rm',sid],1)
  cli(['logs',sid]);cli(['logs','--guest',sid])
+ assert cli(['logs','--tail','0',sid]).stdout==b''
+ lines=cli(['logs','--tail','2',sid]).stdout.splitlines()
+ assert len(lines)<=2
  cli(['ctl','--id',sid,'--list-port','--json'])
  cli(['stop','--timeout','6s',sid]);owner.communicate(timeout=5)
  view=json.loads(cli(['inspect',sid]).stdout)
- assert not view['active'] and view['lastRun']['finishedAt']
+ assert not view['active'] and view['lastRun']['finishedAt'] and 'endpoints' not in view
  cli(['stop',sid]);cli(['rm',sid]);cli(['inspect',sid],1)
  print('PASS list/inspect/readiness/logs/ports/stop/remove',flush=True)
 

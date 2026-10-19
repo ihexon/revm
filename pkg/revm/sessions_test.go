@@ -1,11 +1,15 @@
 package revm
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"linuxvm/pkg/commanderr"
@@ -307,3 +311,101 @@ func TestTemporaryRunRetention(t *testing.T) {
 		})
 	}
 }
+
+func TestInspectEndpointsAndVolumeUsage(t *testing.T) {
+	r := testRoots(t)
+	cfg := testConfig()
+	cfg.RunMode = ModeContainer
+	volume := fakeVolume(t, r, cfg.SessionID)
+	disk := filepath.Join(r.volumeDir(volume.ID), "disk.ext4")
+	if err := os.Truncate(disk, 8*1024*1024); err != nil {
+		t.Fatal(err)
+	}
+	cfg.VolumeName = volume.Name
+	l, err := beginRun(context.Background(), &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.close()
+	view, err := InspectSession(cfg.SessionID)
+	if err != nil || view.Endpoints == nil || !strings.HasSuffix(view.Endpoints.Podman, "/socks/podman-api.sock") || view.LogDir != l.logDir {
+		t.Fatalf("%+v %v", view, err)
+	}
+	volumes, err := ListVolumes()
+	if err != nil || len(volumes) != 1 {
+		t.Fatal(volumes, err)
+	}
+	v := volumes[0]
+	if v.Path != disk || !v.InUse || v.SizeBytes == nil || *v.SizeBytes != 8*1024*1024 || v.AllocatedBytes == nil || *v.AllocatedBytes >= *v.SizeBytes {
+		t.Fatalf("%+v", v)
+	}
+	if err := l.close(); err != nil {
+		t.Fatal(err)
+	}
+	view, err = InspectSession(cfg.SessionID)
+	if err != nil || view.Endpoints != nil {
+		t.Fatal("stopped endpoint advertised", view, err)
+	}
+	if err := os.Remove(disk); err != nil {
+		t.Fatal(err)
+	}
+	volumes, err = ListVolumes()
+	if err != nil || len(volumes) != 1 || volumes[0].Error == "" || volumes[0].SizeBytes != nil {
+		t.Fatal("missing disk hidden", volumes, err)
+	}
+}
+
+func TestLogTailFollowsNewLines(t *testing.T) {
+	testRoots(t)
+	cfg := testConfig()
+	l, err := beginRun(context.Background(), &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.close()
+	path := filepath.Join(l.logDir, "revm.log")
+	if err := os.WriteFile(path, []byte("old\nlast\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	w := &notifyingBuffer{ready: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() { done <- SessionLogs(ctx, cfg.SessionID, "", false, true, 1, w) }()
+	select {
+	case <-w.ready:
+	case <-ctx.Done():
+		t.Fatal("log reader did not start")
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.WriteString("new\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	if err = l.close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = <-done; err != nil {
+		t.Fatal(err)
+	}
+	if w.String() != "last\nnew\n" {
+		t.Fatalf("%q", w.String())
+	}
+}
+
+type notifyingBuffer struct {
+	buffer bytes.Buffer
+	ready  chan struct{}
+	once   sync.Once
+}
+
+func (w *notifyingBuffer) Write(p []byte) (int, error) {
+	n, err := w.buffer.Write(p)
+	w.once.Do(func() { close(w.ready) })
+	return n, err
+}
+
+func (w *notifyingBuffer) String() string { return w.buffer.String() }

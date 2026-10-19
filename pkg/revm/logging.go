@@ -14,6 +14,39 @@ import (
 
 const maxLogFileSize = 10 * 1024 * 1024
 
+// Scan backwards in fixed-size blocks; a large log or long line does not need
+// to fit in memory. Leave the file positioned for the existing copy/follow loop.
+func seekLogTail(f *os.File, lines int) error {
+	if lines < 0 {
+		_, err := f.Seek(0, io.SeekStart)
+		return err
+	}
+	end, err := f.Seek(0, io.SeekEnd)
+	if err != nil || lines == 0 {
+		return err
+	}
+	buf := make([]byte, 4096)
+	for offset := end; offset > 0; {
+		size := min(offset, int64(len(buf)))
+		offset -= size
+		n, err := f.ReadAt(buf[:size], offset)
+		if err != nil && err != io.EOF {
+			return err
+		}
+		for i := n - 1; i >= 0; i-- {
+			if buf[i] == '\n' && offset+int64(i) != end-1 {
+				lines--
+				if lines == 0 {
+					_, err := f.Seek(offset+int64(i)+1, io.SeekStart)
+					return err
+				}
+			}
+		}
+	}
+	_, err = f.Seek(0, io.SeekStart)
+	return err
+}
+
 // Bound automatic diagnostics even when a failing kernel is flooding its log.
 func guestLogTail(path string) string {
 	f, err := os.Open(path)

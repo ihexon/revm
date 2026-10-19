@@ -19,8 +19,12 @@ Create storage with `revm volume create data`, then select it with
 `revm podman --volume data`. Every launch requires `--volume NAME` or an external
 `--container-disk PATH`. A session records the volume used by its latest run for
 inspection; that record never selects or recreates storage. Volumes have no
-session association. `volume ls --json` lists them; `volume rm NAME` deletes an
-unused volume. Deleting a session preserves all volumes.
+session association. `volume ls` shows the disk path, whether it is in use,
+logical capacity and host-allocated space. `volume ls --json` reports `path`,
+`inUse`, `sizeBytes` and `allocatedBytes`; unknown sizes are null with an `error`.
+Allocated space is the host file's allocated blocks, not guest filesystem usage
+or reclaimable space (shared/cloned blocks may still be counted). `volume rm NAME`
+deletes an unused volume. Deleting a session preserves all volumes.
 
 Omit `--id` to remove session records after successful execution and cleanup.
 Failures, interruptions and crashes retain logs and results until `rm`. Supply

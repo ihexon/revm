@@ -48,17 +48,17 @@ because a version is missing or mismatched.
 Use an external Podman storage disk; mutually exclusive with --volume NAME.
 .SH SESSION MANAGEMENT
 .B ls --json
-lists sessions; 
+lists sessions; human output includes mode, start time, duration, exit code and command.
 .B inspect NAME
-prints configuration and last result as JSON.
+prints configuration, last result, log directory and active connection URLs as JSON.
 .B wait NAME
 returns the selected instance's recorded exit status;
 .B wait --ready --timeout 30s NAME
 waits for guest readiness.
 .B stop NAME
 requests shutdown and waits for resource release.
-.B logs [--guest] [-f] NAME
-reads instance logs.
+.B logs [--guest] [--tail N] [-f] NAME
+reads instance logs. Default tail -1 reads all; tail 0 with -f follows only new lines.
 .B rm NAME
 removes a stopped session, preserving volumes.
 .SH DATA
@@ -72,11 +72,11 @@ Unset cache, state and data roots default to ~/.cache, ~/.local/state and
 .B volume create NAME
 creates independent persistent storage, selected by podman --volume NAME.
 .B volume ls --json
-lists managed volumes.
+lists managed volumes with disk paths, in-use state, logical capacity and host-allocated bytes.
 .B volume rm NAME
 explicitly deletes an unused volume.
 .B cache prune
-removes inactive resources with verified ownership, preserving legacy data.
+removes inactive runtime/cache resources with verified ownership, preserving diagnostic records, legacy data and persistent disks.
 .SH EXIT STATUS
 0 means success; 2 means invalid invocation; 1 means an operational failure.
 Guest exit codes are preserved, including 126 and 127. Signals return 128 plus

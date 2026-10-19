@@ -25,7 +25,7 @@ func timeoutContext(ctx context.Context, c *cli.Command) (context.Context, conte
 }
 func sessionCommands() []*cli.Command {
 	return []*cli.Command{
-		{Name: "ls", Usage: "list sessions and their latest state", Flags: []cli.Flag{&cli.BoolFlag{Name: "json"}}, Action: func(ctx context.Context, c *cli.Command) error {
+		{Name: "ls", Usage: "list session mode, state, timing, exit code and command", Flags: []cli.Flag{&cli.BoolFlag{Name: "json", Usage: "print structured session records"}}, Action: func(ctx context.Context, c *cli.Command) error {
 			if err := noArgs(c); err != nil {
 				return err
 			}
@@ -36,13 +36,9 @@ func sessionCommands() []*cli.Command {
 			if c.Bool("json") {
 				return json.NewEncoder(c.Writer).Encode(views)
 			}
-			fmt.Fprintln(c.Writer, "ID\tSTATUS\tINSTANCE")
-			for _, v := range views {
-				fmt.Fprintf(c.Writer, "%s\t%s\t%s\n", v.ID, v.Status, v.InstanceID)
-			}
-			return nil
+			return writeSessions(c.Writer, views, time.Now())
 		}},
-		{Name: "inspect", Usage: "print session configuration and last result as JSON", Action: func(ctx context.Context, c *cli.Command) error {
+		{Name: "inspect", Usage: "print configuration, last result, log directory and active connection URLs as JSON", Action: func(ctx context.Context, c *cli.Command) error {
 			id, err := sessionArg(c)
 			if err != nil {
 				return err
@@ -86,12 +82,15 @@ func sessionCommands() []*cli.Command {
 			}
 			return revm.RemoveSession(id)
 		}},
-		{Name: "logs", Usage: "read the latest instance log", Flags: []cli.Flag{&cli.BoolFlag{Name: "guest", Usage: "read vm.log instead of revm.log"}, &cli.BoolFlag{Name: "follow", Aliases: []string{"f"}, Usage: "follow until this instance stops"}, &cli.StringFlag{Name: "instance", Usage: "read a specific instance ID"}}, Action: func(ctx context.Context, c *cli.Command) error {
+		{Name: "logs", Usage: "read the latest instance log", Flags: []cli.Flag{&cli.IntFlag{Name: "tail", Value: -1, Usage: "show the last N lines; -1 shows all, 0 skips existing lines"}, &cli.BoolFlag{Name: "guest", Usage: "read vm.log instead of revm.log"}, &cli.BoolFlag{Name: "follow", Aliases: []string{"f"}, Usage: "follow until this instance stops"}, &cli.StringFlag{Name: "instance", Usage: "read a specific instance ID"}}, Action: func(ctx context.Context, c *cli.Command) error {
 			id, err := sessionArg(c)
 			if err != nil {
 				return err
 			}
-			return revm.SessionLogs(ctx, id, c.String("instance"), c.Bool("guest"), c.Bool("follow"), c.Writer)
+			if c.Int("tail") < -1 {
+				return commanderr.Usage(fmt.Errorf("--tail must be -1 (all lines) or nonnegative"))
+			}
+			return revm.SessionLogs(ctx, id, c.String("instance"), c.Bool("guest"), c.Bool("follow"), c.Int("tail"), c.Writer)
 		}},
 	}
 }

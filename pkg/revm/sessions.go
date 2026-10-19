@@ -7,6 +7,7 @@ import (
 	"linuxvm/pkg/execution"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/service/guestcontrol"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,10 +18,17 @@ import (
 
 type SessionView struct {
 	Session
-	Error   string     `json:"error,omitempty"`
-	Status  string     `json:"status"`
-	Active  bool       `json:"active"`
-	LastRun *RunRecord `json:"lastRun,omitempty"`
+	Error     string            `json:"error,omitempty"`
+	Status    string            `json:"status"`
+	Active    bool              `json:"active"`
+	LastRun   *RunRecord        `json:"lastRun,omitempty"`
+	LogDir    string            `json:"logDir,omitempty"`
+	Endpoints *SessionEndpoints `json:"endpoints,omitempty"`
+}
+
+type SessionEndpoints struct {
+	Management string `json:"management"`
+	Podman     string `json:"podman,omitempty"`
 }
 
 func inspectSession(r Roots, id string) (SessionView, error) {
@@ -58,6 +66,15 @@ func inspectSession(r Roots, id string) (SessionView, error) {
 	}
 	view.LastRun = &rec
 	view.Status = rec.Status
+	view.LogDir = filepath.Join(r.sessionDir(id), "runs", s.InstanceID, "logs")
+	if active {
+		paths := newMachinePathManager(rec.RuntimeDir)
+		address := func(path string) string { return (&url.URL{Scheme: "unix", Path: path}).String() }
+		view.Endpoints = &SessionEndpoints{Management: address(paths.GetVMCtlSocketFile())}
+		if s.Config.RunMode == ModeContainer {
+			view.Endpoints.Podman = address(paths.GetPodmanSocketFile())
+		}
+	}
 	if !active && rec.FinishedAt == nil {
 		view.Status = "unknown"
 		view.LastRun.Status = "unknown"
@@ -268,7 +285,10 @@ func waitInstance(ctx context.Context, s Session, ready, stop bool) (*RunRecord,
 		}
 	}
 }
-func SessionLogs(ctx context.Context, id, instance string, guest, follow bool, w io.Writer) error {
+func SessionLogs(ctx context.Context, id, instance string, guest, follow bool, tail int, w io.Writer) error {
+	if tail < -1 {
+		return fmt.Errorf("log tail must be -1 (all lines) or nonnegative")
+	}
 	r, err := ResolveRoots()
 	if err != nil {
 		return err
@@ -298,6 +318,9 @@ func SessionLogs(ctx context.Context, id, instance string, guest, follow bool, w
 		return err
 	}
 	defer file.Close()
+	if err := seekLogTail(file, tail); err != nil {
+		return err
+	}
 	for {
 		if _, err = io.Copy(w, file); err != nil {
 			return err

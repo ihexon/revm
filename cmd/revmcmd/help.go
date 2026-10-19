@@ -22,7 +22,7 @@ func configureHelp(app *cli.Command) {
 		"inspect":       "Example:\n  revm inspect dev",
 		"stop":          "The timeout limits this client's wait. Shutdown grace is set with --stop-timeout when starting the VM.\n\nExample:\n  revm stop --timeout 15s dev",
 		"wait":          "Waits for the selected instance, even if the session name is later reused.\n\nExamples:\n  revm wait --ready --timeout 30s dev\n  revm wait dev  # returns its recorded exit status",
-		"logs":          "Reads revm lifecycle logs; --guest selects the VM boot/service log. Command stdout/stderr are streamed directly and are not recorded here.\n\nExamples:\n  revm logs dev\n  revm logs --guest --follow dev",
+		"logs":          "Reads revm lifecycle logs; --guest selects the VM boot/service log. Command stdout/stderr are streamed directly and are not recorded here.\n\nExamples:\n  revm logs --tail 50 dev\n  revm logs --guest --tail 20 --follow dev",
 		"rm":            "Requires a stopped session. Deletes its records and logs; preserves volumes and external disks.\n\nExample:\n  revm rm dev",
 		"volume":        "Persistent disks are independent of sessions. Select one explicitly with revm podman --volume NAME.\n\nExample:\n  revm volume create data",
 		"volume create": "Example:\n  revm volume create data",

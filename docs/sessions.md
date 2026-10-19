@@ -1,13 +1,13 @@
 # Session commands
 
 ```sh
-revm ls                     # ID, status and current/last instance
+revm ls                     # mode, status, start time, duration, exit code and command
 revm ls --json
-revm inspect dev            # JSON config, volume reference and last run result
+revm inspect dev            # JSON config, last result, log directory and live endpoints
 revm wait --ready --timeout 30s dev
 revm wait dev               # return the recorded instance exit status
-revm logs dev
-revm logs --guest -f dev
+revm logs --tail 50 dev
+revm logs --guest --tail 20 -f dev
 revm stop --timeout 15s dev
 revm rm dev                 # stopped sessions only; volumes remain
 revm run -- sh -c 'echo temporary'
@@ -25,6 +25,8 @@ no recorded result is `unknown` and returns an error. Inspect includes the guest
 result separately from the CLI exit code, cleanup state and error text.
 
 `logs` reads the latest instance's `revm.log`; `--guest` selects `vm.log`.
+`--tail N` reads the last N lines before following, without loading the entire
+file. The default `--tail -1` reads all lines; `--tail 0 -f` follows new lines only.
 `--instance UUID` reads an older run. `--follow` ends when that instance stops.
 Logs, configuration and results are private state; workload stdout/stderr are
 streamed to the caller and are not automatically copied into these logs.
@@ -44,3 +46,18 @@ Incomplete or unreadable records appear as `broken` with an `error` in JSON;
 they do not block listing other sessions. `rm` can remove these records while
 preserving volumes and external disks. Session names beginning with `.` are
 reserved for internal staging.
+
+`inspect` and `ls --json` include `logDir`. While the selected instance is active,
+`endpoints.management` and (for Podman mode) `endpoints.podman` are Unix URLs.
+These are connection addresses, not readiness guarantees; use `wait --ready`
+for guest readiness and the Podman API ping for Podman readiness. Stopped
+instances omit `endpoints` so scripts do not reuse stale sockets.
+
+```sh
+export CONTAINER_HOST="$(revm inspect containers | jq -r '.endpoints.podman')"
+podman info
+```
+
+Human-readable `ls` shows UTC start timestamps and elapsed instance time.
+Unknown crash duration and missing exit codes display `-`; `inspect` retains
+the full error and instance ID. Use JSON for scripts, not table column parsing.

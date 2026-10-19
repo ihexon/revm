@@ -3,6 +3,7 @@ package revmcmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/urfave/cli/v3"
 	"linuxvm/pkg/commanderr"
@@ -39,7 +40,7 @@ func resourceCommands() []*cli.Command {
 				_, err = fmt.Fprintln(c.Writer, v.Name)
 				return err
 			}},
-			{Name: "ls", Usage: "list managed volumes", Flags: []cli.Flag{&cli.BoolFlag{Name: "json"}}, Action: func(ctx context.Context, c *cli.Command) error {
+			{Name: "ls", Usage: "list volume paths, usage state, capacity and allocated space", Flags: []cli.Flag{&cli.BoolFlag{Name: "json", Usage: "print structured volume records with sizes in bytes"}}, Action: func(ctx context.Context, c *cli.Command) error {
 				if err := noArgs(c); err != nil {
 					return err
 				}
@@ -50,10 +51,7 @@ func resourceCommands() []*cli.Command {
 				if c.Bool("json") {
 					return json.NewEncoder(c.Writer).Encode(list)
 				}
-				for _, v := range list {
-					fmt.Fprintf(c.Writer, "%s\t%s\n", v.Name, v.ID)
-				}
-				return nil
+				return writeVolumes(c.Writer, list)
 			}},
 			{Name: "rm", Usage: "delete one unused managed volume", Action: func(ctx context.Context, c *cli.Command) error {
 				name, err := oneArg(c)
@@ -70,7 +68,9 @@ func resourceCommands() []*cli.Command {
 				}
 				paths, err := revm.PruneCache()
 				for _, p := range paths {
-					fmt.Fprintln(c.Writer, p)
+					if _, writeErr := fmt.Fprintln(c.Writer, p); writeErr != nil {
+						return errors.Join(err, writeErr)
+					}
 				}
 				return err
 			}},

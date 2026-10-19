@@ -48,11 +48,13 @@ revm inspect shell
 revm exec --id shell -- sh -c 'uname -a'
 revm exec --id shell --tty=always -- sh
 revm wait --ready --timeout 30s shell
-revm logs --guest -f shell
+revm logs --guest --tail 50 -f shell
 revm stop shell
 revm wait shell                    # returns this instance's recorded exit status
 revm rm shell                      # stopped sessions only; volumes remain
 ```
+
+`ls` shows the mode, start time, duration, exit code and command. `inspect` includes the log directory and active management/Podman connection URLs.
 
 One session name has at most one active instance. Each start gets a new instance ID, a private writable rootfs, separate logs and a result record. A crash with no result is reported as `unknown`. Omitting `--id` creates a disposable run: records and logs are removed only after success; failures, interruptions and crashes retain them until `revm rm`. Specifying `--id` retains them.
 
@@ -72,6 +74,7 @@ podman run --rm alpine uname -a
 Volumes persist independently of sessions. Each Podman launch must explicitly select an existing `--volume NAME` or an external disk. Stop and session removal preserve the data. `--container-disk PATH` uses a user-owned external disk. Share host directories explicitly with `--mount`; home is not mounted automatically.
 
 ```sh
+revm volume ls                    # path, in-use state, capacity and allocated space
 revm volume ls --json
 revm volume rm data   # explicit deletion; refuses an active volume
 revm cache prune                  # only inactive resources with known ownership
