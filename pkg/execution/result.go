@@ -76,7 +76,7 @@ func FromProcess(err error) Result {
 	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 		code = 127
 	}
-	if errors.Is(err, os.ErrPermission) {
+	if errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.ENOEXEC) || errors.Is(err, syscall.EISDIR) {
 		code = 126
 	}
 	return r
