@@ -91,3 +91,32 @@ func TestRemoveSessionPreservesExternalData(t *testing.T) {
 		}
 	}
 }
+
+func TestWaitIncludesCleanupFailure(t *testing.T) {
+	r := testRoots(t)
+	cfg := testConfig()
+	l, err := beginRun(context.Background(), &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(l.record.CacheDir)
+	result := execution.FromProcess(nil)
+	if err = l.finish(&result, nil); err != nil {
+		t.Fatal(err)
+	}
+	owner := l.record
+	owner.InstanceID = "different-owner"
+	if err = writeJSONAtomic(filepath.Join(l.record.CacheDir, "owner.json"), owner); err != nil {
+		t.Fatal(err)
+	}
+	if err = l.close(); err == nil {
+		t.Fatal("cleanup ownership mismatch ignored")
+	}
+	if err = WaitSession(context.Background(), cfg.SessionID, false); commanderr.ExitCode(err) != 1 {
+		t.Fatal("cleanup failure recorded as success", err)
+	}
+	view, err := inspectSession(r, cfg.SessionID)
+	if err != nil || view.LastRun.Result.Cleanup != "failed" {
+		t.Fatalf("%+v %v", view, err)
+	}
+}

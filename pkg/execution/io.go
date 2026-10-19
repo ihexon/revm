@@ -46,6 +46,9 @@ func (r *pollReader) Read(b []byte) (int, error) {
 		if n == 0 {
 			continue
 		}
+		if err := r.ctx.Err(); err != nil {
+			return 0, err
+		}
 		n, err = unix.Read(r.fd, b)
 		if errors.Is(err, unix.EINTR) || errors.Is(err, unix.EAGAIN) {
 			continue

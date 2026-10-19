@@ -288,13 +288,18 @@ func beginRun(ctx context.Context, cfg *Config) (lease *sessionRun, retErr error
 		return nil, err
 	}
 	if errors.Is(err, os.ErrNotExist) {
-		if _, e := os.Stat(legacySessionDir(cfg.SessionID)); e == nil {
-			return nil, fmt.Errorf("legacy session %q exists; run revm migrate %s before starting it", cfg.SessionID, cfg.SessionID)
-		} else if !os.IsNotExist(e) {
+		s = Session{Version: 1, ID: cfg.SessionID}
+		if legacy, e := legacyResources(legacySessionDir(cfg.SessionID)); e == nil && legacy {
+			var receipt migrationReceipt
+			if readJSON(filepath.Join(r.State, "migrations", cfg.SessionID+".json"), &receipt) != nil || receipt.Version != 1 || receipt.Source != legacySessionDir(cfg.SessionID) {
+				return nil, fmt.Errorf("legacy session %q exists; run revm migrate %s before starting it", cfg.SessionID, cfg.SessionID)
+			}
+			s.VolumeID = receipt.VolumeID
+		} else if e != nil {
 			return nil, e
 		}
-		s = Session{Version: 1, ID: cfg.SessionID}
 	}
+
 	original := *cfg
 	if cfg.RunMode == ModeContainer && cfg.ContainerDisk == nil {
 		catalog, err := acquireLock(filepath.Join(r.Data, "locks", "catalog.lock"))
@@ -448,7 +453,10 @@ func removeOwned(dir, instance string) error {
 	var owner RunRecord
 	if err := readJSON(filepath.Join(dir, "owner.json"), &owner); err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			if _, statErr := os.Lstat(dir); os.IsNotExist(statErr) {
+				return nil
+			}
+			return fmt.Errorf("resource directory has no ownership record; retained: %s", dir)
 		}
 		return err
 	}
@@ -457,14 +465,28 @@ func removeOwned(dir, instance string) error {
 	}
 	return os.RemoveAll(dir)
 }
-func (l *sessionRun) close() error {
-	err := errors.Join(removeOwned(l.record.RuntimeDir, l.record.InstanceID), removeOwned(l.record.CacheDir, l.record.InstanceID))
+func (l *sessionRun) close(prior ...error) error {
+	err := errors.Join(append(prior, removeOwned(l.record.RuntimeDir, l.record.InstanceID), removeOwned(l.record.CacheDir, l.record.InstanceID))...)
+	// Commit cleanup failure before releasing the session lock, so wait cannot
+	// observe a successful record for a CLI which is about to fail cleanup.
+	if err != nil && l.record.FinishedAt != nil && !l.session.Config.Remove {
+		if l.record.ExitCode == nil || *l.record.ExitCode == 0 {
+			code := 1
+			l.record.ExitCode = &code
+		}
+		if l.record.Result != nil {
+			l.record.Result.Cleanup = "failed"
+		}
+		l.record.Error = commanderr.Diagnostic(errors.Join(errors.New(l.record.Error), err))
+		err = errors.Join(err, writeJSONAtomic(l.resultPath, l.record))
+	}
 	for _, f := range l.files {
 		err = errors.Join(err, f.Close())
 	}
 	l.files = nil
 	return err
 }
+
 func legacySessionDir(id string) string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".cache", "revm", id)
@@ -490,4 +512,15 @@ func sessionWorkspace(id string) (string, error) {
 		return "", err
 	}
 	return rec.RuntimeDir, nil
+}
+
+func legacyResources(dir string) (bool, error) {
+	for _, name := range []string{"rootfs", "raw-disk", "logs", "socks", "ssh"} {
+		if _, err := os.Lstat(filepath.Join(dir, name)); err == nil {
+			return true, nil
+		} else if !os.IsNotExist(err) {
+			return false, err
+		}
+	}
+	return false, nil
 }

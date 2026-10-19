@@ -257,3 +257,15 @@ func TestDiskVersionNeverAuthorizesReplacement(t *testing.T) {
 		t.Fatal("disk with missing version was replaced")
 	}
 }
+
+func TestNewCacheLayoutIsNotALegacySession(t *testing.T) {
+	dir := t.TempDir()
+	os.Mkdir(filepath.Join(dir, uuid.NewString()), 0700)
+	if legacy, err := legacyResources(dir); err != nil || legacy {
+		t.Fatal("instance cache mistaken for a legacy session", err)
+	}
+	os.Mkdir(filepath.Join(dir, "raw-disk"), 0700)
+	if legacy, err := legacyResources(dir); err != nil || !legacy {
+		t.Fatal("legacy persistent storage not detected", err)
+	}
+}

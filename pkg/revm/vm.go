@@ -49,9 +49,10 @@ type VM struct {
 	workspace     vmWorkspace
 	observability vmObservability
 
-	seq      atomic.Uint64
-	resultMu sync.Mutex
-	result   *execution.Result
+	shutdownRequested atomic.Bool
+	seq               atomic.Uint64
+	resultMu          sync.Mutex
+	result            *execution.Result
 }
 
 type vmRuntime struct {
@@ -132,7 +133,7 @@ func (vm *VM) Release() error {
 		if vm.cfg.Remove {
 			retErr = errors.Join(retErr, os.RemoveAll(vm.lease.roots.sessionDir(vm.cfg.SessionID)))
 		}
-		retErr = errors.Join(retErr, vm.lease.close())
+		retErr = vm.lease.close(retErr)
 		vm.lease = nil
 	}
 	return retErr
@@ -319,6 +320,8 @@ func (vm *VM) Run(ctx context.Context) error {
 	var forceStopOnce sync.Once
 	var forceStopErr error
 	forceVMRunWithStop := func(cause error) {
+		vm.shutdownRequested.Store(true)
+		vm.stopRequested(cause)
 		forceStopOnce.Do(func() {
 			forceStopErr = vm.forceVirtualMachine()
 		})
@@ -370,6 +373,7 @@ func (vm *VM) Run(ctx context.Context) error {
 	}()
 
 	g.Go(func() error {
+		defer close(vm.runtime.done)
 		if err := waitForNetworkReady(hostServicesCtx, networkReady); err != nil {
 			return err
 		}
@@ -381,7 +385,6 @@ func (vm *VM) Run(ctx context.Context) error {
 		// libkrun_vmm_run is a blocking C call. The backend intentionally owns
 		// that lifetime and returns only after the guest exits.
 		err := vm.runtime.backend.Start(context.Background())
-		close(vm.runtime.done)
 		if err != nil {
 			finishVMRun(err)
 		} else {
@@ -407,6 +410,7 @@ func (vm *VM) Run(ctx context.Context) error {
 }
 
 func (vm *VM) requestGuestShutdown() {
+	vm.shutdownRequested.Store(true)
 	if vm.runtime.backend == nil {
 		return
 	}
@@ -438,8 +442,14 @@ func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, forceVMR
 			vm.result = &result
 			vm.resultMu.Unlock()
 			vm.requestGuestShutdown()
+			var force <-chan struct{}
+			if c := execution.ControllerFrom(vm.commandContext); c != nil {
+				force = c.Force()
+			}
 			select {
 			case <-vm.runtime.done:
+			case <-force:
+				err = errors.Join(err, vm.forceVirtualMachine())
 			case <-time.After(vm.stopBudget(vm.commandContext)):
 				err = errors.Join(err, fmt.Errorf("VM graceful shutdown timed out"), vm.forceVirtualMachine())
 			}
@@ -499,8 +509,8 @@ func waitForNetworkReady(ctx context.Context, networkReady <-chan struct{}) erro
 func (vm *VM) startHostService(g *errgroup.Group, ctx context.Context, forceVMRun func(error), start func(context.Context) error) {
 	g.Go(func() error {
 		err := start(ctx)
-		if err == nil || errors.Is(err, context.Canceled) {
-			return err
+		if err == nil || ctx.Err() != nil || errors.Is(err, context.Canceled) || vm.shutdownRequested.Load() {
+			return nil
 		}
 
 		forceVMRun(err)

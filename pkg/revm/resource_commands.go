@@ -10,10 +10,19 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
 )
+
+type migrationReceipt struct {
+	Version  int       `json:"version"`
+	Source   string    `json:"source"`
+	VolumeID string    `json:"volumeID,omitempty"`
+	Size     int64     `json:"size,omitempty"`
+	Modified time.Time `json:"modified,omitempty"`
+}
 
 func ListVolumes() ([]Volume, error) {
 	r, err := ResolveRoots()
@@ -172,11 +181,16 @@ func MigrateSession(ctx context.Context, id string) (Session, error) {
 			if v.DefaultSession != id && v.Name != "podman-"+id {
 				continue
 			}
-			var receipt struct {
-				Source string `json:"source"`
-			}
+			var receipt migrationReceipt
 			if readJSON(filepath.Join(r.volumeDir(v.ID), "migration.json"), &receipt) != nil || receipt.Source != source {
 				return empty, fmt.Errorf("migration conflicts with existing volume %s; both sources preserved", v.Name)
+			}
+			info, err := os.Stat(source)
+			if err != nil {
+				return empty, err
+			}
+			if receipt.Version != 1 || receipt.Size != info.Size() || !receipt.Modified.Equal(info.ModTime()) {
+				return empty, fmt.Errorf("legacy source changed since the volume was copied; both copies preserved")
 			}
 			volume = v
 		}
@@ -207,11 +221,14 @@ func MigrateSession(ctx context.Context, id string) (Session, error) {
 			if err = writeJSONAtomic(filepath.Join(temp, "volume.json"), volume); err != nil {
 				return empty, err
 			}
-			if err = writeJSONAtomic(filepath.Join(temp, "migration.json"), struct {
-				Source string `json:"source"`
-			}{source}); err != nil {
+			info, err := os.Stat(source)
+			if err != nil {
 				return empty, err
 			}
+			if err = writeJSONAtomic(filepath.Join(temp, "migration.json"), migrationReceipt{Version: 1, Source: source, VolumeID: volume.ID, Size: info.Size(), Modified: info.ModTime()}); err != nil {
+				return empty, err
+			}
+
 			if err = os.Rename(temp, r.volumeDir(volume.ID)); err != nil {
 				return empty, err
 			}
@@ -243,6 +260,10 @@ func MigrateSession(ctx context.Context, id string) (Session, error) {
 		}
 	}
 	if err = writeJSONAtomic(filepath.Join(r.sessionDir(id), "session.json"), s); err != nil {
+		return empty, err
+	}
+	// Classification survives rm, just like the persistent volume association.
+	if err = writeJSONAtomic(filepath.Join(r.State, "migrations", id+".json"), migrationReceipt{Version: 1, Source: old, VolumeID: s.VolumeID}); err != nil {
 		return empty, err
 	}
 	return s, nil

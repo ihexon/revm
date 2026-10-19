@@ -132,12 +132,26 @@ func StopSession(ctx context.Context, id string) error {
 	}
 	client := network.NewUnixClient(newMachinePathManager(view.LastRun.RuntimeDir).GetVMCtlSocketFile())
 	defer client.Close()
-	_, status, err := client.Post("/v2/stop").DoAndRead(ctx)
-	if err != nil {
-		return fmt.Errorf("request stop: %w", err)
-	}
-	if status != 200 {
-		return fmt.Errorf("stop API returned HTTP %d", status)
+	for {
+		_, status, requestErr := client.Post("/v2/stop").DoAndRead(ctx)
+		if requestErr == nil {
+			if status != 200 {
+				return fmt.Errorf("stop API returned HTTP %d", status)
+			}
+			break
+		}
+		current, inspectErr := InspectSession(id)
+		if inspectErr != nil {
+			return inspectErr
+		}
+		if !current.Active || current.InstanceID != view.InstanceID {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("request stop: %w", context.Cause(ctx))
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 	_, err = waitInstance(ctx, view.Session, false, true)
 	return err
