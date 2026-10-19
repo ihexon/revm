@@ -41,8 +41,6 @@ type Spec struct {
 	ControlAddr         string
 	NetAddr             string
 	NotifyAddr          string
-	HostSSHForwardAddr  string
-	GuestSSHListenAddr  string
 	GuestIP             string
 	HostLoopbackAddress string
 	PortForwards        []define.PortForward
@@ -57,12 +55,6 @@ func NewConfig(spec Spec) (*Config, error) {
 	}
 	if spec.NotifyAddr == "" {
 		return nil, errors.New("gvproxy notification address is empty")
-	}
-	if spec.HostSSHForwardAddr == "" {
-		return nil, errors.New("gvproxy ssh forward address is empty")
-	}
-	if spec.GuestSSHListenAddr == "" {
-		return nil, errors.New("gvproxy guest ssh address is empty")
 	}
 	if spec.GuestIP == "" {
 		return nil, errors.New("gvproxy guest IP is empty")
@@ -80,17 +72,7 @@ func NewConfig(spec Spec) (*Config, error) {
 		return nil, fmt.Errorf("invalid gvproxy notification address: %w", err)
 	}
 
-	_, sshPortStr, err := net.SplitHostPort(spec.GuestSSHListenAddr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid guest ssh listen address: %w", err)
-	}
-	sshServerGuestAddr := net.JoinHostPort(spec.GuestIP, sshPortStr)
-
-	logrus.Infof("configuring local port forwarding from %s to %s", spec.HostSSHForwardAddr, sshServerGuestAddr)
-
-	forwards := map[string]string{
-		spec.HostSSHForwardAddr: sshServerGuestAddr,
-	}
+	forwards := map[string]string{}
 	for _, forward := range spec.PortForwards {
 		forwards[portForwardLocal(forward)] = portForwardRemote(forward)
 	}

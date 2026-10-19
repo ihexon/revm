@@ -18,28 +18,11 @@ func (vm *VM) GuestSpec() protocol.GuestSpec {
 		SchemaVersion: protocol.GuestSpecVersion,
 		RunMode:       vm.runtime.spec.RunMode,
 		NetworkMode:   string(vm.runtime.spec.VirtualNetworkMode),
-		TTY:           vm.runtime.spec.TTY,
 		Storage: protocol.GuestStorage{
 			VirtioFS: guestMountsFromSpec(vm.runtime.spec.Storage.VirtioFS),
 			Blocks:   guestBlockDevsFromSpec(vm.runtime.spec.Storage.Blocks),
 		},
-		SSH:    guestSSHFromSpec(vm.runtime.spec.SSHInfo),
 		Podman: guestPodmanFromSpec(vm.runtime.spec.PodmanInfo),
-	}
-}
-
-func (vm *VM) AttachSpec() protocol.AttachSpec {
-	return protocol.AttachSpec{
-		SchemaVersion:            protocol.AttachSpecVersion,
-		User:                     define.DefaultGuestUser,
-		PrivateKeyFile:           vm.runtime.spec.SSHInfo.HostSSHPrivateKeyFile,
-		UseGVProxyTunnel:         vm.runtime.spec.VirtualNetworkMode == define.GVISOR,
-		GVPCtlAddr:               vm.runtime.spec.GVPCtlAddr,
-		GuestSSHServerListenAddr: vm.runtime.spec.SSHInfo.GuestSSHServerListenAddr,
-		GuestTunnelHost:          define.GuestIP,
-		GuestControlCID:          define.GuestVSockCID,
-		GuestControlPort:         define.GuestControlPort,
-		GuestControlSocket:       vm.runtime.spec.GuestControlAddr,
 	}
 }
 
@@ -67,10 +50,8 @@ func (vm *VM) ManagementView() management.VMConfigView {
 			ManagementAPI: vm.runtime.spec.VMCtlAddr,
 			GVProxyAPI:    vm.runtime.spec.GVPCtlAddr,
 			PodmanAPI:     vm.runtime.spec.PodmanInfo.HostPodmanProxyAddr,
-			SSH:           vm.runtime.spec.SSHInfo.HostSSHProxyListenAddr,
 			GuestControl:  vm.runtime.spec.GuestControlAddr,
 		},
-		TTY: vm.runtime.spec.TTY,
 	}
 
 	for _, mount := range vm.runtime.spec.Storage.VirtioFS {
@@ -105,8 +86,6 @@ func (vm *VM) GVProxySpec() gvproxy.Spec {
 		ControlAddr:         vm.runtime.spec.GVPCtlAddr,
 		NetAddr:             vm.runtime.spec.GVPVNetAddr,
 		NotifyAddr:          vm.runtime.spec.GVPNotifyAddr,
-		HostSSHForwardAddr:  vm.runtime.spec.SSHInfo.HostSSHProxyListenAddr,
-		GuestSSHListenAddr:  vm.runtime.spec.SSHInfo.GuestSSHServerListenAddr,
 		GuestIP:             define.GuestIP,
 		HostLoopbackAddress: define.LocalHost,
 		PortForwards:        append([]define.PortForward(nil), vm.runtime.spec.PortForwards...),
@@ -144,16 +123,6 @@ func guestBlockDevsFromSpec(devs []define.BlockDeviceSpec) []protocol.GuestBlock
 		})
 	}
 	return out
-}
-
-func guestSSHFromSpec(ssh define.SSHInfo) protocol.GuestSSH {
-	return protocol.GuestSSH{
-		HostSSHPublicKey:         ssh.HostSSHPublicKey,
-		GuestSSHServerListenAddr: ssh.GuestSSHServerListenAddr,
-		GuestSSHPrivateKeyFile:   ssh.GuestSSHPrivateKeyFile,
-		GuestSSHAuthorizedKeys:   ssh.GuestSSHAuthorizedKeys,
-		GuestSSHPidFile:          ssh.GuestSSHPidFile,
-	}
 }
 
 func guestPodmanFromSpec(podman define.PodmanInfo) protocol.GuestPodman {

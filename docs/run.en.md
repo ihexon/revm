@@ -23,7 +23,6 @@ The VM rootfs always comes from the Alpine archive embedded in the release. It i
 
 - the Alpine userspace and apk package manager
 - guest-agent
-- the dropbear SSH compatibility service
 - Podman, containers configuration, and container networking tools
 - tools required for networking, mounts, logging, and lifecycle control
 

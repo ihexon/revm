@@ -23,7 +23,6 @@ func RunGuest(ctx context.Context, vmc *protocol.GuestSpec) error {
 		return fmt.Errorf("unsupported mode %q", vmc.RunMode)
 	}
 	g.Go(func() error { return StartGuestControlServer(services, container) })
-	g.Go(func() error { return StartGuestSSHServer(services, vmc) })
 	g.Go(func() error { return SyncRTCTime(services) })
 	if container {
 		g.Go(func() error { return StartGuestPodmanService(services, vmc) })

@@ -21,7 +21,6 @@ type MachineSpec struct {
 	VirtualNetworkMode VNetMode `json:"virtualNetworkMode,omitempty"`
 
 	LogFile           string            `json:"logFile,omitempty"`
-	SSHInfo           SSHInfo           `json:"sshInfo,omitempty"`
 	PodmanInfo        PodmanInfo        `json:"podmanInfo,omitempty"` // 仅在 container mode 下有意义
 	PortForwards      []PortForward     `json:"portForwards,omitempty"`
 	VMCtlAddr         string            `json:"vmCtlAddr,omitempty"`
@@ -29,8 +28,6 @@ type MachineSpec struct {
 	IgnitionServerCfg IgnitionServerCfg `json:"ignitionServerCfg,omitempty"`
 	GuestControlAddr  string            `json:"guestControlAddr,omitempty"`
 	GuestAgentCfg     GuestAgentCfg     `json:"guestAgentCfg,omitempty"`
-
-	TTY bool `json:"TTY"`
 }
 
 const (
@@ -51,20 +48,6 @@ type VirtioFSSpec struct {
 	Opts          string `json:"opts"`
 	UUID          string `json:"uuid"`
 	DAXWindowSize uint64 `json:"daxWindowSize,omitempty"`
-}
-
-type SSHInfo struct {
-	// HOST
-	HostSSHPrivateKeyFile  string `json:"hostSSHKeyFile,omitempty"`
-	HostSSHPublicKey       string `json:"sshPublicKey,omitempty"`
-	HostSSHPrivateKey      string `json:"sshPrivateKey,omitempty"`
-	HostSSHProxyListenAddr string `json:"hostSSHProxyListenAddr,omitempty"`
-
-	// GUEST
-	GuestSSHServerListenAddr string `json:"guestSSHServerListenAddr,omitempty"`
-	GuestSSHPrivateKeyFile   string `json:"guestSSHPrivateKeyFile,omitempty"`
-	GuestSSHAuthorizedKeys   string `json:"guestSSHAuthorizedKeys,omitempty"`
-	GuestSSHPidFile          string `json:"guestSSHPidFile,omitempty"`
 }
 
 type IgnitionServerCfg struct {

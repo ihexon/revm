@@ -51,19 +51,18 @@ type Config struct {
 	TTY         string            `json:"tty,omitempty"`
 	StopTimeout time.Duration     `json:"stopTimeout"`
 
-	Network              string               `json:"network,omitempty"` // "gvisor" | "tsi"
-	Mounts               []string             `json:"mounts,omitempty"`  // "/host:/guest[,ro]"
-	Disks                []RawDiskSpec        `json:"disks,omitempty"`
-	ContainerDisk        *ContainerDiskSpec   `json:"containerDisk,omitempty"`
-	PodmanProxyAPIFile   string               `json:"podmanProxyAPIFile,omitempty"`
-	ManageAPIFile        string               `json:"manageAPIFile,omitempty"`
-	SSHKeyFileSymbolPath string               `json:"SSHKeyFileSymbolPath,omitempty"`
-	ReportURL            string               `json:"reportURL,omitempty"`
-	Proxy                bool                 `json:"proxy,omitempty"`
-	LogLevel             string               `json:"logLevel,omitempty"` // default "info"
-	PortList             bool                 `json:"portList,omitempty"`
-	PortForwards         []define.PortForward `json:"portForwards,omitempty"`
-	PortUnforwards       []define.PortForward `json:"portUnforwards,omitempty"`
+	Network            string               `json:"network,omitempty"` // "gvisor" | "tsi"
+	Mounts             []string             `json:"mounts,omitempty"`  // "/host:/guest[,ro]"
+	Disks              []RawDiskSpec        `json:"disks,omitempty"`
+	ContainerDisk      *ContainerDiskSpec   `json:"containerDisk,omitempty"`
+	PodmanProxyAPIFile string               `json:"podmanProxyAPIFile,omitempty"`
+	ManageAPIFile      string               `json:"manageAPIFile,omitempty"`
+	ReportURL          string               `json:"reportURL,omitempty"`
+	Proxy              bool                 `json:"proxy,omitempty"`
+	LogLevel           string               `json:"logLevel,omitempty"` // default "info"
+	PortList           bool                 `json:"portList,omitempty"`
+	PortForwards       []define.PortForward `json:"portForwards,omitempty"`
+	PortUnforwards     []define.PortForward `json:"portUnforwards,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults pre-filled.

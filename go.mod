@@ -3,15 +3,11 @@ module linuxvm
 go 1.26.3
 
 require (
-	al.essio.dev/pkg/shellescape v1.6.1-0.20250626071713-b09271781b1a
-	github.com/charmbracelet/keygen v0.5.4
 	github.com/creack/pty v1.1.24
-	github.com/gofrs/flock v0.13.0
 	github.com/google/uuid v1.6.0
 	github.com/ihexon/getSysProxy v0.0.0-20260212161208-c7b7a282814a
 	github.com/inetaf/tcpproxy v0.0.0-20260515195445-c159a6051109
 	github.com/libp2p/go-yamux/v5 v5.1.0
-	github.com/mattn/go-isatty v0.0.20
 	github.com/pkg/errors v0.9.1
 	github.com/shirou/gopsutil/v4 v4.26.6
 	github.com/sirupsen/logrus v1.10.2
@@ -46,7 +42,7 @@ require (
 	github.com/miekg/dns v1.1.73 // indirect
 	github.com/pierrec/lz4/v4 v4.1.23 // indirect; indirecte
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
-	golang.org/x/crypto v0.57.0
+	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 )

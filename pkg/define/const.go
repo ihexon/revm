@@ -38,8 +38,6 @@ const (
 	ContainerStorageMountPoint  = "/var/lib/containers"
 	DefaultContainerDiskVersion = "revm-container-storage-v1"
 
-	DefaultGuestUser = "root"
-
 	UnspecifiedAddress = "0.0.0.0"
 	GuestIP            = "192.168.127.2"
 	GuestCIDR          = "192.168.127.2/24"
@@ -55,8 +53,6 @@ const (
 	GuestVSockCID = 3
 
 	LocalHost = "127.0.0.1"
-
-	SSHLocalForwardListenPort = 6123
 )
 
 const (

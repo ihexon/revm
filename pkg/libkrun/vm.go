@@ -43,7 +43,6 @@ type Libkrun struct {
 	initConfig C.KrunInitConfig
 	vmmBuilder C.KrunVmmBuilder
 	vmm        C.KrunVmm
-	vmmHandle  C.KrunVmmHandle
 
 	console C.KrunConsoleDevice
 	files   libkrunFiles
@@ -98,16 +97,6 @@ func (v *Libkrun) Start(_ context.Context) error {
 	return nil
 }
 
-// Shutdown asks libkrun to perform its native guest shutdown. It is safe to
-// call while krun_vmm_run is blocked; the handle is designed for that purpose.
-func (v *Libkrun) Shutdown(_ context.Context) error {
-	if v.vmmHandle == nil {
-		return errors.New("libkrun: VMM handle is unavailable")
-	}
-	var errOut C.KrunError
-	return checkKrunResult("shutdown VMM", C.krun_vmm_handle_shutdown(v.vmmHandle, &errOut), errOut)
-}
-
 // Close releases handles and host file descriptors. It is idempotent and also
 // cleans up partially built graphs after a failed Create call.
 func (v *Libkrun) Close() error {
@@ -116,10 +105,6 @@ func (v *Libkrun) Close() error {
 }
 
 func (v *Libkrun) close() error {
-	if v.vmmHandle != nil {
-		C.krun_vmm_handle_destroy(v.vmmHandle)
-		v.vmmHandle = nil
-	}
 	if v.vmm != nil {
 		C.krun_vmm_destroy(v.vmm)
 		v.vmm = nil
@@ -347,18 +332,13 @@ func (v *Libkrun) buildVMM() error {
 	if C.krun_check_nested_virt() {
 		C.krun_vmm_builder_nested_virt(&v.vmmBuilder, true)
 	}
-	// Enable the upstream guest shutdown device. The request is still
-	// best-effort on platforms where libkrun does not implement it.
-	C.krun_vmm_builder_shutdown_support(&v.vmmBuilder, C.bool(true))
 	var errOut C.KrunError
 	v.vmm = C.krun_vmm_builder_build(&v.vmmBuilder, &errOut)
 	v.vmmBuilder = nil
 	if err := checkKrunHandle("build VMM", unsafe.Pointer(v.vmm), errOut); err != nil {
 		return err
 	}
-	errOut = nil
-	v.vmmHandle = C.krun_vmm_handle(v.vmm, &errOut)
-	return checkKrunHandle("obtain VMM handle", unsafe.Pointer(v.vmmHandle), errOut)
+	return nil
 }
 
 func (v *Libkrun) freeGuestAgentData() {

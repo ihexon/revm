@@ -17,7 +17,7 @@ import (
 )
 
 func WaitReady(ctx context.Context, target Target) (protocol.ExecReady, error) {
-	client := newClient(target, true)
+	client := newClient(target)
 	defer client.Close()
 	for {
 		data, status, err := client.Get("/v2/ready").DoAndRead(ctx)

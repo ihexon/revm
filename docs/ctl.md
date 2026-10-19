@@ -32,13 +32,11 @@ revm ctl --id web --list-port
 
 ~~~text
 PROTOCOL  HOST            GUEST
-tcp       127.0.0.1:6123  192.168.127.2:22
 tcp       127.0.0.1:8080  192.168.127.2:8000
 ~~~
 
 列表可能包括：
 
-- revm 的内部兼容 SSH forwarding；
 - Podman 容器通过 -p 发布的端口；
 - ctl 手动创建的端口。
 
@@ -83,7 +81,7 @@ revm ctl --id web \
 --port-unexport [tcp:]<host-ip>:<host-port>
 ~~~
 
-当前只接受 TCP 和 IPv4，端口范围为 1 到 65535。host 端口不能与 revm 内部 SSH forwarding 冲突，也不能在同一批更新中重复。
+当前只接受 TCP 和 IPv4，端口范围为 1 到 65535。host 端口不能在同一批更新中重复。
 
 ## 工作方式
 

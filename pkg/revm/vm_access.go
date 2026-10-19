@@ -10,7 +10,6 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/network"
-	"linuxvm/pkg/protocol"
 	guestcontrol "linuxvm/pkg/service/guestcontrol"
 	"linuxvm/pkg/service/management"
 	"net/http"
@@ -118,10 +117,10 @@ func updatePortForwards(ctx context.Context, normalizedCfg Config) error {
 	if view.Endpoints.GVProxyAPI == "" {
 		return fmt.Errorf("gvproxy API endpoint is empty")
 	}
-	if err := validatePortUpdateSet(normalizedCfg.PortUnforwards, view.Endpoints.SSH, "unexport"); err != nil {
+	if err := validatePortUpdateSet(normalizedCfg.PortUnforwards, "unexport"); err != nil {
 		return err
 	}
-	if err := validatePortUpdateSet(normalizedCfg.PortForwards, view.Endpoints.SSH, "export"); err != nil {
+	if err := validatePortUpdateSet(normalizedCfg.PortForwards, "export"); err != nil {
 		return err
 	}
 
@@ -143,40 +142,13 @@ func attach(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	attachSpec, err := fetchAttachSpec(ctx, workspace)
-	if err != nil {
-		return err
-	}
-	controlTarget := guestcontrol.Target{CID: attachSpec.GuestControlCID, Port: attachSpec.GuestControlPort}
-	if attachSpec.GuestControlSocket != "" {
-		if addr, parseErr := network.ParseUnixAddr(attachSpec.GuestControlSocket); parseErr == nil {
-			controlTarget.UnixSocket = addr.Path
-		}
-	}
-	defaults := guestcontrol.DefaultTarget()
-	if controlTarget.CID == 0 {
-		controlTarget.CID = defaults.CID
-	}
-	if controlTarget.Port == 0 {
-		controlTarget.Port = defaults.Port
-	}
+	controlTarget := guestcontrol.Target{UnixSocket: newMachinePathManager(workspace).GetGuestControlSocketFile()}
 
 	if len(cfg.Exec.Argv) == 0 {
 		cfg.Exec.Argv = []string{"/bin/sh"}
 	}
 	_, err = executeGuest(ctx, controlTarget, cfg)
 	return err
-}
-
-func fetchAttachSpec(ctx context.Context, workspaceDirPath string) (protocol.AttachSpec, error) {
-	spec, err := fetchManagementJSON[protocol.AttachSpec](ctx, workspaceDirPath, "/v2/attach", "attach spec")
-	if err != nil {
-		return protocol.AttachSpec{}, err
-	}
-	if spec.SchemaVersion != protocol.AttachSpecVersion {
-		return protocol.AttachSpec{}, fmt.Errorf("unsupported attach spec version: %d", spec.SchemaVersion)
-	}
-	return spec, nil
 }
 
 func fetchManagementView(ctx context.Context, workspaceDirPath string) (management.VMConfigView, error) {

@@ -50,10 +50,6 @@ func ExtractBuiltinRootfs(ctx context.Context, dstDir string) error {
 		return err
 	}
 
-	defer func() {
-		RootfsBytes = nil
-	}()
-
 	return libarchive_go.NewArchiver().SetReader(bytes.NewReader(RootfsBytes)).SetChdir(dstDir).SetSparse(true).IncludeXattr().ModeX(ctx)
 }
 

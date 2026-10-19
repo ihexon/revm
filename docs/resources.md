@@ -4,7 +4,7 @@ revm uses XDG paths on both Linux and macOS:
 
 | Kind | Default | Removed by |
 | --- | --- | --- |
-| Runtime sockets and SSH keys | `$XDG_RUNTIME_DIR/revm/<instance>`; private `/tmp/revm-<uid>` fallback | instance exit, `cache prune` |
+| Runtime sockets | `$XDG_RUNTIME_DIR/revm/<instance>`; private `/tmp/revm-<uid>` fallback | instance exit, `cache prune` |
 | Private writable rootfs | `${XDG_CACHE_HOME:-~/.cache}/revm/instances/<instance>` | instance exit, `cache prune` |
 | Session config, results and logs | `${XDG_STATE_HOME:-~/.local/state}/revm/sessions/<id>` | `rm` |
 | Persistent volumes | `${XDG_DATA_HOME:-~/.local/share}/revm/volumes/<uuid>` | `volume rm NAME` |

@@ -9,35 +9,6 @@ import (
 	"strconv"
 )
 
-func GetAvailablePort(preferredPort uint16) (uint64, error) {
-	if preferredPort != 0 {
-		addr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("127.0.0.1:%d", preferredPort))
-		if err != nil {
-			return 0, err
-		}
-		l, err := net.ListenTCP("tcp4", addr)
-		if err == nil {
-			_ = l.Close()
-			return uint64(preferredPort), nil
-		}
-	}
-
-	// Fallback to ephemeral port
-	addr, err := net.ResolveTCPAddr("tcp4", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-
-	l, err := net.ListenTCP("tcp4", addr)
-	if err != nil {
-		return 0, err
-	}
-
-	defer l.Close()
-
-	return uint64(l.Addr().(*net.TCPAddr).Port), nil
-}
-
 type Addr struct {
 	Scheme string
 	Host   string // hostname or IP (no brackets)

@@ -66,7 +66,7 @@ export CONTAINER_HOST=unix:///tmp/revm-containers.sock
 podman run --rm alpine uname -a
 ```
 
-The default `podman-containers` volume persists independently of the session. Stop, restart and session removal preserve it; starting the same name reconnects it. `--container-disk PATH` uses a user-owned external disk. Podman sessions share the host home at the same path; add project shares with `--mount`.
+The default `podman-containers` volume persists independently of the session. Stop, restart and session removal preserve it; starting the same name reconnects it. `--container-disk PATH` uses a user-owned external disk. Share host directories explicitly with `--mount`; home is not mounted automatically.
 
 ```sh
 revm volume ls --json
@@ -76,7 +76,7 @@ revm cache prune                  # only inactive resources with known ownership
 
 ## Files and storage
 
-Runtime sockets and keys use a short private runtime directory. Rootfs copies use `${XDG_CACHE_HOME:-~/.cache}/revm/instances`; logs and results use `${XDG_STATE_HOME:-~/.local/state}/revm/sessions`; persistent volumes use `${XDG_DATA_HOME:-~/.local/share}/revm/volumes`. Roots cannot overlap. See [resource ownership](docs/resources.md).
+Runtime sockets use a short private runtime directory. Rootfs copies use `${XDG_CACHE_HOME:-~/.cache}/revm/instances`; logs and results use `${XDG_STATE_HOME:-~/.local/state}/revm/sessions`; persistent volumes use `${XDG_DATA_HOME:-~/.local/share}/revm/volumes`. Roots cannot overlap. See [resource ownership](docs/resources.md).
 
 ```sh
 revm run --id files --mount "$PWD:/workspace" -- sh
@@ -97,7 +97,7 @@ revm ctl --id web --port-export 127.0.0.1:8080:8000
 revm ctl --id web --port-unexport 127.0.0.1:8080
 ```
 
-Manual forwards support TCP/IPv4 and default to `127.0.0.1`. The internal SSH port is reserved. `--manage-api`, `--podman-api` and `--ssh-key` expose convenient symlinks; unrelated existing paths are never overwritten.
+Manual forwards support TCP/IPv4 and default to `127.0.0.1`. `--manage-api` and `--podman-api` expose convenient symlinks; unrelated existing paths are never overwritten.
 
 ## Development
 

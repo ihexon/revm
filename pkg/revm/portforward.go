@@ -175,16 +175,13 @@ func portForwardRemote(forward define.PortForward) string {
 	return net.JoinHostPort(forward.GuestIP, strconv.Itoa(int(forward.GuestPort)))
 }
 
-func validatePortForwardSet(forwards []define.PortForward, reservedLocal string) error {
+func validatePortForwardSet(forwards []define.PortForward) error {
 	seen := map[string]struct{}{}
 	for _, forward := range forwards {
 		if err := validatePortForward(forward, true); err != nil {
 			return err
 		}
 		local := portForwardLocal(forward)
-		if local == reservedLocal {
-			return fmt.Errorf("port export %s conflicts with internal SSH forward", local)
-		}
 		key := forward.Protocol + "/" + local
 		if _, ok := seen[key]; ok {
 			return fmt.Errorf("duplicate port export %s", local)
@@ -194,7 +191,7 @@ func validatePortForwardSet(forwards []define.PortForward, reservedLocal string)
 	return nil
 }
 
-func validatePortUpdateSet(forwards []define.PortForward, reservedLocal, action string) error {
+func validatePortUpdateSet(forwards []define.PortForward, action string) error {
 	seen := map[string]struct{}{}
 	for _, forward := range forwards {
 		requireRemote := action == "export"
@@ -202,9 +199,6 @@ func validatePortUpdateSet(forwards []define.PortForward, reservedLocal, action 
 			return fmt.Errorf("port %s: %w", action, err)
 		}
 		local := portForwardLocal(forward)
-		if local == reservedLocal {
-			return fmt.Errorf("port %s %s conflicts with internal SSH forward", action, local)
-		}
 		key := forward.Protocol + "/" + local
 		if _, ok := seen[key]; ok {
 			return fmt.Errorf("duplicate port %s %s", action, local)

@@ -10,18 +10,13 @@ import (
 	"linuxvm/pkg/service/guestcontrol"
 	"runtime"
 	"sync"
-	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 type Provider struct {
-	mc                   *define.MachineSpec
-	libkrun              *Libkrun
-	mu                   sync.Mutex
-	runDone              chan struct{}
-	state                providerState
-	shutdownFallbackOnce sync.Once
+	mc      *define.MachineSpec
+	libkrun *Libkrun
+	mu      sync.Mutex
+	state   providerState
 }
 
 type providerState uint8
@@ -34,7 +29,7 @@ const (
 )
 
 func NewProvider(ctx context.Context, mc *define.MachineSpec) (*Provider, error) {
-	p := &Provider{mc: mc, libkrun: New(mc), runDone: make(chan struct{}), state: providerCreated}
+	p := &Provider{mc: mc, libkrun: New(mc), state: providerCreated}
 	if err := p.libkrun.Create(ctx); err != nil {
 		return nil, err
 	}
@@ -53,7 +48,6 @@ func (p *Provider) Start(_ context.Context) error {
 	defer func() {
 		p.mu.Lock()
 		p.state = providerExited
-		close(p.runDone)
 		p.mu.Unlock()
 	}()
 
@@ -65,72 +59,11 @@ func (p *Provider) Start(_ context.Context) error {
 }
 
 func (p *Provider) RequestShutdown(ctx context.Context) error {
-	nativeErr := p.libkrun.Shutdown(ctx)
-	if nativeErr == nil {
-		// libkrun owns the VMM lifecycle. Once the native shutdown event has been
-		// accepted, give the guest a short opportunity to handle it. Alpine's
-		// minimal init may not consume the GPIO/restart-key event, so retain a
-		// delayed GuestControl fallback without racing a successful shutdown.
-		p.scheduleGuestShutdownFallback()
-		return nil
-	}
-	// Older libkrun builds and guests without shutdown support can still use the
-	// guest-control endpoint as a compatibility fallback.
-	guestErr := p.requestGuestShutdown(ctx)
-	if guestErr == nil {
-		return nil
-	}
-	return errors.Join(nativeErr, guestErr)
-}
-
-func (p *Provider) requestGuestShutdown(ctx context.Context) error {
 	controlTarget := guestcontrol.DefaultTarget()
 	if addr, err := network.ParseUnixAddr(p.mc.GuestControlAddr); err == nil {
 		controlTarget.UnixSocket = addr.Path
 	}
 	return guestcontrol.Shutdown(ctx, controlTarget)
-}
-
-func (p *Provider) scheduleGuestShutdownFallback() {
-	p.shutdownFallbackOnce.Do(func() {
-		go func() {
-			timer := time.NewTimer(750 * time.Millisecond)
-			defer timer.Stop()
-			select {
-			case <-p.runDone:
-				return
-			case <-timer.C:
-			}
-			logrus.Debug("native libkrun shutdown did not finish guest exit; using GuestControl compatibility fallback")
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			if err := p.requestGuestShutdown(ctx); err != nil {
-				// Native shutdown remains authoritative; this is only the
-				// compatibility path for guests that do not handle the event.
-				return
-			}
-		}()
-	})
-}
-
-func (p *Provider) ForceStop(ctx context.Context) error {
-	p.mu.Lock()
-	started := p.state != providerCreated && p.state != providerClosed
-	p.mu.Unlock()
-	if !started {
-		// A host service can fail before the VMM goroutine has entered Start.
-		// There is no guest to stop yet; Release will close the created handle.
-		return nil
-	}
-	if err := p.RequestShutdown(ctx); err != nil {
-		return err
-	}
-	select {
-	case <-p.runDone:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 }
 
 func (p *Provider) Close() error {

@@ -57,7 +57,7 @@ revm podman --id app \
   --mount "$PWD:/workspace"
 ~~~
 
-revm podman also mounts the host home directory at the same path in the guest, which lets workloads use project files, credentials, and caches. Existing shared inodes retain the host UID, GID, and mode in the guest; revm does not pre-process external shared directories.
+revm podman only shares explicit `--mount` paths; the host home directory is not mounted automatically. Existing shared inodes retain the host UID, GID, and mode in the guest; revm does not pre-process external shared directories.
 
 Mount format:
 
@@ -138,7 +138,6 @@ revm podman --id dev \
 | --mount | Add VirtIO-FS shares; repeatable. |
 | --podman-api | Custom Podman API socket. |
 | --manage-api | Custom VM management socket. |
-| --ssh-key | Symlink the compatibility SSH key to a custom path. |
 | --report-events | HTTP endpoint for lifecycle events. |
 | --log-level | Set the log level. Logs always go to the session directory. |
 

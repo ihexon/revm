@@ -82,7 +82,6 @@ func newRunCommand() *cli.Command {
 			&cli.StringFlag{Name: define.FlagWorkDir, Usage: "working directory for command execution inside the guest; the guest-agent chdirs to this path before running the command", Value: "/"},
 			&cli.StringFlag{Name: define.FlagVNetworkType, Usage: "virtual network stack: gvisor uses gvisor-tap-vsock (full TCP/UDP, DNS, NAT via 192.168.127.0/24); tsi uses libkrun transparent socket interception", Value: string(define.GVISOR)},
 			&cli.StringFlag{Name: define.FlagManageAPIFile, Usage: "custom Unix socket path for the host-side VM management API; defaults to the current instance runtime directory"},
-			&cli.StringFlag{Name: define.FlagExportSSHKeyPrivateFile, Usage: "file path to symlink the generated SSH key to"},
 			&cli.StringFlag{Name: define.FlagReportEvents, Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888)"},
 			sessionFlag(),
 			logLevelFlag(),
@@ -110,7 +109,6 @@ func newPodmanCommand() *cli.Command {
 			&cli.StringFlag{Name: define.FlagContainerDisk, Usage: "persistent ext4 raw disk image for container storage (format: <path>[,version=<string>]); auto-created if missing; existing disks are inspected and never replaced automatically; defaults to an independent managed volume"},
 			&cli.StringFlag{Name: define.FlagPodmanProxyAPIFile, Usage: "custom Unix socket path for the host-side Podman API proxy; defaults to the current instance runtime directory"},
 			&cli.StringFlag{Name: define.FlagManageAPIFile, Usage: "custom Unix socket path for the host-side VM management API; defaults to the current instance runtime directory"},
-			&cli.StringFlag{Name: define.FlagExportSSHKeyPrivateFile, Usage: "file path to symlink the generated SSH key to"},
 			&cli.StringFlag{Name: define.FlagReportEvents, Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888)"},
 			sessionFlag(),
 			logLevelFlag(),
@@ -148,7 +146,7 @@ func newCtlCommand() *cli.Command {
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "json", Usage: "print port mappings as JSON (requires --list-port)"},
-			&cli.BoolFlag{Name: define.FlagListPort, Usage: "list current gvproxy port mappings for the running VM, including internal SSH forwarding"},
+			&cli.BoolFlag{Name: define.FlagListPort, Usage: "list current gvproxy port mappings for the running VM"},
 			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "expose a guest TCP port on the host (format: [tcp:]<host-port>:<guest-port> or [tcp:]<host-ip>:<host-port>:<guest-port>); updates the running VM and exits; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagPortUnexport, Usage: "stop exposing a host TCP port for a running VM (format: [tcp:]<host-port> or [tcp:]<host-ip>:<host-port>); can be specified multiple times"},
 			sessionFlag(),
@@ -214,7 +212,7 @@ func parseConfig(c *cli.Command, mode revm.RunMode) (*revm.Config, error) {
 	cfg.Exec = execution.Request{Argv: c.Args().Slice(), Env: c.StringSlice(define.FlagEnvs), WorkDir: c.String(define.FlagWorkDir)}
 	cfg.Mounts = c.StringSlice(define.FlagMount)
 	cfg.ManageAPIFile, cfg.PodmanProxyAPIFile = c.String(define.FlagManageAPIFile), c.String(define.FlagPodmanProxyAPIFile)
-	cfg.SSHKeyFileSymbolPath, cfg.ReportURL = c.String(define.FlagExportSSHKeyPrivateFile), c.String(define.FlagReportEvents)
+	cfg.ReportURL = c.String(define.FlagReportEvents)
 	cfg.PortList = c.Bool(define.FlagListPort)
 	var err error
 	if cfg.Disks, err = revm.ParseRawDiskSpecs(c.StringSlice(define.FlagRawDisk)); err != nil {

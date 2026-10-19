@@ -25,7 +25,6 @@ VM rootfs 固定来自 release 内置的 Alpine 压缩包。它包括：
 
 - Alpine 基础用户空间和 apk 包管理器
 - guest-agent
-- dropbear SSH 兼容服务
 - Podman、containers 配置和容器网络工具
 - 网络、挂载、日志和生命周期所需工具
 
@@ -100,9 +99,9 @@ stdin 按流传输，不等待输入全部结束。非 PTY 模式分别保留 st
 
 ## 日志与资源
 
-每次运行使用独立 rootfs 和临时 socket/key 目录。日志和结果位于 `${XDG_STATE_HOME:-~/.local/state}/revm/sessions/<id>/runs/<instance>/`。使用 `revm logs ID`、`revm logs --guest -f ID` 读取日志，`revm inspect ID` 查看路径和结果。
+每次运行使用独立 rootfs 和临时 socket 目录。日志和结果位于 `${XDG_STATE_HOME:-~/.local/state}/revm/sessions/<id>/runs/<instance>/`。使用 `revm logs ID`、`revm logs --guest -f ID` 读取日志，`revm inspect ID` 查看路径和结果。
 
-`--manage-api`、`--ssh-key` 可导出连接符号链接，退出时只清理仍指向本实例的链接，不覆盖已有文件。`--rm` 在退出后删除 session 记录和日志；外部磁盘、volume、bind mount 数据保留。详见 [资源所有权](resources.md) 和 [session 命令](sessions.md)。
+`--manage-api` 可导出连接符号链接，退出时只清理仍指向本实例的链接，不覆盖已有文件。`--rm` 在退出后删除 session 记录和日志；外部磁盘、volume、bind mount 数据保留。详见 [资源所有权](resources.md) 和 [session 命令](sessions.md)。
 
 ## 停止行为
 
@@ -125,7 +124,6 @@ stdin 按流传输，不等待输入全部结束。非 PTY 模式分别保留 st
 --workdir
 --network
 --manage-api
---ssh-key
 --report-events
 --log-level
 ~~~

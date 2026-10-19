@@ -1,76 +1,25 @@
 # Guest agent
 
-cmd/guest-agent builds the process injected into the Alpine VM at /.bin/guest-agent. It is an internal component; users normally interact with it through revm run, revm podman, revm attach, or revm ctl.
+The internal Linux process at `/.bin/guest-agent` mounts the guest filesystems,
+configures networking, and owns the command service and optional Podman engine.
+The host injects this executable into the separately built Alpine rootfs.
 
-## Responsibilities
+Commands and PTYs use `/v2/exec` over a host-only vsock listener. Four Yamux
+streams carry control, stdin, stdout and stderr. Each command gets a cgroup;
+cancellation and completion clean up its descendants. There is no SSH execution
+path or automatic execution retry.
 
-The guest agent:
+Required service failure ends the VM. Shutdown stops new requests, terminates
+executions and Podman containers, waits for service cleanup, syncs disks, then
+reboots. The guest shares a five-second cleanup budget; the host can terminate
+the VMM child when its own deadline expires. The host requests orderly shutdown
+through `POST /v1/shutdown`.
 
-- reads the VM configuration delivered through the ignition vsock or Unix socket;
-- mounts /proc, /sys, /dev, /tmp, /run, block devices, and VirtIO-FS shares;
-- configures gvisor or tsi networking;
-- starts the guest-control HTTP-over-vsock service;
-- starts the optional dropbear SSH compatibility endpoint;
-- runs the command supplied to revm run;
-- starts the Podman API service for revm podman;
-- supervises the Podman and dropbear processes;
-- flushes mounted disks and reboots the guest when the compatibility shutdown path is used.
+Gvisor uses a fixed IPv4 address, route and DNS configuration. TSI uses libkrun's
+socket interception. Podman uses gvisor networking and a private Unix API socket;
+the host reaches it through a dedicated vsock/Yamux proxy. Only explicit `--mount`
+paths are shared. Persistent storage is managed by the host.
 
-The Alpine rootfs is built separately and contains the runtime commands and apk packages. The guest agent is the only executable injected at runtime.
-
-## Boot sequence
-
-1. Initialize logging from LOG_LEVEL.
-2. Read the guest specification from the host.
-3. Mount pseudo filesystems and the configured storage.
-4. Attach the guest log virtio port when available.
-5. Start the guest-control server.
-6. Configure the selected network.
-7. Dispatch by mode:
-   - command mode runs the requested binary and exits when it finishes;
-   - container mode starts Podman system service and remains alive.
-8. Start time synchronization and the SSH compatibility endpoint.
-9. Report readiness through the host-side management and Podman probes.
-10. On shutdown, stop child services, sync disks, and reboot.
-
-The host normally requests shutdown through libkrun's native shutdown API. Guest-control POST /v1/shutdown remains the compatibility fallback for guests or older backends that do not complete native shutdown.
-
-## Guest-control
-
-The host-side attach path uses the guest-control endpoint for non-PTY commands. The endpoint streams stdout, stderr, and the final exit status. Its vsock listener accepts only host CID 2 and rejects guest-origin connections. The shutdown endpoint is intentionally small and is not a general-purpose guest management API.
-
-PTY support is separate. revm attach --pty uses the SSH compatibility service because terminal allocation and interactive terminal resize are not part of the guest-control stream.
-
-## Storage and ownership
-
-The agent mounts VirtIO-FS shares at the configured target paths and mounts block devices at their configured guest paths. Existing shared inodes retain the host UID, GID, and mode as reported by libkrun passthrough.
-
-## Networking
-
-gvisor mode obtains an address through gvisor-tap-vsock and configures the guest route and DNS. tsi mode uses libkrun transparent socket interception and does not start gvproxy. Container mode uses gvisor for container networking and port publication. The Podman management API is separate: a root-only Unix socket, reached from the host over a CID-restricted vsock listener and Yamux streams. It has no TCP listener.
-
-## Source map
-
-| Path | Responsibility |
-| --- | --- |
-| main.go | boot orchestration and mode dispatch |
-| pkg/service/vmconfig.go | fetch and decode the host VM configuration |
-| pkg/service/mount.go | pseudo filesystems, block devices, and VirtIO-FS |
-| pkg/service/network.go | gvisor and tsi guest networking |
-| pkg/service/guestcontrol.go | command and shutdown HTTP service |
-| pkg/service/dropbear.go | SSH compatibility service |
-| pkg/service/podman.go | Podman system service |
-| pkg/service/runcmdline.go | command execution and output handling |
-| pkg/service/shutdown.go | compatibility sync and reboot path |
-| pkg/supervisor/supervisor.go | restart-capable child process supervisor |
-| pkg/network and pkg/vsock | guest network and vsock helpers |
-
-## Build
-
-The guest agent is built by the root build script and embedded into the host release. Build the application from the repository root:
-
-~~~bash
-go run ./scripts --build revm
-~~~
-
-The guest agent depends on the protocol and define packages from the parent module. Keep changes to its wire format in sync with the host-side service.
+Build from the repository root with `go run ./scripts --build revm`. The nested
+Go module uses the parent's protocol and execution packages through a local
+module replacement.

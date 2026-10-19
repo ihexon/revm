@@ -16,7 +16,7 @@ revm is a small CLI that manages libkrun microVM sessions. Every session has one
 - Every VM boots the Alpine rootfs packaged with the revm release.
 - --rootfs and rootfs import/export commands are removed.
 - A different distribution or userspace should run as a Podman workload inside the Alpine VM.
-- Non-interactive commands use the guest-control vsock endpoint. SSH remains only as a PTY and compatibility entrypoint.
+- All commands and PTYs use the streaming guest-control endpoint. The built-in SSH service has been removed.
 - Existing files in VirtIO-FS shares retain the host UID, GID, and mode in the guest; revm does not pre-process external shared directories.
 - revm run and revm podman create VMs; attach and ctl only connect to existing sessions.
 
@@ -37,7 +37,7 @@ Every command requires --id. The default session directory is:
 ~/.cache/revm/<session-id>/
 ~~~
 
-Logs always go to two files in the session directory: logs/revm.log for host lifecycle and control-plane messages, and logs/vm.log for the guest-agent and compatibility services. The management socket, Podman socket, and SSH key can be exported to custom paths with command flags.
+Logs always go to two files in the session directory: logs/revm.log for host lifecycle and control-plane messages, and logs/vm.log for the guest-agent and compatibility services. The management and Podman sockets can be exported to custom paths with command flags.
 
 The two network modes are gvisor and tsi. gvisor provides gvisor-tap-vsock, NAT, DNS, and port control. tsi uses libkrun transparent socket interception and does not support manual ctl port mappings.
 

@@ -101,18 +101,14 @@ func (vm *VM) Release() error {
 	vm.runtime.spec = nil
 	if vm.cfg != nil {
 		p := newMachinePathManager(vm.workspace.dir)
-		for link, target := range map[string]string{vm.cfg.ManageAPIFile: p.GetVMCtlSocketFile(), vm.cfg.PodmanProxyAPIFile: p.GetPodmanSocketFile(), vm.cfg.SSHKeyFileSymbolPath: p.GetSSHKeyFilePath()} {
+		for link, target := range map[string]string{vm.cfg.ManageAPIFile: p.GetVMCtlSocketFile(), vm.cfg.PodmanProxyAPIFile: p.GetPodmanSocketFile()} {
 			if link == "" {
 				continue
 			}
 			if actual, err := os.Readlink(link); err == nil && actual == target {
 				retErr = errors.Join(retErr, os.Remove(link))
 			}
-			if link == vm.cfg.SSHKeyFileSymbolPath {
-				if actual, err := os.Readlink(link + ".pub"); err == nil && actual == target+".pub" {
-					retErr = errors.Join(retErr, os.Remove(link+".pub"))
-				}
-			}
+
 		}
 	}
 
@@ -243,19 +239,6 @@ func (vm *VM) createUserSymlinks() error {
 		}
 	}
 
-	if cfg.SSHKeyFileSymbolPath != "" {
-		// link ssh private key to user-specified path
-		sshKeyPath := p.GetSSHKeyFilePath()
-		if err := createSymlink(sshKeyPath, cfg.SSHKeyFileSymbolPath); err != nil {
-			return fmt.Errorf("ssh private key: %w", err)
-		}
-
-		// link ssh public key to user-specified path
-		if err := createSymlink(sshKeyPath+".pub", cfg.SSHKeyFileSymbolPath+".pub"); err != nil {
-			return fmt.Errorf("ssh public key: %w", err)
-		}
-	}
-
 	return nil
 }
 
@@ -271,7 +254,7 @@ func (vm *VM) createUserSymlinks() error {
 // Shutdown is intentionally two-phase. A graceful shutdown request, such as the
 // first Ctrl-C or a management API stop request, only asks the guest to exit.
 // Host services stay alive and backend.Start keeps waiting because the guest may
-// still need management, network, proxy, or SSH-side plumbing while it runs its
+// still need management, network or proxy connections while it runs its
 // shutdown path. Once the VM exits by itself and backend.Start returns, Run stops
 // host services and returns.
 //

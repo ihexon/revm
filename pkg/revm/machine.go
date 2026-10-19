@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/filesystem"
-	ssh "linuxvm/pkg/ssh"
 	"linuxvm/pkg/static_resources"
 	"net/url"
 	"os"
@@ -73,14 +72,6 @@ func (v *machineBuilder) withBuiltInAlpineRootfs(ctx context.Context) error {
 	}
 	v.RootFS = alpineRootfsDir
 	return nil
-}
-
-func (v *machineBuilder) withMountUserHome(ctx context.Context) error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	return v.withUserProvidedMounts([]string{fmt.Sprintf("%s:%s", homeDir, homeDir)})
 }
 
 func (v *machineBuilder) withUserProvidedMounts(dirs []string) error {
@@ -181,37 +172,6 @@ func (v *machineBuilder) configurePodman(ctx context.Context, userEnv []string) 
 	return nil
 }
 
-func (v *machineBuilder) configureSSH() error {
-	keyPath := v.pathMgr.GetSSHKeyFilePath()
-	pubKeyPath := keyPath + ".pub"
-	if err := os.MkdirAll(filepath.Dir(keyPath), 0700); err != nil {
-		return err
-	}
-
-	privateKey, publicKey, err := ssh.GenerateKey()
-	if err != nil {
-		return err
-	}
-	if err = os.WriteFile(keyPath, privateKey, 0600); err != nil {
-		return err
-	}
-	if err = os.WriteFile(pubKeyPath, publicKey, 0644); err != nil {
-		return err
-	}
-
-	v.SSHInfo = define.SSHInfo{
-		HostSSHPublicKey:      string(publicKey),
-		HostSSHPrivateKey:     string(privateKey),
-		HostSSHPrivateKeyFile: keyPath,
-
-		GuestSSHPrivateKeyFile: "/run/dropbear/private.key",
-		GuestSSHAuthorizedKeys: "/root/.ssh/authorized_keys",
-		GuestSSHPidFile:        "/run/dropbear/dropbear.pid",
-	}
-
-	return nil
-}
-
 func (v *machineBuilder) configureVMCtlAPI() error {
 	apiPath := v.pathMgr.GetVMCtlSocketFile()
 
@@ -298,13 +258,10 @@ func buildMachine(ctx context.Context, cfg Config, workspace string) (*define.Ma
 	b.pathMgr.rootfsDir = filepath.Join(cfg.paths.record.CacheDir, "rootfs")
 	b.LogFile = filepath.Join(cfg.paths.logDir, "vm.log")
 	b.MemoryInMB, b.Cpus = cfg.MemoryMB, uint8(cfg.CPUs)
-	if err := b.configureSSH(); err != nil {
-		return nil, err
-	}
 	if err := b.configureNetwork(define.VNetMode(cfg.Network)); err != nil {
 		return nil, err
 	}
-	if err := validatePortForwardSet(cfg.PortForwards, b.SSHInfo.HostSSHProxyListenAddr); err != nil {
+	if err := validatePortForwardSet(cfg.PortForwards); err != nil {
 		return nil, err
 	}
 	b.PortForwards = cfg.PortForwards
@@ -312,9 +269,6 @@ func buildMachine(ctx context.Context, cfg Config, workspace string) (*define.Ma
 		return nil, err
 	}
 	if cfg.RunMode == ModeContainer {
-		if err := b.withMountUserHome(ctx); err != nil {
-			return nil, err
-		}
 		if err := b.configurePodman(ctx, cfg.Exec.Env); err != nil {
 			return nil, err
 		}

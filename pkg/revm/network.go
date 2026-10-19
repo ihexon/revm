@@ -5,12 +5,9 @@ package revm
 import (
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/network"
-	"net"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/sirupsen/logrus"
 )
@@ -24,7 +21,7 @@ func (v *machineBuilder) configureNetwork(mode define.VNetMode) error {
 	case define.GVISOR:
 		return v.configureGVisorNetwork()
 	case define.TSI:
-		return v.configureTSINetwork()
+		return nil
 	default:
 		return fmt.Errorf("invalid network mode: %s", mode)
 	}
@@ -47,26 +44,5 @@ func (v *machineBuilder) configureGVisorNetwork() error {
 		return err
 	}
 
-	port, err := network.GetAvailablePort(0)
-	if err != nil {
-		return err
-	}
-	v.SSHInfo.GuestSSHServerListenAddr = net.JoinHostPort(define.UnspecifiedAddress, strconv.FormatUint(port, 10))
-	forwardPort, err := network.GetAvailablePort(define.SSHLocalForwardListenPort)
-	if err != nil {
-		return fmt.Errorf("get available port for ssh forwarding: %w", err)
-	}
-	v.SSHInfo.HostSSHProxyListenAddr = net.JoinHostPort(define.LocalHost, strconv.FormatUint(forwardPort, 10))
-	return nil
-}
-
-func (v *machineBuilder) configureTSINetwork() error {
-	logrus.Infof("Using TSI network mode (libkrun built-in networking)")
-	port, err := network.GetAvailablePort(0)
-	if err != nil {
-		return err
-	}
-	v.SSHInfo.GuestSSHServerListenAddr = net.JoinHostPort(define.LocalHost, strconv.FormatUint(port, 10))
-	v.SSHInfo.HostSSHProxyListenAddr = v.SSHInfo.GuestSSHServerListenAddr
 	return nil
 }

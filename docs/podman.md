@@ -59,7 +59,7 @@ revm podman --id app \
   --mount "$PWD:/workspace"
 ~~~
 
-revm podman 还会自动把宿主 home 目录挂载到 guest 中的相同路径，以便 Podman workload 使用项目、凭证和缓存。共享目录中的已有文件在 guest 中保留宿主机 UID、GID 和权限；revm 不预处理外部共享目录。
+revm podman 只挂载显式指定的 `--mount`，不会自动共享宿主 home。共享目录中的已有文件在 guest 中保留宿主机 UID、GID 和权限；revm 不预处理外部共享目录。
 
 挂载格式：
 
@@ -140,7 +140,6 @@ revm podman --id dev \
 | --mount | 添加 VirtIO-FS 共享目录，可重复。 |
 | --podman-api | 自定义 Podman API socket。 |
 | --manage-api | 自定义 VM 管理 socket。 |
-| --ssh-key | 导出兼容 SSH key 的符号链接。 |
 | --report-events | 接收生命周期事件的 HTTP endpoint。 |
 | --log-level | 设置日志等级。日志始终写入 session 目录。 |
 

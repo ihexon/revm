@@ -30,13 +30,11 @@ Example output:
 
 ~~~text
 PROTOCOL  HOST            GUEST
-tcp       127.0.0.1:6123  192.168.127.2:22
 tcp       127.0.0.1:8080  192.168.127.2:8000
 ~~~
 
 The list can include:
 
-- revm's internal SSH compatibility forwarding;
 - ports published by Podman containers with -p;
 - ports created manually with ctl.
 
@@ -81,7 +79,7 @@ Formats:
 --port-unexport [tcp:]<host-ip>:<host-port>
 ~~~
 
-Only TCP and IPv4 are accepted today. Ports must be 1 through 65535. A host port cannot conflict with revm's internal SSH forwarding or be duplicated in one update batch.
+Only TCP and IPv4 are accepted today. Ports must be 1 through 65535. A host port cannot be duplicated in one update batch.
 
 ## How it works
 

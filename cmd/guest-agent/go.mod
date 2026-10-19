@@ -4,7 +4,6 @@ go 1.26.3
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/insomniacslk/dhcp v0.0.0-20260719225207-c76316d4aa82
 	github.com/mdlayher/vsock v1.3.0
 	github.com/moby/sys/mountinfo v0.7.3-0.20250407123443-8d553c09dc5e
 	github.com/sirupsen/logrus v1.10.2
@@ -15,19 +14,11 @@ require (
 )
 
 require (
-	github.com/cilium/ebpf v0.16.0 // indirect
 	github.com/creack/pty v1.1.24 // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/inetaf/tcpproxy v0.0.0-20260515195445-c159a6051109 // indirect
-	github.com/josharian/native v1.1.0 // indirect
-	github.com/jsimonetti/rtnetlink v1.3.5 // indirect
 	github.com/libp2p/go-buffer-pool v0.0.2 // indirect
 	github.com/libp2p/go-yamux/v5 v5.1.0 // indirect
-	github.com/mdlayher/netlink v1.7.2 // indirect
-	github.com/mdlayher/packet v1.1.2 // indirect
 	github.com/mdlayher/socket v0.6.0 // indirect
-	github.com/pierrec/lz4/v4 v4.1.23 // indirect
-	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
