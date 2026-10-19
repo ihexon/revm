@@ -16,6 +16,11 @@ func TestInvalidInvocations(t *testing.T) {
 		{"run", "--id", "test", "--network", "bogus", "--", "true"},
 		{"run", "--id", "test", "--envs", "INVALID", "--", "true"},
 		{"ctl", "--id", "test"},
+		{"volume", "unknown"}, {"cache", "unknown"}, {"ls", "unexpected"},
+		{"inspect"}, {"rm", "a", "b"}, {"stop", "--timeout=-1s", "test"},
+		{"wait", "../escape"}, {"logs", "../escape"},
+		{"run", "--id", "test", "--tty=wrong", "--", "true"},
+		{"run", "--id", "test", "--pty", "--tty=never", "--", "true"},
 	} {
 		t.Run(args[0], func(t *testing.T) {
 			app := NewApp("revm")

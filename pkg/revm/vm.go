@@ -43,6 +43,7 @@ type VM struct {
 	cfg            *Config
 	lease          *sessionRun
 	commandContext context.Context
+	stopRequested  context.CancelCauseFunc
 
 	runtime       vmRuntime
 	workspace     vmWorkspace
@@ -128,6 +129,9 @@ func (vm *VM) Release() error {
 	}
 	vm.observability.events.close()
 	if vm.lease != nil {
+		if vm.cfg.Remove {
+			retErr = errors.Join(retErr, os.RemoveAll(vm.lease.roots.sessionDir(vm.cfg.SessionID)))
+		}
 		retErr = errors.Join(retErr, vm.lease.close())
 		vm.lease = nil
 	}
@@ -293,6 +297,8 @@ func (vm *VM) createUserSymlinks() error {
 // the VM run to end. If the VM exits or the run is cancelled normally, Run
 // returns nil; otherwise it returns the first meaningful failure cause.
 func (vm *VM) Run(ctx context.Context) error {
+	ctx, vm.stopRequested = context.WithCancelCause(ctx)
+	defer vm.stopRequested(context.Canceled)
 	vm.commandContext = ctx
 	vm.lease.record.Status = "running"
 	if err := writeJSONAtomic(vm.lease.resultPath, vm.lease.record); err != nil {
@@ -533,7 +539,7 @@ func (vm *VM) startIgnitionService(ctx context.Context) error {
 func (vm *VM) startMachineManagementAPI(ctx context.Context) error {
 	server, err := management.NewServer(managementMachine{
 		Machine: vm.runtime.view,
-		backend: vm.runtime.backend,
+		vm:      vm,
 	})
 	if err != nil {
 		return fmt.Errorf("create management server: %w", err)
@@ -543,11 +549,12 @@ func (vm *VM) startMachineManagementAPI(ctx context.Context) error {
 
 type managementMachine struct {
 	*runtimemachine.Machine
-	backend backend.Backend
+	vm *VM
 }
 
 func (m managementMachine) RequestShutdown(ctx context.Context) error {
-	return m.backend.RequestShutdown(ctx)
+	m.vm.stopRequested(context.Canceled)
+	return nil
 }
 
 func (vm *VM) reportPodmanReady(ctx context.Context) error {

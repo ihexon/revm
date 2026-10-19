@@ -4,6 +4,7 @@ package revmcmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"linuxvm/pkg/commanderr"
@@ -88,6 +89,7 @@ func NewApp(name string) *cli.Command {
 		},
 	}
 	app.Commands = append(app.Commands, resourceCommands()...)
+	app.Commands = append(app.Commands, sessionCommands()...)
 	app.Action = func(ctx context.Context, c *cli.Command) error {
 		if c.Args().Len() != 0 {
 			return commanderr.Usage(fmt.Errorf("unknown command %q; use revm --help", c.Args().First()))
@@ -99,6 +101,14 @@ func NewApp(name string) *cli.Command {
 }
 
 func configureErrors(c *cli.Command) {
+	if c.Action == nil && len(c.Commands) > 0 {
+		c.Action = func(ctx context.Context, c *cli.Command) error {
+			if c.Args().Len() > 0 {
+				return commanderr.Usage(fmt.Errorf("unknown %s command %q", c.Name, c.Args().First()))
+			}
+			return cli.ShowSubcommandHelp(c)
+		}
+	}
 	c.ExitErrHandler = func(context.Context, *cli.Command, error) {}
 	c.OnUsageError = func(_ context.Context, _ *cli.Command, err error, _ bool) error { return commanderr.Usage(err) }
 	for _, child := range c.Commands {
@@ -113,6 +123,7 @@ func newRunCommand() *cli.Command {
 		UsageText:                 "run [flags] <command> [args...]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
+			&cli.BoolFlag{Name: "rm", Usage: "remove session records and logs after exit; preserve persistent data"},
 			&cli.StringFlag{Name: "tty", Value: "auto", Usage: "terminal allocation: auto, always or never"},
 			&cli.BoolFlag{Name: "pty", Usage: "compatibility alias for --tty=always"},
 			&cli.DurationFlag{Name: "stop-timeout", Value: 10 * time.Second, Usage: "graceful cancellation budget"},
@@ -205,6 +216,7 @@ func newCtlCommand() *cli.Command {
 		UsageText:                 "ctl --id <session-id> --list-port\n   ctl --id <session-id> [--port-export spec | --port-unexport spec]",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
+			&cli.BoolFlag{Name: "json", Usage: "print port mappings as JSON (requires --list-port)"},
 			&cli.BoolFlag{Name: define.FlagListPort, Usage: "list current gvproxy port mappings for the running VM, including internal SSH forwarding"},
 			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "expose a guest TCP port on the host (format: [tcp:]<host-port>:<guest-port> or [tcp:]<host-ip>:<host-port>:<guest-port>); updates the running VM and exits; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagPortUnexport, Usage: "stop exposing a host TCP port for a running VM (format: [tcp:]<host-port> or [tcp:]<host-ip>:<host-port>); can be specified multiple times"},
@@ -222,6 +234,7 @@ func runLogged(ctx context.Context, command *cli.Command, buildConfig func() (*r
 	if err != nil {
 		return commanderr.Usage(err)
 	}
+	cfg.Remove = command.Bool("rm")
 	cfg.TTY = command.String("tty")
 	cfg.StopTimeout = command.Duration("stop-timeout")
 	if command.Bool("pty") {
@@ -245,6 +258,9 @@ func runCtl(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return commanderr.Usage(err)
 	}
+	if command.Bool("json") && !opts.ListPort {
+		return commanderr.Usage(fmt.Errorf("--json requires --list-port"))
+	}
 	cfg := NewCtlConfig(opts)
 	normalized, err := revm.NormalizeConfig(*cfg)
 	if err != nil {
@@ -254,6 +270,12 @@ func runCtl(ctx context.Context, command *cli.Command) error {
 		ports, err := revm.ListPorts(ctx, &normalized)
 		if err != nil {
 			return err
+		}
+		if command.Bool("json") {
+			if ports == nil {
+				ports = []define.PortMapping{}
+			}
+			return json.NewEncoder(command.Writer).Encode(ports)
 		}
 		return writePortMappings(command.Writer, ports)
 	}

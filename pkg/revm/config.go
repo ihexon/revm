@@ -38,6 +38,7 @@ func (m RunMode) IsValid() bool {
 }
 
 type Config struct {
+	Remove    bool `json:"remove,omitempty"`
 	paths     *sessionRun
 	RunMode   RunMode `json:"runMode,omitempty"`
 	SessionID string  `json:"sessionID,omitempty"` // session name
@@ -256,3 +257,6 @@ func validateBuildConfig(cfg Config) error {
 
 	return nil
 }
+
+// ValidateSessionID checks a logical session name without creating resources.
+func ValidateSessionID(id string) error { return validateSessionID(id) }

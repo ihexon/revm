@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"linuxvm/pkg/execution"
 )
 
 func Run(ctx context.Context, cfg *Config) error {
@@ -24,6 +25,11 @@ func Run(ctx context.Context, cfg *Config) error {
 			return err
 		}
 		runErr := vm.Run(ctx)
+		if controller := execution.ControllerFrom(ctx); controller != nil {
+			if cause := controller.Cause(); cause != nil {
+				runErr = errors.Join(cause, runErr)
+			}
+		}
 		recordErr := vm.lease.finish(vm.result, runErr)
 		releaseErr := vm.Release()
 		return errors.Join(runErr, recordErr, releaseErr)

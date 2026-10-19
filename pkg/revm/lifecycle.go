@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"linuxvm/pkg/commanderr"
 	"linuxvm/pkg/execution"
 	"os"
 	"path/filepath"
@@ -175,6 +176,7 @@ type Session struct {
 	InstanceID string `json:"instanceID,omitempty"`
 }
 type RunRecord struct {
+	ExitCode   *int              `json:"exitCode,omitempty"`
 	StateRoot  string            `json:"stateRoot"`
 	Version    int               `json:"version"`
 	SessionID  string            `json:"sessionID"`
@@ -429,6 +431,8 @@ func ensureDefaultVolume(ctx context.Context, r Roots, s Session) (Volume, error
 }
 func (l *sessionRun) finish(result *execution.Result, runErr error) error {
 	now := time.Now().UTC()
+	code := commanderr.ExitCode(runErr)
+	l.record.ExitCode = &code
 	l.record.FinishedAt = &now
 	l.record.Status = "stopped"
 	l.record.Result = result
