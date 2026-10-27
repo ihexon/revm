@@ -85,7 +85,10 @@ try:
             os.chmod(script,mode)
             p,_=run(['/work/script'],extra=['--mount',fixture+':/work'])
             finish(p,126)
-    print('PASS exec failure, permission/format status 126 and guest signals', flush=True)
+        p,_=run(['sh','-c','test -f /work/script && ! touch /work/new-file'],extra=['--mount',fixture+':/work,ro'])
+        finish(p)
+        assert not os.path.exists(fixture+'/new-file')
+    print('PASS read-only mounts, exec failure, permission/format status 126 and guest signals', flush=True)
 
     owner, sid = run(['sh','-c','echo ready; sleep 100'])
     assert line(owner) == b'ready\n'

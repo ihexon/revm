@@ -20,12 +20,8 @@ func guestMountsFromSpec(mounts []VirtioFSSpec) []protocol.GuestMount {
 	for _, m := range mounts {
 		out = append(out, protocol.GuestMount{
 			ReadOnly: m.ReadOnly,
-			Source:   m.Source,
 			Tag:      m.Tag,
 			Target:   m.Target,
-			Type:     m.Type,
-			Opts:     m.Opts,
-			UUID:     m.UUID,
 		})
 	}
 	return out
@@ -40,7 +36,6 @@ func guestBlockDevsFromSpec(devs []BlockDeviceSpec) []protocol.GuestBlockDev {
 		out = append(out, protocol.GuestBlockDev{
 			FsType:   d.GuestMount.FsType,
 			UUID:     d.GuestMount.UUID,
-			Path:     d.Path,
 			MountTo:  d.GuestMount.Target,
 			ReadOnly: d.ReadOnly || d.GuestMount.ReadOnly,
 		})

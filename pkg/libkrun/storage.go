@@ -97,11 +97,7 @@ func (v *machine) addVirtioFS(spec define.VirtioFSSpec) error {
 	if err := checkKrunHandle("create virtiofs device", unsafe.Pointer(device), errOut); err != nil {
 		return err
 	}
-	daxWindow := spec.DAXWindowSize
-	if daxWindow == 0 {
-		daxWindow = virtiofsMemWindow
-	}
-	C.krun_fs_device_set_dax_window_size(device, C.uint64_t(daxWindow))
+	C.krun_fs_device_set_dax_window_size(device, C.uint64_t(virtiofsMemWindow))
 	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
 	return nil
 }

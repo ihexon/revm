@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"linuxvm/pkg/define"
-	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/static_resources"
 	"net/url"
 	"os"
@@ -71,23 +70,6 @@ func (v *machineBuilder) withBuiltInAlpineRootfs(ctx context.Context) error {
 		return err
 	}
 	v.RootFS = alpineRootfsDir
-	return nil
-}
-
-func (v *machineBuilder) withUserProvidedMounts(dirs []string) error {
-	if len(dirs) == 0 || dirs == nil {
-		return nil
-	}
-
-	mounts := filesystem.CmdLineMountToMounts(dirs)
-	for i := range mounts {
-		p, err := filepath.Abs(filepath.Clean(mounts[i].Source))
-		if err != nil {
-			return fmt.Errorf("failed to resolve mount source %q: %w", mounts[i].Source, err)
-		}
-		mounts[i].Source = p
-	}
-	v.Storage.VirtioFS = append(v.Storage.VirtioFS, mounts...)
 	return nil
 }
 
@@ -263,9 +245,7 @@ func buildMachine(ctx context.Context, cfg Config, workspace string) (*define.Ma
 	if err := b.withUserProvidedStorageRAWDisk(ctx, cfg.Disks); err != nil {
 		return nil, err
 	}
-	if err := b.withUserProvidedMounts(cfg.Mounts); err != nil {
-		return nil, err
-	}
+	b.Storage.VirtioFS = cfg.Mounts
 	if err := b.configureGuestAgent(ctx); err != nil {
 		return nil, err
 	}

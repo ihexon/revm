@@ -35,14 +35,10 @@ type StorageSpec struct {
 }
 
 type VirtioFSSpec struct {
-	ReadOnly      bool   `json:"readOnly"`
-	Source        string `json:"source"`
-	Tag           string `json:"tag"`
-	Target        string `json:"target"`
-	Type          string `json:"type"`
-	Opts          string `json:"opts"`
-	UUID          string `json:"uuid"`
-	DAXWindowSize uint64 `json:"daxWindowSize,omitempty"`
+	ReadOnly bool   `json:"readOnly"`
+	Source   string `json:"source"`
+	Tag      string `json:"tag"`
+	Target   string `json:"target"`
 }
 
 // BlockDeviceSpec represents one prepared block device and its guest mount.

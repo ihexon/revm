@@ -10,6 +10,7 @@ import (
 	"linuxvm/pkg/commanderr"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/execution"
+	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/revm"
 	"os"
 	"sort"
@@ -195,10 +196,12 @@ func parseConfig(c *cli.Command, mode revm.RunMode) (*revm.Config, error) {
 	cfg.Network, cfg.Proxy = c.String(define.FlagVNetworkType), c.Bool(define.FlagUsingSystemProxy)
 	cfg.Exec = execution.Request{Argv: c.Args().Slice(), Env: c.StringSlice(define.FlagEnvs), WorkDir: c.String(define.FlagWorkDir)}
 	cfg.VolumeName = c.String("volume")
-	cfg.Mounts = c.StringSlice(define.FlagMount)
 	cfg.ManageAPIFile, cfg.PodmanProxyAPIFile = c.String(define.FlagManageAPIFile), c.String(define.FlagPodmanProxyAPIFile)
 	cfg.PortList = c.Bool(define.FlagListPort)
 	var err error
+	if cfg.Mounts, err = filesystem.ParseMounts(c.StringSlice(define.FlagMount)); err != nil {
+		return nil, err
+	}
 	if cfg.Disks, err = revm.ParseRawDiskSpecs(c.StringSlice(define.FlagRawDisk)); err != nil {
 		return nil, err
 	}

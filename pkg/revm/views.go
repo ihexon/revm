@@ -29,7 +29,7 @@ func (vm *VM) ManagementView() management.VMConfigView {
 			ReadOnly: mount.ReadOnly,
 			Source:   mount.Source,
 			Target:   mount.Target,
-			Type:     mount.Type,
+			Type:     "virtiofs",
 		})
 	}
 

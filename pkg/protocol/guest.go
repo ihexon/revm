@@ -1,6 +1,6 @@
 package protocol
 
-const GuestSpecVersion = 4
+const GuestSpecVersion = 5
 
 // GuestSpec is the versioned host-to-guest boot contract.
 // Keep this type limited to fields consumed inside the guest-agent.
@@ -19,18 +19,13 @@ type GuestStorage struct {
 
 type GuestMount struct {
 	ReadOnly bool   `json:"readOnly"`
-	Source   string `json:"source,omitempty"`
 	Tag      string `json:"tag,omitempty"`
 	Target   string `json:"target"`
-	Type     string `json:"type"`
-	Opts     string `json:"opts,omitempty"`
-	UUID     string `json:"uuid,omitempty"`
 }
 
 type GuestBlockDev struct {
 	FsType   string `json:"fsType,omitempty"`
 	UUID     string `json:"UUID,omitempty"`
-	Path     string `json:"path,omitempty"`
 	MountTo  string `json:"mountTo,omitempty"`
 	ReadOnly bool   `json:"readOnly,omitempty"`
 }
