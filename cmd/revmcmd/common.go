@@ -14,7 +14,6 @@ import (
 	"os"
 	"sort"
 	"text/tabwriter"
-	"time"
 
 	"github.com/urfave/cli/v3"
 )
@@ -71,7 +70,6 @@ func newRunCommand() *cli.Command {
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "tty", Value: "auto", Usage: "terminal allocation: auto, always or never"},
-			&cli.DurationFlag{Name: "stop-timeout", Value: 10 * time.Second, Usage: "graceful cancellation budget"},
 			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to min(host CPU count, 4)"},
 			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to one quarter of available memory, between 512 and 2048 MB"},
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
@@ -97,7 +95,6 @@ func newPodmanCommand() *cli.Command {
 		UsageText:                 "revm podman [options] (--volume NAME | --container-disk PATH)",
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
-			&cli.DurationFlag{Name: "stop-timeout", Value: 10 * time.Second, Usage: "graceful cancellation budget"},
 			&cli.Int8Flag{Name: define.FlagCPUS, Usage: "number of vCPU cores to assign to the VM; defaults to min(host CPU count, 4)"},
 			&cli.Uint64Flag{Name: define.FlagMemoryInMB, Usage: "VM memory size in MB; minimum 512 MB; defaults to one quarter of available memory, between 512 and 2048 MB"},
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
@@ -125,7 +122,6 @@ func newExecCommand() *cli.Command {
 		DisableSliceFlagSeparator: true,
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "tty", Value: "auto", Usage: "terminal allocation: auto, always or never"},
-			&cli.DurationFlag{Name: "stop-timeout", Value: 10 * time.Second, Usage: "graceful cancellation budget"},
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "guest environment (KEY=VALUE); repeatable"},
 			&cli.StringFlag{Name: define.FlagWorkDir, Value: "/", Usage: "absolute guest working directory"},
 			sessionFlag(true),
@@ -163,10 +159,6 @@ func runLogged(ctx context.Context, command *cli.Command, mode revm.RunMode) err
 		return commanderr.Usage(err)
 	}
 	cfg.TTY = command.String("tty")
-	cfg.StopTimeout = command.Duration("stop-timeout")
-	if controller := execution.ControllerFrom(ctx); controller != nil {
-		controller.SetTimeout(cfg.StopTimeout)
-	}
 	return revm.Run(ctx, cfg)
 }
 

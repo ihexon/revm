@@ -17,7 +17,7 @@ func runLocal(t *testing.T, argv []string, input io.Reader, tty bool) (Result, [
 	a, b := net.Pipe()
 	go Serve(ctx, b, "test-instance")
 	var out, diag bytes.Buffer
-	r, err := Execute(ctx, a, Request{Version: 2, InstanceID: "test-instance", RequestID: "request", Argv: argv, TTY: tty}, Options{IO: IO{Stdin: input, Stdout: &out, Stderr: &diag}, StopTimeout: 100 * time.Millisecond})
+	r, err := Execute(ctx, a, Request{Version: 2, InstanceID: "test-instance", RequestID: "request", Argv: argv, TTY: tty}, Options{IO: IO{Stdin: input, Stdout: &out, Stderr: &diag}})
 	return r, out.Bytes(), diag.Bytes(), err
 }
 
@@ -42,7 +42,7 @@ func TestStreamingBeforeEOF(t *testing.T) {
 	defer read.Close()
 	done := make(chan error, 1)
 	go func() {
-		_, err := Execute(ctx, a, Request{Version: 2, InstanceID: "instance", RequestID: "live", Argv: []string{"cat"}}, Options{IO: IO{Stdin: input, Stdout: read}, StopTimeout: time.Second})
+		_, err := Execute(ctx, a, Request{Version: 2, InstanceID: "instance", RequestID: "live", Argv: []string{"cat"}}, Options{IO: IO{Stdin: input, Stdout: read}})
 		done <- err
 	}()
 	go func() { _, _ = writer.Write([]byte("before EOF")) }()

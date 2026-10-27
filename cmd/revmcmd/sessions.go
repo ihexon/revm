@@ -51,7 +51,7 @@ func sessionCommands() []*cli.Command {
 			e.SetIndent("", "  ")
 			return e.Encode(view)
 		}},
-		{Name: "stop", Usage: "request shutdown and wait for this instance to release its resources", Flags: []cli.Flag{&cli.DurationFlag{Name: "timeout", Value: 15 * time.Second, Usage: "maximum wait; VM grace budget is set when starting it"}}, Action: func(ctx context.Context, c *cli.Command) error {
+		{Name: "stop", Usage: "stop the VM immediately and wait for resource cleanup", Flags: []cli.Flag{&cli.DurationFlag{Name: "timeout", Value: 15 * time.Second, Usage: "maximum wait for the VM and cleanup helper to finish"}}, Action: func(ctx context.Context, c *cli.Command) error {
 			id, err := sessionArg(c)
 			if err != nil {
 				return err

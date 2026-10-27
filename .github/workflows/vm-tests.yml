@@ -24,6 +24,7 @@ jobs:
         run: |
           python3 tests/smoke.py
           python3 tests/terminal.py
+          python3 tests/lifecycle.py
           python3 tests/sessions.py
           python3 tests/volumes.py
           python3 tests/guest.py

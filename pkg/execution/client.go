@@ -17,9 +17,7 @@ type IO struct {
 }
 type Options struct {
 	IO
-	StopTimeout time.Duration
-	Controller  *Controller
-	OnStarted   func(*Streams, Message) error
+	OnStarted func(*Streams, Message) error
 }
 
 func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (result Result, retErr error) {
@@ -74,8 +72,9 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 	}
 	outputDone := make(chan struct{})
 	go func() { copies.Wait(); close(outputDone) }()
-	// Normal completion waits for outputDone below. Cancellation may abandon a
-	// blocked caller-owned writer; the one-shot CLI process owns its lifetime.
+	// Protect caller-owned writers from writes after return. The CLI owns this
+	// goroutine and can exit immediately even when a downstream writer is stuck.
+	defer func() { s.Session.Close(); <-outputDone }()
 	type controlEvent struct {
 		message Message
 		err     error
@@ -101,50 +100,13 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 		}
 	}()
 
-	var cancelErr error
-	var force <-chan struct{}
-	if opts.Controller != nil {
-		force = opts.Controller.Force()
-	}
-	var timer *time.Timer
-	var deadline <-chan time.Time
-	cancelCh := ctx.Done()
-	defer func() {
-		if timer != nil {
-			timer.Stop()
-		}
-	}()
-	cancelExec := func(err error) {
-		if cancelErr != nil {
-			return
-		}
-		cancelErr = err
-		stopInput()
-		sig := "SIGTERM"
-		grace := opts.StopTimeout
-		var canceled *Canceled
-		if errors.As(err, &canceled) {
-			sig = canceled.Signal
-			grace = max(0, time.Until(canceled.Deadline))
-		}
-		_ = s.Send(Message{Type: "cancel", InstanceID: started.InstanceID, ExecID: started.ExecID, Signal: sig, GraceMillis: grace.Milliseconds()})
-		timer = time.NewTimer(grace + 3*time.Second)
-		deadline = timer.C
-	}
-	outputFailure := func(err error) {
+	outputFailure := func(err error) error {
+		result.Output = "truncated"
 		failure := fmt.Errorf("write command output: %w", err)
 		if errors.Is(err, syscall.EPIPE) {
-			if opts.Controller != nil {
-				opts.Controller.Request("SIGPIPE")
-				if cause := opts.Controller.Cause(); cause != nil {
-					failure = errors.Join(cause, failure)
-				}
-			} else {
-				now := time.Now()
-				failure = errors.Join(&Canceled{Signal: "SIGPIPE", At: now, Deadline: now.Add(opts.StopTimeout)}, failure)
-			}
+			return errors.Join(&Canceled{Signal: "SIGPIPE"}, failure)
 		}
-		cancelExec(failure)
+		return failure
 	}
 	completed, drained := false, false
 	outputCh := outputDone
@@ -152,7 +114,7 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 		if completed && drained {
 			// Copies publish their errors before closing outputDone.
 			for len(copyErrors) > 0 {
-				outputFailure(<-copyErrors)
+				return result, outputFailure(<-copyErrors)
 			}
 			stopInput()
 			_ = s.Stdin.Close()
@@ -162,36 +124,25 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 			}
 			select {
 			case err := <-inputErrors:
-				cancelErr = errors.Join(cancelErr, err)
+				return result, err
 			default:
 			}
 			_ = s.Send(Message{Type: "ack", InstanceID: started.InstanceID, ExecID: started.ExecID})
-			return result, cancelErr
+			return result, nil
 		}
 		select {
 		case <-outputCh:
 			drained = true
 			outputCh = nil
 		case err := <-inputErrors:
-			cancelExec(err)
-		case <-force:
-			force = nil
-			_ = s.Send(Message{Type: "cancel", InstanceID: started.InstanceID, ExecID: started.ExecID, Signal: "SIGKILL", GraceMillis: 0})
-			if timer != nil {
-				timer.Stop()
-			}
-			timer = time.NewTimer(3 * time.Second)
-			deadline = timer.C
-		case <-cancelCh:
-			cancelCh = nil
-			cancelExec(context.Cause(ctx))
+			return result, err
+		case <-ctx.Done():
+			return result, context.Cause(ctx)
 		case err := <-copyErrors:
-			outputFailure(err)
-		case <-deadline:
-			return result, errors.Join(cancelErr, errors.New("execution cleanup deadline exceeded"))
+			return result, outputFailure(err)
 		case event := <-messages:
 			if event.err != nil {
-				return result, errors.Join(cancelErr, fmt.Errorf("execution disconnected before completion: %w", event.err))
+				return result, fmt.Errorf("execution disconnected before completion: %w", event.err)
 			}
 			m := event.message
 			if m.Type == "error" {
@@ -199,9 +150,6 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 			}
 			if m.Result != nil {
 				result = *m.Result
-				if m.Type == "exit" && opts.Controller != nil {
-					opts.Controller.Complete()
-				}
 			}
 			if m.Type == "completed" {
 				completed = true

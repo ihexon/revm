@@ -9,7 +9,6 @@ import (
 	"path"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/shirou/gopsutil/v4/mem"
@@ -48,9 +47,8 @@ type Config struct {
 	CPUs       int     `json:"cpus,omitempty"`      // 0 → host CPU count
 	MemoryMB   uint64  `json:"memoryMB,omitempty"`  // 0 → host total RAM
 
-	Exec        execution.Request `json:"exec"`
-	TTY         string            `json:"tty,omitempty"`
-	StopTimeout time.Duration     `json:"stopTimeout"`
+	Exec execution.Request `json:"exec"`
+	TTY  string            `json:"tty,omitempty"`
 
 	Network            string               `json:"network,omitempty"` // "gvisor" | "tsi"
 	Mounts             []string             `json:"mounts,omitempty"`  // "/host:/guest[,ro]"
@@ -70,11 +68,10 @@ type Config struct {
 // An omitted session name creates a disposable run.
 func DefaultConfig() *Config {
 	return &Config{
-		Network:     "gvisor",
-		LogLevel:    "info",
-		Exec:        execution.Request{WorkDir: "/"},
-		TTY:         "auto",
-		StopTimeout: 10 * time.Second,
+		Network:  "gvisor",
+		LogLevel: "info",
+		Exec:     execution.Request{WorkDir: "/"},
+		TTY:      "auto",
 	}
 }
 
@@ -131,9 +128,6 @@ func NormalizeConfig(cfg Config) (Config, error) {
 }
 
 func validateConfig(cfg Config) error {
-	if cfg.StopTimeout < 0 {
-		return fmt.Errorf("--stop-timeout must not be negative")
-	}
 	if cfg.TTY != "auto" && cfg.TTY != "always" && cfg.TTY != "never" {
 		return fmt.Errorf("--tty must be auto, always or never")
 	}

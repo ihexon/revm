@@ -25,7 +25,7 @@ def start(argv, stdin=subprocess.DEVNULL):
 def run(argv, extra=(), **kw):
     sid = 'audit-'+uuid.uuid4().hex[:10]
     sessions.append(sid)
-    return start(['run', '--id', sid, '--cpus', '1', '--memory', '512', '--stop-timeout', '1s']+list(extra)+['--']+argv, **kw), sid
+    return start(['run', '--id', sid, '--cpus', '1', '--memory', '512']+list(extra)+['--']+argv, **kw), sid
 
 def line(p):
     assert select.select([p.stdout], [], [], 20)[0], 'timed out waiting for output'
@@ -89,7 +89,7 @@ try:
 
     owner, sid = run(['sh','-c','echo ready; sleep 100'])
     assert line(owner) == b'ready\n'
-    attached = start(['exec','--id',sid,'--stop-timeout','1s','--','sh','-c',
+    attached = start(['exec','--id',sid,'--','sh','-c',
                       'setsid sh -c "exec sleep 123" & echo ready; wait'])
     assert line(attached) == b'ready\n'
     attached.send_signal(signal.SIGTERM); finish(attached,143)
@@ -116,6 +116,9 @@ try:
             children = [int(x) for x in found.stdout.split()]
             if not children: time.sleep(.005)
         assert children, phase
+        assert len(children) == 1, children
+        command = subprocess.check_output(['ps','-p',str(children[0]),'-o','command=']).decode()
+        assert command.rstrip().endswith(' _cleanup'), command
         p.kill(); p.wait(timeout=5)
         deadline = time.monotonic()+5
         while time.monotonic() < deadline:
@@ -126,7 +129,7 @@ try:
             if not alive: break
             time.sleep(.02)
         assert not alive, (phase, alive)
-    print('PASS no orphan VMM after owner SIGKILL during startup/running', flush=True)
+    print('PASS VM runs in the main process; cleanup child exits after SIGKILL', flush=True)
 finally:
     for p in processes:
         if p.poll() is None: p.kill()

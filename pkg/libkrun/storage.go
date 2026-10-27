@@ -16,7 +16,7 @@ import (
 	"unsafe"
 )
 
-func (v *Libkrun) setupStorage() error {
+func (v *machine) setupStorage() error {
 	for _, disk := range v.cfg.Storage.Blocks {
 		if err := v.addDisk(disk); err != nil {
 			return err
@@ -30,7 +30,7 @@ func (v *Libkrun) setupStorage() error {
 	return nil
 }
 
-func (v *Libkrun) addDisk(spec define.BlockDeviceSpec) error {
+func (v *machine) addDisk(spec define.BlockDeviceSpec) error {
 	stat, err := os.Stat(spec.Path)
 	if err != nil {
 		return err
@@ -66,7 +66,7 @@ func (v *Libkrun) addDisk(spec define.BlockDeviceSpec) error {
 	return nil
 }
 
-func (v *Libkrun) addVirtioFS(spec define.VirtioFSSpec) error {
+func (v *machine) addVirtioFS(spec define.VirtioFSSpec) error {
 	tag, hostPath, readOnly := spec.Tag, spec.Source, spec.ReadOnly
 	absPath, err := filepath.Abs(hostPath)
 	if err != nil {

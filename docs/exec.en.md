@@ -22,7 +22,7 @@ injects Ctrl-D. Terminal state is restored on exit and suspend; resize is forwar
 Session records resolve the current instance's management socket. A stopped
 session cannot execute commands; inspect it with `revm ls` or `revm inspect ID`.
 INT, TERM, HUP and QUIT cancel only this execution and its descendants, preserving
-the VM. `--stop-timeout` defaults to 10s; a second signal accelerates cleanup.
+the VM. The client exits immediately; disconnect kills the execution subtree.
 
 ```sh
 revm wait --ready --timeout 30s dev

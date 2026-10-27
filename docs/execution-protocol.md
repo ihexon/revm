@@ -28,26 +28,33 @@ so `exec -- podman ps` remains usable without local mount privileges.
 
 `--tty=auto` requires both stdin and stdout to be terminals, with revm in the
 foreground. `always` and `never` override allocation.
-The host enters raw mode only after command startup, restores it on suspend/exit,
-and forwards terminal resize. Stdin EOF never synthesizes terminal input.
+The host enters raw mode after `started`, retaining terminal-generated signals.
+Ctrl-C cancels locally, and suspend/exit restore the terminal. Resize reaches the
+guest PTY. Background jobs must use `--tty=never`; redirected stdin is allowed.
 
-INT, TERM, HUP and QUIT retain the first cancellation cause and deadline.
-`--stop-timeout` defaults to 10s; a second signal accelerates cleanup. Exec
-cancels only its execution. Run shares one grace budget between command cleanup
-and VM shutdown, followed by at most 3s for forced shutdown. Normal output drain has no deadline: slow consumers apply backpressure. Only
-cancellation bounds draining to 3s; incomplete output and stdin read failures
-are errors. An early close by a command that no longer needs stdin is allowed.
+The revm process directly hosts libkrun and host services. There is no `_vmm`
+child, shutdown RPC, escalation timer or native teardown while the VM runs.
+Cancellation returns immediately and main ends the entire process. Disconnecting
+an exec client kills its guest command subtree without stopping the VM. Normal
+command completion drains output before process exit. There is no automatic
+sync: commands and applications own flushing their writes.
 
-The native VMM lives in a child process on a separate session. An inherited
-control pipe ties its lifetime to its CLI owner, including during native
-initialization. EOF exits the child even when a native thread is blocked; normal
-shutdown waits for it. Killing the CLI can leave a briefly reparented child, but
-must not leave a running orphan VMM. `tests/smoke.py` checks both startup and
-running owner death on a real VM.
+If libkrun calls `_exit` itself, the shell receives its native exit status.
+There is no interception layer. Without a recorded command result the session
+stays `unknown`, and `revm wait` returns 1, even if the native status was 0.
 
-The guest agent owns required services and every upgraded execution. A service
-failure ends the VM; services are not automatically restarted. Shutdown stops
-accepting commands, sends TERM to executions, stops Podman containers, and waits
-for service cleanup before syncing disks. These steps share a five-second guest
-budget; the host timeout remains the final limit. The old `/v1/exec` endpoint is
-removed.
+A detached `_cleanup` helper inherits instance locks, the original terminal
+state and a read-only lifetime pipe. Only the VM process keeps the write end.
+EOF means all VM threads have died, so the helper can safely remove temporary
+resources and release locks. It never inherits stdout/stderr pipes or consumes
+stdin. A missing result stays unknown. The CLI may finish before file cleanup;
+`wait` waits for the locks too.
+Terminal restoration after an abrupt exit is best effort; an already revoked
+or closed controlling terminal cannot be restored.
+Persistent data is never removed. `cache prune` recovers leftovers if cleanup
+itself is interrupted.
+
+The guest agent owns required services and every upgraded execution. Service
+failure ends the VM; services are not restarted. `/v1/exec` and `/v1/shutdown`
+are removed. revm never requests guest shutdown or filesystem sync; applications requiring
+persistence must flush writes before exiting or stopping the VM.

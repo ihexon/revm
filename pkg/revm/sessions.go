@@ -255,6 +255,12 @@ func waitInstance(ctx context.Context, s Session, ready, stop bool) (*RunRecord,
 		}
 		finished := !active || current.InstanceID != s.InstanceID
 		if finished {
+			// The cleanup helper can update the result before releasing its lock.
+			// Read again after observing release so wait returns that final result.
+			rec, err = loadRun(r, s)
+			if err != nil {
+				return nil, err
+			}
 			if ready {
 				return &rec, fmt.Errorf("instance stopped before becoming ready")
 			}

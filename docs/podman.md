@@ -158,6 +158,6 @@ exec 使用 guest-control v2 执行普通命令和 PTY。ctl 只处理端口映�
 
 ## 停止行为
 
-第一次停止信号通过 guest-control 请求关闭，等待 --stop-timeout 宽限期；第二次信号或超时进入强制回收。容器存储磁盘在正常停止时会同步。
+停止信号或 `revm stop` 会直接结束承载 libkrun 的 revm 进程。持久磁盘文件保留，但不承诺取消时未刷盘的数据能够保存；需要保存数据时，先让容器应用完成写入并执行 `revm exec --id NAME -- sync`，再停止 VM。临时资源由独立子进程在 VM 进程死亡后清理。
 
 See [resource ownership](resources.md) and [session management](sessions.md). Runtime paths may use the private `/tmp/revm-<uid>` fallback; logs and results are stored under XDG_STATE_HOME.

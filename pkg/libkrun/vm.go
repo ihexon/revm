@@ -11,14 +11,12 @@ package libkrun
 import "C"
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/static_resources"
 	"os"
 	"path/filepath"
-	"sync"
 	"unsafe"
 )
 
@@ -32,10 +30,10 @@ const (
 	vsockCID             = 3
 )
 
-// Libkrun owns one libkrun 2.x builder graph. The graph is kept alive until
+// machine owns one libkrun 2.x builder graph. The graph is kept alive until
 // krun_vmm_run consumes the VMM; initConfig is kept until the VMM exits because
 // libkrun_init borrows the serialized configuration data.
-type Libkrun struct {
+type machine struct {
 	cfg *define.MachineSpec
 
 	manager    C.KrunMmioDeviceManager
@@ -44,25 +42,14 @@ type Libkrun struct {
 	vmmBuilder C.KrunVmmBuilder
 	vmm        C.KrunVmm
 
-	console C.KrunConsoleDevice
-	files   libkrunFiles
+	files libkrunFiles
 
-	guestAgentData unsafe.Pointer
-	closeOnce      sync.Once
-	closeErr       error
+	nativeLog *os.File
 }
 
-// New creates a new libkrun instance.
-func New(cfg *define.MachineSpec) *Libkrun { return &Libkrun{cfg: cfg} }
-
-// Create constructs a libkrun 2.x VMM. Handles are transferred to the manager
-// or builder as soon as they are added, which makes cleanup deterministic.
-func (v *Libkrun) Create(ctx context.Context) (retErr error) {
-	defer func() {
-		if retErr != nil {
-			retErr = errors.Join(retErr, v.Close())
-		}
-	}()
+// create constructs a single VMM. Success and failure both end the CLI
+// process; the OS releases its native allocations and file descriptors.
+func (v *machine) create() error {
 	if v.cfg == nil {
 		return errors.New("libkrun: nil machine specification")
 	}
@@ -84,10 +71,10 @@ func (v *Libkrun) Create(ctx context.Context) (retErr error) {
 	return v.buildVMM()
 }
 
-// Start enters the VMM. The upstream API consumes the VMM handle and reports
+// start enters the VMM. The upstream API consumes the VMM handle and reports
 // failures through libkrun's logging/error path, so this returns when the guest
 // has stopped.
-func (v *Libkrun) Start(_ context.Context) error {
+func (v *machine) start() error {
 	if v.vmm == nil {
 		return errors.New("libkrun: VMM has not been created")
 	}
@@ -97,47 +84,14 @@ func (v *Libkrun) Start(_ context.Context) error {
 	return nil
 }
 
-// Close releases handles and host file descriptors. It is idempotent and also
-// cleans up partially built graphs after a failed Create call.
-func (v *Libkrun) Close() error {
-	v.closeOnce.Do(func() { v.closeErr = v.close() })
-	return v.closeErr
-}
-
-func (v *Libkrun) close() error {
-	if v.vmm != nil {
-		C.krun_vmm_destroy(v.vmm)
-		v.vmm = nil
+func (v *machine) init() error {
+	file, err := os.OpenFile(v.cfg.LogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
 	}
-	if v.vmmBuilder != nil {
-		C.krun_vmm_builder_destroy(v.vmmBuilder)
-		v.vmmBuilder = nil
-	}
-	if v.manager != nil {
-		C.krun_mmio_device_manager_destroy(v.manager)
-		v.manager = nil
-	}
-	if v.payload != nil {
-		C.krun_payload_destroy(v.payload)
-		v.payload = nil
-	}
-	if v.initConfig != nil {
-		C.krun_init_config_destroy(v.initConfig)
-		v.initConfig = nil
-	}
-	if v.console != nil {
-		C.krun_console_device_destroy(v.console)
-		v.console = nil
-	}
-	v.files.close()
-	v.freeGuestAgentData()
-	return nil
-}
-
-func (v *Libkrun) init() error {
+	v.nativeLog = file
 	var errOut C.KrunError
-	// The optional BorrowedFd parameter uses -1 for the default logger target.
-	result := C.krun_init_log(-1, logLevel(os.Getenv("LIBKRUN_DEBUG")), C.KRUN_LOG_STYLE_AUTO, C.KRUN_LOG_OPTIONS_NO_ENV, &errOut)
+	result := C.krun_init_log(C.int(file.Fd()), logLevel(os.Getenv("LIBKRUN_DEBUG")), C.KRUN_LOG_STYLE_AUTO, C.KRUN_LOG_OPTIONS_NO_ENV, &errOut)
 	if err := checkKrunResult("initialize logging", result, errOut); err != nil {
 		return err
 	}
@@ -148,7 +102,7 @@ func (v *Libkrun) init() error {
 	return nil
 }
 
-func (v *Libkrun) setResources() error {
+func (v *machine) setResources() error {
 	v.vmmBuilder = C.krun_vmm_builder_new()
 	if v.vmmBuilder == nil {
 		return errors.New("libkrun: failed to allocate VMM builder")
@@ -161,22 +115,17 @@ func (v *Libkrun) setResources() error {
 	return checkKrunResult("set memory size", C.krun_vmm_builder_ram_mib(&v.vmmBuilder, C.uint32_t(v.cfg.MemoryInMB), &errOut), errOut)
 }
 
-func (v *Libkrun) loadPayload() error {
+func (v *machine) loadPayload() error {
 	var errOut C.KrunError
 	v.payload = C.krun_payload_load_krunfw(&errOut)
 	return checkKrunHandle("load libkrunfw payload", unsafe.Pointer(v.payload), errOut)
 }
 
-func (v *Libkrun) setupInitConfig() error {
+func (v *machine) setupInitConfig() error {
 	builder := C.krun_init_config_builder()
 	if builder == nil {
 		return errors.New("libkrun: failed to allocate init config builder")
 	}
-	defer func() {
-		if builder != nil {
-			C.krun_init_builder_destroy(builder)
-		}
-	}()
 
 	initBuilderArg(&builder, define.GuestAgentPathInGuest)
 	for _, arg := range v.cfg.GuestAgentCfg.Args {
@@ -198,14 +147,13 @@ func (v *Libkrun) setupInitConfig() error {
 		envStr.free()
 	}
 	v.initConfig = C.krun_init_builder_build(&builder)
-	builder = nil
 	if v.initConfig == nil {
 		return errors.New("libkrun: failed to build init config")
 	}
 	return nil
 }
 
-func (v *Libkrun) setupDevices() error {
+func (v *machine) setupDevices() error {
 	if err := v.setupRootFS(); err != nil {
 		return err
 	}
@@ -227,7 +175,7 @@ func (v *Libkrun) setupDevices() error {
 	return v.setupStorage()
 }
 
-func (v *Libkrun) setupRNG() error {
+func (v *machine) setupRNG() error {
 	var errOut C.KrunError
 	device := C.krun_rng_device_new(&errOut)
 	if err := checkKrunHandle("create RNG device", unsafe.Pointer(device), errOut); err != nil {
@@ -237,7 +185,7 @@ func (v *Libkrun) setupRNG() error {
 	return nil
 }
 
-func (v *Libkrun) setupBalloon() error {
+func (v *machine) setupBalloon() error {
 	var errOut C.KrunError
 	device := C.krun_balloon_device_new(&errOut)
 	if err := checkKrunHandle("create virtio-balloon device", unsafe.Pointer(device), errOut); err != nil {
@@ -247,37 +195,26 @@ func (v *Libkrun) setupBalloon() error {
 	return nil
 }
 
-func (v *Libkrun) setupRootFS() error {
+func (v *machine) setupRootFS() error {
 	rootPath, err := filepath.Abs(v.cfg.RootFS)
 	if err != nil {
 		return fmt.Errorf("resolve rootfs: %w", err)
 	}
-	root := C.KrunFsDevice(nil)
 	var errOut C.KrunError
 	tag := newKrunStr(rootFSTag)
 	path := newKrunStr(rootPath)
-	root = C.krun_fs_device_new(tag.value, path.value, &errOut)
+	root := C.krun_fs_device_new(tag.value, path.value, &errOut)
 	tag.free()
 	path.free()
 	if err := checkKrunHandle("create root filesystem", unsafe.Pointer(root), errOut); err != nil {
 		return err
 	}
-	defer func() {
-		if root != nil {
-			C.krun_fs_device_destroy(root)
-		}
-	}()
 	C.krun_fs_device_set_dax_window_size(root, C.uint64_t(virtiofsMemWindow))
 
 	overlay := C.krun_fs_overlay_new()
 	if overlay == nil {
 		return errors.New("libkrun: failed to allocate root filesystem overlay")
 	}
-	defer func() {
-		if overlay != nil {
-			C.krun_fs_overlay_destroy(overlay)
-		}
-	}()
 	if err := addOverlayDir(overlay, guestHiddenBinDir, overlayDirectoryMode); err != nil {
 		return err
 	}
@@ -290,23 +227,20 @@ func (v *Libkrun) setupRootFS() error {
 		return err
 	}
 	C.krun_fs_device_set_overlay(root, overlay)
-	overlay = nil
 	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(root)))
-	root = nil
 	return nil
 }
 
-func (v *Libkrun) addGuestAgentOverlay(overlay C.KrunFsOverlay) error {
+func (v *machine) addGuestAgentOverlay(overlay C.KrunFsOverlay) error {
 	guestAgent, err := static_resources.GuestAgent()
 	if err != nil {
 		return err
 	}
-	v.freeGuestAgentData()
-	v.guestAgentData = C.CBytes(guestAgent)
-	if v.guestAgentData == nil {
+	guestAgentData := C.CBytes(guestAgent)
+	if guestAgentData == nil {
 		return errors.New("libkrun: failed to allocate guest-agent overlay")
 	}
-	data := C.KrunBytes{data: (*C.uint8_t)(v.guestAgentData), len: C.size_t(len(guestAgent))}
+	data := C.KrunBytes{data: (*C.uint8_t)(guestAgentData), len: C.size_t(len(guestAgent))}
 	return addOverlayFile(overlay, guestAgentPath, data, overlayFileMode, false)
 }
 
@@ -324,7 +258,7 @@ func addOverlayFile(overlay C.KrunFsOverlay, path string, data C.KrunBytes, mode
 	return checkKrunResult("add overlay file", C.krun_fs_overlay_add_file(overlay, p.value, data, mode, C.bool(oneShot), &errOut), errOut)
 }
 
-func (v *Libkrun) buildVMM() error {
+func (v *machine) buildVMM() error {
 	C.krun_vmm_builder_payload(&v.vmmBuilder, v.payload)
 	v.payload = nil
 	C.krun_vmm_builder_devices(&v.vmmBuilder, v.manager)
@@ -339,13 +273,6 @@ func (v *Libkrun) buildVMM() error {
 		return err
 	}
 	return nil
-}
-
-func (v *Libkrun) freeGuestAgentData() {
-	if v.guestAgentData != nil {
-		C.free(v.guestAgentData)
-		v.guestAgentData = nil
-	}
 }
 
 type krunString struct {

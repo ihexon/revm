@@ -16,7 +16,7 @@ try:
  cli(['rm','broken'])
  print('PASS incomplete session listing and removal',flush=True)
  sid='audit-'+uuid.uuid4().hex[:10]
- owner=subprocess.Popen([binary,'run','--id',sid,'--cpus','1','--memory','512','--stop-timeout','1s','--','sh','-c','echo ready; sleep 100'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);processes.append(owner)
+ owner=subprocess.Popen([binary,'run','--id',sid,'--cpus','1','--memory','512','--','sh','-c','echo ready; sleep 100'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);processes.append(owner)
  assert owner.stdout.readline()==b'ready\n'
  cli(['wait','--ready','--timeout','5s',sid])
  active=json.loads(cli(['inspect',sid]).stdout)
@@ -46,10 +46,16 @@ try:
   cli(['run','--cpus','1','--memory','512','--','sh','-c','exit '+str(code)],code)
   views=json.loads(cli(['ls','--json']).stdout)
   if code==0:
+   end=time.monotonic()+5
+   while views:
+    assert time.monotonic()<end,views
+    time.sleep(.05)
+    views=json.loads(cli(['ls','--json']).stdout)
    assert views==[]
   else:
    assert len(views)==1 and views[0]['lastRun']['exitCode']==code
    sid=views[0]['id']
+   cli(['wait',sid],code)
    cli(['logs',sid]);cli(['logs','--guest',sid]);cli(['cache','prune'])
    assert len(json.loads(cli(['ls','--json']).stdout))==1
    cli(['rm',sid])

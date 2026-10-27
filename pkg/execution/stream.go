@@ -25,15 +25,14 @@ type Request struct {
 }
 
 type Message struct {
-	Type        string  `json:"type"`
-	InstanceID  string  `json:"instance_id,omitempty"`
-	ExecID      string  `json:"exec_id,omitempty"`
-	Signal      string  `json:"signal,omitempty"`
-	GraceMillis int64   `json:"grace_ms,omitempty"`
-	Rows        uint16  `json:"rows,omitempty"`
-	Cols        uint16  `json:"cols,omitempty"`
-	Result      *Result `json:"result,omitempty"`
-	Error       string  `json:"error,omitempty"`
+	Type       string  `json:"type"`
+	InstanceID string  `json:"instance_id,omitempty"`
+	ExecID     string  `json:"exec_id,omitempty"`
+	Signal     string  `json:"signal,omitempty"`
+	Rows       uint16  `json:"rows,omitempty"`
+	Cols       uint16  `json:"cols,omitempty"`
+	Result     *Result `json:"result,omitempty"`
+	Error      string  `json:"error,omitempty"`
 }
 
 type Streams struct {

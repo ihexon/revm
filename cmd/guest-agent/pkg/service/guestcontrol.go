@@ -10,9 +10,7 @@ import (
 	"linuxvm/pkg/protocol"
 	"net"
 	"net/http"
-	"os"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -119,18 +117,6 @@ func handleGuestControl(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		execution.Serve(ctx, conn, guestInstance, commandEnv...)
 		return
 	}
-	if r.URL.Path == "/v1/shutdown" {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		go func() {
-			// Let the response reach the host before the init signal path starts
-			// its disk-sync and reboot sequence.
-			_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
-		}()
-		return
-	}
+
 	http.Error(w, "not found", http.StatusNotFound)
 }

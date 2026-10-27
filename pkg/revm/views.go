@@ -11,23 +11,23 @@ import (
 	"linuxvm/pkg/service/management"
 )
 
-func (vm *VM) IgnitionListenAddr() string { return vm.runtime.spec.IgnitionServerCfg.ListenSockAddr }
+func (vm *VM) IgnitionListenAddr() string { return vm.spec.IgnitionServerCfg.ListenSockAddr }
 
 func (vm *VM) GuestSpec() protocol.GuestSpec {
 	return protocol.GuestSpec{
 		SchemaVersion: protocol.GuestSpecVersion,
-		RunMode:       vm.runtime.spec.RunMode,
-		NetworkMode:   string(vm.runtime.spec.VirtualNetworkMode),
+		RunMode:       vm.spec.RunMode,
+		NetworkMode:   string(vm.spec.VirtualNetworkMode),
 		Storage: protocol.GuestStorage{
-			VirtioFS: guestMountsFromSpec(vm.runtime.spec.Storage.VirtioFS),
-			Blocks:   guestBlockDevsFromSpec(vm.runtime.spec.Storage.Blocks),
+			VirtioFS: guestMountsFromSpec(vm.spec.Storage.VirtioFS),
+			Blocks:   guestBlockDevsFromSpec(vm.spec.Storage.Blocks),
 		},
-		Podman: guestPodmanFromSpec(vm.runtime.spec.PodmanInfo),
+		Podman: guestPodmanFromSpec(vm.spec.PodmanInfo),
 	}
 }
 
 func (vm *VM) GuestControlTarget() guestcontrol.Target {
-	return guestcontrol.Target{CID: define.GuestVSockCID, Port: define.GuestControlPort, UnixSocket: unixSocketPath(vm.runtime.spec.GuestControlAddr)}
+	return guestcontrol.Target{CID: define.GuestVSockCID, Port: define.GuestControlPort, UnixSocket: unixSocketPath(vm.spec.GuestControlAddr)}
 }
 
 func unixSocketPath(raw string) string {
@@ -40,21 +40,21 @@ func unixSocketPath(raw string) string {
 
 func (vm *VM) ManagementView() management.VMConfigView {
 	view := management.VMConfigView{
-		RunMode:     vm.runtime.spec.RunMode,
-		NetworkMode: string(vm.runtime.spec.VirtualNetworkMode),
+		RunMode:     vm.spec.RunMode,
+		NetworkMode: string(vm.spec.VirtualNetworkMode),
 		Resources: management.ResourceView{
-			MemoryInMB: vm.runtime.spec.MemoryInMB,
-			CPUs:       vm.runtime.spec.Cpus,
+			MemoryInMB: vm.spec.MemoryInMB,
+			CPUs:       vm.spec.Cpus,
 		},
 		Endpoints: management.EndpointView{
-			ManagementAPI: vm.runtime.spec.VMCtlAddr,
-			GVProxyAPI:    vm.runtime.spec.GVPCtlAddr,
-			PodmanAPI:     vm.runtime.spec.PodmanInfo.HostPodmanProxyAddr,
-			GuestControl:  vm.runtime.spec.GuestControlAddr,
+			ManagementAPI: vm.spec.VMCtlAddr,
+			GVProxyAPI:    vm.spec.GVPCtlAddr,
+			PodmanAPI:     vm.spec.PodmanInfo.HostPodmanProxyAddr,
+			GuestControl:  vm.spec.GuestControlAddr,
 		},
 	}
 
-	for _, mount := range vm.runtime.spec.Storage.VirtioFS {
+	for _, mount := range vm.spec.Storage.VirtioFS {
 		view.Mounts = append(view.Mounts, management.MountView{
 			ReadOnly: mount.ReadOnly,
 			Source:   mount.Source,
@@ -63,7 +63,7 @@ func (vm *VM) ManagementView() management.VMConfigView {
 		})
 	}
 
-	for _, disk := range vm.runtime.spec.Storage.Blocks {
+	for _, disk := range vm.spec.Storage.Blocks {
 		diskView := management.DiskView{
 			ReadOnly: disk.ReadOnly,
 			DirectIO: disk.DirectIO,
@@ -83,12 +83,12 @@ func (vm *VM) ManagementView() management.VMConfigView {
 
 func (vm *VM) GVProxySpec() gvproxy.Spec {
 	return gvproxy.Spec{
-		ControlAddr:         vm.runtime.spec.GVPCtlAddr,
-		NetAddr:             vm.runtime.spec.GVPVNetAddr,
-		NotifyAddr:          vm.runtime.spec.GVPNotifyAddr,
+		ControlAddr:         vm.spec.GVPCtlAddr,
+		NetAddr:             vm.spec.GVPVNetAddr,
+		NotifyAddr:          vm.spec.GVPNotifyAddr,
 		GuestIP:             define.GuestIP,
 		HostLoopbackAddress: define.LocalHost,
-		PortForwards:        append([]define.PortForward(nil), vm.runtime.spec.PortForwards...),
+		PortForwards:        append([]define.PortForward(nil), vm.spec.PortForwards...),
 	}
 }
 

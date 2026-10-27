@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -90,26 +89,6 @@ func Serve(ctx context.Context, conn net.Conn, instance string, defaultEnv ...st
 	go func() { copies.Wait(); close(outputDone) }()
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
-	var timer *time.Timer
-	var deadline <-chan time.Time
-	defer func() {
-		if timer != nil {
-			timer.Stop()
-		}
-	}()
-	cancelExec := func(sig string, grace time.Duration) {
-		if timer != nil {
-			_ = owned.Kill()
-			return
-		}
-		signal, ok := Signal(sig)
-		if !ok {
-			signal = syscall.SIGTERM
-		}
-		owned.Signal(signal)
-		timer = time.NewTimer(max(0, grace))
-		deadline = timer.C
-	}
 	cancelCh := ctx.Done()
 	var waitErr error
 running:
@@ -120,14 +99,11 @@ running:
 		case m, ok := <-controls:
 			if !ok {
 				controls = nil
-				cancelExec("SIGTERM", 10*time.Second)
+				_ = owned.Kill()
 				continue
 			}
 			if m.InstanceID != instance || m.ExecID != execID {
 				continue
-			}
-			if m.Type == "cancel" {
-				cancelExec(m.Signal, time.Duration(m.GraceMillis)*time.Millisecond)
 			}
 			if m.Type == "resize" && terminal != nil && m.Rows > 0 && m.Cols > 0 {
 				_ = pty.Setsize(terminal, &pty.Winsize{Rows: m.Rows, Cols: m.Cols})
@@ -139,10 +115,7 @@ running:
 			}
 		case <-cancelCh:
 			cancelCh = nil
-			cancelExec("SIGTERM", 3*time.Second)
-		case <-deadline:
 			_ = owned.Kill()
-			deadline = nil
 		}
 	}
 	input.Close()
@@ -161,11 +134,6 @@ running:
 	_ = s.Send(Message{Type: "exit", Result: &exitResult})
 	// Normal output follows downstream backpressure, regardless of duration.
 	// Only a cancellation or disconnect abandons the remaining output.
-	if timer != nil {
-		timer.Stop()
-		timer = time.NewTimer(3 * time.Second)
-		deadline = timer.C
-	}
 draining:
 	for {
 		select {
@@ -176,16 +144,9 @@ draining:
 			break draining
 		case <-s.Session.CloseChan():
 			return
-		case <-deadline:
-			result.Output = "truncated"
-			break draining
-		case m, ok := <-controls:
+		case _, ok := <-controls:
 			if !ok {
 				return
-			}
-			if m.InstanceID == instance && m.ExecID == execID && m.Type == "cancel" {
-				result.Output = "truncated"
-				break draining
 			}
 		}
 	}
@@ -210,7 +171,7 @@ func waitAck(ctx context.Context, s *Streams, controls <-chan Message, instance,
 			if !ok {
 				return
 			}
-			if m.InstanceID == instance && m.ExecID == execID && (m.Type == "ack" || m.Type == "cancel") {
+			if m.InstanceID == instance && m.ExecID == execID && m.Type == "ack" {
 				return
 			}
 		}

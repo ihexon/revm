@@ -3,9 +3,6 @@
 package guestcontrol
 
 import (
-	"context"
-	"fmt"
-	"io"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
 	"time"
@@ -15,21 +12,6 @@ type Target struct {
 	CID        uint32
 	Port       uint32
 	UnixSocket string
-}
-
-func Shutdown(ctx context.Context, target Target) error {
-	client := newClient(target)
-	defer client.Close()
-	resp, err := client.Post("/v1/shutdown").Do(ctx)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("guest shutdown returned %d: %s", resp.StatusCode, body)
-	}
-	return nil
 }
 
 func DefaultTarget() Target {

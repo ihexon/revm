@@ -4,10 +4,8 @@ package revm
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"linuxvm/pkg/commanderr"
-	"linuxvm/pkg/execution"
 )
 
 func Run(ctx context.Context, cfg *Config) error {
@@ -26,20 +24,7 @@ func Run(ctx context.Context, cfg *Config) error {
 	case ModeControl:
 		return controlSession(ctx, cfg)
 	case ModeRootfs, ModeContainer:
-		vm, err := buildVM(ctx, cfg)
-		if err != nil {
-			return err
-		}
-		runErr := vm.Run(ctx)
-		if controller := execution.ControllerFrom(ctx); controller != nil {
-			if cause := controller.Cause(); cause != nil {
-				runErr = errors.Join(cause, runErr)
-			}
-		}
-		recordErr := vm.lease.finish(vm.result, runErr)
-		lease := vm.lease
-		releaseErr := vm.Release(recordErr)
-		return lease.diagnose(errors.Join(runErr, releaseErr))
+		return runVM(ctx, cfg)
 	default:
 		return fmt.Errorf("unsupported run mode %q", cfg.RunMode)
 	}

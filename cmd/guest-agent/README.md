@@ -9,11 +9,9 @@ streams carry control, stdin, stdout and stderr. Each command gets a cgroup;
 cancellation and completion clean up its descendants. There is no SSH execution
 path or automatic execution retry.
 
-Required service failure ends the VM. Shutdown stops new requests, terminates
-executions and Podman containers, waits for service cleanup, syncs disks, then
-reboots. The guest shares a five-second cleanup budget; the host can terminate
-the VMM child when its own deadline expires. The host requests orderly shutdown
-through `POST /v1/shutdown`.
+Required service failure ends the VM. The host directly ends its own process to
+stop libkrun; there is no guest shutdown RPC, reboot sequence or automatic sync.
+Applications own flushing writes. Disconnect immediately kills an exec subtree.
 
 Gvisor uses a fixed IPv4 address, route and DNS configuration. TSI uses libkrun's
 socket interception. Podman uses gvisor networking and a private Unix API socket;

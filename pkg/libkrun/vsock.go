@@ -16,7 +16,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func (v *Libkrun) setupVSock() error {
+func (v *machine) setupVSock() error {
 	var features C.uint32_t
 	if v.cfg.VirtualNetworkMode == define.TSI {
 		// Upstream's HIJACK_INET flag covers both AF_INET and AF_INET6.
@@ -31,7 +31,6 @@ func (v *Libkrun) setupVSock() error {
 	}
 	addr, err := network.ParseUnixAddr(v.cfg.IgnitionServerCfg.ListenSockAddr)
 	if err != nil {
-		C.krun_vsock_device_destroy(device)
 		return err
 	}
 	path := newKrunStr(addr.Path)
@@ -39,7 +38,6 @@ func (v *Libkrun) setupVSock() error {
 	C.krun_vsock_device_add_unix_port(device, C.uint32_t(define.DefaultVSockPort), path.value, C.bool(false))
 	controlAddr, err := network.ParseUnixAddr(v.cfg.GuestControlAddr)
 	if err != nil {
-		C.krun_vsock_device_destroy(device)
 		return err
 	}
 	controlPath := newKrunStr(controlAddr.Path)
@@ -50,7 +48,6 @@ func (v *Libkrun) setupVSock() error {
 	if v.cfg.RunMode == define.ContainerMode.String() {
 		podmanAddr, err := network.ParseUnixAddr(v.cfg.PodmanInfo.HostPodmanTransportAddr)
 		if err != nil {
-			C.krun_vsock_device_destroy(device)
 			return err
 		}
 		podmanPath := newKrunStr(podmanAddr.Path)

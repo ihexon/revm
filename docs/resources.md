@@ -37,11 +37,17 @@ Missing labels never authorize deletion. New disks are published without
 replacing an existing target. Session and volume cleanup never delete external
 disks or bind mount contents.
 
-Session, volume and external-disk locks cover the entire VMM lifetime. Lock
-files are stable and never unlinked; the VMM inherits the open locks, so a killed
-CLI cannot release storage still being used by its child. `cache prune` skips
+The main revm process hosts libkrun. Its exit releases the VM; a detached cleanup
+helper then removes owned runtime/cache files. Session, volume and external-disk
+locks cover both VM execution and cleanup. Lock files are stable and never
+unlinked; the helper inherits them and releases them after cleanup. Use
+`revm wait ID` to wait for that release before reusing named sessions or disks.
+`cache prune` skips
 active instances and only removes resources with matching ownership records.
 Unclassified legacy directories and all persistent data are preserved.
+
+The VM process sets its host `TMPDIR` to the instance runtime directory, so
+native-library temporary sockets are removed by the same cleanup.
 
 Old cache layouts are not imported or used. They remain untouched. Select an
 existing external disk explicitly with `--container-disk`; revm does not maintain

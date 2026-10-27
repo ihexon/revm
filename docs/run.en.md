@@ -104,9 +104,15 @@ Use `revm logs ID`, `revm logs --guest -f ID`, and `revm inspect ID`.
 Omitting `--id` removes records only after successful execution and cleanup. Failures and interruptions retain logs and results until `revm rm`; persistent data is always preserved.
 See [resource ownership](resources.md) and [session commands](sessions.md).
 
-INT, TERM, HUP and QUIT retain the first cancellation cause. `--stop-timeout`
-defaults to 10s, shared by command cleanup and VM shutdown. A second signal
-accelerates cleanup, followed by at most 3s for forced shutdown. The VMM child
-exits on loss of its owner's control pipe.
+INT, TERM, HUP and QUIT immediately end the revm process, which directly hosts
+libkrun. Status is `128+signal`; there is no VM shutdown grace period.
+Cancellation can discard buffered guest writes and pending output. Normal
+completion drains output before exiting. revm does not sync guest filesystems;
+applications must flush writes they need to preserve.
+A detached helper cleans temporary resources after process death and preserves
+persistent disks and failure logs. `revm wait SESSION` also waits for cleanup.
+
+If libkrun calls `_exit` itself, the shell receives its native status. A session
+without a command result remains `unknown`, and `revm wait` returns 1.
 
 Run `revm run --help` for all options.

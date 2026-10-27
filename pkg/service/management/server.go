@@ -20,7 +20,7 @@ type errResponse struct {
 }
 
 type Machine interface {
-	RequestShutdown(ctx context.Context) error
+	RequestStop(ctx context.Context) error
 	ManagementView() VMConfigView
 }
 
@@ -72,7 +72,7 @@ func (s *Server) handleRequestVMStop(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, nil)
 		return
 	}
-	if err := s.machine.RequestShutdown(r.Context()); err != nil {
+	if err := s.machine.RequestStop(r.Context()); err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, errResponse{Error: err.Error()})
 		return
 	}

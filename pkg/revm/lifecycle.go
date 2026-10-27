@@ -457,8 +457,8 @@ func removeOwned(dir, instance string) error {
 }
 func (l *sessionRun) close(prior ...error) error {
 	err := errors.Join(append(prior, removeOwned(l.record.RuntimeDir, l.record.InstanceID), removeOwned(l.record.CacheDir, l.record.InstanceID))...)
-	// Commit cleanup failure before releasing the session lock, so wait cannot
-	// observe a successful record for a CLI which is about to fail cleanup.
+	// Commit cleanup failure before releasing the session lock, so wait
+	// observes the final record even though the originating CLI already exited.
 	if err == nil && l.session.Config.Remove && l.record.FinishedAt != nil && l.record.ExitCode != nil && *l.record.ExitCode == 0 {
 		err = os.RemoveAll(l.roots.sessionDir(l.session.ID))
 	}

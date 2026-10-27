@@ -19,14 +19,14 @@ func executeGuest(ctx context.Context, target guestcontrol.Target, cfg Config) (
 	if w, h, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
 		req.Rows, req.Cols = uint16(h), uint16(w)
 	}
-	terminal := &system.CommandTerminal{}
+	terminal := &system.ProcessTerminal
 	defer terminal.Restore()
 	controller := execution.ControllerFrom(ctx)
 	if controller != nil {
 		controller.SetTerminal(terminal.Event)
 		defer controller.SetTerminal(nil)
 	}
-	opts := execution.Options{IO: execution.IO{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}, StopTimeout: cfg.StopTimeout, Controller: controller}
+	opts := execution.Options{IO: execution.IO{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}}
 	opts.OnStarted = func(s *execution.Streams, m execution.Message) error {
 		return terminal.Start(useTTY, func() {
 			w, h, err := term.GetSize(int(os.Stdin.Fd()))

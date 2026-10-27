@@ -94,7 +94,7 @@ Format:
 ~~~
 
 Missing external disks are created and remain user-owned. Existing disks are inspected; mismatched versions return an error without replacing data. Stopping or removing a session preserves its managed volume. Every launch explicitly selects storage; session names do not reconnect disks.
-Omit `--id` to remove session records at exit. Use `volume rm NAME` for explicit deletion; active volumes cannot be deleted. Legacy layouts are not imported; select an existing disk explicitly with `--container-disk`.
+Omit `--id` to remove session records after successful execution and cleanup. Interruptions and failures retain logs until `revm rm`. Use `volume rm NAME` for explicit deletion; active volumes cannot be deleted. Legacy layouts are not imported; select an existing disk explicitly with `--container-disk`.
 
 ## Port publishing
 
@@ -157,7 +157,10 @@ exec uses guest-control v2 for both ordinary commands and PTYs. ctl only changes
 
 ## Stop behavior
 
-The first stop signal requests guest shutdown over guest-control and waits for
-`--stop-timeout`. A second signal or timeout forces cleanup, bounded to three seconds. The container storage disk is synced during a normal stop.
+A stop signal or `revm stop` immediately ends the revm process hosting libkrun.
+Persistent disk files remain, but buffered guest writes can be lost. Let container
+applications finish their writes, then use `revm exec --id NAME -- sync` before
+stopping when persistence is required. A detached helper removes temporary
+resources after the VM process dies.
 
 See [resource ownership](resources.md) and [session management](sessions.md). Runtime paths may use the private `/tmp/revm-<uid>` fallback; logs and results are stored under XDG_STATE_HOME.

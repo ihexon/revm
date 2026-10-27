@@ -17,6 +17,13 @@ ls | inspect | stop | wait | logs | rm | volume | cache | completion
 revm runs the supplied argv in a fresh Alpine system environment. Input and
 output stream without waiting for EOF. Without a PTY, stdout and stderr remain
 separate. Each session name permits one running instance.
+.PP
+The main process hosts libkrun. Ctrl-C, termination signals and revm stop end
+that process immediately. Cancellation may discard buffered writes and output;
+normal completion drains output first. Applications are responsible for flushing
+writes; revm does not shut down the guest or sync its filesystems. A detached
+helper removes temporary files after process death and preserves persistent
+disks and failure logs. Use revm wait NAME to wait for cleanup and lock release.
 .SH OPTIONS
 .TP
 .B --version
@@ -29,9 +36,6 @@ memory bounded to 512-2048 MiB. Minimum memory: 512 MiB.
 .B --tty=auto|always|never
 Allocate a PTY. Auto requires foreground terminal stdin and terminal stdout.
 Input EOF does not inject Ctrl-D.
-.TP
-.B --stop-timeout DURATION
-Grace period for cancellation, default 10s. A second signal accelerates cleanup.
 .TP
 .B --id NAME
 Retain named session records and logs. Without it, successful runs remove records;
@@ -56,7 +60,7 @@ returns the selected instance's recorded exit status;
 .B wait --ready --timeout 30s NAME
 waits for guest readiness.
 .B stop NAME
-requests shutdown and waits for resource release.
+ends the VM process and waits for resource release.
 .B logs [--guest] [--tail N] [-f] NAME
 reads instance logs. Default tail -1 reads all; tail 0 with -f follows only new lines.
 .B rm NAME
@@ -80,8 +84,9 @@ removes inactive runtime/cache resources with verified ownership, preserving dia
 .SH EXIT STATUS
 0 means success; 2 means invalid invocation; 1 means an operational failure.
 Guest exit codes are preserved, including 126 and 127. Signals return 128 plus
-the Linux signal number. A host cancellation retains its first signal. Unknown
-results never count as success. Diagnostics go to stderr; structured command
+the Linux signal number. A host cancellation retains its first signal. If libkrun
+exits the process itself, its native status reaches the shell; a missing command
+result remains unknown and revm wait returns 1. Diagnostics go to stderr; structured command
 output goes to stdout.
 .SH EXAMPLES
 printf 'hello\en' | revm run -- cat

@@ -105,14 +105,15 @@ stdin 按流传输，不等待输入全部结束。非 PTY 模式分别保留 st
 
 ## 停止行为
 
-第一次 INT、TERM、HUP、QUIT 保留原始取消原因并开始 `--stop-timeout` 宽限期（默认 10s）。第二次信号加速清理。run 命令和 VM 关闭共用宽限预算，强制回收再最多等待 3s；信号状态按 Linux 的 `128+signal` 返回。VMM 子进程监听父进程控制管道，父进程消失后退出。
+revm 主进程直接运行 libkrun。INT、TERM、HUP、QUIT 或 `revm stop` 立即结束 VM 进程，不等待 guest 关机，退出状态为 `128+signal`。取消可能丢弃尚未刷盘的数据和未送达的输出；正常命令完成会先排空输出再退出。revm 不会自动 sync，需要持久化的数据由用户的程序自行刷盘。独立清理子进程在主进程死亡后清理临时资源，保留持久磁盘和失败日志；`revm wait SESSION` 会等到清理完成。
+
+若 libkrun 自行调用 `_exit`，shell 直接收到其原生退出码；未收到命令结果的 session 记为 `unknown`，`revm wait` 返回 1。
 
 ## 全部选项
 
 ~~~text
 --id
 --tty
---stop-timeout
 --cpus
 --memory
 --envs

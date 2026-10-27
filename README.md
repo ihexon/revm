@@ -59,7 +59,9 @@ revm rm shell                      # stopped sessions only; volumes remain
 
 One session name has at most one active instance. Each start gets a new instance ID, a private writable rootfs, separate logs and a result record. A crash with no result is reported as `unknown`. Omitting `--id` creates a disposable run: records and logs are removed only after success; failures, interruptions and crashes retain them until `revm rm`. Specifying `--id` retains them.
 
-The first INT, TERM, HUP or QUIT cancels the command with a shared shutdown budget (`--stop-timeout`, default 10s). A second signal accelerates cleanup. Exec cancellation affects its own command and descendants. The native VMM is a child whose lifetime follows a control pipe from its owner; losing the CLI also terminates the VMM.
+The `revm run` / `podman` process is the VM: libkrun runs directly inside it. INT, TERM, HUP, QUIT and `revm stop` end that process immediately, without a shutdown grace period. Cancellation can discard buffered guest writes and pending output. Normal command completion drains output before exiting. revm does not shut down the guest or sync its filesystems; applications own flushing writes. Exec cancellation disconnects only its command; the guest kills that command's entire subtree.
+
+A detached cleanup helper waits for the VM process to die, then restores the terminal if necessary and removes temporary resources. It retains failed-run logs and all persistent volumes. Cleanup can briefly continue after the shell receives the command status; `revm wait SESSION` waits for it. `cache prune` can recover leftovers if the helper itself fails.
 
 ## Containers
 
@@ -117,6 +119,7 @@ python3 tests/smoke.py
 python3 tests/sessions.py
 python3 tests/volumes.py
 python3 tests/terminal.py
+python3 tests/lifecycle.py
 python3 tests/guest.py
 ```
 

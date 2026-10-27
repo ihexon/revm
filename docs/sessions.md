@@ -15,12 +15,13 @@ revm run -- sh -c 'echo temporary'
 
 `wait` and `stop` bind to the instance selected when the command starts. They do
 not silently follow a replacement instance using the same session name. `stop`
-requests cancellation and waits for the instance to release its locks. The VM's
-shutdown grace period is its startup `--stop-timeout`; `stop --timeout` bounds the
-client's wait. An already stopped session is a successful no-op.
+ends the VM process immediately and waits for its cleanup helper to release the
+instance locks. `stop --timeout` bounds the client's wait. An already stopped session is a successful no-op.
 
 `wait --ready` waits until the guest execution service is ready after mounts and
-network setup. `wait` without it returns the persisted CLI status. A crash with
+network setup. `wait` without it waits for post-exit cleanup and returns the recorded status.
+Cleanup failures may change that recorded status after the originating shell has
+already received the command exit code. A crash with
 no recorded result is `unknown` and returns an error. Inspect includes the guest
 result separately from the CLI exit code, cleanup state and error text.
 

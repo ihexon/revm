@@ -20,7 +20,7 @@ func configureHelp(app *cli.Command) {
 		"ctl":           "Manage TCP port forwarding for a running gvisor session.\n\nExamples:\n  revm ctl --id dev --list-port --json\n  revm ctl --id dev --port-export 127.0.0.1:8080:8000\n  revm ctl --id dev --port-unexport 127.0.0.1:8080",
 		"ls":            "Example:\n  revm ls --json",
 		"inspect":       "Example:\n  revm inspect dev",
-		"stop":          "The timeout limits this client's wait. Shutdown grace is set with --stop-timeout when starting the VM.\n\nExample:\n  revm stop --timeout 15s dev",
+		"stop":          "Stops the VM immediately, then waits for resource cleanup. The timeout limits this client's wait.\n\nExample:\n  revm stop --timeout 15s dev",
 		"wait":          "Waits for the selected instance, even if the session name is later reused.\n\nExamples:\n  revm wait --ready --timeout 30s dev\n  revm wait dev  # returns its recorded exit status",
 		"logs":          "Reads revm lifecycle logs; --guest selects the VM boot/service log. Command stdout/stderr are streamed directly and are not recorded here.\n\nExamples:\n  revm logs --tail 50 dev\n  revm logs --guest --tail 20 --follow dev",
 		"rm":            "Requires a stopped session. Deletes its records and logs; preserves volumes and external disks.\n\nExample:\n  revm rm dev",
