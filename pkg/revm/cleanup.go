@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -18,8 +19,7 @@ import (
 
 // The write end stays open for the entire CLI process, including native code.
 // Only process death closes it; closing it on a Go return would clean a live VM.
-var cleanupOwner *os.File
-var cleanupReady bool
+var cleanupOwner atomic.Pointer[os.File]
 
 type cleanupState struct {
 	Roots    Roots
@@ -31,8 +31,8 @@ type cleanupState struct {
 // TerminalRestored is called by main immediately before exit. A killed or
 // native-exited parent cannot send this, so the helper restores its terminal.
 func TerminalRestored() {
-	if cleanupReady {
-		_ = json.NewEncoder(cleanupOwner).Encode(true)
+	if owner := cleanupOwner.Load(); owner != nil {
+		_ = json.NewEncoder(owner).Encode(true)
 	}
 }
 
@@ -66,7 +66,6 @@ func startCleanup(ctx context.Context, l *sessionRun, cancel context.CancelCause
 		return err
 	}
 	// Keep all inherited locks until this process has died and cleanup finishes.
-	cleanupOwner = owner
 	go func() {
 		err := cmd.Wait()
 		if err == nil {
@@ -87,7 +86,7 @@ func startCleanup(ctx context.Context, l *sessionRun, cancel context.CancelCause
 	if err != nil {
 		return fmt.Errorf("start cleanup helper: %w", err)
 	}
-	cleanupReady = true
+	cleanupOwner.Store(owner)
 	return nil
 }
 

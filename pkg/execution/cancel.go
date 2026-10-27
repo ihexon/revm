@@ -15,11 +15,10 @@ func (c *Canceled) ExitCode() int {
 	return 1
 }
 
-// Controller records the first cancellation and delivers terminal events.
+// Controller cancels the command and delivers terminal events.
 type Controller struct {
 	mu       sync.Mutex
 	cancel   context.CancelCauseFunc
-	cause    *Canceled
 	terminal func(string)
 }
 type controllerKey struct{}
@@ -34,15 +33,8 @@ func ControllerFrom(ctx context.Context) *Controller {
 	return c
 }
 func (c *Controller) Request(sig string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.cause != nil {
-		return
-	}
-	c.cause = &Canceled{Signal: sig}
-	c.cancel(c.cause)
+	c.cancel(&Canceled{Signal: sig})
 }
-func (c *Controller) Cause() *Canceled            { c.mu.Lock(); defer c.mu.Unlock(); return c.cause }
 func (c *Controller) SetTerminal(fn func(string)) { c.mu.Lock(); defer c.mu.Unlock(); c.terminal = fn }
 func (c *Controller) Terminal(sig string) {
 	c.mu.Lock()

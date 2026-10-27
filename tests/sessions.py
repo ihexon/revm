@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Session CLI integration checks against a real VM."""
-import json, os, signal, subprocess, tempfile, time, uuid
+import json, os, select, signal, subprocess, tempfile, time, uuid
 binary=os.path.abspath('out/revm/bin/revm')
 root=tempfile.TemporaryDirectory(prefix='revm-sessions-')
 env=dict(os.environ,XDG_STATE_HOME=root.name+'/state',XDG_CACHE_HOME=root.name+'/cache',XDG_DATA_HOME=root.name+'/data')
@@ -10,6 +10,27 @@ def cli(args,code=0):
  assert p.returncode==code,(args,p.returncode,p.stdout,p.stderr)
  return p
 try:
+ # Query commands must exit even when their output pipe is full.
+ iid=str(uuid.uuid4())
+ session=root.name+'/state/revm/sessions/blocked-logs'
+ run=session+'/runs/'+iid
+ os.makedirs(run+'/logs')
+ with open(session+'/session.json','w') as f:
+  json.dump(dict(version=1,id='blocked-logs',instanceID=iid,config={}),f)
+ with open(run+'/result.json','w') as f:
+  json.dump(dict(version=1,sessionID='blocked-logs',instanceID=iid,status='stopped',exitCode=0),f)
+ with open(run+'/logs/revm.log','wb') as f:f.write(b'log line\n'*1000000)
+ for sig in [signal.SIGINT,signal.SIGTERM]:
+  reader=subprocess.Popen([binary,'logs','blocked-logs'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  processes.append(reader)
+  assert select.select([reader.stdout],[],[],5)[0]
+  time.sleep(.1)
+  reader.send_signal(sig)
+  assert reader.wait(timeout=3)==128+sig
+  reader.communicate()
+ cli(['rm','blocked-logs'])
+ print('PASS blocked log output exits on the first termination signal',flush=True)
+
  os.makedirs(root.name+'/state/revm/sessions/broken/runs/incomplete')
  views=json.loads(cli(['ls','--json']).stdout)
  assert views[0]['id']=='broken' and views[0]['status']=='broken' and views[0]['error']

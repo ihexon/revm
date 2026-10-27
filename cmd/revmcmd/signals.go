@@ -20,31 +20,29 @@ func Execute(ctx context.Context, args []string) error {
 		signals = append(signals, syscall.SIGHUP)
 	}
 	signal.Notify(ch, signals...)
-	done := make(chan struct{})
-	defer close(done)
 	defer signal.Stop(ch)
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			case s := <-ch:
-				name := execution.SignalName(s.(syscall.Signal))
-				switch s {
-				case syscall.SIGWINCH, syscall.SIGCONT:
-					controller.Terminal(name)
-				case syscall.SIGTSTP:
-					controller.Terminal(name)
-					_ = syscall.Kill(os.Getpid(), syscall.SIGSTOP)
-				default:
-					controller.Request(name)
-				}
+	// Only the process boundary waits for command completion. A blocked writer
+	// or native call must never prevent main from restoring the terminal and exiting.
+	done := make(chan error, 1)
+	go func() { done <- NewApp("revm").Run(ctx, args) }()
+	for {
+		select {
+		case err := <-done:
+			return errors.Join(context.Cause(ctx), err)
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case s := <-ch:
+			name := execution.SignalName(s.(syscall.Signal))
+			switch s {
+			case syscall.SIGWINCH, syscall.SIGCONT:
+				controller.Terminal(name)
+			case syscall.SIGTSTP:
+				controller.Terminal(name)
+				_ = syscall.Kill(os.Getpid(), syscall.SIGSTOP)
+			default:
+				controller.Request(name)
+				return context.Cause(ctx)
 			}
 		}
-	}()
-	err := NewApp("revm").Run(ctx, args)
-	if cause := controller.Cause(); cause != nil {
-		return errors.Join(cause, err)
 	}
-	return err
 }

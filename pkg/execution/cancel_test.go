@@ -8,9 +8,9 @@ import (
 func TestCancellationKeepsFirstCause(t *testing.T) {
 	ctx, c := WithController(context.Background())
 	c.Request("SIGTERM")
-	first := c.Cause()
+	first := context.Cause(ctx)
 	c.Request("SIGINT")
-	if context.Cause(ctx) != first || c.Cause().Signal != "SIGTERM" {
+	if context.Cause(ctx) != first || first.(*Canceled).Signal != "SIGTERM" {
 		t.Fatal("cancellation changed")
 	}
 	if ctx.Err() == nil {

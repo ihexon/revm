@@ -147,14 +147,8 @@ func execInSession(ctx context.Context, cfg Config) error {
 	if len(cfg.Exec.Argv) == 0 {
 		cfg.Exec.Argv = []string{"/bin/sh"}
 	}
-	done := make(chan error, 1)
-	go func() { _, err := executeGuest(ctx, controlTarget, cfg); done <- err }()
-	select {
-	case err := <-done:
-		return err
-	case <-ctx.Done():
-		return context.Cause(ctx)
-	}
+	_, err = executeGuest(ctx, controlTarget, cfg)
+	return err
 }
 
 func fetchManagementView(ctx context.Context, workspaceDirPath string) (management.VMConfigView, error) {
