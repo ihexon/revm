@@ -12,6 +12,11 @@ const (
 )
 
 const (
+	NetworkGVisor = "gvisor"
+	NetworkTSI    = "tsi"
+)
+
+const (
 	GuestAgentPathInGuest   = "/.bin/guest-agent"
 	GuestHiddenBinDir       = "/.bin"
 	VMConfigFilePathInGuest = "/vmconfig.json"

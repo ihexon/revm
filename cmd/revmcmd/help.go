@@ -14,10 +14,10 @@ import (
 func configureHelp(app *cli.Command) {
 	app.Description = "Run one Linux command in a temporary VM. Successful temporary runs clean up automatically; failed runs keep diagnostics.\n\nExamples:\n  revm run -- uname -a\n  printf 'hello\\n' | revm run -- cat\n  revm run --id dev --mount \"$PWD:/work\" --workdir /work -- sh"
 	examples := map[string]string{
-		"run":           "Arguments after -- are passed unchanged. Use sh -c for shell syntax.\n\nExamples:\n  revm run -- uname -a\n  revm run --mount \"$PWD:/work\" --workdir /work -- sh\n  revm run -- sh -c 'echo hello; exit 42'",
+		"run":           "Arguments after -- are passed unchanged. Use sh -c for shell syntax.\n\nExamples:\n  revm run -- uname -a\n  revm run --mount \"$PWD:/work\" --workdir /work -- sh\n  revm run -- sh -c 'echo hello; exit 42'\n  revm run --network tsi -- nc -lk -s 127.0.0.1 -p 8080 -e cat",
 		"podman":        "Runs in the foreground until stopped. Create the volume first; it survives session removal.\n\nExamples:\n  revm volume create data\n  revm podman --id containers --volume data --podman-api /tmp/revm-podman.sock\n  # In another terminal:\n  CONTAINER_HOST=unix:///tmp/revm-podman.sock podman info",
 		"exec":          "Without COMMAND, opens /bin/sh. The session must already be running.\n\nExamples:\n  revm exec --id dev\n  revm exec --id dev --workdir /tmp -- sh -c 'pwd'",
-		"ports":         "List startup forwards and Podman-published ports. Change startup forwards by restarting the session.\n\nExamples:\n  revm ports dev\n  revm ports --json dev",
+		"ports":         "List gvisor startup forwards and Podman-published ports. TSI binds host ports directly and has no forwarding table. Change startup forwards by restarting the session.\n\nExamples:\n  revm ports dev\n  revm ports --json dev",
 		"ls":            "Example:\n  revm ls --json",
 		"inspect":       "Example:\n  revm inspect dev",
 		"stop":          "Stops the VM immediately, then waits for resource cleanup. The timeout limits this client's wait.\n\nExample:\n  revm stop --timeout 15s dev",

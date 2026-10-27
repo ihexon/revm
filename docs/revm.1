@@ -50,8 +50,18 @@ Attach an external persistent raw/ext4 disk. Existing disks are inspected and ne
 .B --container-disk PATH
 Use an external Podman storage disk; mutually exclusive with --volume NAME.
 .TP
+.B --network gvisor|tsi
+Select networking for run (default: gvisor). TSI connects IPv4/IPv6 TCP and
+outbound UDP sockets through the host, including host loopback. TCP listeners
+bind host ports directly. DNS uses a snapshot of the host /etc/resolv.conf,
+excluding scoped IPv6 servers; at least one unscoped nameserver is required.
+Unix sockets remain guest-local. TSI does not support raw sockets or guest UDP
+servers. Connected UDP to loopback may stay inside the guest; use a non-loopback
+DNS address for resolvers using connected UDP. TCP port conflicts may fall back
+to guest-only listeners. Podman requires gvisor.
+.TP
 .B --port-export [HOST_IP:]HOST_PORT:GUEST_PORT
-Forward a guest TCP port at startup; defaults to 127.0.0.1. Repeat for multiple mappings.
+With gvisor, forward a guest TCP port at startup; defaults to 127.0.0.1. Repeat for multiple mappings.
 .SH SESSION MANAGEMENT
 .B ls --json
 lists sessions; human output includes mode, start time, duration, exit code and command.
@@ -66,7 +76,7 @@ ends the VM process and waits for resource release.
 .B logs [--guest] [--tail N] [-f] NAME
 reads instance logs. Default tail -1 reads all; tail 0 with -f follows only new lines.
 .B ports [--json] NAME
-lists current startup forwards and Podman-published ports.
+lists current startup forwards and Podman-published ports (gvisor only).
 .B rm NAME
 removes a stopped session, preserving volumes.
 .SH DATA

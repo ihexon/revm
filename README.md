@@ -17,6 +17,7 @@ export PATH="$PWD/revm-release/bin:$PATH"
 
 ```sh
 revm run -- sh
+revm run --network tsi -- sh
 printf 'hello\n' | revm run -- cat
 revm run --mount "$PWD:/workspace" --workdir /workspace -- sh
 revm run --raw-disk "$HOME/data.ext4,mnt=/data" -- sh
@@ -68,6 +69,16 @@ revm run --id demo --port-export 8080:8000 -- nc -lk -p 8000 -e cat
 
 # Terminal 2
 revm ports --json demo
+printf 'hello\n' | nc -w 1 127.0.0.1 8080
+```
+
+## TSI host networking
+
+```sh
+# Terminal 1: listen directly on host TCP port 8080
+revm run --network tsi -- nc -lk -s 127.0.0.1 -p 8080 -e cat
+
+# Terminal 2
 printf 'hello\n' | nc -w 1 127.0.0.1 8080
 ```
 

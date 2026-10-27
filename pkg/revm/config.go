@@ -26,6 +26,7 @@ type VMOptions struct {
 	VolumeName         string                `json:"volumeName,omitempty"`
 	RunMode            define.RunMode        `json:"runMode,omitempty"`
 	SessionID          string                `json:"sessionID,omitempty"`
+	Network            string                `json:"network"`
 	CPUs               int                   `json:"cpus,omitempty"`
 	MemoryMB           uint64                `json:"memoryMB,omitempty"`
 	Mounts             []define.VirtioFSSpec `json:"mounts,omitempty"`
@@ -61,6 +62,9 @@ func normalizeExecOptions(opts *ExecOptions) error {
 func normalizeVMOptions(cfg VMOptions) (VMOptions, error) {
 	if err := normalizeExecOptions(&cfg.ExecOptions); err != nil {
 		return VMOptions{}, err
+	}
+	if cfg.Network == "" {
+		cfg.Network = define.NetworkGVisor
 	}
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = "info"
@@ -114,6 +118,18 @@ func validateVMOptions(cfg VMOptions) error {
 	}
 	if cfg.CPUs < 1 || cfg.CPUs > 32 {
 		return fmt.Errorf("cpus must be between 1 and 32, got %d", cfg.CPUs)
+	}
+	switch cfg.Network {
+	case define.NetworkGVisor:
+	case define.NetworkTSI:
+		if cfg.RunMode == define.ContainerMode {
+			return fmt.Errorf("podman requires gvisor network")
+		}
+		if len(cfg.PortForwards) != 0 {
+			return fmt.Errorf("--port-export requires gvisor; TSI listeners bind host ports directly")
+		}
+	default:
+		return fmt.Errorf("--network must be gvisor or tsi, got %q", cfg.Network)
 	}
 	return validatePortForwardSet(cfg.PortForwards)
 }

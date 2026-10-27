@@ -1,11 +1,13 @@
 package protocol
 
-const GuestSpecVersion = 6
+const GuestSpecVersion = 7
 
 // GuestSpec is the versioned host-to-guest boot contract.
 // Keep this type limited to fields consumed inside the guest-agent.
 type GuestSpec struct {
 	SchemaVersion int          `json:"schemaVersion"`
+	Network       string       `json:"network"`
+	ResolvConf    string       `json:"resolvConf,omitempty"`
 	RunMode       string       `json:"runMode,omitempty"`
 	Storage       GuestStorage `json:"storage,omitempty"`
 	Podman        GuestPodman  `json:"podman,omitempty"`

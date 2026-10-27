@@ -17,8 +17,13 @@ import (
 )
 
 func (v *machine) setupVSock() error {
+	var features C.uint32_t
+	if v.cfg.Network == define.NetworkTSI {
+		// Intercept IPv4/IPv6 sockets. Unix sockets remain inside the guest.
+		features = C.KRUN_TSI_FLAGS_HIJACK_INET
+	}
 	var errOut C.KrunError
-	device := C.krun_vsock_device_new(C.uint64_t(define.GuestVSockCID), C.uint32_t(0), &errOut)
+	device := C.krun_vsock_device_new(C.uint64_t(define.GuestVSockCID), features, &errOut)
 	if err := checkKrunHandle("create vsock device", unsafe.Pointer(device), errOut); err != nil {
 		return err
 	}

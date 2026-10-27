@@ -110,7 +110,7 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("mount virtiofs: %w", err)
 	}
 
-	if err := service.ConfigureNetwork(ctx); err != nil {
+	if err := service.ConfigureNetwork(ctx, vmc.Network, vmc.ResolvConf); err != nil {
 		return err
 	}
 	execution.RequireGuestIsolation()

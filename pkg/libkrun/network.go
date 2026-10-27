@@ -9,6 +9,7 @@ package libkrun
 import "C"
 
 import (
+	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
 	"unsafe"
 
@@ -23,6 +24,9 @@ var guestMAC = [6]byte{0x5a, 0x94, 0xef, 0xe4, 0x0c, 0xee}
 const compatNetFeatures = (1 << 0) | (1 << 1) | (1 << 7) | (1 << 10) | (1 << 11) | (1 << 14)
 
 func (v *machine) setupNetwork() error {
+	if v.cfg.Network == define.NetworkTSI {
+		return nil
+	}
 	logrus.Info("configuring gvisor-tap-vsock network")
 	addr, err := network.ParseUnixAddr(v.cfg.GVPVNetAddr)
 	if err != nil {

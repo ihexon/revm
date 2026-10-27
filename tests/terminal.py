@@ -2,12 +2,13 @@
 """Real terminal and early pipe-close checks (requires a VM-capable host)."""
 import fcntl, os, pty, select, signal, subprocess, tempfile, termios, time, uuid
 binary=os.path.abspath('out/revm/bin/revm')
+network=os.environ.get('REVM_TEST_NETWORK','gvisor')
 root=tempfile.TemporaryDirectory(prefix='revm-terminal-')
 env=dict(os.environ,XDG_STATE_HOME=root.name+'/state',XDG_CACHE_HOME=root.name+'/cache',XDG_DATA_HOME=root.name+'/data')
 processes=[];child=None
 
 def argv(command):
- return [binary,'run','--id','audit-'+uuid.uuid4().hex[:10],'--cpus','1','--memory','512','--']+command
+ return [binary,'run','--network',network,'--id','audit-'+uuid.uuid4().hex[:10],'--cpus','1','--memory','512','--']+command
 
 def terminal_state(fd):
  state=termios.tcgetattr(fd)

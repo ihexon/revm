@@ -20,3 +20,5 @@ printf 'hello\n' | nc -w 1 127.0.0.1 8080
 
 `--port-export` 可重复指定，也接受 `HOST_IP:HOST_PORT:GUEST_PORT`；支持 TCP 和 IPv4。
 修改启动转发规则需重启 session。容器端口使用 `podman run -p HOST_PORT:CONTAINER_PORT`。
+
+TSI 直接监听宿主端口，不使用转发表。`--port-export` 和 `revm ports` 仅用于 gvisor 网络。

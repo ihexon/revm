@@ -52,7 +52,7 @@ func (v *machineBuilder) setupWorkspace(workspacePath string) error {
 
 	v.pathMgr = newMachinePathManager(v.WorkspaceDir)
 
-	return nil
+	return os.MkdirAll(filepath.Dir(v.pathMgr.GetGuestControlSocketFile()), 0700)
 }
 
 func (v *machineBuilder) withBuiltInAlpineRootfs(ctx context.Context) error {
@@ -92,7 +92,11 @@ func (v *machineBuilder) configureGuestAgent(ctx context.Context) error {
 	finalEnv = append(finalEnv, "LC_ALL=C.UTF-8")
 	finalEnv = append(finalEnv, "LANG=C.UTF-8")
 	finalEnv = append(finalEnv, "TMPDIR=/tmp")
-	finalEnv = append(finalEnv, fmt.Sprintf("HOST_DOMAIN=%s", define.HostDomainInGVPNet))
+	hostDomain := define.HostDomainInGVPNet
+	if v.Network == define.NetworkTSI {
+		hostDomain = "localhost"
+	}
+	finalEnv = append(finalEnv, "HOST_DOMAIN="+hostDomain)
 	finalEnv = append(finalEnv, fmt.Sprintf("%s=%s", define.EnvLogLevel, logrus.GetLevel().String()))
 
 	if _, err := static_resources.GuestAgent(); err != nil {
@@ -178,6 +182,7 @@ func buildMachine(ctx context.Context, cfg VMOptions, lease *sessionRun) (*defin
 	b.pathMgr.rootfsDir = filepath.Join(lease.record.CacheDir, "rootfs")
 	b.LogFile = filepath.Join(lease.logDir, "vm.log")
 	b.MemoryInMB, b.Cpus = cfg.MemoryMB, uint8(cfg.CPUs)
+	b.Network = cfg.Network
 	if err := b.configureNetwork(); err != nil {
 		return nil, err
 	}

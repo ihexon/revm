@@ -6,6 +6,8 @@ func (spec *MachineSpec) GuestSpec() protocol.GuestSpec {
 	return protocol.GuestSpec{
 		SchemaVersion: protocol.GuestSpecVersion,
 		RunMode:       string(spec.RunMode),
+		Network:       spec.Network,
+		ResolvConf:    spec.ResolvConf,
 		Storage: protocol.GuestStorage{
 			VirtioFS: guestMountsFromSpec(spec.Storage.VirtioFS),
 			Blocks:   guestBlockDevsFromSpec(spec.Storage.Blocks),

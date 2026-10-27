@@ -13,7 +13,10 @@ Required service failure ends the VM. The host directly ends its own process to
 stop libkrun; there is no guest shutdown RPC, reboot sequence or automatic sync.
 Applications own flushing writes. Disconnect immediately kills an exec subtree.
 
-Networking uses gvproxy with a fixed IPv4 address, route and DNS configuration.
+Gvisor networking uses gvproxy with a fixed IPv4 address, route and DNS configuration.
+TSI uses host IPv4/IPv6 sockets without a virtual interface or gvproxy; the guest
+writes the host resolver snapshot from its boot configuration to /etc/resolv.conf.
+Unix sockets stay guest-local. Podman requires gvisor.
 Podman has a private Unix API socket;
 the host reaches it through a dedicated vsock/Yamux proxy. Only explicit `--mount`
 paths are shared. Persistent storage is managed by the host.

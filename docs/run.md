@@ -39,5 +39,22 @@ revm run --id demo --port-export 8080:8000 -- nc -lk -p 8000 -e cat
 revm ports demo  # 在另一终端查询
 ```
 
+`--network` 可选 `gvisor`（默认）或 `tsi`：
+
+- `gvisor` 使用虚拟网卡，通过 `--port-export` 转发端口，适合普通运行和 Podman。
+- `tsi` 将 IPv4/IPv6 TCP 和出站 UDP socket 接到宿主网络；TCP 可通过 `127.0.0.1` / `::1` 访问宿主服务。启动时复制宿主 `/etc/resolv.conf`，跳过当前 libkrun 无法正确传递的带 `%接口` 的 IPv6 DNS 地址；至少需要一个不带 scope 的 DNS 地址。Unix socket 仍留在 guest 内。
+
+```sh
+# 直接监听宿主 TCP 端口，无需 --port-export
+revm run --network tsi -- nc -lk -s 127.0.0.1 -p 8080 -e cat
+# 在另一终端访问
+printf 'hello\n' | nc -w 1 127.0.0.1 8080
+```
+
+TSI 中监听 `0.0.0.0` 会监听宿主所有 IPv4 接口。
+当前上游 TSI 优先尝试 guest 网络：TCP 端口冲突可能回退为仅 guest 可访问的监听，已连接 UDP 访问回环地址可能留在 guest 内。宿主使用回环 DNS 时，这会影响使用已连接 UDP 的解析器；可在 guest `/etc/resolv.conf` 中改用宿主可达的非回环 DNS 地址。
+TSI 不接受 `--port-export`，没有可供 `revm ports` 查询的转发表，`podman` 命令仍使用 gvisor。
+[上游 TSI](https://github.com/libkrun/libkrun/blob/a4d501ef87f7456a8b6632859a8575c16ee20f6b/README.md#virtio-vsock--tsi) 不支持 raw socket（如 ping）和 guest UDP 服务端；需要这些功能时使用 gvisor。
+
 CPU 默认为宿主 CPU 数与 4 的较小值；内存默认为可用内存的四分之一，限制在 512–2048 MiB。
 使用 `revm run --help` 查看全部选项。

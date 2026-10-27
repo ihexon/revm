@@ -23,7 +23,9 @@ jobs:
       - name: Real VM regressions
         run: |
           python3 tests/smoke.py
+          python3 tests/tsi.py
           python3 tests/terminal.py
+          REVM_TEST_NETWORK=tsi python3 tests/terminal.py
           python3 tests/lifecycle.py
           python3 tests/sessions.py
           python3 tests/volumes.py

@@ -4,6 +4,7 @@ package revm
 
 import (
 	"context"
+	"fmt"
 	"linuxvm/pkg/commanderr"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/gvproxy"
@@ -28,9 +29,15 @@ func ExecSession(ctx context.Context, session string, opts ExecOptions) error {
 }
 
 func ListPorts(ctx context.Context, session string) ([]define.PortMapping, error) {
-	workspace, err := sessionWorkspace(session)
+	view, err := InspectSession(session)
 	if err != nil {
 		return nil, err
 	}
-	return gvproxy.ListPorts(ctx, newMachinePathManager(workspace).GetGVPCtlSocketFile())
+	if view.Config.Network == define.NetworkTSI {
+		return nil, fmt.Errorf("TSI has no port forwarding table: guest listeners bind host ports directly")
+	}
+	if !view.Active || view.LastRun == nil {
+		return nil, fmt.Errorf("session %q is not running", session)
+	}
+	return gvproxy.ListPorts(ctx, newMachinePathManager(view.LastRun.RuntimeDir).GetGVPCtlSocketFile())
 }

@@ -19,3 +19,5 @@ printf 'hello\n' | nc -w 1 127.0.0.1 8080
 Repeat `--port-export` for multiple mappings. `HOST_IP:HOST_PORT:GUEST_PORT` is also accepted;
 only TCP and IPv4 are supported. Restart the session to change startup forwards.
 Publish container ports with `podman run -p HOST_PORT:CONTAINER_PORT`.
+
+TSI binds host ports directly and has no forwarding table. `--port-export` and `revm ports` require gvisor networking.

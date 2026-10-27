@@ -8,6 +8,9 @@ type MachineSpec struct {
 	Cpus       uint8  `json:"cpus,omitempty"`
 	RootFS     string `json:"rootFS,omitempty"`
 
+	Network    string `json:"network"`
+	ResolvConf string `json:"resolvConf,omitempty"`
+
 	// Storage is the complete host-to-guest storage plan. It is prepared before
 	// the VMM is built and translated to libkrun devices by the backend.
 	Storage StorageSpec `json:"storage,omitempty"`

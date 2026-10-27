@@ -76,6 +76,7 @@ func newRunCommand() *cli.Command {
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagRawDisk, Usage: "attach a raw disk (format: <path>[,uuid=<uuid>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=relaxed|full|none]); auto-created if missing; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagMount, Usage: "share a host directory with the guest (format: /host/path:/guest/path[,ro]); can be specified multiple times"},
+			&cli.StringFlag{Name: "network", Value: define.NetworkGVisor, Usage: "gvisor uses a virtual network; tsi connects and listens through host sockets directly"},
 			&cli.StringFlag{Name: define.FlagWorkDir, Usage: "absolute working directory inside the guest", Value: "/"},
 			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "forward a guest TCP port at startup (HOST_PORT:GUEST_PORT or HOST_IP:HOST_PORT:GUEST_PORT); repeatable; defaults to 127.0.0.1"},
 			sessionFlag(false),
@@ -165,7 +166,7 @@ func execOptions(c *cli.Command) revm.ExecOptions {
 
 func parseVMOptions(c *cli.Command, mode define.RunMode) (*revm.VMOptions, error) {
 	cfg := &revm.VMOptions{
-		RunMode: mode, SessionID: c.String(define.FlagSessionID), LogLevel: c.String(define.FlagLogLevel),
+		RunMode: mode, Network: c.String("network"), SessionID: c.String(define.FlagSessionID), LogLevel: c.String(define.FlagLogLevel),
 		CPUs: int(c.Int8(define.FlagCPUS)), MemoryMB: c.Uint64(define.FlagMemoryInMB),
 		ExecOptions: execOptions(c), VolumeName: c.String("volume"),
 		PodmanProxyAPIFile: c.String(define.FlagPodmanProxyAPIFile),
