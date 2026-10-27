@@ -112,7 +112,7 @@ func TestResourceNameCompletion(t *testing.T) {
 		t.Setenv(key, filepath.Join(root, sub))
 	}
 	session := filepath.Join(root, "state/revm/sessions/dev")
-	volume := filepath.Join(root, "data/revm/volumes/4fe61727-80d4-4aef-a132-d04527086cdd")
+	volume := filepath.Join(root, "data/revm/volumes/data")
 	for _, dir := range []string{session, volume} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			t.Fatal(err)

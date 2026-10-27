@@ -35,10 +35,10 @@ func testConfig() Config {
 func fakeVolume(t *testing.T, r Roots, id string) Volume {
 	t.Helper()
 	v := Volume{Version: 1, ID: uuid.NewString(), Name: "podman-" + id, Purpose: "podman", Format: "ext4"}
-	if err := writeJSONAtomic(filepath.Join(r.volumeDir(v.ID), "volume.json"), v); err != nil {
+	if err := writeJSONAtomic(filepath.Join(r.volumeDir(v.Name), "volume.json"), v); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(r.volumeDir(v.ID), "disk.ext4"), []byte("persistent data"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(r.volumeDir(v.Name), "disk.ext4"), []byte("persistent data"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	return v
@@ -130,6 +130,47 @@ func TestPersistentVolumeReuseAndMissingReference(t *testing.T) {
 	cfg.ContainerDisk = nil
 	if _, err := beginRun(context.Background(), &cfg); err == nil {
 		t.Fatal("missing volume reference silently recreated")
+	}
+}
+
+func TestDamagedVolumeDoesNotBlockOtherVolumes(t *testing.T) {
+	r := testRoots(t)
+	broken := fakeVolume(t, r, "broken")
+	if err := os.WriteFile(filepath.Join(r.volumeDir(broken.Name), "volume.json"), []byte("{bad"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Creation and attachment must not read unrelated metadata.
+	good, err := CreateVolume(context.Background(), "good")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := testConfig()
+	cfg.RunMode, cfg.VolumeName = ModeContainer, good.Name
+	l, err := beginRun(context.Background(), &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.close()
+	views, err := ListVolumes()
+	if err != nil || len(views) != 2 {
+		t.Fatal(views, err)
+	}
+	if views[0].Name != "good" || !views[0].InUse || views[0].Error != "" || views[1].Error == "" {
+		t.Fatalf("%+v", views)
+	}
+	if err := RemoveVolume(good.Name); !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Fatal("active volume deletion", err)
+	}
+	l.close()
+	if err := RemoveVolume(good.Name); err != nil {
+		t.Fatal(err)
+	}
+	// Broken metadata must neither authorize replacement nor prevent explicit deletion.
+	if _, err := CreateVolume(context.Background(), broken.Name); err == nil {
+		t.Fatal("replaced a broken volume")
+	}
+	if err := RemoveVolume(broken.Name); err != nil {
+		t.Fatal(err)
 	}
 }
 func TestPrunePreservesActiveForeignAndLegacy(t *testing.T) {

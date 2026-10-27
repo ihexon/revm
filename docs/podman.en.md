@@ -76,7 +76,7 @@ Each launch requires `--volume NAME` or `--container-disk PATH`, never both.
 Create a named volume with `revm volume create NAME`. Its disk lives at:
 
 ~~~text
-${XDG_DATA_HOME:-~/.local/share}/revm/volumes/<volume-id>/disk.ext4
+${XDG_DATA_HOME:-~/.local/share}/revm/volumes/<volume-name>/disk.ext4
 ~~~
 
 Use a persistent path:

@@ -9,7 +9,6 @@ import (
 	"linuxvm/pkg/execution"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -93,9 +92,9 @@ func (r Roots) sessionDir(id string) string { return filepath.Join(r.State, "ses
 func (r Roots) sessionLock(id string) string {
 	return filepath.Join(r.State, "locks", "session-"+id+".lock")
 }
-func (r Roots) volumeDir(id string) string { return filepath.Join(r.Data, "volumes", id) }
-func (r Roots) volumeLock(id string) string {
-	return filepath.Join(r.Data, "locks", "volume-"+id+".lock")
+func (r Roots) volumeDir(name string) string { return filepath.Join(r.Data, "volumes", name) }
+func (r Roots) volumeLock(name string) string {
+	return filepath.Join(r.Data, "locks", "volume-"+name+".lock")
 }
 
 // Closing, rather than explicitly unlocking, retains the lock while an
@@ -237,39 +236,18 @@ func loadRun(r Roots, s Session) (RunRecord, error) {
 	}
 	return rec, err
 }
-func loadVolume(r Roots, id string) (Volume, error) {
+func loadVolume(r Roots, name string) (Volume, error) {
 	var v Volume
-	if _, err := uuid.Parse(id); err != nil {
-		return v, fmt.Errorf("invalid volume ID: %s", id)
+	if err := validateSessionID(name); err != nil {
+		return v, err
 	}
-	if err := readJSON(filepath.Join(r.volumeDir(id), "volume.json"), &v); err != nil {
-		return v, fmt.Errorf("volume %s missing or unreadable (data will not be recreated): %w", id, err)
+	if err := readJSON(filepath.Join(r.volumeDir(name), "volume.json"), &v); err != nil {
+		return v, fmt.Errorf("volume %q missing or unreadable (data will not be recreated): %w", name, err)
 	}
-	if v.Version != 1 || v.ID != id || v.Format != "ext4" {
-		return v, fmt.Errorf("unsupported volume metadata: %s", id)
+	if _, err := uuid.Parse(v.ID); err != nil || v.Version != 1 || v.Name != name || v.Format != "ext4" {
+		return v, fmt.Errorf("unsupported volume metadata: %s", name)
 	}
 	return v, nil
-}
-func volumes(r Roots) ([]Volume, error) {
-	entries, err := os.ReadDir(filepath.Join(r.Data, "volumes"))
-	if os.IsNotExist(err) {
-		return []Volume{}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	result := []Volume{}
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		v, err := loadVolume(r, e.Name())
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, v)
-	}
-	return result, nil
 }
 func beginRun(ctx context.Context, cfg *Config) (lease *sessionRun, retErr error) {
 	r, err := ResolveRoots()
@@ -311,27 +289,24 @@ func beginRun(ctx context.Context, cfg *Config) (lease *sessionRun, retErr error
 	original := *cfg
 	s.VolumeID = ""
 	if cfg.VolumeName != "" {
-		catalog, err := acquireLock(filepath.Join(r.Data, "locks", "catalog.lock"))
-		if err != nil {
+		if err := validateSessionID(cfg.VolumeName); err != nil {
 			return nil, err
 		}
-		v, err := findVolume(r, cfg.VolumeName)
-		if err != nil {
-			catalog.Close()
-			return nil, err
-		}
-		if _, err := os.Stat(filepath.Join(r.volumeDir(v.ID), "disk.ext4")); err != nil {
-			catalog.Close()
-			return nil, fmt.Errorf("volume disk missing (will not recreate): %w", err)
-		}
-		s.VolumeID = v.ID
-		lock, err := acquireLock(r.volumeLock(v.ID))
-		catalog.Close()
+		lock, err := acquireLock(r.volumeLock(cfg.VolumeName))
 		if err != nil {
 			return nil, err
 		}
 		l.files = append(l.files, lock)
-		cfg.ContainerDisk = &ContainerDiskSpec{Path: filepath.Join(r.volumeDir(v.ID), "disk.ext4")}
+		v, err := loadVolume(r, cfg.VolumeName)
+		if err != nil {
+			return nil, err
+		}
+		path := filepath.Join(r.volumeDir(v.Name), "disk.ext4")
+		if _, err := os.Stat(path); err != nil {
+			return nil, fmt.Errorf("volume disk missing (will not recreate): %w", err)
+		}
+		s.VolumeID = v.ID
+		cfg.ContainerDisk = &ContainerDiskSpec{Path: path}
 	}
 	// External disk ownership never transfers to a session. A stable path lock
 	// prevents two VMMs writing one disk, even across different state roots.

@@ -7,7 +7,7 @@ revm uses XDG paths on both Linux and macOS:
 | Runtime sockets | `$XDG_RUNTIME_DIR/revm/<instance>`; private `/tmp/revm-<uid>` fallback | instance exit, `cache prune` |
 | Private writable rootfs | `${XDG_CACHE_HOME:-~/.cache}/revm/instances/<instance>` | instance exit, `cache prune` |
 | Session config, results and logs | `${XDG_STATE_HOME:-~/.local/state}/revm/sessions/<id>` | `rm` |
-| Persistent volumes | `${XDG_DATA_HOME:-~/.local/share}/revm/volumes/<uuid>` | `volume rm NAME` |
+| Persistent volumes | `${XDG_DATA_HOME:-~/.local/share}/revm/volumes/<name>` | `volume rm NAME` |
 
 Roots must be absolute and must not overlap. Long runtime paths use the short
 fallback so Unix sockets fit on macOS. Resource directories are private. Each
@@ -25,6 +25,11 @@ logical capacity and host-allocated space. `volume ls --json` reports `path`,
 Allocated space is the host file's allocated blocks, not guest filesystem usage
 or reclaimable space (shared/cloned blocks may still be counted). `volume rm NAME`
 deletes an unused volume. Deleting a session preserves all volumes.
+
+Each volume is stored under its name. A damaged volume is listed with an error
+and does not block other volumes; use `volume rm NAME` to explicitly delete it.
+Earlier UUID-based volume directories are not converted automatically. Their
+disk files remain usable through `--container-disk PATH`.
 
 Omit `--id` to remove session records after successful execution and cleanup.
 Failures, interruptions and crashes retain logs and results until `rm`. Supply

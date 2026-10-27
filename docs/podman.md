@@ -77,7 +77,7 @@ revm podman 只挂载显式指定的 `--mount`，不会自动共享宿主 home�
 必须显式选择 `--volume NAME` 或 `--container-disk PATH`，两者不能同时使用。`volume create NAME` 创建命名卷，其磁盘位于：
 
 ~~~text
-${XDG_DATA_HOME:-~/.local/share}/revm/volumes/<volume-id>/disk.ext4
+${XDG_DATA_HOME:-~/.local/share}/revm/volumes/<volume-name>/disk.ext4
 ~~~
 
 使用持久化路径：

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
@@ -26,20 +27,31 @@ func ListVolumes() ([]VolumeView, error) {
 	if err != nil {
 		return nil, err
 	}
-	list, err := volumes(r)
-	if err != nil {
+	entries, err := os.ReadDir(filepath.Join(r.Data, "volumes"))
+	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
-	views := make([]VolumeView, 0, len(list))
-	for _, v := range list {
-		view := VolumeView{Volume: v, Path: filepath.Join(r.volumeDir(v.ID), "disk.ext4")}
+	views := []VolumeView{}
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		name := entry.Name()
+		view := VolumeView{Volume: Volume{Name: name}, Path: filepath.Join(r.volumeDir(name), "disk.ext4")}
+		v, err := loadVolume(r, name)
+		if err != nil {
+			view.Error = err.Error()
+			views = append(views, view)
+			continue
+		}
+		view.Volume = v
 		var stat unix.Stat_t
 		statErr := unix.Stat(view.Path, &stat)
 		if statErr == nil {
 			allocated := stat.Blocks * 512
 			view.SizeBytes, view.AllocatedBytes = &stat.Size, &allocated
 		}
-		active, lockErr := activeLock(r.volumeLock(v.ID))
+		active, lockErr := activeLock(r.volumeLock(name))
 		diskLock, diskErr := lockDisk(view.Path)
 		if diskLock != nil {
 			diskLock.Close()
@@ -65,19 +77,15 @@ func CreateVolume(ctx context.Context, name string) (Volume, error) {
 	if err != nil {
 		return Volume{}, err
 	}
-	catalog, err := acquireLock(filepath.Join(r.Data, "locks", "catalog.lock"))
+	lock, err := acquireLock(r.volumeLock(name))
 	if err != nil {
 		return Volume{}, err
 	}
-	defer catalog.Close()
-	list, err := volumes(r)
-	if err != nil {
+	defer lock.Close()
+	if _, err := os.Lstat(r.volumeDir(name)); err == nil {
+		return Volume{}, fmt.Errorf("volume %q already exists", name)
+	} else if !os.IsNotExist(err) {
 		return Volume{}, err
-	}
-	for _, v := range list {
-		if v.Name == name {
-			return Volume{}, fmt.Errorf("volume %q already exists", name)
-		}
 	}
 	v := Volume{Version: 1, ID: uuid.NewString(), Name: name, Purpose: "podman", Format: "ext4"}
 	base := filepath.Join(r.Data, "volumes")
@@ -99,54 +107,34 @@ func CreateVolume(ctx context.Context, name string) (Volume, error) {
 	if err = writeJSONAtomic(filepath.Join(temp, "volume.json"), v); err != nil {
 		return v, err
 	}
-	if err = os.Rename(temp, r.volumeDir(v.ID)); err != nil {
+	if err = os.Rename(temp, r.volumeDir(name)); err != nil {
 		return v, err
 	}
 	return v, syncDir(base)
 }
-func findVolume(r Roots, name string) (Volume, error) {
-	list, err := volumes(r)
-	if err != nil {
-		return Volume{}, err
-	}
-	for _, v := range list {
-		if v.Name == name {
-			return v, nil
-		}
-	}
-	return Volume{}, fmt.Errorf("volume %q not found; create it with revm volume create", name)
-}
 func RemoveVolume(name string) error {
+	if err := validateSessionID(name); err != nil {
+		return err
+	}
 	r, err := ResolveRoots()
 	if err != nil {
 		return err
 	}
-	catalog, err := acquireLock(filepath.Join(r.Data, "locks", "catalog.lock"))
+	lock, err := acquireLock(r.volumeLock(name))
 	if err != nil {
 		return err
 	}
-	defer catalog.Close()
-	list, err := volumes(r)
+	defer lock.Close()
+	path := r.volumeDir(name)
+	if _, err := os.Lstat(path); err != nil {
+		return fmt.Errorf("volume %q: %w", name, err)
+	}
+	diskLock, err := lockDisk(filepath.Join(path, "disk.ext4"))
 	if err != nil {
 		return err
 	}
-	for _, v := range list {
-		if v.Name != name {
-			continue
-		}
-		lock, err := acquireLock(r.volumeLock(v.ID))
-		if err != nil {
-			return err
-		}
-		defer lock.Close()
-		diskLock, err := lockDisk(filepath.Join(r.volumeDir(v.ID), "disk.ext4"))
-		if err != nil {
-			return err
-		}
-		defer diskLock.Close()
-		return os.RemoveAll(r.volumeDir(v.ID))
-	}
-	return fmt.Errorf("volume %q not found", name)
+	defer diskLock.Close()
+	return os.RemoveAll(path)
 }
 func lockDisk(path string) (*os.File, error) {
 	canonical, err := canonicalPath(path)

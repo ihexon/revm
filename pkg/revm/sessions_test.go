@@ -89,7 +89,7 @@ func TestRemoveSessionPreservesExternalData(t *testing.T) {
 	if err := RemoveSession(cfg.SessionID); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []string{external, filepath.Join(r.volumeDir(v.ID), "disk.ext4")} {
+	for _, p := range []string{external, filepath.Join(r.volumeDir(v.Name), "disk.ext4")} {
 		if _, err := os.Stat(p); err != nil {
 			t.Fatal("persistent data removed", p)
 		}
@@ -149,7 +149,7 @@ func TestBrokenSessionCanBeListedAndRemoved(t *testing.T) {
 	if err := RemoveSession("broken"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(r.volumeDir(volume.ID), "disk.ext4")); err != nil {
+	if _, err := os.Stat(filepath.Join(r.volumeDir(volume.Name), "disk.ext4")); err != nil {
 		t.Fatal("removed persistent volume", err)
 	}
 }
@@ -317,7 +317,7 @@ func TestInspectEndpointsAndVolumeUsage(t *testing.T) {
 	cfg := testConfig()
 	cfg.RunMode = ModeContainer
 	volume := fakeVolume(t, r, cfg.SessionID)
-	disk := filepath.Join(r.volumeDir(volume.ID), "disk.ext4")
+	disk := filepath.Join(r.volumeDir(volume.Name), "disk.ext4")
 	if err := os.Truncate(disk, 8*1024*1024); err != nil {
 		t.Fatal(err)
 	}
