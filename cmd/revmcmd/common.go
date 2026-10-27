@@ -81,7 +81,6 @@ func newRunCommand() *cli.Command {
 			&cli.StringFlag{Name: define.FlagWorkDir, Usage: "absolute working directory inside the guest", Value: "/"},
 			&cli.StringFlag{Name: define.FlagVNetworkType, Usage: "network mode: gvisor supports port forwarding; tsi uses host socket connections", Value: string(define.GVISOR)},
 			&cli.StringFlag{Name: define.FlagManageAPIFile, Usage: "custom Unix socket path for the host-side VM management API; defaults to the current instance runtime directory"},
-			&cli.StringFlag{Name: define.FlagReportEvents, Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888)"},
 			sessionFlag(false),
 			logLevelFlag(),
 		},
@@ -109,7 +108,6 @@ func newPodmanCommand() *cli.Command {
 			&cli.StringFlag{Name: define.FlagContainerDisk, Usage: "persistent ext4 raw disk image for container storage (format: <path>[,version=<string>]); auto-created if missing; existing disks are inspected and never replaced automatically; mutually exclusive with --volume"},
 			&cli.StringFlag{Name: define.FlagPodmanProxyAPIFile, Usage: "custom Unix socket path for the host-side Podman API proxy; defaults to the current instance runtime directory"},
 			&cli.StringFlag{Name: define.FlagManageAPIFile, Usage: "custom Unix socket path for the host-side VM management API; defaults to the current instance runtime directory"},
-			&cli.StringFlag{Name: define.FlagReportEvents, Usage: "HTTP endpoint to receive VM lifecycle events (e.g. unix:///var/run/events.sock or tcp://192.168.1.252:8888)"},
 			sessionFlag(false),
 			logLevelFlag(),
 		},
@@ -207,7 +205,6 @@ func parseConfig(c *cli.Command, mode revm.RunMode) (*revm.Config, error) {
 	cfg.VolumeName = c.String("volume")
 	cfg.Mounts = c.StringSlice(define.FlagMount)
 	cfg.ManageAPIFile, cfg.PodmanProxyAPIFile = c.String(define.FlagManageAPIFile), c.String(define.FlagPodmanProxyAPIFile)
-	cfg.ReportURL = c.String(define.FlagReportEvents)
 	cfg.PortList = c.Bool(define.FlagListPort)
 	var err error
 	if cfg.Disks, err = revm.ParseRawDiskSpecs(c.StringSlice(define.FlagRawDisk)); err != nil {

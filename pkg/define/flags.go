@@ -14,7 +14,6 @@ const (
 	FlagContainerDisk      = "container-disk"
 	FlagPodmanProxyAPIFile = "podman-api"
 	FlagManageAPIFile      = "manage-api"
-	FlagReportEvents       = "report-events"
 	FlagPortExport         = "port-export"
 	FlagPortUnexport       = "port-unexport"
 	FlagListPort           = "list-port"

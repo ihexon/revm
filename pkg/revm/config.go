@@ -58,7 +58,6 @@ type Config struct {
 	ContainerDisk      *ContainerDiskSpec   `json:"containerDisk,omitempty"`
 	PodmanProxyAPIFile string               `json:"podmanProxyAPIFile,omitempty"`
 	ManageAPIFile      string               `json:"manageAPIFile,omitempty"`
-	ReportURL          string               `json:"reportURL,omitempty"`
 	Proxy              bool                 `json:"proxy,omitempty"`
 	LogLevel           string               `json:"logLevel,omitempty"` // default "info"
 	PortList           bool                 `json:"portList,omitempty"`

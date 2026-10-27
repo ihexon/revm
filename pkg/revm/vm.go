@@ -15,7 +15,6 @@ import (
 	"linuxvm/pkg/podmanproxy"
 	"linuxvm/pkg/service/ignition"
 	"linuxvm/pkg/service/management"
-	"net/http"
 	"os"
 	goruntime "runtime"
 	"sync"
@@ -30,11 +29,6 @@ const defaultForceStopTimeout = 3 * time.Second
 
 // VM owns one prepared virtual machine session.
 //
-// It deliberately separates three concerns:
-//   - runtime: immutable machine view plus backend lifecycle operations.
-//   - workspace: host-side session files and their cleanup.
-//   - observability: logs and event reporting.
-//
 // Release must always be called to release resources.
 type VM struct {
 	cfg            *Config
@@ -42,12 +36,11 @@ type VM struct {
 	commandContext context.Context
 	stopRequested  context.CancelCauseFunc
 
-	runtime       vmRuntime
-	workspace     vmWorkspace
-	observability vmObservability
+	runtime   vmRuntime
+	workspace vmWorkspace
+	runLog    *os.File
 
 	shutdownRequested atomic.Bool
-	seq               atomic.Uint64
 	resultMu          sync.Mutex
 	result            *execution.Result
 }
@@ -60,11 +53,6 @@ type vmRuntime struct {
 
 type vmWorkspace struct {
 	dir string
-}
-
-type vmObservability struct {
-	events eventDispatcher
-	runLog *os.File
 }
 
 // newProvider creates a libkrun Provider for the current platform.
@@ -85,7 +73,7 @@ func newProvider(ctx context.Context, mc *define.MachineSpec, locks ...*os.File)
 	return p, nil
 }
 
-// Release frees host-side resources such as the backend, file locks, logs, and event reporters.
+// Release frees host-side resources such as the backend, file locks, and logs.
 // It must always be called, even if Run has not been called. Release is idempotent.
 func (vm *VM) Release(prior ...error) error {
 	retErr := errors.Join(prior...)
@@ -112,12 +100,11 @@ func (vm *VM) Release(prior ...error) error {
 		}
 	}
 
-	if vm.observability.runLog != nil {
-		releaseRunLog(vm.observability.runLog)
-		vm.observability.runLog = nil
+	if vm.runLog != nil {
+		releaseRunLog(vm.runLog)
+		vm.runLog = nil
 	}
 
-	vm.observability.events.close()
 	if vm.lease != nil {
 		retErr = vm.lease.close(retErr)
 		vm.lease = nil
@@ -172,13 +159,7 @@ func buildVM(ctx context.Context, cfg *Config) (retVM *VM, retErr error) {
 		workspace: vmWorkspace{
 			dir: lease.record.RuntimeDir,
 		},
-		observability: vmObservability{
-			runLog: logFile,
-		},
-	}
-
-	if reporter := newEventReporter(normalizedCfg.ReportURL); reporter != nil {
-		vm.observability.events.start(reporter)
+		runLog: logFile,
 	}
 
 	defer func() {
@@ -295,7 +276,8 @@ func (vm *VM) Run(ctx context.Context) error {
 		forceVMRun(cause)
 	}
 
-	networkReady, signalNetworkReady := vm.newNetworkReadySignal()
+	networkReady := make(chan struct{})
+	signalNetworkReady := sync.OnceFunc(func() { close(networkReady) })
 
 	var g errgroup.Group
 
@@ -305,7 +287,7 @@ func (vm *VM) Run(ctx context.Context) error {
 	})
 	vm.startHostService(&g, hostServicesCtx, forceVMRunWithStop, vm.startMachineManagementAPI)
 
-	if err := vm.startModeServices(&g, hostServicesCtx, forceVMRunWithStop, networkReady); err != nil {
+	if err := vm.startModeServices(&g, hostServicesCtx, forceVMRunWithStop); err != nil {
 		return err
 	}
 
@@ -342,9 +324,7 @@ func (vm *VM) Run(ctx context.Context) error {
 			return err
 		}
 
-		reason := fmt.Errorf("boot virtual machine")
-		logrus.Info(reason.Error())
-		vm.emit(EventVirtualMachineBooting, reason.Error())
+		logrus.Info("boot virtual machine")
 
 		// libkrun_vmm_run is a blocking C call. The backend intentionally owns
 		// that lifetime and returns only after the guest exits.
@@ -397,7 +377,7 @@ func (vm *VM) forceVirtualMachine() error {
 	return nil
 }
 
-func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, forceVMRun func(error), networkReady <-chan struct{}) error {
+func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, forceVMRun func(error)) error {
 	switch vm.runtime.spec.RunMode {
 	case define.RootFsMode.String():
 		g.Go(func() error {
@@ -432,30 +412,9 @@ func (vm *VM) startModeServices(g *errgroup.Group, ctx context.Context, forceVMR
 			}
 			return podmanproxy.ServeHost(ctx, socket.Path, transport.Path)
 		})
-		go func() {
-			if err := waitForNetworkReady(ctx, networkReady); err != nil {
-				return
-			}
-			if err := vm.reportPodmanReady(ctx); err != nil {
-				logrus.Warnf("podman API readiness check failed: %v", err)
-			}
-		}()
-
 		return nil
 	default:
 		return fmt.Errorf("unsupported run mode: %s", vm.runtime.spec.RunMode)
-	}
-}
-
-func (vm *VM) newNetworkReadySignal() (<-chan struct{}, func()) {
-	networkReady := make(chan struct{})
-	var once sync.Once
-
-	return networkReady, func() {
-		once.Do(func() {
-			close(networkReady)
-			vm.emit(EventNetworkReady, "host network ready")
-		})
 	}
 }
 
@@ -523,54 +482,6 @@ func (vm *VM) RequestShutdown(ctx context.Context) error {
 	return nil
 }
 
-func (vm *VM) reportPodmanReady(ctx context.Context) error {
-	if err := vm.waitPodmanReady(ctx); err != nil {
-		return err
-	}
-
-	msg := fmt.Sprintf("podman API proxy ready on %s", vm.runtime.spec.PodmanInfo.HostPodmanProxyAddr)
-	logrus.Info(msg)
-	vm.emit(EventPodmanReady, msg)
-	return nil
-}
-
-func (vm *VM) waitPodmanReady(ctx context.Context) error {
-	addr, err := network.ParseUnixAddr(vm.runtime.spec.PodmanInfo.HostPodmanProxyAddr)
-	if err != nil {
-		return fmt.Errorf("parse podman proxy address: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, define.DefaultProbeTimeout)
-	defer cancel()
-
-	client := network.NewUnixClient(addr.Path, network.WithTimeout(define.DefaultTimeTicker))
-	defer client.Close()
-
-	ticker := time.NewTicker(define.DefaultTimeTicker)
-	defer ticker.Stop()
-
-	for {
-		if pingPodman(ctx, client) {
-			return nil
-		}
-
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("podman API not ready: %w", ctx.Err())
-		case <-ticker.C:
-		}
-	}
-}
-
-func pingPodman(ctx context.Context, client *network.Client) bool {
-	_, status, err := client.Get("/_ping").DoAndRead(ctx)
-	if err != nil {
-		return false
-	}
-
-	return status >= http.StatusOK && status < http.StatusMultipleChoices
-}
-
 func (vm *VM) stopBudget(ctx context.Context) time.Duration {
 	if c := execution.ControllerFrom(ctx); c != nil {
 		if cause := c.Cause(); cause != nil {
@@ -578,17 +489,4 @@ func (vm *VM) stopBudget(ctx context.Context) time.Duration {
 		}
 	}
 	return vm.cfg.StopTimeout
-}
-
-func (vm *VM) emitStopping(reason string) {
-	logrus.Info(reason)
-	vm.emit(EventStopping, reason)
-}
-
-// emit sending events with option msg
-func (vm *VM) emit(kind EventKind, msg string) {
-	if vm == nil || vm.cfg == nil {
-		return
-	}
-	vm.observability.events.emit(vm.cfg.SessionID, vm.cfg.RunMode, kind, msg, vm.seq.Add(1))
 }

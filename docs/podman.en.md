@@ -141,7 +141,6 @@ revm podman --volume data --id dev \
 | --mount | Add VirtIO-FS shares; repeatable. |
 | --podman-api | Custom Podman API socket. |
 | --manage-api | Custom VM management socket. |
-| --report-events | HTTP endpoint for lifecycle events. |
 | --log-level | Set the log level. Logs always go to the session directory. |
 
 revm podman has no --network option; it always uses gvisor.

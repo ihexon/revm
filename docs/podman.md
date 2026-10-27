@@ -142,7 +142,6 @@ revm podman --volume data --id dev \
 | --mount | 添加 VirtIO-FS 共享目录，可重复。 |
 | --podman-api | 自定义 Podman API socket。 |
 | --manage-api | 自定义 VM 管理 socket。 |
-| --report-events | 接收生命周期事件的 HTTP endpoint。 |
 | --log-level | 设置日志等级。日志始终写入 session 目录。 |
 
 revm podman 没有 --network 选项，始终使用 gvisor。

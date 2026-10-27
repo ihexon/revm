@@ -122,7 +122,6 @@ stdin 按流传输，不等待输入全部结束。非 PTY 模式分别保留 st
 --workdir
 --network
 --manage-api
---report-events
 --log-level
 ~~~
 
