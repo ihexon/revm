@@ -17,10 +17,11 @@ func (v *machineBuilder) configureNetwork() error {
 	if v.Network == define.NetworkTSI {
 		data, err := os.ReadFile("/etc/resolv.conf")
 		if err != nil {
-			return fmt.Errorf("read host DNS configuration for TSI: %w", err)
+			logrus.Warnf("read host DNS configuration for TSI: %v; continuing without host DNS", err)
+			data = nil
 		}
-		v.ResolvConf, err = tsiResolvConf(string(data))
-		return err
+		v.ResolvConf = tsiResolvConf(string(data))
+		return nil
 	}
 	logrus.Infof("Configuring gvisor-tap-vsock network mode")
 	pathMgr := v.pathMgr
@@ -43,21 +44,14 @@ func (v *machineBuilder) configureNetwork() error {
 
 // The pinned libkrun misencodes IPv6 scope IDs. Keep usable host DNS servers
 // rather than passing scoped addresses that can abort guest resolver startup.
-func tsiResolvConf(config string) (string, error) {
+func tsiResolvConf(config string) string {
 	var lines []string
-	servers := 0
 	for _, line := range strings.Split(config, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) >= 2 && fields[0] == "nameserver" {
-			if strings.Contains(fields[1], "%") {
-				continue
-			}
-			servers++
+		if len(fields) >= 2 && fields[0] == "nameserver" && strings.Contains(fields[1], "%") {
+			continue
 		}
 		lines = append(lines, line)
 	}
-	if servers == 0 {
-		return "", fmt.Errorf("TSI requires a nameserver without an IPv6 scope in host /etc/resolv.conf")
-	}
-	return strings.Join(lines, "\n"), nil
+	return strings.Join(lines, "\n")
 }

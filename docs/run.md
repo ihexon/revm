@@ -42,7 +42,7 @@ revm ports demo  # 在另一终端查询
 `--network` 可选 `gvisor`（默认）或 `tsi`：
 
 - `gvisor` 使用虚拟网卡，通过 `--port-export` 转发端口，适合普通运行和 Podman。
-- `tsi` 将 IPv4/IPv6 TCP 和出站 UDP socket 接到宿主网络；TCP 可通过 `127.0.0.1` / `::1` 访问宿主服务。启动时复制宿主 `/etc/resolv.conf`，跳过当前 libkrun 无法正确传递的带 `%接口` 的 IPv6 DNS 地址；至少需要一个不带 scope 的 DNS 地址。Unix socket 仍留在 guest 内。
+- `tsi` 将 IPv4/IPv6 TCP 和出站 UDP socket 接到宿主网络；TCP 可通过 `127.0.0.1` / `::1` 访问宿主服务。启动时复制宿主 `/etc/resolv.conf`，跳过当前 libkrun 无法正确传递的带 `%接口` 的 IPv6 DNS 地址。没有可用 DNS 或无法读取宿主 DNS 配置时仍可启动；需要名称解析时，在 guest `/etc/resolv.conf` 中配置可达的 DNS 地址。Unix socket 仍留在 guest 内。
 
 ```sh
 # 直接监听宿主 TCP 端口，无需 --port-export

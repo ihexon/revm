@@ -40,7 +40,7 @@ revm ports demo  # In another terminal
 `--network` accepts `gvisor` (default) or `tsi`:
 
 - `gvisor` uses a virtual interface and `--port-export` forwarding, for ordinary runs and Podman.
-- `tsi` connects IPv4/IPv6 TCP and outbound UDP sockets through the host network. TCP can reach host services through `127.0.0.1` / `::1`. The host's `/etc/resolv.conf` is copied at boot, excluding scoped IPv6 DNS addresses (`%interface`) that the pinned libkrun cannot forward correctly; at least one unscoped DNS address is required. Unix sockets stay inside the guest.
+- `tsi` connects IPv4/IPv6 TCP and outbound UDP sockets through the host network. TCP can reach host services through `127.0.0.1` / `::1`. The host's `/etc/resolv.conf` is copied at boot, excluding scoped IPv6 DNS addresses (`%interface`) that the pinned libkrun cannot forward correctly. The VM still starts if no usable DNS server is configured or the host DNS configuration cannot be read; configure a reachable DNS server in the guest `/etc/resolv.conf` when name resolution is needed. Unix sockets stay inside the guest.
 
 ```sh
 # Listen directly on a host TCP port, without --port-export
