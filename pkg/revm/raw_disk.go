@@ -31,11 +31,6 @@ type ContainerDiskSpec struct {
 	Path string `json:"path,omitempty"`
 }
 
-var (
-	newRawDiskManager      = func() (disk.Manager, error) { return disk.NewBlkManager() }
-	extractEmbeddedRAWDisk = static_resources.ExtractEmbeddedRawDisk
-)
-
 func ParseRawDiskSpecs(specs []string) ([]RawDiskSpec, error) {
 	parsed := make([]RawDiskSpec, 0, len(specs))
 	for _, spec := range specs {
@@ -259,18 +254,13 @@ func createRAWDisk(ctx context.Context, spec RawDiskSpec) (define.BlockDeviceSpe
 
 	logrus.Infof("creating raw disk: path=%q uuid=%q mount=%q", spec.Path, diskUUID, resolveRawDiskMount(diskUUID, spec.MountTo))
 
-	diskMgr, err := newRawDiskManager()
-	if err != nil {
-		return define.BlockDeviceSpec{}, err
-	}
-
 	logrus.Infof("extracting embedded raw disk image: path=%q", spec.Path)
-	if err := extractEmbeddedRAWDisk(ctx, spec.Path); err != nil {
+	if err := static_resources.ExtractEmbeddedRawDisk(ctx, spec.Path); err != nil {
 		return define.BlockDeviceSpec{}, fmt.Errorf("extract embedded raw disk to %q: %w", spec.Path, err)
 	}
 
 	logrus.Infof("writing raw disk uuid: path=%q uuid=%q", spec.Path, diskUUID)
-	if err := diskMgr.NewUUID(ctx, diskUUID, spec.Path); err != nil {
+	if err := disk.SetUUID(spec.Path, diskUUID); err != nil {
 		return define.BlockDeviceSpec{}, fmt.Errorf("write uuid %q to raw disk %q: %w", diskUUID, spec.Path, err)
 	}
 
@@ -281,12 +271,7 @@ func createRAWDisk(ctx context.Context, spec RawDiskSpec) (define.BlockDeviceSpe
 }
 
 func inspectRAWDisk(ctx context.Context, rawDiskPath string, mountOverride string) (define.BlockDeviceSpec, error) {
-	diskMgr, err := newRawDiskManager()
-	if err != nil {
-		return define.BlockDeviceSpec{}, err
-	}
-
-	info, err := diskMgr.Inspect(ctx, rawDiskPath)
+	info, err := disk.Inspect(rawDiskPath)
 	if err != nil {
 		return define.BlockDeviceSpec{}, err
 	}

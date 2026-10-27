@@ -68,16 +68,6 @@ func guestLogTail(path string) string {
 	return strings.Join(lines[max(0, len(lines)-8):], "\n")
 }
 
-// StartCommandLogging configures logrus and opens the run log for CLI preflight work.
-func StartCommandLogging(cfg Config) (*os.File, error) {
-	return setupRunLogging(cfg)
-}
-
-// StopCommandLogging releases a log file opened by StartCommandLogging.
-func StopCommandLogging(file *os.File) {
-	releaseRunLog(file)
-}
-
 func setupRunLogging(cfg Config) (*os.File, error) {
 	if err := validateSessionID(cfg.SessionID); err != nil {
 		return nil, err
