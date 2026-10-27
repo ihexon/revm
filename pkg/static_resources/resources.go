@@ -1,12 +1,9 @@
 package static_resources
 
 import (
-	"bytes"
 	"context"
 	_ "embed"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	libarchive_go "linuxvm/pkg/libarchive"
 )
@@ -21,36 +18,11 @@ var RootfsBytes []byte
 var GuestAgentBytes []byte
 
 func ExtractEmbeddedRawDisk(ctx context.Context, targetPath string) error {
-	targetPath, err := filepath.Abs(filepath.Clean(targetPath))
-	if err != nil {
-		return err
-	}
-	baseDir, fileName := filepath.Split(targetPath)
-
-	if err = os.MkdirAll(baseDir, 0755); err != nil {
-		return err
-	}
-
-	return libarchive_go.NewArchiver().
-		SetReader(bytes.NewReader(BuiltinRawDiskBytes)).
-		SetFastRead(true).
-		SetSparse(true).
-		WithPattern("ext4.raw").
-		SetChdir(baseDir).
-		WithTransform("ext4.raw", fileName).
-		ModeX(ctx)
+	return libarchive_go.ExtractDisk(ctx, BuiltinRawDiskBytes, targetPath)
 }
 
 func ExtractBuiltinRootfs(ctx context.Context, dstDir string) error {
-	dstDir, err := filepath.Abs(filepath.Clean(dstDir))
-	if err != nil {
-		return err
-	}
-	if err = os.MkdirAll(dstDir, 0755); err != nil {
-		return err
-	}
-
-	return libarchive_go.NewArchiver().SetReader(bytes.NewReader(RootfsBytes)).SetChdir(dstDir).SetSparse(true).IncludeXattr().ModeX(ctx)
+	return libarchive_go.ExtractRootFS(ctx, RootfsBytes, dstDir)
 }
 
 func GuestAgent() ([]byte, error) {
