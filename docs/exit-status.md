@@ -32,4 +32,4 @@ draining. A downstream pipe closing while execution is active returns 141
 sync; applications own flushing their data. Joined error diagnostics are
 deduplicated onto one stderr line;
 human wording is not a parsing contract. Use exit status, `ls --json`, `inspect`,
-and `ctl --list-port --json` for automation.
+and `ports --json SESSION` for automation.

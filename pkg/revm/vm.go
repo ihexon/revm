@@ -111,11 +111,9 @@ func (vm *VM) Run(ctx context.Context) (*execution.Result, error) {
 		}()
 	}
 	start(func(ctx context.Context) error {
-		server, err := management.NewServer(vm)
-		if err != nil {
-			return err
-		}
-		return server.Start(ctx)
+		return management.Serve(ctx, newMachinePathManager(vm.spec.WorkspaceDir).GetVMCtlSocketFile(), func() {
+			vm.stop(&execution.Canceled{Signal: "SIGTERM"})
+		})
 	})
 	networkReady := make(chan struct{})
 	ready := sync.OnceFunc(func() { close(networkReady) })
@@ -172,9 +170,4 @@ func (vm *VM) Run(ctx context.Context) (*execution.Result, error) {
 	case <-ctx.Done():
 		return nil, context.Cause(ctx)
 	}
-}
-
-func (vm *VM) RequestStop(context.Context) error {
-	vm.stop(&execution.Canceled{Signal: "SIGTERM"})
-	return nil
 }

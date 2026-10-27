@@ -62,9 +62,12 @@ revm cache prune
 ## Port forwarding
 
 ```sh
-revm ctl --id dev --port-export 127.0.0.1:8080:8000
-revm ctl --id dev --list-port --json
-revm ctl --id dev --port-unexport 127.0.0.1:8080
+# Terminal 1
+revm run --id demo --port-export 8080:8000 -- nc -lk -p 8000 -e cat
+
+# Terminal 2
+revm ports --json demo
+printf 'hello\n' | nc -w 1 127.0.0.1 8080
 ```
 
 ## Completion and help

@@ -63,51 +63,6 @@ func ParsePortExportSpec(spec string) (define.PortForward, error) {
 	}, nil
 }
 
-func ParsePortUnexportSpecs(specs []string) ([]define.PortForward, error) {
-	forwards := make([]define.PortForward, 0, len(specs))
-	for _, spec := range specs {
-		if strings.TrimSpace(spec) == "" {
-			continue
-		}
-		forward, err := ParsePortUnexportSpec(spec)
-		if err != nil {
-			return nil, err
-		}
-		forwards = append(forwards, forward)
-	}
-	return forwards, nil
-}
-
-func ParsePortUnexportSpec(spec string) (define.PortForward, error) {
-	protocol, fields, err := splitPortSpec(spec)
-	if err != nil {
-		return define.PortForward{}, err
-	}
-	if len(fields) != 1 && len(fields) != 2 {
-		return define.PortForward{}, fmt.Errorf("invalid port unexport %q: use HOST_PORT or HOST_IP:HOST_PORT", spec)
-	}
-
-	hostIP := define.LocalHost
-	if len(fields) == 2 {
-		hostIP = fields[0]
-		fields = fields[1:]
-	}
-
-	hostPort, err := parseTCPPort(fields[0], "host port")
-	if err != nil {
-		return define.PortForward{}, fmt.Errorf("invalid port unexport %q: %w", spec, err)
-	}
-	if err := validateListenIP(hostIP); err != nil {
-		return define.PortForward{}, fmt.Errorf("invalid port unexport %q: %w", spec, err)
-	}
-
-	return define.PortForward{
-		Protocol: protocol,
-		HostIP:   hostIP,
-		HostPort: hostPort,
-	}, nil
-}
-
 func splitPortSpec(spec string) (string, []string, error) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
@@ -171,14 +126,10 @@ func portForwardLocal(forward define.PortForward) string {
 	return net.JoinHostPort(forward.HostIP, strconv.Itoa(int(forward.HostPort)))
 }
 
-func portForwardRemote(forward define.PortForward) string {
-	return net.JoinHostPort(forward.GuestIP, strconv.Itoa(int(forward.GuestPort)))
-}
-
 func validatePortForwardSet(forwards []define.PortForward) error {
 	seen := map[string]struct{}{}
 	for _, forward := range forwards {
-		if err := validatePortForward(forward, true); err != nil {
+		if err := validatePortForward(forward); err != nil {
 			return err
 		}
 		local := portForwardLocal(forward)
@@ -191,24 +142,7 @@ func validatePortForwardSet(forwards []define.PortForward) error {
 	return nil
 }
 
-func validatePortUpdateSet(forwards []define.PortForward, action string) error {
-	seen := map[string]struct{}{}
-	for _, forward := range forwards {
-		requireRemote := action == "export"
-		if err := validatePortForward(forward, requireRemote); err != nil {
-			return fmt.Errorf("port %s: %w", action, err)
-		}
-		local := portForwardLocal(forward)
-		key := forward.Protocol + "/" + local
-		if _, ok := seen[key]; ok {
-			return fmt.Errorf("duplicate port %s %s", action, local)
-		}
-		seen[key] = struct{}{}
-	}
-	return nil
-}
-
-func validatePortForward(forward define.PortForward, requireRemote bool) error {
+func validatePortForward(forward define.PortForward) error {
 	if !isPortForwardProtocol(forward.Protocol) {
 		return fmt.Errorf("unsupported protocol %q: only tcp is supported", forward.Protocol)
 	}
@@ -217,9 +151,6 @@ func validatePortForward(forward define.PortForward, requireRemote bool) error {
 	}
 	if forward.HostPort == 0 {
 		return fmt.Errorf("host port must be between 1 and 65535")
-	}
-	if !requireRemote {
-		return nil
 	}
 	if err := validateGuestIP(forward.GuestIP); err != nil {
 		return err

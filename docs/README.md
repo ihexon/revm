@@ -7,13 +7,13 @@ revm 在 libkrun VM 中执行 Linux 命令。所有命令和 PTY 共用 guest-co
 - [run：运行命令](run.md)
 - [podman：容器服务](podman.md)
 - [exec：在已有 VM 中运行新命令](exec.md)
-- [ctl：端口映射](ctl.md)
+- [ports：端口查询](ports.md)
 - [session 管理](sessions.md)
 - [资源所有权](resources.md)
 - [退出状态](exit-status.md)
 - [执行和信号协议](execution-protocol.md)
 
-`run`、`podman` 省略 `--id` 时临时运行，退出后清理记录；指定 `--id NAME` 时保留日志和结果。`exec`、`ctl` 需要正在运行的 session 名称。
+`run`、`podman` 省略 `--id` 时临时运行，成功后清理记录，失败时保留日志和结果；指定 `--id NAME` 时保留日志和结果。`exec`、`ports` 需要正在运行的 session 名称。
 
 持久卷独立管理：`volume create NAME` 创建，`podman --volume NAME` 使用，`volume rm NAME` 删除。session 不隐式创建或重新关联卷。`--container-disk PATH` 可直接使用外部磁盘。
 

@@ -26,7 +26,9 @@ func TestInvalidInvocations(t *testing.T) {
 		{"run", "--id", "test", "--memory", "1", "--", "true"},
 		{"run", "--id", "test", "--network", "bogus", "--", "true"},
 		{"run", "--id", "test", "--envs", "INVALID", "--", "true"},
-		{"ctl", "--id", "test"},
+		{"ctl", "--id", "test"}, {"ports"}, {"ports", "a", "b"},
+		{"run", "--port-export", "80", "--", "true"},
+		{"exec", "--id", "test", "--envs", "INVALID"},
 		{"volume", "unknown"}, {"cache", "unknown"}, {"ls", "unexpected"},
 		{"inspect"}, {"rm", "a", "b"}, {"stop", "--timeout=-1s", "test"},
 		{"wait", "../escape"}, {"logs", "../escape"},
@@ -84,7 +86,7 @@ func TestReleaseInterfaces(t *testing.T) {
 }
 
 func TestHelpDocumentsRequiredArgumentsAndSupportedShells(t *testing.T) {
-	for _, name := range []string{"inspect", "stop", "wait", "logs", "rm"} {
+	for _, name := range []string{"inspect", "stop", "wait", "logs", "rm", "ports"} {
 		app := NewApp("revm")
 		var out bytes.Buffer
 		app.Writer = &out
@@ -132,7 +134,7 @@ func TestResourceNameCompletion(t *testing.T) {
 		want string
 	}{
 		{[]string{"logs"}, "dev\n"}, {[]string{"logs", "--guest"}, "--guest\ndev\n"},
-		{[]string{"exec", "--id"}, "dev\n"}, {[]string{"ctl", "--id=d"}, "--id=dev\n"},
+		{[]string{"exec", "--id"}, "dev\n"}, {[]string{"ports"}, "dev\n"},
 		{[]string{"podman", "--volume"}, "data\n"}, {[]string{"volume", "rm"}, "data\n"},
 		{[]string{"run", "--tt"}, "--tty\n"},
 	} {

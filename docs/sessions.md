@@ -40,7 +40,7 @@ an automatically generated name, visible in `revm ls`. Use `inspect`, `logs` and
 `rm` with that name. `cache prune` preserves diagnostic records. `--id NAME`
 always retains records.
 
-`ctl --id dev --list-port --json` returns the current port mapping array.
+`revm ports --json dev` returns the current port mapping array.
 
 New sessions are published only after their initial records are complete.
 Incomplete or unreadable records appear as `broken` with an `error` in JSON;

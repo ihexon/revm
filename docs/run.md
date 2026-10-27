@@ -2,127 +2,41 @@
 
 [English](run.en.md)
 
-revm run 启动一个新的 session，使用程序内置的 Alpine rootfs，在 guest 内执行一条命令。它适合构建、测试、脚本、一次性 Linux 工具和需要隔离环境的本地任务。
+```sh
+revm run [选项] -- COMMAND [ARG...]
+revm run -- uname -a
+printf 'hello\n' | revm run -- cat
+revm run --cpus 2 --memory 1024 -- sh
+revm run --mount "$PWD:/work,ro" --workdir /work -- ls
+revm run --envs CHECK=value -- sh -c 'echo "$CHECK"'
+revm run --raw-disk "$HOME/data.ext4,mnt=/data" -- sh
+revm run --tty=never -- sh -c 'echo hello; exit 42'
+```
 
-## 语法
+`--mount` 只接受 `HOST:/GUEST[,ro]`，目标必须是绝对路径且不能重复。
+磁盘参数为 `PATH[,uuid=UUID][,mnt=/GUEST][,readonly=true][,directio=true][,sync=relaxed|full|none]`。
+磁盘不存在时自动创建，已有磁盘保留。应用负责刷盘。
 
-~~~text
-revm run [--id <session-id>] [options] -- <command> [args...]
-~~~
+```sh
+# 终端 1：保留 session 和日志
+revm run --id dev -- sh
 
-省略 `--id` 时临时运行，退出后清理记录；指定 `--id` 时保留日志和结果。-- 后面的参数原样组成 guest 命令；不应把宿主 shell 语法直接交给 revm，复杂逻辑请显式使用 sh -c。
+# 终端 2
+revm exec --id dev -- uname -a
+revm inspect dev
+revm logs --guest --tail 50 dev
+revm stop dev
+revm wait dev
+revm rm dev
+```
 
-~~~bash
-revm run --id shell -- sh -c 'uname -a; cat /etc/os-release'
-revm run --id build --mount "$PWD:/workspace" --workdir /workspace -- sh -c 'make test'
-~~~
+省略 `--id` 时，成功运行会清理记录；失败运行保留日志和结果。
+Ctrl-C 或 `revm stop` 立即结束 VM 进程。
 
-命令退出后，revm 请求 guest 关闭并退出。要保持 session 存活，请在 guest 中运行长期进程，或使用 revm podman。
+```sh
+revm run --id demo --port-export 8080:8000 -- nc -lk -p 8000 -e cat
+revm ports demo  # 在另一终端查询
+```
 
-## rootfs 策略
-
-VM rootfs 固定来自 release 内置的 Alpine 压缩包。它包括：
-
-- Alpine 基础用户空间和 apk 包管理器
-- guest-agent
-- Podman、containers 配置和容器网络工具
-- 网络、挂载、日志和生命周期所需工具
-
-run 不支持 --rootfs，也不支持替换、导入或导出 VM rootfs。需要其他发行版或自定义用户空间时，应启动 revm podman，再通过 Podman 运行对应镜像；这样 workload 不会改变 VM 控制面。
-
-## 资源和网络
-
-~~~bash
-revm run --id test --cpus 4 --memory 4096 -- sh -c './test.sh'
-revm run --id net --network gvisor -- sh
-revm run --id light --network tsi -- sh
-~~~
-
-选项：
-
-| 选项 | 说明 |
-| --- | --- |
-| --cpus | vCPU 数量。默认 min(主机 CPU 数量, 4)；最大 32。 |
-| --memory | 内存 MB。默认可用内存的四分之一，限制在 512–2048 MB；最小 512。 |
-| --network | gvisor 或 tsi，默认 gvisor。 |
-| --workdir | guest 命令的工作目录，默认 /。 |
-| --envs KEY=VALUE | 传入 guest 命令的环境变量，可重复。 |
-| --system-proxy | 读取 macOS 系统 HTTP/HTTPS 代理并传入 guest。gvisor 下会改写 127.0.0.1 代理地址。 |
-
-gvisor 使用 gvisor-tap-vsock，提供 DNS、NAT、TCP/UDP 和端口转发。tsi 使用 libkrun 的透明 socket interception，启动路径更轻，但不能使用 ctl 的手动端口映射。
-
-## VirtIO-FS 目录
-
-使用 --mount 将宿主目录共享到 guest：
-
-~~~text
---mount /host/path:/guest/path[,ro]
-~~~
-
-~~~bash
-revm run --id files \
-  --mount "$PWD:/workspace" \
-  --mount "$HOME/.cache:/host-cache,ro" \
-  --workdir /workspace \
-  -- sh
-~~~
-
-共享目录中的已有文件在 guest 中保留宿主机 UID、GID 和权限。revm 不递归预处理外部共享目录。
-
-如果 guest 需要读写目录，不要加 ro。mount 源路径会被解析为绝对路径，且必须位于用户 home 或 /tmp 下。
-
-## 原始磁盘
-
---raw-disk 将 raw/ext4 磁盘挂载到 guest。镜像不存在时自动创建。
-
-~~~text
---raw-disk <path>[,uuid=<uuid>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=none|relaxed|full]
-~~~
-
-~~~bash
-revm run --id disk \
-  --raw-disk "$HOME/.cache/revm/data.ext4,mnt=/data" \
-  -- sh -c 'df -h /data'
-~~~
-
-说明：
-
-- mnt 必须是绝对 guest 路径；省略时使用磁盘自身的默认挂载目标。
-- readonly、directio 接受 true 或 false。
-- sync 支持 none、relaxed、full。
-- uuid 只在新建镜像时用于指定文件系统 UUID；已存在镜像不会强制改 UUID。
-
-## 终端、流和退出状态
-
-stdin 按流传输，不等待输入全部结束。非 PTY 模式分别保留 stdout、stderr；guest 退出码直接返回。`--tty=auto` 在前台且 stdin/stdout 都是终端时分配 PTY；`always`、`never` 可覆盖。PTY 的 stdin EOF 不注入 Ctrl-D。
-
-## 日志与资源
-
-每次运行使用独立 rootfs 和临时 socket 目录。日志和结果位于 `${XDG_STATE_HOME:-~/.local/state}/revm/sessions/<id>/runs/<instance>/`。使用 `revm logs ID`、`revm logs --guest -f ID` 读取日志，`revm inspect ID` 查看路径和结果。
-
-`--manage-api` 可导出连接符号链接，退出时只清理仍指向本实例的链接，不覆盖已有文件。未指定 `--id` 时退出后删除 session 记录和日志；外部磁盘、volume、bind mount 数据保留。详见 [资源所有权](resources.md) 和 [session 命令](sessions.md)。
-
-## 停止行为
-
-revm 主进程直接运行 libkrun。INT、TERM、HUP、QUIT 或 `revm stop` 立即结束 VM 进程，不等待 guest 关机，退出状态为 `128+signal`。取消可能丢弃尚未刷盘的数据和未送达的输出；正常命令完成会先排空输出再退出。revm 不会自动 sync，需要持久化的数据由用户的程序自行刷盘。独立清理子进程在主进程死亡后清理临时资源，保留持久磁盘和失败日志；`revm wait SESSION` 会等到清理完成。
-
-若 libkrun 自行调用 `_exit`，shell 直接收到其原生退出码；未收到命令结果的 session 记为 `unknown`，`revm wait` 返回 1。
-
-## 全部选项
-
-~~~text
---id
---tty
---cpus
---memory
---envs
---raw-disk
---mount
---system-proxy
---workdir
---network
---manage-api
---log-level
-~~~
-
-执行 revm run --help 查看当前二进制的完整说明。
+CPU 默认为宿主 CPU 数与 4 的较小值；内存默认为可用内存的四分之一，限制在 512–2048 MiB。
+使用 `revm run --help` 查看全部选项。

@@ -30,7 +30,7 @@ func NewApp(name string) *cli.Command {
 			newRunCommand(),
 			newPodmanCommand(),
 			newExecCommand(),
-			newCtlCommand(),
+			newPortsCommand(),
 			newCompleteCommand(),
 		},
 	}
@@ -80,6 +80,7 @@ func newRunCommand() *cli.Command {
 			&cli.StringFlag{Name: define.FlagWorkDir, Usage: "absolute working directory inside the guest", Value: "/"},
 			&cli.StringFlag{Name: define.FlagVNetworkType, Usage: "network mode: gvisor supports port forwarding; tsi uses host socket connections", Value: string(define.GVISOR)},
 			&cli.StringFlag{Name: define.FlagManageAPIFile, Usage: "custom Unix socket path for the host-side VM management API; defaults to the current instance runtime directory"},
+			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "forward a guest TCP port at startup (HOST_PORT:GUEST_PORT or HOST_IP:HOST_PORT:GUEST_PORT); repeatable; defaults to 127.0.0.1"},
 			sessionFlag(false),
 			logLevelFlag(),
 		},
@@ -106,6 +107,7 @@ func newPodmanCommand() *cli.Command {
 			&cli.StringFlag{Name: define.FlagContainerDisk, Usage: "persistent ext4 raw disk image for container storage (format: <path>); auto-created if missing; existing disks are inspected and never replaced automatically; mutually exclusive with --volume"},
 			&cli.StringFlag{Name: define.FlagPodmanProxyAPIFile, Usage: "custom Unix socket path for the host-side Podman API proxy; defaults to the current instance runtime directory"},
 			&cli.StringFlag{Name: define.FlagManageAPIFile, Usage: "custom Unix socket path for the host-side VM management API; defaults to the current instance runtime directory"},
+			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "forward a guest TCP port at startup (HOST_PORT:GUEST_PORT or HOST_IP:HOST_PORT:GUEST_PORT); repeatable; defaults to 127.0.0.1"},
 			sessionFlag(false),
 			logLevelFlag(),
 		},
@@ -133,21 +135,23 @@ func newExecCommand() *cli.Command {
 	}
 }
 
-func newCtlCommand() *cli.Command {
+func newPortsCommand() *cli.Command {
 	return &cli.Command{
-		Name:                      "ctl",
-		Usage:                     "control an existing VM session",
-		UsageText:                 "revm ctl --id SESSION --list-port [--json]\n   revm ctl --id SESSION [--port-export SPEC] [--port-unexport SPEC]",
-		DisableSliceFlagSeparator: true,
-		Flags: []cli.Flag{
-			&cli.BoolFlag{Name: "json", Usage: "print port mappings as JSON (requires --list-port)"},
-			&cli.BoolFlag{Name: define.FlagListPort, Usage: "list current gvproxy port mappings for the running VM"},
-			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "expose a guest TCP port on the host (format: [tcp:]<host-port>:<guest-port> or [tcp:]<host-ip>:<host-port>:<guest-port>); updates the running VM and exits; can be specified multiple times"},
-			&cli.StringSliceFlag{Name: define.FlagPortUnexport, Usage: "stop exposing a host TCP port for a running VM (format: [tcp:]<host-port> or [tcp:]<host-ip>:<host-port>); can be specified multiple times"},
-			sessionFlag(true),
-		},
-		Action: func(ctx context.Context, command *cli.Command) error {
-			return runCtl(ctx, command)
+		Name: "ports", Usage: "list current TCP port mappings for a running session",
+		ArgsUsage: "SESSION", Flags: []cli.Flag{&cli.BoolFlag{Name: "json", Usage: "print port mappings as JSON"}},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			session, err := sessionArg(c)
+			if err != nil {
+				return err
+			}
+			ports, err := revm.ListPorts(ctx, session)
+			if err != nil {
+				return err
+			}
+			if c.Bool("json") {
+				return json.NewEncoder(c.Writer).Encode(ports)
+			}
+			return writePortMappings(c.Writer, ports)
 		},
 	}
 }
@@ -158,42 +162,6 @@ func runVM(ctx context.Context, command *cli.Command, mode define.RunMode) error
 		return commanderr.Usage(err)
 	}
 	return revm.RunVM(ctx, *cfg)
-}
-
-func runCtl(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() != 0 {
-		return commanderr.Usage(fmt.Errorf("ctl does not accept a command"))
-	}
-	exports, err := revm.ParsePortExportSpecs(command.StringSlice(define.FlagPortExport))
-	if err != nil {
-		return commanderr.Usage(err)
-	}
-	unexports, err := revm.ParsePortUnexportSpecs(command.StringSlice(define.FlagPortUnexport))
-	if err != nil {
-		return commanderr.Usage(err)
-	}
-	list := command.Bool(define.FlagListPort)
-	if list == (len(exports)+len(unexports) > 0) {
-		return commanderr.Usage(fmt.Errorf("select either --list-port or port updates"))
-	}
-	if command.Bool("json") && !list {
-		return commanderr.Usage(fmt.Errorf("--json requires --list-port"))
-	}
-	session := command.String(define.FlagSessionID)
-	if !list {
-		return revm.UpdatePorts(ctx, session, exports, unexports)
-	}
-	ports, err := revm.ListPorts(ctx, session)
-	if err != nil {
-		return err
-	}
-	if command.Bool("json") {
-		if ports == nil {
-			ports = []define.PortMapping{}
-		}
-		return json.NewEncoder(command.Writer).Encode(ports)
-	}
-	return writePortMappings(command.Writer, ports)
 }
 
 func execOptions(c *cli.Command) revm.ExecOptions {

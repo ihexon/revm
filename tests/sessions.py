@@ -37,7 +37,10 @@ try:
  cli(['rm','broken'])
  print('PASS incomplete session listing and removal',flush=True)
  sid='audit-'+uuid.uuid4().hex[:10]
- owner=subprocess.Popen([binary,'run','--id',sid,'--cpus','1','--memory','512','--','sh','-c','echo ready; sleep 100'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);processes.append(owner)
+ with socket.socket() as listener:
+  listener.bind(('127.0.0.1',0))
+  port=str(listener.getsockname()[1])
+ owner=subprocess.Popen([binary,'run','--id',sid,'--cpus','1','--memory','512','--port-export',port+':8080','--','sh','-c','nc -lk -p 8080 -e cat & echo ready; wait'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);processes.append(owner)
  assert owner.stdout.readline()==b'ready\n'
  cli(['wait','--ready','--timeout','5s',sid])
  active=json.loads(cli(['inspect',sid]).stdout)
@@ -49,14 +52,12 @@ try:
  assert cli(['logs','--tail','0',sid]).stdout==b''
  lines=cli(['logs','--tail','2',sid]).stdout.splitlines()
  assert len(lines)<=2
- with socket.socket() as listener:
-  listener.bind(('127.0.0.1',0))
-  port=str(listener.getsockname()[1])
- cli(['ctl','--id',sid,'--port-export',port+':8080'])
- ports=json.loads(cli(['ctl','--id',sid,'--list-port','--json']).stdout)
+ ports=json.loads(cli(['ports','--json',sid]).stdout)
  assert any(p['local']=='127.0.0.1:'+port and p['remote'].endswith(':8080') for p in ports),ports
- cli(['ctl','--id',sid,'--port-unexport',port])
- assert not any(p['local']=='127.0.0.1:'+port for p in json.loads(cli(['ctl','--id',sid,'--list-port','--json']).stdout))
+ with socket.create_connection(('127.0.0.1',int(port)),timeout=5) as connection:
+  connection.sendall(b'port-forward-ok\n')
+  with connection.makefile('rb') as response:
+   assert response.readline()==b'port-forward-ok\n'
  cli(['stop','--timeout','6s',sid]);owner.communicate(timeout=5)
  view=json.loads(cli(['inspect',sid]).stdout)
  assert not view['active'] and view['lastRun']['finishedAt'] and 'endpoints' not in view

@@ -25,4 +25,4 @@ revm logs --guest -f dev
 revm stop dev
 ```
 
-旧 guest 缺少 v3 能力时会明确报错，需要重启 session。端口管理使用 `ctl`，生命周期管理见 [session 命令](sessions.md)。运行 `revm exec --help` 查看全部选项。
+旧 guest 缺少 v3 能力时会明确报错，需要重启 session。端口查询使用 `revm ports SESSION`，生命周期管理见 [session 命令](sessions.md)。运行 `revm exec --help` 查看全部选项。

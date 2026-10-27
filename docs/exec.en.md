@@ -31,5 +31,5 @@ revm stop dev
 ```
 
 Older guests without v3 return a capability error and must be restarted. Use
-`ctl` for ports and [session commands](sessions.md) for lifecycle management.
+`revm ports SESSION` for ports and [session commands](sessions.md) for lifecycle management.
 Run `revm exec --help` for all options.

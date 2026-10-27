@@ -7,13 +7,13 @@ revm runs Linux commands in libkrun VMs. Every command and PTY uses the same str
 - [run: execute a command](run.en.md)
 - [podman: container service](podman.en.md)
 - [exec: start a command in an existing VM](exec.en.md)
-- [ctl: port mappings](ctl.en.md)
+- [ports: port mappings](ports.en.md)
 - [Session management](sessions.md)
 - [Resource ownership](resources.md)
 - [Exit status](exit-status.md)
 - [Execution and signals](execution-protocol.md)
 
-Omit `--id` to discard successful run records; failures retain logs and results. Use `--id NAME` to retain every run. `exec` and `ctl` require a running session name.
+Omit `--id` to discard successful run records; failures retain logs and results. Use `--id NAME` to retain every run. `exec` and `ports` require a running session name.
 
 Volumes are independent: `volume create NAME` creates storage, `podman --volume NAME` uses it, and `volume rm NAME` deletes it. Sessions do not implicitly create or reconnect volumes. `--container-disk PATH` selects an external disk.
 

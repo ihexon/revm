@@ -17,7 +17,7 @@ func configureHelp(app *cli.Command) {
 		"run":           "Arguments after -- are passed unchanged. Use sh -c for shell syntax.\n\nExamples:\n  revm run -- uname -a\n  revm run --mount \"$PWD:/work\" --workdir /work -- sh\n  revm run -- sh -c 'echo hello; exit 42'",
 		"podman":        "Runs in the foreground until stopped. Create the volume first; it survives session removal.\n\nExamples:\n  revm volume create data\n  revm podman --id containers --volume data --podman-api /tmp/revm-podman.sock\n  # In another terminal:\n  CONTAINER_HOST=unix:///tmp/revm-podman.sock podman info",
 		"exec":          "Without COMMAND, opens /bin/sh. The session must already be running.\n\nExamples:\n  revm exec --id dev\n  revm exec --id dev --workdir /tmp -- sh -c 'pwd'",
-		"ctl":           "Manage TCP port forwarding for a running gvisor session.\n\nExamples:\n  revm ctl --id dev --list-port --json\n  revm ctl --id dev --port-export 127.0.0.1:8080:8000\n  revm ctl --id dev --port-unexport 127.0.0.1:8080",
+		"ports":         "List startup forwards and Podman-published ports. Change startup forwards by restarting the session.\n\nExamples:\n  revm ports dev\n  revm ports --json dev",
 		"ls":            "Example:\n  revm ls --json",
 		"inspect":       "Example:\n  revm inspect dev",
 		"stop":          "Stops the VM immediately, then waits for resource cleanup. The timeout limits this client's wait.\n\nExample:\n  revm stop --timeout 15s dev",
@@ -38,7 +38,7 @@ func configureHelp(app *cli.Command) {
 			c.Description = description
 		}
 		switch path {
-		case "inspect", "stop", "wait", "logs", "rm":
+		case "inspect", "stop", "wait", "logs", "rm", "ports":
 			c.ArgsUsage = "SESSION"
 		case "volume create", "volume rm":
 			c.ArgsUsage = "NAME"
@@ -83,7 +83,7 @@ func completeValues(ctx context.Context, c *cli.Command) {
 	}
 	if kind == "" && c.Args().Len() == 0 {
 		switch c.Name {
-		case "inspect", "stop", "wait", "logs", "rm":
+		case "inspect", "stop", "wait", "logs", "rm", "ports":
 			kind = "session"
 			if len(args) > 0 && args[0] == "volume" {
 				kind = "volume"

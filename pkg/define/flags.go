@@ -15,8 +15,6 @@ const (
 	FlagPodmanProxyAPIFile = "podman-api"
 	FlagManageAPIFile      = "manage-api"
 	FlagPortExport         = "port-export"
-	FlagPortUnexport       = "port-unexport"
-	FlagListPort           = "list-port"
 
 	ContainerDiskUUID = "162cf68f-93c7-49ad-be53-45ed0e9fe42b"
 

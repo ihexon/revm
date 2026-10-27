@@ -12,7 +12,7 @@ revm \- run Linux commands in a libkrun microVM
 [--tty=auto|always|never] -- command [args...]
 .br
 .B revm
-ls | inspect | stop | wait | logs | rm | volume | cache | completion
+ls | inspect | stop | wait | logs | ports | rm | volume | cache | completion
 .SH DESCRIPTION
 revm runs the supplied argv in a fresh Alpine system environment. Input and
 output stream without waiting for EOF. Without a PTY, stdout and stderr remain
@@ -49,6 +49,9 @@ Attach an external persistent raw/ext4 disk. Existing disks are inspected and ne
 .TP
 .B --container-disk PATH
 Use an external Podman storage disk; mutually exclusive with --volume NAME.
+.TP
+.B --port-export [HOST_IP:]HOST_PORT:GUEST_PORT
+Forward a guest TCP port at startup; defaults to 127.0.0.1. Repeat for multiple mappings.
 .SH SESSION MANAGEMENT
 .B ls --json
 lists sessions; human output includes mode, start time, duration, exit code and command.
@@ -62,6 +65,8 @@ waits for guest readiness.
 ends the VM process and waits for resource release.
 .B logs [--guest] [--tail N] [-f] NAME
 reads instance logs. Default tail -1 reads all; tail 0 with -f follows only new lines.
+.B ports [--json] NAME
+lists current startup forwards and Podman-published ports.
 .B rm NAME
 removes a stopped session, preserving volumes.
 .SH DATA
