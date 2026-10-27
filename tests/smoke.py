@@ -46,6 +46,10 @@ try:
     assert p.returncode == 42 and out == data and err == b'stderr', (p.returncode, len(out), err)
     print('PASS binary streaming and exit 42', flush=True)
 
+    p, _ = run(['sh', '-c', 'printf "%s" "$0"; exit 42', '--generate-shell-completion'])
+    assert finish(p, 42)[0] == b'--generate-shell-completion'
+    print('PASS completion marker is passed unchanged to the guest', flush=True)
+
     p, _ = run(['cat'], stdin=subprocess.PIPE)
     p.stdin.write(b'before EOF\n'); p.stdin.flush()
     assert line(p) == b'before EOF\n'

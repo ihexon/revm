@@ -6,8 +6,11 @@ import (
 	"linuxvm/pkg/commanderr"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/urfave/cli/v3"
 )
 
 func TestInvalidInvocations(t *testing.T) {
@@ -58,7 +61,7 @@ func TestHelpSucceeds(t *testing.T) {
 }
 
 func TestReleaseInterfaces(t *testing.T) {
-	for _, args := range [][]string{{"--version"}, {"completion", "bash"}, {"completion", "zsh"}, {"completion", "fish"}, {"run", "--generate-shell-completion"}} {
+	for _, args := range [][]string{{"--version"}, {"completion", "bash"}, {"completion", "zsh"}, {"completion", "fish"}, {"_complete", "run"}} {
 		app := NewApp("revm")
 		var out bytes.Buffer
 		app.Writer = &out
@@ -136,7 +139,7 @@ func TestResourceNameCompletion(t *testing.T) {
 		app := NewApp("revm")
 		var out bytes.Buffer
 		app.Writer = &out
-		args := append(append([]string{"revm"}, tc.args...), "--generate-shell-completion")
+		args := append([]string{"revm", "_complete"}, tc.args...)
 		if err := app.Run(context.Background(), args); err != nil {
 			t.Fatal(args, err)
 		}
@@ -145,10 +148,26 @@ func TestResourceNameCompletion(t *testing.T) {
 		}
 	}
 	// A completion request after -- must not launch the VM or create a session.
-	if err := Execute(context.Background(), []string{"revm", "run", "--id", "completion-must-not-run", "--", "false", "--generate-shell-completion"}); err != nil {
+	if err := Execute(context.Background(), []string{"revm", "_complete", "run", "--id", "completion-must-not-run", "--", "false"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "state/revm/sessions/completion-must-not-run")); !os.IsNotExist(err) {
 		t.Fatal("completion created a session", err)
+	}
+}
+
+func TestCompletionFlagIsAnOrdinaryGuestArgument(t *testing.T) {
+	want := []string{"printf", "%s", "--generate-shell-completion"}
+	app := NewApp("revm")
+	var got []string
+	app.Command("run").Action = func(_ context.Context, c *cli.Command) error {
+		got = c.Args().Slice()
+		return nil
+	}
+	if err := app.Run(context.Background(), append([]string{"revm", "run", "--"}, want...)); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("guest arguments changed: got %q, want %q", got, want)
 	}
 }

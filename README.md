@@ -37,6 +37,7 @@ man ./revm-release/share/man/man1/revm.1
 ```
 
 Run `revm COMMAND --help` for required arguments and copyable examples. Shell completion includes existing session and volume names.
+After upgrading, reload or regenerate your shell completion script using the commands above.
 
 Releases include completion scripts, the manual, documentation and archive checksums. Linux needs accessible KVM; macOS uses Hypervisor.framework.
 

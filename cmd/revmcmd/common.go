@@ -23,7 +23,6 @@ func NewApp(name string) *cli.Command {
 	app := &cli.Command{
 		Name:                            name,
 		Version:                         versionString(),
-		EnableShellCompletion:           true,
 		ConfigureShellCompletionCommand: configureCompletion,
 		Usage:                           "run and control revm Linux microVM sessions",
 		DisableSliceFlagSeparator:       true,
@@ -32,6 +31,7 @@ func NewApp(name string) *cli.Command {
 			newPodmanCommand(),
 			newExecCommand(),
 			newCtlCommand(),
+			newCompleteCommand(),
 		},
 	}
 	app.Commands = append(app.Commands, resourceCommands()...)
