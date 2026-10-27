@@ -28,9 +28,8 @@ func (v *machineBuilder) configureNetwork() error {
 	controlPath := pathMgr.GetGVPCtlSocketFile()
 	v.GVPCtlAddr = (&url.URL{Scheme: "unix", Path: controlPath}).String()
 	v.GVPVNetAddr = fmt.Sprintf("unixgram://%s", pathMgr.GetVNetSocketFile())
-	v.GVPNotifyAddr = fmt.Sprintf("unix://%s", pathMgr.GetGVPNotifySocketFile())
 
-	for _, path := range []string{controlPath, pathMgr.GetVNetSocketFile(), pathMgr.GetGVPNotifySocketFile()} {
+	for _, path := range []string{controlPath, pathMgr.GetVNetSocketFile()} {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove stale network socket %q: %w", path, err)
 		}

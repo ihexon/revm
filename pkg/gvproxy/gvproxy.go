@@ -2,7 +2,6 @@ package gvproxy
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -14,7 +13,6 @@ import (
 
 	"linuxvm/pkg/define"
 
-	"github.com/containers/gvisor-tap-vsock/pkg/notification"
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
@@ -33,14 +31,12 @@ const (
 type Config struct {
 	ControlAddr string
 	NetAddr     string
-	NotifyAddr  string
 	Stack       types.Configuration
 }
 
 type Spec struct {
 	ControlAddr         string
 	NetAddr             string
-	NotifyAddr          string
 	GuestIP             string
 	HostLoopbackAddress string
 	PortForwards        []define.PortForward
@@ -52,9 +48,6 @@ func NewConfig(spec Spec) (*Config, error) {
 	}
 	if spec.NetAddr == "" {
 		return nil, errors.New("gvproxy network address is empty")
-	}
-	if spec.NotifyAddr == "" {
-		return nil, errors.New("gvproxy notification address is empty")
 	}
 	if spec.GuestIP == "" {
 		return nil, errors.New("gvproxy guest IP is empty")
@@ -68,9 +61,6 @@ func NewConfig(spec Spec) (*Config, error) {
 	if err := validateUnixAddr(spec.NetAddr, "unixgram"); err != nil {
 		return nil, fmt.Errorf("invalid gvproxy network address: %w", err)
 	}
-	if err := validateUnixAddr(spec.NotifyAddr, "unix"); err != nil {
-		return nil, fmt.Errorf("invalid gvproxy notification address: %w", err)
-	}
 
 	forwards := map[string]string{}
 	for _, forward := range spec.PortForwards {
@@ -80,7 +70,6 @@ func NewConfig(spec Spec) (*Config, error) {
 	return &Config{
 		ControlAddr: spec.ControlAddr,
 		NetAddr:     spec.NetAddr,
-		NotifyAddr:  spec.NotifyAddr,
 		Stack: types.Configuration{
 			MTU:               defaultMTU,
 			Debug:             os.Getenv("REVM_GVPROXY_DEBUG") == "1",
@@ -119,9 +108,6 @@ func Run(ctx context.Context, spec Spec, onReady func()) error {
 		return fmt.Errorf("create virtual network: %w", err)
 	}
 
-	if err := startNotificationListener(ctx, g, config.NotifyAddr, onReady); err != nil {
-		return err
-	}
 	if err := startControlAPI(ctx, g, config.ControlAddr, vn); err != nil {
 		return err
 	}
@@ -132,14 +118,8 @@ func Run(ctx context.Context, spec Spec, onReady func()) error {
 		return err
 	}
 
-	notifyPath, _ := unixSocketPath(config.NotifyAddr)
-	notificationSender := notification.NewNotificationSender(notifyPath)
-	vn.SetNotificationSender(notificationSender)
-	g.Go(func() error {
-		notificationSender.Start(ctx)
-		return nil
-	})
-	notificationSender.Send(types.NotificationMessage{NotificationType: types.Ready})
+	onReady()
+	logrus.Info("gvproxy network stack ready")
 
 	return g.Wait()
 }
@@ -215,70 +195,6 @@ func startUnixgramNet(ctx context.Context, g *errgroup.Group, addr string, vn *v
 	})
 
 	return nil
-}
-
-func startNotificationListener(ctx context.Context, g *errgroup.Group, addr string, onReady func()) error {
-	path, err := unixSocketPath(addr)
-	if err != nil {
-		return fmt.Errorf("notification address: %w", err)
-	}
-
-	_ = os.Remove(path)
-	ln, err := net.Listen("unix", path)
-	if err != nil {
-		return fmt.Errorf("notification listen error: %w", err)
-	}
-
-	g.Go(func() error {
-		defer func() {
-			_ = ln.Close()
-			_ = os.Remove(path)
-		}()
-
-		go func() {
-			<-ctx.Done()
-			_ = ln.Close()
-		}()
-
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
-					return nil
-				}
-				return fmt.Errorf("notification accept error: %w", err)
-			}
-			g.Go(func() error {
-				handleNotification(conn, onReady)
-				return nil
-			})
-		}
-	})
-	return nil
-}
-
-func handleNotification(conn net.Conn, onReady func()) {
-	defer conn.Close()
-
-	var msg types.NotificationMessage
-	if err := json.NewDecoder(conn).Decode(&msg); err != nil {
-		logrus.Warnf("decode gvproxy notification: %v", err)
-		return
-	}
-
-	switch msg.NotificationType {
-	case types.Ready:
-		onReady()
-		logrus.Infof("gvproxy network stack ready")
-	case types.ConnectionEstablished:
-		logrus.Infof("gvproxy network connection established: %s", msg.MacAddress)
-	case types.ConnectionClosed:
-		logrus.Infof("gvproxy network connection closed: %s", msg.MacAddress)
-	case types.HypervisorError:
-		logrus.Errorf("gvproxy hypervisor error")
-	default:
-		logrus.Debugf("unknown gvproxy notification: %s", msg.NotificationType)
-	}
 }
 
 func validateUnixAddr(raw, scheme string) error {

@@ -18,8 +18,6 @@ type MachineSpec struct {
 	GVPCtlAddr string `json:"GVPCtlAddr,omitempty"`
 	// GVPVNetAddr is the unixgram virtio-net backend served by gvproxy.
 	GVPVNetAddr string `json:"GVPVNetAddr,omitempty"`
-	// GVPNotifyAddr receives gvproxy lifecycle notifications.
-	GVPNotifyAddr string `json:"GVPNotifyAddr,omitempty"`
 
 	LogFile          string        `json:"logFile,omitempty"`
 	PodmanInfo       PodmanInfo    `json:"podmanInfo,omitempty"` // 仅在 container mode 下有意义
