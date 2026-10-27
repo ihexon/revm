@@ -5,6 +5,16 @@ package libarchive_go
 #include <archive_entry.h>
 #include <locale.h>
 #include <stdlib.h>
+#ifdef __APPLE__
+#include <xlocale.h>
+#define REVM_UTF8_LOCALE "UTF-8"
+#else
+#define REVM_UTF8_LOCALE "C.UTF-8"
+#endif
+
+static locale_t extraction_locale(void) {
+	return newlocale(LC_CTYPE_MASK, REVM_UTF8_LOCALE, (locale_t)0);
+}
 */
 import "C"
 
@@ -15,15 +25,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-)
-
-var (
-	cLocaleOnce sync.Once
-	cLocaleErr  error
 )
 
 func ExtractRootFS(ctx context.Context, data []byte, dir string) error {
@@ -43,9 +47,19 @@ func extract(ctx context.Context, data []byte, destination string, disk bool) er
 	if len(data) == 0 {
 		return errors.New("embedded archive is empty")
 	}
-	if err := ensureCLocale(); err != nil {
-		return err
+	// Tar pathnames use UTF-8 regardless of the caller's locale. Keep the
+	// locale thread-local so concurrent native code is not affected.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	locale := C.extraction_locale()
+	if locale == nil {
+		return errors.New("cannot create UTF-8 locale for archive extraction")
 	}
+	previous := C.uselocale(locale)
+	defer func() {
+		C.uselocale(previous)
+		C.freelocale(locale)
+	}()
 	destination, err := filepath.Abs(destination)
 	if err != nil {
 		return err
@@ -139,17 +153,6 @@ func extract(ctx context.Context, data []byte, destination string, disk bool) er
 		return fmt.Errorf("finish extraction: %s", C.GoString(C.archive_error_string(writer)))
 	}
 	return ctx.Err()
-}
-
-func ensureCLocale() error {
-	cLocaleOnce.Do(func() {
-		locale := C.CString("")
-		defer C.free(unsafe.Pointer(locale))
-		if C.setlocale(C.LC_ALL, locale) == nil {
-			cLocaleErr = errors.New("failed to set C locale from environment")
-		}
-	})
-	return cLocaleErr
 }
 
 func restoreEntryXattrs(pathname string, entry *C.struct_archive_entry) error {

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -55,6 +56,21 @@ func TestRootFSMetadataAndLinks(t *testing.T) {
 	}
 	if link, err := os.Readlink(filepath.Join(dir, "symlink")); err != nil || link != "/日本語" {
 		t.Fatalf("symlink: %q %v", link, err)
+	}
+}
+
+func TestExtractionIgnoresHostLocale(t *testing.T) {
+	t.Parallel()
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, locale := range []string{"C", "revm-invalid-locale"} {
+		cmd := exec.Command(binary, "-test.run=^TestRootFSMetadataAndLinks$")
+		cmd.Env = append(os.Environ(), "LC_ALL="+locale, "LANG="+locale)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("locale %q: %v\n%s", locale, err, output)
+		}
 	}
 }
 
