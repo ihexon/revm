@@ -33,13 +33,6 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 		return Result{}, err
 	}
 	defer s.Session.Close()
-	outputCtx, stopOutput := context.WithCancel(context.Background())
-	defer stopOutput()
-	outputs, restoreOutputs, err := outputWriters(outputCtx, opts.Stdout, opts.Stderr)
-	if err != nil {
-		return Result{}, err
-	}
-	defer restoreOutputs()
 	if opts.OnStarted != nil {
 		if err := opts.OnStarted(s, started); err != nil {
 			return Result{}, err
@@ -66,7 +59,7 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 	for _, pair := range []struct {
 		dst io.Writer
 		src io.Reader
-	}{{outputs[0], s.Stdout}, {outputs[1], s.Stderr}} {
+	}{{opts.Stdout, s.Stdout}, {opts.Stderr, s.Stderr}} {
 		go func() {
 			defer copies.Done()
 			dst := pair.dst
@@ -81,7 +74,8 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 	}
 	outputDone := make(chan struct{})
 	go func() { copies.Wait(); close(outputDone) }()
-	defer func() { stopOutput(); s.Session.Close(); <-outputDone }()
+	// Normal completion waits for outputDone below. Cancellation may abandon a
+	// blocked caller-owned writer; the one-shot CLI process owns its lifetime.
 	type controlEvent struct {
 		message Message
 		err     error
