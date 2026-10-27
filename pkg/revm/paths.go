@@ -42,10 +42,6 @@ func (p *machinePathManager) GetVMCtlSocketFile() string {
 	return p.GetSocketFile("vmctl.sock")
 }
 
-func (p *machinePathManager) GetIgnSocketFile() string {
-	return p.GetSocketFile("ign.sock")
-}
-
 func (p *machinePathManager) GetGuestControlSocketFile() string {
 	return p.GetSocketFile("guest-control.sock")
 }

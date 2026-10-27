@@ -20,14 +20,13 @@ type MachineSpec struct {
 
 	VirtualNetworkMode VNetMode `json:"virtualNetworkMode,omitempty"`
 
-	LogFile           string            `json:"logFile,omitempty"`
-	PodmanInfo        PodmanInfo        `json:"podmanInfo,omitempty"` // 仅在 container mode 下有意义
-	PortForwards      []PortForward     `json:"portForwards,omitempty"`
-	VMCtlAddr         string            `json:"vmCtlAddr,omitempty"`
-	RunMode           string            `json:"runMode,omitempty"`
-	IgnitionServerCfg IgnitionServerCfg `json:"ignitionServerCfg,omitempty"`
-	GuestControlAddr  string            `json:"guestControlAddr,omitempty"`
-	GuestAgentCfg     GuestAgentCfg     `json:"guestAgentCfg,omitempty"`
+	LogFile          string        `json:"logFile,omitempty"`
+	PodmanInfo       PodmanInfo    `json:"podmanInfo,omitempty"` // 仅在 container mode 下有意义
+	PortForwards     []PortForward `json:"portForwards,omitempty"`
+	VMCtlAddr        string        `json:"vmCtlAddr,omitempty"`
+	RunMode          string        `json:"runMode,omitempty"`
+	GuestControlAddr string        `json:"guestControlAddr,omitempty"`
+	GuestAgentCfg    GuestAgentCfg `json:"guestAgentCfg,omitempty"`
 }
 
 const (
@@ -48,10 +47,6 @@ type VirtioFSSpec struct {
 	Opts          string `json:"opts"`
 	UUID          string `json:"uuid"`
 	DAXWindowSize uint64 `json:"daxWindowSize,omitempty"`
-}
-
-type IgnitionServerCfg struct {
-	ListenSockAddr string `json:"ListenSockAddr,omitempty"`
 }
 
 // BlockDeviceSpec represents one prepared block device and its guest mount.

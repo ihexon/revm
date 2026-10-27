@@ -11,12 +11,14 @@ package libkrun
 import "C"
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/static_resources"
 	"os"
 	"path/filepath"
+	"strings"
 	"unsafe"
 )
 
@@ -221,6 +223,13 @@ func (v *machine) setupRootFS() error {
 	if err := v.addGuestAgentOverlay(overlay); err != nil {
 		return err
 	}
+	config, err := json.Marshal(v.cfg.GuestSpec())
+	if err != nil {
+		return err
+	}
+	if err := addOverlayFile(overlay, strings.TrimPrefix(define.VMConfigFilePathInGuest, "/"), config, 0444); err != nil {
+		return err
+	}
 	var initErr C.KrunInitError
 	result := C.krun_init_config_apply(v.initConfig, overlay, v.payload, &initErr)
 	if err := checkInitResult("apply init config", result, initErr); err != nil {
@@ -236,12 +245,7 @@ func (v *machine) addGuestAgentOverlay(overlay C.KrunFsOverlay) error {
 	if err != nil {
 		return err
 	}
-	guestAgentData := C.CBytes(guestAgent)
-	if guestAgentData == nil {
-		return errors.New("libkrun: failed to allocate guest-agent overlay")
-	}
-	data := C.KrunBytes{data: (*C.uint8_t)(guestAgentData), len: C.size_t(len(guestAgent))}
-	return addOverlayFile(overlay, guestAgentPath, data, overlayFileMode, false)
+	return addOverlayFile(overlay, guestAgentPath, guestAgent, overlayFileMode)
 }
 
 func addOverlayDir(overlay C.KrunFsOverlay, path string, mode C.uint32_t) error {
@@ -251,11 +255,17 @@ func addOverlayDir(overlay C.KrunFsOverlay, path string, mode C.uint32_t) error 
 	return checkKrunResult("add overlay directory", C.krun_fs_overlay_add_dir(overlay, p.value, mode, &errOut), errOut)
 }
 
-func addOverlayFile(overlay C.KrunFsOverlay, path string, data C.KrunBytes, mode C.uint32_t, oneShot bool) error {
+func addOverlayFile(overlay C.KrunFsOverlay, path string, content []byte, mode C.uint32_t) error {
+	// Overlay contents stay alive with the native VM until process exit.
+	buffer := C.CBytes(content)
+	if buffer == nil {
+		return fmt.Errorf("libkrun: failed to allocate overlay file %s", path)
+	}
+	data := C.KrunBytes{data: (*C.uint8_t)(buffer), len: C.size_t(len(content))}
 	p := newKrunStr(path)
 	defer p.free()
 	var errOut C.KrunError
-	return checkKrunResult("add overlay file", C.krun_fs_overlay_add_file(overlay, p.value, data, mode, C.bool(oneShot), &errOut), errOut)
+	return checkKrunResult("add overlay file", C.krun_fs_overlay_add_file(overlay, p.value, data, mode, C.bool(false), &errOut), errOut)
 }
 
 func (v *machine) buildVMM() error {

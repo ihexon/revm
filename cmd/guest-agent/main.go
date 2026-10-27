@@ -116,7 +116,7 @@ func run(ctx context.Context, _ *cli.Command) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	vmc, err := service.GetVMConfig(ctx)
+	vmc, err := service.GetVMConfig()
 	if err != nil {
 		return fmt.Errorf("get vm config: %w", err)
 	}

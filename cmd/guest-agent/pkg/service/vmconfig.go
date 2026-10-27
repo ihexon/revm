@@ -1,59 +1,24 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"guestAgent/pkg/vsock"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/protocol"
 	"os"
-	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
-func getVMConfig(ctx context.Context) (*protocol.GuestSpec, error) {
-	ctx, cancel := context.WithTimeout(ctx, define.DefaultProbeTimeout)
-	defer cancel()
-
-	ticker := time.NewTicker(define.DefaultTimeTicker)
-	defer ticker.Stop()
-
-	var lastErr error
-	for {
-		svc := vsock.NewVSockService()
-		vmc, err := svc.GetVMConfig(ctx)
-		_ = svc.Close()
-		if err == nil {
-			return vmc, nil
-		}
-
-		lastErr = err
-		logrus.Debugf("get vmconfig attempt failed: %v, retrying...", err)
-
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("failed to get vmconfig from vsock: %w (last: %v)", ctx.Err(), lastErr)
-		case <-ticker.C:
-		}
-	}
-}
-
-func GetVMConfig(ctx context.Context) (*protocol.GuestSpec, error) {
-	vmc, err := getVMConfig(ctx)
+func GetVMConfig() (*protocol.GuestSpec, error) {
+	data, err := os.ReadFile(define.VMConfigFilePathInGuest)
 	if err != nil {
 		return nil, err
 	}
-
-	return vmc, WriteToJsonFile(vmc, define.VMConfigFilePathInGuest)
-}
-
-func WriteToJsonFile(vmc *protocol.GuestSpec, file string) error {
-	b, err := json.Marshal(vmc)
-	if err != nil {
-		return fmt.Errorf("failed to marshal vmconfig: %w", err)
+	var spec protocol.GuestSpec
+	if err := json.Unmarshal(data, &spec); err != nil {
+		return nil, err
 	}
-
-	return os.WriteFile(file, b, 0644)
+	if spec.SchemaVersion != protocol.GuestSpecVersion {
+		return nil, fmt.Errorf("unsupported guest spec schema version: %d", spec.SchemaVersion)
+	}
+	return &spec, nil
 }

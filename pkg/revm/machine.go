@@ -96,22 +96,6 @@ func (v *machineBuilder) configureGuestAgent(ctx context.Context) error {
 		return fmt.Errorf("workspace path is empty")
 	}
 
-	unixUSL := &url.URL{
-		Scheme: "unix",
-		Path:   v.pathMgr.GetIgnSocketFile(),
-	}
-
-	if err := os.MkdirAll(filepath.Dir(unixUSL.Path), 0755); err != nil {
-		return err
-	}
-
-	if err := os.Remove(unixUSL.Path); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-
-	v.IgnitionServerCfg = define.IgnitionServerCfg{
-		ListenSockAddr: unixUSL.String(),
-	}
 	controlURL := &url.URL{Scheme: "unix", Path: v.pathMgr.GetGuestControlSocketFile()}
 	v.GuestControlAddr = controlURL.String()
 	if err := os.Remove(controlURL.Path); err != nil && !os.IsNotExist(err) {

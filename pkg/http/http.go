@@ -18,11 +18,10 @@ import (
 
 // Server provides common HTTP server functionality.
 type Server struct {
-	name        string
-	listener    string
-	server      *http.Server
-	Mux         *http.ServeMux
-	OnListening func() // called once after net.Listen succeeds
+	name     string
+	listener string
+	server   *http.Server
+	Mux      *http.ServeMux
 }
 
 func NewUnixSockHTTPServer(name, listener string) *Server {
@@ -50,10 +49,6 @@ func (s *Server) Serve(ctx context.Context) error {
 	if err := os.Chmod(addr.Path, 0600); err != nil {
 		_ = ln.Close()
 		return fmt.Errorf("restrict socket permissions: %w", err)
-	}
-
-	if s.OnListening != nil {
-		s.OnListening()
 	}
 
 	s.server = &http.Server{Handler: s.Mux}

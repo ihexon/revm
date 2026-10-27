@@ -6,25 +6,9 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/network"
-	"linuxvm/pkg/protocol"
 	"linuxvm/pkg/service/guestcontrol"
 	"linuxvm/pkg/service/management"
 )
-
-func (vm *VM) IgnitionListenAddr() string { return vm.spec.IgnitionServerCfg.ListenSockAddr }
-
-func (vm *VM) GuestSpec() protocol.GuestSpec {
-	return protocol.GuestSpec{
-		SchemaVersion: protocol.GuestSpecVersion,
-		RunMode:       vm.spec.RunMode,
-		NetworkMode:   string(vm.spec.VirtualNetworkMode),
-		Storage: protocol.GuestStorage{
-			VirtioFS: guestMountsFromSpec(vm.spec.Storage.VirtioFS),
-			Blocks:   guestBlockDevsFromSpec(vm.spec.Storage.Blocks),
-		},
-		Podman: guestPodmanFromSpec(vm.spec.PodmanInfo),
-	}
-}
 
 func (vm *VM) GuestControlTarget() guestcontrol.Target {
 	return guestcontrol.Target{CID: define.GuestVSockCID, Port: define.GuestControlPort, UnixSocket: unixSocketPath(vm.spec.GuestControlAddr)}
@@ -89,44 +73,5 @@ func (vm *VM) GVProxySpec() gvproxy.Spec {
 		GuestIP:             define.GuestIP,
 		HostLoopbackAddress: define.LocalHost,
 		PortForwards:        append([]define.PortForward(nil), vm.spec.PortForwards...),
-	}
-}
-
-func guestMountsFromSpec(mounts []define.VirtioFSSpec) []protocol.GuestMount {
-	out := make([]protocol.GuestMount, 0, len(mounts))
-	for _, m := range mounts {
-		out = append(out, protocol.GuestMount{
-			ReadOnly: m.ReadOnly,
-			Source:   m.Source,
-			Tag:      m.Tag,
-			Target:   m.Target,
-			Type:     m.Type,
-			Opts:     m.Opts,
-			UUID:     m.UUID,
-		})
-	}
-	return out
-}
-
-func guestBlockDevsFromSpec(devs []define.BlockDeviceSpec) []protocol.GuestBlockDev {
-	out := make([]protocol.GuestBlockDev, 0, len(devs))
-	for _, d := range devs {
-		if d.GuestMount == nil {
-			continue
-		}
-		out = append(out, protocol.GuestBlockDev{
-			FsType:   d.GuestMount.FsType,
-			UUID:     d.GuestMount.UUID,
-			Path:     d.Path,
-			MountTo:  d.GuestMount.Target,
-			ReadOnly: d.ReadOnly || d.GuestMount.ReadOnly,
-		})
-	}
-	return out
-}
-
-func guestPodmanFromSpec(podman define.PodmanInfo) protocol.GuestPodman {
-	return protocol.GuestPodman{
-		GuestPodmanRunWithEnvs: append([]string(nil), podman.GuestPodmanRunWithEnvs...),
 	}
 }

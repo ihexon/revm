@@ -15,7 +15,6 @@ import (
 	"linuxvm/pkg/libkrun"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/podmanproxy"
-	"linuxvm/pkg/service/ignition"
 	"linuxvm/pkg/service/management"
 
 	"github.com/sirupsen/logrus"
@@ -98,7 +97,7 @@ func runVM(ctx context.Context, cfg *Config) (retErr error) {
 func (vm *VM) Run(ctx context.Context) (*execution.Result, error) {
 	ctx, vm.stop = context.WithCancelCause(ctx)
 	defer vm.stop(context.Canceled)
-	errorsCh := make(chan error, 5)
+	errorsCh := make(chan error, 4)
 	start := func(service func(context.Context) error) {
 		go func() {
 			if err := service(ctx); err != nil && ctx.Err() == nil {
@@ -106,13 +105,6 @@ func (vm *VM) Run(ctx context.Context) (*execution.Result, error) {
 			}
 		}()
 	}
-	start(func(ctx context.Context) error {
-		server, err := ignition.NewServer(vm)
-		if err != nil {
-			return err
-		}
-		return server.Start(ctx)
-	})
 	start(func(ctx context.Context) error {
 		server, err := management.NewServer(vm)
 		if err != nil {

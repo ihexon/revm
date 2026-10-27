@@ -29,13 +29,6 @@ func (v *machine) setupVSock() error {
 	if err := checkKrunHandle("create vsock device", unsafe.Pointer(device), errOut); err != nil {
 		return err
 	}
-	addr, err := network.ParseUnixAddr(v.cfg.IgnitionServerCfg.ListenSockAddr)
-	if err != nil {
-		return err
-	}
-	path := newKrunStr(addr.Path)
-	defer path.free()
-	C.krun_vsock_device_add_unix_port(device, C.uint32_t(define.DefaultVSockPort), path.value, C.bool(false))
 	controlAddr, err := network.ParseUnixAddr(v.cfg.GuestControlAddr)
 	if err != nil {
 		return err
@@ -55,7 +48,6 @@ func (v *machine) setupVSock() error {
 		C.krun_vsock_device_add_unix_port(device, C.uint32_t(define.GuestPodmanPort), podmanPath.value, C.bool(true))
 	}
 	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
-	logrus.Infof("vsock port %d → %s", define.DefaultVSockPort, addr.Path)
 	logrus.Infof("vsock port %d → %s", define.GuestControlPort, controlAddr.Path)
 	return nil
 }

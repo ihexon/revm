@@ -44,24 +44,17 @@ const (
 	GatewayIP          = "192.168.127.1"
 	GuestSubnet        = "192.168.127.0/24"
 
-	DefaultVSockPort  = 25882
 	GuestControlPort  = 25883
 	GuestPodmanPort   = 25884
 	GuestPodmanSocket = "/run/revm/podman/podman.sock"
-	// libkrun assigns the guest CID 3; CID 2 is the host and is used by the
-	// guest agent when it connects back to the ignition server.
+	// libkrun assigns the guest CID 3.
 	GuestVSockCID = 3
 
 	LocalHost = "127.0.0.1"
 )
 
 const (
-	RestAPIVMConfigURL = "/vmconfig"
-)
-
-const (
 	EnvLogLevel = "LOG_LEVEL"
 
-	DefaultTimeTicker   = 100 * time.Millisecond
-	DefaultProbeTimeout = 60 * time.Second
+	DefaultTimeTicker = 100 * time.Millisecond
 )
