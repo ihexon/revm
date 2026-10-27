@@ -10,7 +10,7 @@ import (
 
 func (vm *VM) ManagementView() management.VMConfigView {
 	view := management.VMConfigView{
-		RunMode:     vm.spec.RunMode,
+		RunMode:     string(vm.spec.RunMode),
 		NetworkMode: string(vm.spec.VirtualNetworkMode),
 		Resources: management.ResourceView{
 			MemoryInMB: vm.spec.MemoryInMB,

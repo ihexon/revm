@@ -14,15 +14,15 @@ func TestSystemProxyReachesExecutionRequest(t *testing.T) {
 	getSystemHTTPProxy = func() (*sysproxy.Item, error) {
 		return &sysproxy.Item{Scheme: "http", Host: "127.0.0.1", Port: 8080}, nil
 	}
-	for _, mode := range []RunMode{ModeRootfs, ModeContainer} {
+	for _, mode := range []define.RunMode{define.RootFsMode, define.ContainerMode} {
 		cfg := testConfig()
 		cfg.RunMode, cfg.Proxy = mode, true
-		if mode == ModeContainer {
+		if mode == define.ContainerMode {
 			cfg.VolumeName = "data"
 			cfg.Exec.Argv = nil
 		}
 		cfg.Exec.Env = []string{"https_proxy=http://explicit:9000"}
-		resolved, err := NormalizeConfig(cfg)
+		resolved, err := normalizeVMOptions(cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -58,14 +58,14 @@ func TestRawDiskSyncNoneSurvivesPreparation(t *testing.T) {
 func TestOmittedSessionIsDisposable(t *testing.T) {
 	cfg := testConfig()
 	cfg.SessionID = ""
-	resolved, err := NormalizeConfig(cfg)
+	resolved, err := normalizeVMOptions(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if resolved.SessionID == "" || !resolved.Remove {
 		t.Fatal("unnamed run must be disposable")
 	}
-	named, err := NormalizeConfig(testConfig())
+	named, err := normalizeVMOptions(testConfig())
 	if err != nil || named.Remove {
 		t.Fatalf("named session must retain records: %v", err)
 	}

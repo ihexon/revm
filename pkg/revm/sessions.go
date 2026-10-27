@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"linuxvm/pkg/define"
 	"linuxvm/pkg/execution"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/service/guestcontrol"
@@ -72,7 +73,7 @@ func inspectSession(r Roots, id string) (SessionView, error) {
 		paths := newMachinePathManager(rec.RuntimeDir)
 		address := func(path string) string { return (&url.URL{Scheme: "unix", Path: path}).String() }
 		view.Endpoints = &SessionEndpoints{Management: address(paths.GetVMCtlSocketFile())}
-		if s.Config.RunMode == ModeContainer {
+		if s.Config.RunMode == define.ContainerMode {
 			view.Endpoints.Podman = address(paths.GetPodmanSocketFile())
 		}
 	}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"sync"
 
+	"linuxvm/pkg/commanderr"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/execution"
 	"linuxvm/pkg/gvproxy"
@@ -24,7 +25,7 @@ import (
 // native thread and host service. The cleanup helper owns post-exit files.
 // Run is therefore a one-shot CLI operation, not an embeddable VM lifetime.
 type VM struct {
-	cfg  *Config
+	cfg  *VMOptions
 	spec *define.MachineSpec
 	stop context.CancelCauseFunc
 }
@@ -43,13 +44,17 @@ func buildTimeInfo() string {
 	return fmt.Sprintf("%s-%s-%s", version, commit, date)
 }
 
-func runVM(ctx context.Context, cfg *Config) (retErr error) {
+func RunVM(ctx context.Context, cfg VMOptions) (retErr error) {
+	cfg, err := normalizeVMOptions(cfg)
+	if err != nil {
+		return commanderr.Usage(err)
+	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(context.Canceled)
 	if err := libkrun.CheckHostSupport(); err != nil {
 		return err
 	}
-	lease, err := beginRun(ctx, cfg)
+	lease, err := beginRun(ctx, &cfg)
 	if err != nil {
 		return err
 	}
@@ -61,14 +66,14 @@ func runVM(ctx context.Context, cfg *Config) (retErr error) {
 		retErr = errors.Join(retErr, lease.finish(result, retErr))
 		retErr = lease.diagnose(retErr)
 	}()
-	logFile, err := setupRunLogging(*cfg)
+	logFile, err := setupRunLogging(cfg.LogLevel, lease.logDir)
 	if err != nil {
 		return err
 	}
 	defer releaseRunLog(logFile)
 	logrus.Infof("revm build info: %s", buildTimeInfo())
 	logrus.Infof("start virtualMachine, full cmdline: %q", os.Args)
-	spec, err := buildMachine(ctx, *cfg, lease.record.RuntimeDir)
+	spec, err := buildMachine(ctx, cfg, lease)
 	if err != nil {
 		return fmt.Errorf("build machine: %w", err)
 	}
@@ -89,7 +94,7 @@ func runVM(ctx context.Context, cfg *Config) (retErr error) {
 	if err = os.Setenv("TMPDIR", lease.record.RuntimeDir); err != nil {
 		return err
 	}
-	vm := &VM{cfg: cfg, spec: spec}
+	vm := &VM{cfg: &cfg, spec: spec}
 	result, retErr = vm.Run(ctx)
 	return retErr
 }
@@ -119,7 +124,7 @@ func (vm *VM) Run(ctx context.Context) (*execution.Result, error) {
 	} else {
 		start(func(ctx context.Context) error { return gvproxy.Run(ctx, vm.GVProxySpec(), ready) })
 	}
-	if vm.cfg.RunMode == ModeContainer {
+	if vm.cfg.RunMode == define.ContainerMode {
 		start(func(ctx context.Context) error {
 			socket, err := network.ParseUnixAddr(vm.spec.PodmanInfo.HostPodmanProxyAddr)
 			if err != nil {
@@ -150,9 +155,9 @@ func (vm *VM) Run(ctx context.Context) (*execution.Result, error) {
 		err    error
 	}
 	commandDone := make(chan completed, 1)
-	if vm.cfg.RunMode == ModeRootfs {
+	if vm.cfg.RunMode == define.RootFsMode {
 		go func() {
-			result, err := executeGuest(ctx, newMachinePathManager(vm.spec.WorkspaceDir).GetGuestControlSocketFile(), *vm.cfg)
+			result, err := executeGuest(ctx, newMachinePathManager(vm.spec.WorkspaceDir).GetGuestControlSocketFile(), vm.cfg.ExecOptions)
 			commandDone <- completed{result, err}
 		}()
 	}

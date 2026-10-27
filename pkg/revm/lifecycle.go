@@ -171,11 +171,11 @@ func readJSON(path string, v any) error {
 }
 
 type Session struct {
-	Version    int    `json:"version"`
-	ID         string `json:"id"`
-	Config     Config `json:"config"`
-	VolumeID   string `json:"volumeID,omitempty"`
-	InstanceID string `json:"instanceID,omitempty"`
+	Version    int       `json:"version"`
+	ID         string    `json:"id"`
+	Config     VMOptions `json:"config"`
+	VolumeID   string    `json:"volumeID,omitempty"`
+	InstanceID string    `json:"instanceID,omitempty"`
 }
 type RunRecord struct {
 	ExitCode   *int              `json:"exitCode,omitempty"`
@@ -249,7 +249,7 @@ func loadVolume(r Roots, name string) (Volume, error) {
 	}
 	return v, nil
 }
-func beginRun(ctx context.Context, cfg *Config) (lease *sessionRun, retErr error) {
+func beginRun(ctx context.Context, cfg *VMOptions) (lease *sessionRun, retErr error) {
 	r, err := ResolveRoots()
 	if err != nil {
 		return nil, err
@@ -396,7 +396,6 @@ func beginRun(ctx context.Context, cfg *Config) (lease *sessionRun, retErr error
 			return nil, err
 		}
 	}
-	cfg.paths = l
 	return l, nil
 }
 func (l *sessionRun) finish(result *execution.Result, runErr error) error {

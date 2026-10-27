@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"linuxvm/pkg/commanderr"
+	"linuxvm/pkg/define"
 	"linuxvm/pkg/execution"
 	"linuxvm/pkg/revm"
 	"strings"
@@ -17,7 +18,7 @@ func TestSessionTableShowsCommandTimeAndExit(t *testing.T) {
 	start := time.Date(2026, 10, 19, 10, 0, 0, 0, time.UTC)
 	end := start.Add(3 * time.Second)
 	code := 42
-	view := revm.SessionView{Session: revm.Session{ID: "failed-run", Config: revm.Config{RunMode: revm.ModeRootfs, Exec: execution.Request{Argv: []string{"sh", "-c", "echo hello\nexit 42"}}}}, Status: "stopped", LastRun: &revm.RunRecord{StartedAt: start, FinishedAt: &end, ExitCode: &code}}
+	view := revm.SessionView{Session: revm.Session{ID: "failed-run", Config: revm.VMOptions{RunMode: define.RootFsMode, ExecOptions: revm.ExecOptions{Exec: execution.Request{Argv: []string{"sh", "-c", "echo hello\nexit 42"}}}}}, Status: "stopped", LastRun: &revm.RunRecord{StartedAt: start, FinishedAt: &end, ExitCode: &code}}
 	var out bytes.Buffer
 	if err := writeSessions(&out, []revm.SessionView{view}, end); err != nil {
 		t.Fatal(err)

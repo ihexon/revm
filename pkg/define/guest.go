@@ -5,7 +5,7 @@ import "linuxvm/pkg/protocol"
 func (spec *MachineSpec) GuestSpec() protocol.GuestSpec {
 	return protocol.GuestSpec{
 		SchemaVersion: protocol.GuestSpecVersion,
-		RunMode:       spec.RunMode,
+		RunMode:       string(spec.RunMode),
 		NetworkMode:   string(spec.VirtualNetworkMode),
 		Storage: protocol.GuestStorage{
 			VirtioFS: guestMountsFromSpec(spec.Storage.VirtioFS),

@@ -128,6 +128,5 @@ revm ctl --id light --list-port
 | --list-port | 列出 gvisor 映射。 |
 | --port-export | 创建 TCP/IPv4 映射，可重复。 |
 | --port-unexport | 删除 TCP/IPv4 映射，可重复。 |
-| --log-level | 日志等级。 |
 
 Use `revm ctl --id ID --list-port --json` for a machine-readable array. Session records resolve the current instance socket; runtime paths may use the short `/tmp/revm-<uid>` fallback.

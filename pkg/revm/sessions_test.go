@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"linuxvm/pkg/define"
 	"os"
 	"path/filepath"
 	"strings"
@@ -315,7 +316,7 @@ func TestTemporaryRunRetention(t *testing.T) {
 func TestInspectEndpointsAndVolumeUsage(t *testing.T) {
 	r := testRoots(t)
 	cfg := testConfig()
-	cfg.RunMode = ModeContainer
+	cfg.RunMode = define.ContainerMode
 	volume := fakeVolume(t, r, cfg.SessionID)
 	disk := filepath.Join(r.volumeDir(volume.Name), "disk.ext4")
 	if err := os.Truncate(disk, 8*1024*1024); err != nil {

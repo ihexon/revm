@@ -15,152 +15,129 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// RunMode selects the VM run mode.
-type RunMode string
-
-const (
-	// ModeRootfs boots the VM with a rootfs and executes a command.
-	ModeRootfs RunMode = "rootfs"
-	// ModeContainer boots the VM with the built-in container runtime (Podman).
-	ModeContainer RunMode = "container"
-	// ModeExec connects to an existing VM session without building a VM.
-	ModeExec RunMode = "exec"
-	// ModeControl performs control-plane operations against an existing VM.
-	ModeControl RunMode = "control"
-)
-
-func (m RunMode) IsValid() bool {
-	switch m {
-	case ModeRootfs, ModeContainer, ModeExec, ModeControl:
-		return true
-	default:
-		return false
-	}
-}
-
-type Config struct {
-	Remove     bool   `json:"remove,omitempty"` // remove records only after successful execution and cleanup
-	VolumeName string `json:"volumeName,omitempty"`
-	paths      *sessionRun
-	RunMode    RunMode `json:"runMode,omitempty"`
-	SessionID  string  `json:"sessionID,omitempty"` // session name
-	CPUs       int     `json:"cpus,omitempty"`      // 0 → host CPU count
-	MemoryMB   uint64  `json:"memoryMB,omitempty"`  // 0 → host total RAM
-
+type ExecOptions struct {
 	Exec execution.Request `json:"exec"`
 	TTY  string            `json:"tty,omitempty"`
+}
 
-	Network            string                `json:"network,omitempty"` // "gvisor" | "tsi"
-	Mounts             []define.VirtioFSSpec `json:"mounts,omitempty"`  // "/host:/guest[,ro]"
+type VMOptions struct {
+	ExecOptions
+	Remove             bool                  `json:"remove,omitempty"`
+	VolumeName         string                `json:"volumeName,omitempty"`
+	RunMode            define.RunMode        `json:"runMode,omitempty"`
+	SessionID          string                `json:"sessionID,omitempty"`
+	CPUs               int                   `json:"cpus,omitempty"`
+	MemoryMB           uint64                `json:"memoryMB,omitempty"`
+	Network            string                `json:"network,omitempty"`
+	Mounts             []define.VirtioFSSpec `json:"mounts,omitempty"`
 	Disks              []RawDiskSpec         `json:"disks,omitempty"`
 	ContainerDisk      *ContainerDiskSpec    `json:"containerDisk,omitempty"`
 	PodmanProxyAPIFile string                `json:"podmanProxyAPIFile,omitempty"`
 	ManageAPIFile      string                `json:"manageAPIFile,omitempty"`
 	Proxy              bool                  `json:"proxy,omitempty"`
-	LogLevel           string                `json:"logLevel,omitempty"` // default "info"
-	PortList           bool                  `json:"portList,omitempty"`
+	LogLevel           string                `json:"logLevel,omitempty"`
 	PortForwards       []define.PortForward  `json:"portForwards,omitempty"`
-	PortUnforwards     []define.PortForward  `json:"portUnforwards,omitempty"`
 }
 
-// DefaultConfig returns a Config with sensible defaults pre-filled.
-// Zero-value resource fields (CPUs, MemoryMB) are resolved at VM creation time.
-// An omitted session name creates a disposable run.
-func DefaultConfig() *Config {
-	return &Config{
-		Network:  "gvisor",
-		LogLevel: "info",
-		Exec:     execution.Request{WorkDir: "/"},
-		TTY:      "auto",
+func normalizeExecOptions(opts *ExecOptions) error {
+	if opts.TTY == "" {
+		opts.TTY = "auto"
 	}
-}
-
-// --- Normalization & Validation --------------------------------------------
-
-// NormalizeConfig returns a copy of cfg with defaults resolved.
-func NormalizeConfig(cfg Config) (Config, error) {
-	if cfg.TTY == "" {
-		cfg.TTY = "auto"
+	if opts.Exec.WorkDir == "" {
+		opts.Exec.WorkDir = "/"
 	}
-	if cfg.Network == "" {
-		cfg.Network = "gvisor"
-	}
-
-	if cfg.LogLevel == "" {
-		cfg.LogLevel = "info"
-	}
-
-	if cfg.Exec.WorkDir == "" {
-		cfg.Exec.WorkDir = "/"
-	}
-
-	if cfg.RunMode == ModeRootfs || cfg.RunMode == ModeContainer {
-		if cfg.SessionID == "" {
-			cfg.SessionID = "run-" + uuid.NewString()
-			cfg.Remove = true
-		}
-		if cfg.CPUs == 0 {
-			cfg.CPUs = min(runtime.NumCPU(), 4)
-		}
-
-		if cfg.MemoryMB == 0 {
-			m, err := mem.VirtualMemory()
-			if err != nil {
-				return Config{}, fmt.Errorf("detect host memory: %w", err)
-			}
-			cfg.MemoryMB = max(512, min(2048, m.Available/1024/1024/4))
-		}
-	}
-
-	if err := validateConfig(cfg); err != nil {
-		return Config{}, err
-	}
-
-	if cfg.Proxy {
-		proxyEnv, err := systemProxyEnv(define.VNetMode(cfg.Network))
-		if err != nil {
-			return Config{}, err
-		}
-		// Explicit --env values take precedence over detected defaults.
-		cfg.Exec.Env = append(proxyEnv, cfg.Exec.Env...)
-	}
-	return cfg, nil
-}
-
-func validateConfig(cfg Config) error {
-	if cfg.TTY != "auto" && cfg.TTY != "always" && cfg.TTY != "never" {
+	if opts.TTY != "auto" && opts.TTY != "always" && opts.TTY != "never" {
 		return fmt.Errorf("--tty must be auto, always or never")
 	}
-	if _, err := logrus.ParseLevel(cfg.LogLevel); err != nil {
-		return fmt.Errorf("invalid --log-level %q", cfg.LogLevel)
+	if !path.IsAbs(opts.Exec.WorkDir) {
+		return fmt.Errorf("--workdir must be an absolute guest path")
 	}
-	for _, env := range cfg.Exec.Env {
+	for _, env := range opts.Exec.Env {
 		key, _, ok := strings.Cut(env, "=")
 		if !ok || key == "" || strings.ContainsAny(env, "\x00") {
 			return fmt.Errorf("invalid environment variable %q: expected KEY=VALUE", env)
 		}
 	}
-	if !path.IsAbs(cfg.Exec.WorkDir) {
-		return fmt.Errorf("--workdir must be an absolute guest path")
+	return nil
+}
+
+func normalizeVMOptions(cfg VMOptions) (VMOptions, error) {
+	if err := normalizeExecOptions(&cfg.ExecOptions); err != nil {
+		return VMOptions{}, err
 	}
+	if cfg.Network == "" {
+		cfg.Network = "gvisor"
+	}
+	if cfg.LogLevel == "" {
+		cfg.LogLevel = "info"
+	}
+	if cfg.SessionID == "" {
+		cfg.SessionID, cfg.Remove = "run-"+uuid.NewString(), true
+	}
+	if cfg.CPUs == 0 {
+		cfg.CPUs = min(runtime.NumCPU(), 4)
+	}
+	if cfg.MemoryMB == 0 {
+		m, err := mem.VirtualMemory()
+		if err != nil {
+			return VMOptions{}, fmt.Errorf("detect host memory: %w", err)
+		}
+		cfg.MemoryMB = max(512, min(2048, m.Available/1024/1024/4))
+	}
+	if err := validateVMOptions(cfg); err != nil {
+		return VMOptions{}, err
+	}
+	if cfg.Proxy {
+		proxyEnv, err := systemProxyEnv(define.VNetMode(cfg.Network))
+		if err != nil {
+			return VMOptions{}, err
+		}
+		cfg.Exec.Env = append(proxyEnv, cfg.Exec.Env...)
+	}
+	return cfg, nil
+}
+
+func validateVMOptions(cfg VMOptions) error {
 	if err := validateSessionID(cfg.SessionID); err != nil {
 		return err
 	}
-
-	if !cfg.RunMode.IsValid() {
-		return fmt.Errorf("invalid run mode %q", cfg.RunMode)
+	if _, err := logrus.ParseLevel(cfg.LogLevel); err != nil {
+		return fmt.Errorf("invalid --log-level %q", cfg.LogLevel)
 	}
-
 	switch cfg.RunMode {
-	case ModeExec:
-		return nil
-	case ModeControl:
-		return validateControlConfig(cfg)
-	case ModeRootfs, ModeContainer:
-		return validateBuildConfig(cfg)
+	case define.ContainerMode:
+		if (cfg.VolumeName == "") == (cfg.ContainerDisk == nil) {
+			return fmt.Errorf("podman requires exactly one of --volume NAME or --container-disk PATH")
+		}
+		if len(cfg.Exec.Argv) != 0 {
+			return fmt.Errorf("podman does not accept a command; use revm exec")
+		}
+	case define.RootFsMode:
+		if cfg.VolumeName != "" || cfg.ContainerDisk != nil {
+			return fmt.Errorf("container storage requires podman mode")
+		}
+		if len(cfg.Exec.Argv) == 0 || cfg.Exec.Argv[0] == "" {
+			return fmt.Errorf("rootfs mode requires a non-empty command")
+		}
 	default:
 		return fmt.Errorf("invalid run mode %q", cfg.RunMode)
 	}
+	if cfg.MemoryMB < 512 {
+		return fmt.Errorf("memory must be at least 512 MB, got %d", cfg.MemoryMB)
+	}
+	if cfg.CPUs < 1 || cfg.CPUs > 32 {
+		return fmt.Errorf("cpus must be between 1 and 32, got %d", cfg.CPUs)
+	}
+	if cfg.Network != "gvisor" && cfg.Network != "tsi" {
+		return fmt.Errorf("network must be gvisor or tsi, got %q", cfg.Network)
+	}
+	if cfg.RunMode == define.ContainerMode && cfg.Network != "gvisor" {
+		return fmt.Errorf("container mode requires gvisor network")
+	}
+	if len(cfg.PortForwards) > 0 && cfg.Network != "gvisor" {
+		return fmt.Errorf("port export requires gvisor network")
+	}
+	return validatePortForwardSet(cfg.PortForwards)
 }
 
 // validateSessionID keeps the session directory below ~/.cache/revm. Session
@@ -187,76 +164,6 @@ func validateSessionID(id string) error {
 		}
 		return fmt.Errorf("session name %q contains invalid character %q; use letters, numbers, '.', '_' or '-'", id, c)
 	}
-	return nil
-}
-
-func validateControlConfig(cfg Config) error {
-	if len(cfg.Exec.Argv) > 0 {
-		return fmt.Errorf("control operations cannot be combined with an exec command")
-	}
-	hasPortUpdates := len(cfg.PortForwards) > 0 || len(cfg.PortUnforwards) > 0
-	operationCount := 0
-	if cfg.PortList {
-		operationCount++
-	}
-	if hasPortUpdates {
-		operationCount++
-	}
-	if operationCount > 1 {
-		return fmt.Errorf("control operations cannot be combined")
-	}
-	if operationCount == 0 {
-		return fmt.Errorf("control mode requires a control operation")
-	}
-	return nil
-}
-
-func validateBuildConfig(cfg Config) error {
-	if cfg.RunMode == ModeContainer {
-		if (cfg.VolumeName == "") == (cfg.ContainerDisk == nil) {
-			return fmt.Errorf("podman requires exactly one of --volume NAME or --container-disk PATH")
-		}
-		if len(cfg.Exec.Argv) != 0 {
-			return fmt.Errorf("podman does not accept a command; use revm exec")
-		}
-	} else if cfg.VolumeName != "" || cfg.ContainerDisk != nil {
-		return fmt.Errorf("container storage requires podman mode")
-	}
-
-	if len(cfg.PortUnforwards) > 0 {
-		return fmt.Errorf("port unexport requires control mode")
-	}
-
-	if cfg.RunMode == ModeRootfs {
-		if len(cfg.Exec.Argv) == 0 || cfg.Exec.Argv[0] == "" {
-			return fmt.Errorf("rootfs mode requires a non-empty command")
-		}
-	}
-
-	if cfg.MemoryMB < 512 {
-		return fmt.Errorf("memory must be at least 512 MB, got %d", cfg.MemoryMB)
-	}
-
-	if cfg.CPUs < 1 {
-		return fmt.Errorf("cpus must be at least 1, got %d", cfg.CPUs)
-	}
-	if cfg.CPUs > 32 {
-		return fmt.Errorf("cpus must be at most 32 (libkrun supported limit), got %d", cfg.CPUs)
-	}
-
-	switch cfg.Network {
-	case "gvisor", "tsi":
-		// ok
-	default:
-		return fmt.Errorf("network must be \"gvisor\" or \"tsi\", got %q", cfg.Network)
-	}
-	if cfg.RunMode == ModeContainer && cfg.Network != string(define.GVISOR) {
-		return fmt.Errorf("container mode requires gvisor network")
-	}
-	if len(cfg.PortForwards) > 0 && cfg.Network != string(define.GVISOR) {
-		return fmt.Errorf("port export requires network %q, got %q", define.GVISOR, cfg.Network)
-	}
-
 	return nil
 }
 

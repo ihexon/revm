@@ -4,23 +4,12 @@ import (
 	"time"
 )
 
+type RunMode string
+
 const (
-	ContainerMode RunMode = iota
-	RootFsMode
+	ContainerMode RunMode = "container"
+	RootFsMode    RunMode = "rootfs"
 )
-
-type RunMode int32
-
-func (m RunMode) String() string {
-	switch m {
-	case ContainerMode:
-		return "container"
-	case RootFsMode:
-		return "rootfs"
-	default:
-		return "unknown"
-	}
-}
 
 type VNetMode string
 

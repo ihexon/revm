@@ -84,7 +84,7 @@ func newRunCommand() *cli.Command {
 			logLevelFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
-			return runLogged(ctx, command, revm.ModeRootfs)
+			return runVM(ctx, command, define.RootFsMode)
 		},
 	}
 }
@@ -110,7 +110,7 @@ func newPodmanCommand() *cli.Command {
 			logLevelFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
-			return runLogged(ctx, command, revm.ModeContainer)
+			return runVM(ctx, command, define.ContainerMode)
 		},
 	}
 }
@@ -126,10 +126,9 @@ func newExecCommand() *cli.Command {
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "guest environment (KEY=VALUE); repeatable"},
 			&cli.StringFlag{Name: define.FlagWorkDir, Value: "/", Usage: "absolute guest working directory"},
 			sessionFlag(true),
-			logLevelFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
-			return runLogged(ctx, command, revm.ModeExec)
+			return revm.ExecSession(ctx, command.String(define.FlagSessionID), execOptions(command))
 		},
 	}
 }
@@ -146,7 +145,6 @@ func newCtlCommand() *cli.Command {
 			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "expose a guest TCP port on the host (format: [tcp:]<host-port>:<guest-port> or [tcp:]<host-ip>:<host-port>:<guest-port>); updates the running VM and exits; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagPortUnexport, Usage: "stop exposing a host TCP port for a running VM (format: [tcp:]<host-port> or [tcp:]<host-ip>:<host-port>); can be specified multiple times"},
 			sessionFlag(true),
-			logLevelFlag(),
 		},
 		Action: func(ctx context.Context, command *cli.Command) error {
 			return runCtl(ctx, command)
@@ -154,50 +152,62 @@ func newCtlCommand() *cli.Command {
 	}
 }
 
-func runLogged(ctx context.Context, command *cli.Command, mode revm.RunMode) error {
-	cfg, err := parseConfig(command, mode)
+func runVM(ctx context.Context, command *cli.Command, mode define.RunMode) error {
+	cfg, err := parseVMOptions(command, mode)
 	if err != nil {
 		return commanderr.Usage(err)
 	}
-	cfg.TTY = command.String("tty")
-	return revm.Run(ctx, cfg)
+	return revm.RunVM(ctx, *cfg)
 }
 
 func runCtl(ctx context.Context, command *cli.Command) error {
-	cfg, err := parseConfig(command, revm.ModeControl)
+	if command.Args().Len() != 0 {
+		return commanderr.Usage(fmt.Errorf("ctl does not accept a command"))
+	}
+	exports, err := revm.ParsePortExportSpecs(command.StringSlice(define.FlagPortExport))
 	if err != nil {
 		return commanderr.Usage(err)
 	}
-	if command.Bool("json") && !cfg.PortList {
+	unexports, err := revm.ParsePortUnexportSpecs(command.StringSlice(define.FlagPortUnexport))
+	if err != nil {
+		return commanderr.Usage(err)
+	}
+	list := command.Bool(define.FlagListPort)
+	if list == (len(exports)+len(unexports) > 0) {
+		return commanderr.Usage(fmt.Errorf("select either --list-port or port updates"))
+	}
+	if command.Bool("json") && !list {
 		return commanderr.Usage(fmt.Errorf("--json requires --list-port"))
 	}
-	if cfg.PortList {
-		ports, err := revm.ListPorts(ctx, cfg)
-		if err != nil {
-			return err
-		}
-		if command.Bool("json") {
-			if ports == nil {
-				ports = []define.PortMapping{}
-			}
-			return json.NewEncoder(command.Writer).Encode(ports)
-		}
-		return writePortMappings(command.Writer, ports)
+	session := command.String(define.FlagSessionID)
+	if !list {
+		return revm.UpdatePorts(ctx, session, exports, unexports)
 	}
-	return revm.Run(ctx, cfg)
+	ports, err := revm.ListPorts(ctx, session)
+	if err != nil {
+		return err
+	}
+	if command.Bool("json") {
+		if ports == nil {
+			ports = []define.PortMapping{}
+		}
+		return json.NewEncoder(command.Writer).Encode(ports)
+	}
+	return writePortMappings(command.Writer, ports)
 }
 
-// Parse directly into the one runtime input configuration. Validation and
-// default resolution happen once at the public Run/ListPorts entry points.
-func parseConfig(c *cli.Command, mode revm.RunMode) (*revm.Config, error) {
-	cfg := revm.DefaultConfig()
-	cfg.RunMode, cfg.SessionID, cfg.LogLevel = mode, c.String(define.FlagSessionID), c.String(define.FlagLogLevel)
-	cfg.CPUs, cfg.MemoryMB = int(c.Int8(define.FlagCPUS)), c.Uint64(define.FlagMemoryInMB)
-	cfg.Network, cfg.Proxy = c.String(define.FlagVNetworkType), c.Bool(define.FlagUsingSystemProxy)
-	cfg.Exec = execution.Request{Argv: c.Args().Slice(), Env: c.StringSlice(define.FlagEnvs), WorkDir: c.String(define.FlagWorkDir)}
-	cfg.VolumeName = c.String("volume")
-	cfg.ManageAPIFile, cfg.PodmanProxyAPIFile = c.String(define.FlagManageAPIFile), c.String(define.FlagPodmanProxyAPIFile)
-	cfg.PortList = c.Bool(define.FlagListPort)
+func execOptions(c *cli.Command) revm.ExecOptions {
+	return revm.ExecOptions{Exec: execution.Request{Argv: c.Args().Slice(), Env: c.StringSlice(define.FlagEnvs), WorkDir: c.String(define.FlagWorkDir)}, TTY: c.String("tty")}
+}
+
+func parseVMOptions(c *cli.Command, mode define.RunMode) (*revm.VMOptions, error) {
+	cfg := &revm.VMOptions{
+		RunMode: mode, SessionID: c.String(define.FlagSessionID), LogLevel: c.String(define.FlagLogLevel),
+		CPUs: int(c.Int8(define.FlagCPUS)), MemoryMB: c.Uint64(define.FlagMemoryInMB),
+		Network: c.String(define.FlagVNetworkType), Proxy: c.Bool(define.FlagUsingSystemProxy),
+		ExecOptions: execOptions(c), VolumeName: c.String("volume"),
+		ManageAPIFile: c.String(define.FlagManageAPIFile), PodmanProxyAPIFile: c.String(define.FlagPodmanProxyAPIFile),
+	}
 	var err error
 	if cfg.Mounts, err = filesystem.ParseMounts(c.StringSlice(define.FlagMount)); err != nil {
 		return nil, err
@@ -213,9 +223,6 @@ func parseConfig(c *cli.Command, mode revm.RunMode) (*revm.Config, error) {
 		cfg.ContainerDisk = &disk
 	}
 	if cfg.PortForwards, err = revm.ParsePortExportSpecs(c.StringSlice(define.FlagPortExport)); err != nil {
-		return nil, err
-	}
-	if cfg.PortUnforwards, err = revm.ParsePortUnexportSpecs(c.StringSlice(define.FlagPortUnexport)); err != nil {
 		return nil, err
 	}
 	return cfg, nil

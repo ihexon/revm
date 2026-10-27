@@ -12,142 +12,74 @@ import (
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/service/management"
 	"net/http"
-	"os"
-
-	"github.com/sirupsen/logrus"
 )
 
-// execSession resolves the execution configuration and connects to an existing VM
-// session without building or starting a virtual machine.
-func execSession(ctx context.Context, cfg *Config) error {
-	if cfg == nil {
-		return fmt.Errorf("config must not be nil")
+func ExecSession(ctx context.Context, session string, opts ExecOptions) error {
+	if err := normalizeExecOptions(&opts); err != nil {
+		return commanderr.Usage(err)
 	}
-	normalizedCfg := *cfg
-	if normalizedCfg.RunMode != ModeExec {
-		return fmt.Errorf("exec requires run mode %q, got %q", ModeExec, normalizedCfg.RunMode)
+	if err := validateSessionID(session); err != nil {
+		return commanderr.Usage(err)
 	}
-	logFile, err := setupRunLogging(normalizedCfg)
+	workspace, err := sessionWorkspace(session)
 	if err != nil {
-		return fmt.Errorf("setup logging: %w", err)
-	}
-	defer releaseRunLog(logFile)
-
-	return execInSession(ctx, normalizedCfg)
-}
-
-func controlSession(ctx context.Context, cfg *Config) (retErr error) {
-	if cfg == nil {
-		return fmt.Errorf("config must not be nil")
-	}
-
-	normalizedCfg := *cfg
-	if normalizedCfg.RunMode != ModeControl {
-		return fmt.Errorf("control operations require run mode %q, got %q", ModeControl, normalizedCfg.RunMode)
-	}
-	logFile, err := setupRunLogging(normalizedCfg)
-	if err != nil {
-		return fmt.Errorf("setup logging: %w", err)
-	}
-	defer func() {
-		if retErr != nil {
-			logrus.Error(retErr)
-		}
-		releaseRunLog(logFile)
-	}()
-
-	logrus.Infof("revm build info: %s", buildTimeInfo())
-	logrus.Infof("control command, full cmdline: %q", os.Args)
-
-	if !normalizedCfg.PortList && len(normalizedCfg.PortForwards) == 0 && len(normalizedCfg.PortUnforwards) == 0 {
-		return fmt.Errorf("no control operation requested")
-	}
-	if len(normalizedCfg.Exec.Argv) > 0 {
-		return fmt.Errorf("control operations cannot be combined with an exec command")
-	}
-	if normalizedCfg.PortList {
-		_, err := ListPorts(ctx, cfg)
 		return err
 	}
-	return updatePortForwards(ctx, normalizedCfg)
+	if len(opts.Exec.Argv) == 0 {
+		opts.Exec.Argv = []string{"/bin/sh"}
+	}
+	_, err = executeGuest(ctx, newMachinePathManager(workspace).GetGuestControlSocketFile(), opts)
+	return err
 }
 
-func ListPorts(ctx context.Context, cfg *Config) ([]define.PortMapping, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("config must not be nil")
+func portEndpoint(ctx context.Context, session string) (string, error) {
+	if err := validateSessionID(session); err != nil {
+		return "", commanderr.Usage(err)
 	}
-
-	normalizedCfg, err := NormalizeConfig(*cfg)
+	workspace, err := sessionWorkspace(session)
 	if err != nil {
-		return nil, commanderr.Usage(err)
-	}
-	if normalizedCfg.RunMode != ModeControl {
-		return nil, fmt.Errorf("port list requires run mode %q, got %q", ModeControl, normalizedCfg.RunMode)
-	}
-	workspace, err := sessionWorkspace(normalizedCfg.SessionID)
-	if err != nil {
-		return nil, err
+		return "", err
 	}
 	view, err := fetchManagementView(ctx, workspace)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	if view.NetworkMode != string(define.GVISOR) {
-		return nil, fmt.Errorf("port list requires network %q, got %q", define.GVISOR, view.NetworkMode)
+		return "", fmt.Errorf("port operations require gvisor network")
 	}
-	if view.Endpoints.GVProxyAPI == "" {
-		return nil, fmt.Errorf("gvproxy API endpoint is empty")
-	}
-	return gvproxy.ListPorts(ctx, view.Endpoints.GVProxyAPI)
+	return view.Endpoints.GVProxyAPI, nil
 }
 
-func updatePortForwards(ctx context.Context, normalizedCfg Config) error {
-	workspace, err := sessionWorkspace(normalizedCfg.SessionID)
+func ListPorts(ctx context.Context, session string) ([]define.PortMapping, error) {
+	endpoint, err := portEndpoint(ctx, session)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	view, err := fetchManagementView(ctx, workspace)
-	if err != nil {
-		return err
-	}
-	if view.NetworkMode != string(define.GVISOR) {
-		return fmt.Errorf("port updates require network %q, got %q", define.GVISOR, view.NetworkMode)
-	}
-	if view.Endpoints.GVProxyAPI == "" {
-		return fmt.Errorf("gvproxy API endpoint is empty")
-	}
-	if err := validatePortUpdateSet(normalizedCfg.PortUnforwards, "unexport"); err != nil {
-		return err
-	}
-	if err := validatePortUpdateSet(normalizedCfg.PortForwards, "export"); err != nil {
-		return err
-	}
+	return gvproxy.ListPorts(ctx, endpoint)
+}
 
-	for _, forward := range normalizedCfg.PortUnforwards {
-		if err := gvproxy.UnexposePort(ctx, view.Endpoints.GVProxyAPI, forward); err != nil {
-			return fmt.Errorf("unexport %s: %w", portForwardLocal(forward), err)
+func UpdatePorts(ctx context.Context, session string, exports, unexports []define.PortForward) error {
+	if err := validatePortUpdateSet(unexports, "unexport"); err != nil {
+		return commanderr.Usage(err)
+	}
+	if err := validatePortUpdateSet(exports, "export"); err != nil {
+		return commanderr.Usage(err)
+	}
+	endpoint, err := portEndpoint(ctx, session)
+	if err != nil {
+		return err
+	}
+	for _, port := range unexports {
+		if err := gvproxy.UnexposePort(ctx, endpoint, port); err != nil {
+			return err
 		}
 	}
-	for _, forward := range normalizedCfg.PortForwards {
-		if err := gvproxy.ExposePort(ctx, view.Endpoints.GVProxyAPI, forward); err != nil {
-			return fmt.Errorf("export %s -> %s: %w", portForwardLocal(forward), portForwardRemote(forward), err)
+	for _, port := range exports {
+		if err := gvproxy.ExposePort(ctx, endpoint, port); err != nil {
+			return err
 		}
 	}
 	return nil
-}
-
-func execInSession(ctx context.Context, cfg Config) error {
-	workspace, err := sessionWorkspace(cfg.SessionID)
-	if err != nil {
-		return err
-	}
-	socket := newMachinePathManager(workspace).GetGuestControlSocketFile()
-
-	if len(cfg.Exec.Argv) == 0 {
-		cfg.Exec.Argv = []string{"/bin/sh"}
-	}
-	_, err = executeGuest(ctx, socket, cfg)
-	return err
 }
 
 func fetchManagementView(ctx context.Context, workspaceDirPath string) (management.VMConfigView, error) {

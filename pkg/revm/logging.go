@@ -68,14 +68,11 @@ func guestLogTail(path string) string {
 	return strings.Join(lines[max(0, len(lines)-8):], "\n")
 }
 
-func setupRunLogging(cfg Config) (*os.File, error) {
-	if err := validateSessionID(cfg.SessionID); err != nil {
+func setupRunLogging(level, dir string) (*os.File, error) {
+	if err := setupLogrus(level); err != nil {
 		return nil, err
 	}
-	if err := setupLogrus(cfg.LogLevel); err != nil {
-		return nil, err
-	}
-	logFile, err := setupLogFile(cfg)
+	logFile, err := setupLogFile(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -84,11 +81,7 @@ func setupRunLogging(cfg Config) (*os.File, error) {
 	// once makes log lines interleave with command output and corrupt the
 	// terminal layout. Callers can follow the session log when they need the
 	// lifecycle trace.
-	if logFile != nil {
-		logrus.SetOutput(logFile)
-	} else {
-		logrus.SetOutput(io.Discard)
-	}
+	logrus.SetOutput(logFile)
 	return logFile, nil
 }
 
@@ -110,11 +103,8 @@ func setupLogrus(level string) error {
 	return nil
 }
 
-func setupLogFile(cfg Config) (*os.File, error) {
-	if cfg.paths == nil {
-		return nil, nil
-	}
-	logFilePath := filepath.Join(cfg.paths.logDir, "revm.log")
+func setupLogFile(dir string) (*os.File, error) {
+	logFilePath := filepath.Join(dir, "revm.log")
 
 	if err := os.MkdirAll(filepath.Dir(logFilePath), 0755); err != nil {
 		return nil, fmt.Errorf("create log directory: %w", err)

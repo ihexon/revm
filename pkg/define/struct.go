@@ -24,7 +24,7 @@ type MachineSpec struct {
 	PodmanInfo       PodmanInfo    `json:"podmanInfo,omitempty"` // 仅在 container mode 下有意义
 	PortForwards     []PortForward `json:"portForwards,omitempty"`
 	VMCtlAddr        string        `json:"vmCtlAddr,omitempty"`
-	RunMode          string        `json:"runMode,omitempty"`
+	RunMode          RunMode       `json:"runMode,omitempty"`
 	GuestControlAddr string        `json:"guestControlAddr,omitempty"`
 	GuestAgentCfg    GuestAgentCfg `json:"guestAgentCfg,omitempty"`
 }

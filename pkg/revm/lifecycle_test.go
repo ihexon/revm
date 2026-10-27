@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"linuxvm/pkg/define"
+	"linuxvm/pkg/execution"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,12 +27,8 @@ func testRoots(t *testing.T) Roots {
 	}
 	return r
 }
-func testConfig() Config {
-	c := *DefaultConfig()
-	c.RunMode = ModeRootfs
-	c.SessionID = "test-" + uuid.NewString()
-	c.Exec.Argv = []string{"true"}
-	return c
+func testConfig() VMOptions {
+	return VMOptions{RunMode: define.RootFsMode, SessionID: "test-" + uuid.NewString(), Network: "gvisor", ExecOptions: ExecOptions{Exec: execution.Request{Argv: []string{"true"}}}}
 }
 func fakeVolume(t *testing.T, r Roots, id string) Volume {
 	t.Helper()
@@ -77,7 +75,6 @@ func TestSessionResourcesAndStableLock(t *testing.T) {
 	if _, err := os.Stat(log); err != nil {
 		t.Fatal("log was removed", err)
 	}
-	cfg.paths = nil
 	l2, err := beginRun(context.Background(), &cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +91,7 @@ func TestSessionResourcesAndStableLock(t *testing.T) {
 func TestPersistentVolumeReuseAndMissingReference(t *testing.T) {
 	r := testRoots(t)
 	cfg := testConfig()
-	cfg.RunMode = ModeContainer
+	cfg.RunMode = define.ContainerMode
 	cfg.VolumeName = "podman-" + cfg.SessionID
 	v := fakeVolume(t, r, cfg.SessionID)
 	l, err := beginRun(context.Background(), &cfg)
@@ -111,7 +108,6 @@ func TestPersistentVolumeReuseAndMissingReference(t *testing.T) {
 	l.close()
 	// The same explicit volume can be reused by a different session.
 	os.RemoveAll(r.sessionDir(cfg.SessionID))
-	cfg.paths = nil
 	cfg.SessionID = "another-session"
 	cfg.ContainerDisk = nil
 	l2, err := beginRun(context.Background(), &cfg)
@@ -126,7 +122,6 @@ func TestPersistentVolumeReuseAndMissingReference(t *testing.T) {
 	if err := RemoveVolume(v.Name); err != nil {
 		t.Fatal(err)
 	}
-	cfg.paths = nil
 	cfg.ContainerDisk = nil
 	if _, err := beginRun(context.Background(), &cfg); err == nil {
 		t.Fatal("missing volume reference silently recreated")
@@ -145,7 +140,7 @@ func TestDamagedVolumeDoesNotBlockOtherVolumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := testConfig()
-	cfg.RunMode, cfg.VolumeName = ModeContainer, good.Name
+	cfg.RunMode, cfg.VolumeName = define.ContainerMode, good.Name
 	l, err := beginRun(context.Background(), &cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -245,7 +240,7 @@ func TestExistingDisksAreNeverReplaced(t *testing.T) {
 	if err := os.WriteFile(p, original, 0600); err != nil {
 		t.Fatal(err)
 	}
-	b := newMachineBuilder(0)
+	b := newMachineBuilder(define.RootFsMode)
 	if _, err := b.prepareRawDisk(context.Background(), RawDiskSpec{Path: p}); err == nil {
 		t.Fatal("invalid raw disk accepted")
 	}

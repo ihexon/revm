@@ -3,6 +3,7 @@ package revmcmd
 import (
 	"fmt"
 	"io"
+	"linuxvm/pkg/define"
 	"linuxvm/pkg/revm"
 	"strconv"
 	"strings"
@@ -19,9 +20,9 @@ func writeSessions(w io.Writer, views []revm.SessionView, now time.Time) error {
 	for _, v := range views {
 		mode := string(v.Config.RunMode)
 		switch v.Config.RunMode {
-		case revm.ModeRootfs:
+		case define.RootFsMode:
 			mode = "run"
-		case revm.ModeContainer:
+		case define.ContainerMode:
 			mode = "podman"
 		}
 		started, duration, code := "-", "-", "-"

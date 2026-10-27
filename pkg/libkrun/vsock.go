@@ -38,7 +38,7 @@ func (v *machine) setupVSock() error {
 	// The control endpoint is host-initiated, so libkrun owns the host-side
 	// Unix listener and forwards accepted connections into the guest port.
 	C.krun_vsock_device_add_unix_port(device, C.uint32_t(define.GuestControlPort), controlPath.value, C.bool(true))
-	if v.cfg.RunMode == define.ContainerMode.String() {
+	if v.cfg.RunMode == define.ContainerMode {
 		podmanAddr, err := network.ParseUnixAddr(v.cfg.PodmanInfo.HostPodmanTransportAddr)
 		if err != nil {
 			return err

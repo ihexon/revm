@@ -24,7 +24,7 @@ type machineBuilder struct {
 func newMachineBuilder(mode define.RunMode) *machineBuilder {
 	return &machineBuilder{
 		MachineSpec: define.MachineSpec{
-			RunMode: mode.String(),
+			RunMode: mode,
 		},
 	}
 }
@@ -212,29 +212,22 @@ func pathWithin(base, candidate string) bool {
 }
 
 // buildMachine prepares native devices; the session lease owns every file.
-func buildMachine(ctx context.Context, cfg Config, workspace string) (*define.MachineSpec, error) {
-	mode := define.RootFsMode
-	if cfg.RunMode == ModeContainer {
-		mode = define.ContainerMode
-	}
-	b := newMachineBuilder(mode)
-	if err := b.setupWorkspace(workspace); err != nil {
+func buildMachine(ctx context.Context, cfg VMOptions, lease *sessionRun) (*define.MachineSpec, error) {
+	b := newMachineBuilder(cfg.RunMode)
+	if err := b.setupWorkspace(lease.record.RuntimeDir); err != nil {
 		return nil, err
 	}
-	b.pathMgr.rootfsDir = filepath.Join(cfg.paths.record.CacheDir, "rootfs")
-	b.LogFile = filepath.Join(cfg.paths.logDir, "vm.log")
+	b.pathMgr.rootfsDir = filepath.Join(lease.record.CacheDir, "rootfs")
+	b.LogFile = filepath.Join(lease.logDir, "vm.log")
 	b.MemoryInMB, b.Cpus = cfg.MemoryMB, uint8(cfg.CPUs)
 	if err := b.configureNetwork(define.VNetMode(cfg.Network)); err != nil {
-		return nil, err
-	}
-	if err := validatePortForwardSet(cfg.PortForwards); err != nil {
 		return nil, err
 	}
 	b.PortForwards = cfg.PortForwards
 	if err := b.withBuiltInAlpineRootfs(ctx); err != nil {
 		return nil, err
 	}
-	if cfg.RunMode == ModeContainer {
+	if cfg.RunMode == define.ContainerMode {
 		if err := b.configurePodman(ctx, cfg.Exec.Env); err != nil {
 			return nil, err
 		}

@@ -13,8 +13,8 @@ import (
 // the VM; there is no guest shutdown RPC or reboot choreography.
 func RunGuest(ctx context.Context, vmc *protocol.GuestSpec) error {
 	g, services := errgroup.WithContext(ctx)
-	container := vmc.RunMode == define.ContainerMode.String()
-	if !container && vmc.RunMode != define.RootFsMode.String() {
+	container := vmc.RunMode == string(define.ContainerMode)
+	if !container && vmc.RunMode != string(define.RootFsMode) {
 		return fmt.Errorf("unsupported mode %q", vmc.RunMode)
 	}
 	g.Go(func() error { return StartGuestControlServer(services, container) })
