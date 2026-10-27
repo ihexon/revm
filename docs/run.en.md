@@ -8,6 +8,7 @@ revm run --cpus 2 --memory 1024 -- sh
 revm run --mount "$PWD:/work,ro" --workdir /work -- ls
 revm run --envs CHECK=value -- sh -c 'echo "$CHECK"'
 revm run --raw-disk "$HOME/data.ext4,mnt=/data" -- sh
+revm run --envs http_proxy=http://host.containers.internal:8080 -- sh
 revm run --tty=never -- sh -c 'echo hello; exit 42'
 ```
 

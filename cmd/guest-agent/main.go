@@ -2,21 +2,17 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"guestAgent/pkg/service"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/execution"
-	"linuxvm/pkg/protocol"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
 
 	"github.com/sirupsen/logrus"
-	"github.com/urfave/cli/v3"
 )
 
 func setupLogger() {
@@ -35,8 +31,6 @@ func setupLogger() {
 		FullTimestamp:   true,
 		TimestampFormat: "2006-01-02 15:04:05.000",
 	})
-
-	return
 }
 
 // setupGuestLogPort opens the guest-log port and routes guest logs to it.
@@ -86,32 +80,12 @@ func main() {
 		return
 	}
 
-	app := cli.Command{
-		Name:                      os.Args[0],
-		Usage:                     "rootfs guest agent",
-		UsageText:                 os.Args[0] + " [command] [flags]",
-		Description:               "setup the guest environment, and run the command specified by the user.",
-		Action:                    run,
-		DisableSliceFlagSeparator: true,
-		ExitErrHandler:            func(context.Context, *cli.Command, error) {},
-	}
-
-	if err := app.Run(context.Background(), os.Args); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			logrus.Errorf("cmdline exit unexpected: %v", err)
-			os.Exit(execution.FromProcess(exitErr).ExitCode())
-		}
-		if errors.Is(err, exec.ErrNotFound) {
-			logrus.Errorf("cmdline exit unexpected: %v", err)
-			os.Exit(127)
-		}
-
-		logrus.Fatalf("cmdline exit unexpected: %v", err)
+	if err := run(context.Background()); err != nil {
+		logrus.Fatal(err)
 	}
 }
 
-func run(ctx context.Context, _ *cli.Command) error {
+func run(ctx context.Context) error {
 	setupLogger()
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -136,16 +110,9 @@ func run(ctx context.Context, _ *cli.Command) error {
 		return fmt.Errorf("mount virtiofs: %w", err)
 	}
 
-	if err := service.ConfigureNetwork(ctx, virtualNetworkType(vmc)); err != nil {
+	if err := service.ConfigureNetwork(ctx); err != nil {
 		return err
 	}
 	execution.RequireGuestIsolation()
 	return service.RunGuest(ctx, vmc)
-}
-
-func virtualNetworkType(vmc *protocol.GuestSpec) define.VNetMode {
-	if vmc.NetworkMode == string(define.TSI) {
-		return define.TSI
-	}
-	return define.GVISOR
 }

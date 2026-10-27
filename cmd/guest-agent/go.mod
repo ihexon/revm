@@ -7,7 +7,6 @@ require (
 	github.com/mdlayher/vsock v1.3.0
 	github.com/moby/sys/mountinfo v0.7.3-0.20250407123443-8d553c09dc5e
 	github.com/sirupsen/logrus v1.10.2
-	github.com/urfave/cli/v3 v3.6.1
 	github.com/vishvananda/netlink v1.3.1
 	golang.org/x/sync v0.23.0
 	linuxvm v0.0.0

@@ -5,10 +5,8 @@ go 1.26.3
 require (
 	github.com/creack/pty v1.1.24
 	github.com/google/uuid v1.6.0
-	github.com/ihexon/getSysProxy v0.0.0-20260212161208-c7b7a282814a
 	github.com/inetaf/tcpproxy v0.0.0-20260515195445-c159a6051109
 	github.com/libp2p/go-yamux/v5 v5.1.0
-	github.com/pkg/errors v0.9.1
 	github.com/shirou/gopsutil/v4 v4.26.6
 	github.com/sirupsen/logrus v1.10.2
 	github.com/urfave/cli/v3 v3.6.1

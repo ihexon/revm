@@ -76,10 +76,7 @@ func newRunCommand() *cli.Command {
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagRawDisk, Usage: "attach a raw disk (format: <path>[,uuid=<uuid>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=relaxed|full|none]); auto-created if missing; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagMount, Usage: "share a host directory with the guest (format: /host/path:/guest/path[,ro]); can be specified multiple times"},
-			&cli.BoolFlag{Name: define.FlagUsingSystemProxy, Usage: "read the macOS system HTTP/HTTPS proxy and forward it to the guest as http_proxy/https_proxy env vars; in gvisor mode, 127.0.0.1 is automatically rewritten to host.containers.internal"},
 			&cli.StringFlag{Name: define.FlagWorkDir, Usage: "absolute working directory inside the guest", Value: "/"},
-			&cli.StringFlag{Name: define.FlagVNetworkType, Usage: "network mode: gvisor supports port forwarding; tsi uses host socket connections", Value: string(define.GVISOR)},
-			&cli.StringFlag{Name: define.FlagManageAPIFile, Usage: "custom Unix socket path for the host-side VM management API; defaults to the current instance runtime directory"},
 			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "forward a guest TCP port at startup (HOST_PORT:GUEST_PORT or HOST_IP:HOST_PORT:GUEST_PORT); repeatable; defaults to 127.0.0.1"},
 			sessionFlag(false),
 			logLevelFlag(),
@@ -102,11 +99,9 @@ func newPodmanCommand() *cli.Command {
 			&cli.StringSliceFlag{Name: define.FlagEnvs, Usage: "environment variables to pass to the guest process (format: KEY=VALUE); can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagRawDisk, Usage: "attach a raw disk (format: <path>[,uuid=<uuid>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=relaxed|full|none]); auto-created if missing; can be specified multiple times"},
 			&cli.StringSliceFlag{Name: define.FlagMount, Usage: "share a host directory with the guest (format: /host/path:/guest/path[,ro]); can be specified multiple times"},
-			&cli.BoolFlag{Name: define.FlagUsingSystemProxy, Usage: "read the macOS system HTTP/HTTPS proxy and forward it to the guest as http_proxy/https_proxy env vars; in gvisor mode, 127.0.0.1 is automatically rewritten to host.containers.internal"},
 			&cli.StringFlag{Name: "volume", Usage: "existing persistent volume name (create with revm volume create NAME)"},
 			&cli.StringFlag{Name: define.FlagContainerDisk, Usage: "persistent ext4 raw disk image for container storage (format: <path>); auto-created if missing; existing disks are inspected and never replaced automatically; mutually exclusive with --volume"},
 			&cli.StringFlag{Name: define.FlagPodmanProxyAPIFile, Usage: "custom Unix socket path for the host-side Podman API proxy; defaults to the current instance runtime directory"},
-			&cli.StringFlag{Name: define.FlagManageAPIFile, Usage: "custom Unix socket path for the host-side VM management API; defaults to the current instance runtime directory"},
 			&cli.StringSliceFlag{Name: define.FlagPortExport, Usage: "forward a guest TCP port at startup (HOST_PORT:GUEST_PORT or HOST_IP:HOST_PORT:GUEST_PORT); repeatable; defaults to 127.0.0.1"},
 			sessionFlag(false),
 			logLevelFlag(),
@@ -172,9 +167,8 @@ func parseVMOptions(c *cli.Command, mode define.RunMode) (*revm.VMOptions, error
 	cfg := &revm.VMOptions{
 		RunMode: mode, SessionID: c.String(define.FlagSessionID), LogLevel: c.String(define.FlagLogLevel),
 		CPUs: int(c.Int8(define.FlagCPUS)), MemoryMB: c.Uint64(define.FlagMemoryInMB),
-		Network: c.String(define.FlagVNetworkType), Proxy: c.Bool(define.FlagUsingSystemProxy),
 		ExecOptions: execOptions(c), VolumeName: c.String("volume"),
-		ManageAPIFile: c.String(define.FlagManageAPIFile), PodmanProxyAPIFile: c.String(define.FlagPodmanProxyAPIFile),
+		PodmanProxyAPIFile: c.String(define.FlagPodmanProxyAPIFile),
 	}
 	var err error
 	if cfg.Mounts, err = filesystem.ParseMounts(c.StringSlice(define.FlagMount)); err != nil {

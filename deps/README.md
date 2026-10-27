@@ -7,7 +7,7 @@ revm 的 libkrun、libkrunfw 和 Alpine rootfs 不在普通应用构建中本地
 ## 两层构建
 
 1. 依赖构建：手动运行 .github/workflows/build-deps.yml。
-2. 应用构建：运行 go run ./scripts --build revm，消费 deps.lock 指向的 release。
+2. 应用构建：运行 go run ./scripts，消费 deps.lock 指向的 release。
 
 这样可以把需要特定 runner、Docker、Rust、交叉架构和虚拟化依赖的构建从日常 Go 开发中隔离出来。
 
@@ -53,7 +53,7 @@ deps/.work 和 deps/dist 是生成目录，已加入 gitignore。
 应用构建读取根目录 deps.lock：
 
 ~~~bash
-go run ./scripts --build revm
+go run ./scripts
 ~~~
 
 应用构建只在 `out/.build-*` 副本中写入 rootfs 和 guest-agent，不修改源码中的嵌入文件。下载归档按校验和缓存，解压目录以 SHA-256 命名并在完成后发布；不同 checkout 可以共用缓存，同一 checkout 的构建由锁串行保护（重复启动直接报错）。缓存位于 `$XDG_CACHE_HOME/revm-build/v1`，未设置时使用系统缓存目录。构建失败保留上一次成功的 bundle。`./scripts/test.sh` 自行准备相同的原生依赖，无需先构建，也不依赖全局 `/tmp/.deps`。
@@ -65,7 +65,7 @@ go run ./scripts --build revm
 本地构建脚本输出到 `deps/dist`。无需发布 GitHub release 即可使用它们：
 
 ~~~bash
-go run ./scripts --build revm --deps-dir deps/dist
+go run ./scripts --deps-dir deps/dist
 ~~~
 
 指定目录必须同时包含当前平台的 libkrun 和 libkrunfw 压缩包；缺失时直接失败，不会退回旧版本。构建日志记录本地资产的 SHA-256，Alpine rootfs 仍使用 `deps.lock` 中校验过的版本。未指定 `--deps-dir` 时，仍消费 `deps.lock` 的已发布资产；修改 `sources.lock` 不会自动改变已发布资产。

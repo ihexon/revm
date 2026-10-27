@@ -11,13 +11,6 @@ const (
 	RootFsMode    RunMode = "rootfs"
 )
 
-type VNetMode string
-
-const (
-	GVISOR VNetMode = "gvisor"
-	TSI    VNetMode = "tsi"
-)
-
 const (
 	GuestAgentPathInGuest   = "/.bin/guest-agent"
 	GuestHiddenBinDir       = "/.bin"

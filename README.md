@@ -20,6 +20,7 @@ revm run -- sh
 printf 'hello\n' | revm run -- cat
 revm run --mount "$PWD:/workspace" --workdir /workspace -- sh
 revm run --raw-disk "$HOME/data.ext4,mnt=/data" -- sh
+revm run --envs http_proxy=http://host.containers.internal:8080 -- sh
 ```
 
 ## Sessions

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -107,7 +108,7 @@ func TestFailedBuildPreservesSourceAndOutput(t *testing.T) {
 		}
 	}
 	cache := t.TempDir()
-	b := &builder{sourceDir: root, goos: "darwin", goarch: "arm64", targets: []string{"revm"}, cacheDir: cache, archiveDir: filepath.Join(cache, "archives"), deps: depsLock{Assets: map[string]string{}}}
+	b := &builder{sourceDir: root, goos: "darwin", goarch: "arm64", cacheDir: cache, archiveDir: filepath.Join(cache, "archives"), deps: depsLock{Assets: map[string]string{}}}
 	if err := b.run(); err == nil {
 		t.Fatal("missing dependency accepted")
 	}
@@ -140,5 +141,34 @@ func TestConcurrentBuildSameOutputRejected(t *testing.T) {
 	b := &builder{sourceDir: root}
 	if err := b.run(); !errors.Is(err, unix.EWOULDBLOCK) {
 		t.Fatalf("concurrent publisher accepted: %v", err)
+	}
+}
+
+func TestLinuxLauncherPreservesPathsAndArguments(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &builder{outDir: filepath.Join(root, "bundle with spaces"), goarch: "arm64"}
+	for _, dir := range []string{b.binDir(), b.libDir()} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	loader := filepath.Join(b.libDir(), b.linuxDynLinkerName())
+	if err := os.WriteFile(loader, []byte("#!/bin/sh\nprintf '%s\\n' \"$REVM_BUNDLE_LAUNCHER\" \"$@\"\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.writeLinuxLauncher(); err != nil {
+		t.Fatal(err)
+	}
+	launcher := filepath.Join(b.binDir(), "revm")
+	out, err := exec.Command(launcher, "two words", "$literal", "").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Join([]string{launcher, "--library-path", b.binDir() + "/../lib", b.binDir() + "/revm.real", "two words", "$literal", "", ""}, "\n")
+	if string(out) != want {
+		t.Fatalf("launcher changed paths or argv: %q, want %q", out, want)
 	}
 }

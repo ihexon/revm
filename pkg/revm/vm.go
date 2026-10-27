@@ -78,11 +78,9 @@ func RunVM(ctx context.Context, cfg VMOptions) (retErr error) {
 		return fmt.Errorf("build machine: %w", err)
 	}
 	paths := newMachinePathManager(lease.record.RuntimeDir)
-	for link, target := range map[string]string{cfg.ManageAPIFile: paths.GetVMCtlSocketFile(), cfg.PodmanProxyAPIFile: paths.GetPodmanSocketFile()} {
-		if link != "" {
-			if err = createSymlink(target, link); err != nil {
-				return err
-			}
+	if cfg.PodmanProxyAPIFile != "" {
+		if err = createSymlink(paths.GetPodmanSocketFile(), cfg.PodmanProxyAPIFile); err != nil {
+			return err
 		}
 	}
 	lease.record.Status = "running"
@@ -117,11 +115,7 @@ func (vm *VM) Run(ctx context.Context) (*execution.Result, error) {
 	})
 	networkReady := make(chan struct{})
 	ready := sync.OnceFunc(func() { close(networkReady) })
-	if vm.spec.VirtualNetworkMode == define.TSI {
-		ready()
-	} else {
-		start(func(ctx context.Context) error { return gvproxy.Run(ctx, vm.GVProxySpec(), ready) })
-	}
+	start(func(ctx context.Context) error { return gvproxy.Run(ctx, vm.GVProxySpec(), ready) })
 	if vm.cfg.RunMode == define.ContainerMode {
 		start(func(ctx context.Context) error {
 			socket, err := network.ParseUnixAddr(vm.spec.PodmanInfo.HostPodmanProxyAddr)

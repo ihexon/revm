@@ -18,7 +18,7 @@ jobs:
           go-version: '1.26.4'
       - name: Build and unit tests
         run: |
-          go run ./scripts --build revm
+          go run ./scripts
           ./scripts/test.sh
       - name: Real VM regressions
         run: |

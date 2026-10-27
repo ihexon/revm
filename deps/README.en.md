@@ -7,7 +7,7 @@ revm does not compile libkrun, libkrunfw, or the Alpine rootfs during the normal
 ## Two build layers
 
 1. Dependency build: manually run .github/workflows/build-deps.yml.
-2. Application build: run go run ./scripts --build revm and consume the release selected by deps.lock.
+2. Application build: run go run ./scripts and consume the release selected by deps.lock.
 
 This keeps runner-specific Docker, Rust, cross-architecture, and native library work out of the normal Go development loop.
 
@@ -53,7 +53,7 @@ deps/.work and deps/dist are generated directories ignored by git.
 The application build reads deps.lock:
 
 ~~~bash
-go run ./scripts --build revm
+go run ./scripts
 ~~~
 
 It downloads the current platform's dependency assets, embeds guest-agent and static resources, links revm, and writes a bundle under out/revm. It does not rebuild libkrun or libkrunfw locally.
@@ -63,7 +63,7 @@ It downloads the current platform's dependency assets, embeds guest-agent and st
 Dependency scripts write archives to `deps/dist`. Consume them without publishing a release:
 
 ~~~bash
-go run ./scripts --build revm --deps-dir deps/dist
+go run ./scripts --deps-dir deps/dist
 ~~~
 
 Both native library archives for the current platform are required. Missing files fail the build instead of falling back to released libraries. The build logs each local archive's SHA-256; the Alpine rootfs still comes from the verified release lock. Without `--deps-dir`, the build uses released assets from `deps.lock`; changing source pins alone does not change that release.

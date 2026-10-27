@@ -28,13 +28,10 @@ type VMOptions struct {
 	SessionID          string                `json:"sessionID,omitempty"`
 	CPUs               int                   `json:"cpus,omitempty"`
 	MemoryMB           uint64                `json:"memoryMB,omitempty"`
-	Network            string                `json:"network,omitempty"`
 	Mounts             []define.VirtioFSSpec `json:"mounts,omitempty"`
 	Disks              []RawDiskSpec         `json:"disks,omitempty"`
 	ContainerDisk      *ContainerDiskSpec    `json:"containerDisk,omitempty"`
 	PodmanProxyAPIFile string                `json:"podmanProxyAPIFile,omitempty"`
-	ManageAPIFile      string                `json:"manageAPIFile,omitempty"`
-	Proxy              bool                  `json:"proxy,omitempty"`
 	LogLevel           string                `json:"logLevel,omitempty"`
 	PortForwards       []define.PortForward  `json:"portForwards,omitempty"`
 }
@@ -65,9 +62,6 @@ func normalizeVMOptions(cfg VMOptions) (VMOptions, error) {
 	if err := normalizeExecOptions(&cfg.ExecOptions); err != nil {
 		return VMOptions{}, err
 	}
-	if cfg.Network == "" {
-		cfg.Network = "gvisor"
-	}
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = "info"
 	}
@@ -86,13 +80,6 @@ func normalizeVMOptions(cfg VMOptions) (VMOptions, error) {
 	}
 	if err := validateVMOptions(cfg); err != nil {
 		return VMOptions{}, err
-	}
-	if cfg.Proxy {
-		proxyEnv, err := systemProxyEnv(define.VNetMode(cfg.Network))
-		if err != nil {
-			return VMOptions{}, err
-		}
-		cfg.Exec.Env = append(proxyEnv, cfg.Exec.Env...)
 	}
 	return cfg, nil
 }
@@ -127,15 +114,6 @@ func validateVMOptions(cfg VMOptions) error {
 	}
 	if cfg.CPUs < 1 || cfg.CPUs > 32 {
 		return fmt.Errorf("cpus must be between 1 and 32, got %d", cfg.CPUs)
-	}
-	if cfg.Network != "gvisor" && cfg.Network != "tsi" {
-		return fmt.Errorf("network must be gvisor or tsi, got %q", cfg.Network)
-	}
-	if cfg.RunMode == define.ContainerMode && cfg.Network != "gvisor" {
-		return fmt.Errorf("container mode requires gvisor network")
-	}
-	if len(cfg.PortForwards) > 0 && cfg.Network != "gvisor" {
-		return fmt.Errorf("port export requires gvisor network")
 	}
 	return validatePortForwardSet(cfg.PortForwards)
 }

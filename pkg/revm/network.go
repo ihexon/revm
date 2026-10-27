@@ -4,7 +4,6 @@ package revm
 
 import (
 	"fmt"
-	"linuxvm/pkg/define"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -12,22 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// configureNetwork records the selected guest network and allocates the host
-// endpoints needed by that mode. There are only two supported modes, so a
-// switch is clearer than a strategy registry.
-func (v *machineBuilder) configureNetwork(mode define.VNetMode) error {
-	v.VirtualNetworkMode = mode
-	switch mode {
-	case define.GVISOR:
-		return v.configureGVisorNetwork()
-	case define.TSI:
-		return nil
-	default:
-		return fmt.Errorf("invalid network mode: %s", mode)
-	}
-}
-
-func (v *machineBuilder) configureGVisorNetwork() error {
+func (v *machineBuilder) configureNetwork() error {
 	logrus.Infof("Configuring gvisor-tap-vsock network mode")
 	pathMgr := v.pathMgr
 	controlPath := pathMgr.GetGVPCtlSocketFile()

@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	sysproxy "github.com/ihexon/getSysProxy"
 	"github.com/sirupsen/logrus"
 )
 
@@ -138,26 +137,6 @@ func (v *machineBuilder) configurePodman(ctx context.Context, userEnv []string) 
 	return nil
 }
 
-func (v *machineBuilder) configureVMCtlAPI() error {
-	apiPath := v.pathMgr.GetVMCtlSocketFile()
-
-	unixAddr := &url.URL{
-		Scheme: "unix",
-		Host:   "",
-		Path:   apiPath,
-	}
-
-	v.VMCtlAddr = unixAddr.String()
-
-	if err := os.MkdirAll(filepath.Dir(unixAddr.Path), 0755); err != nil {
-		return err
-	}
-	if err := os.Remove(unixAddr.Path); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
-}
-
 // createSymlink never replaces an unrelated file or connection endpoint.
 func createSymlink(target, linkPath string) error {
 	if err := os.MkdirAll(filepath.Dir(linkPath), 0755); err != nil {
@@ -172,27 +151,6 @@ func createSymlink(target, linkPath string) error {
 		return err
 	}
 	return os.Symlink(target, linkPath)
-}
-
-var getSystemHTTPProxy = sysproxy.GetHTTP
-
-func systemProxyEnv(network define.VNetMode) ([]string, error) {
-	httpProxy, err := getSystemHTTPProxy()
-	if err != nil {
-		return nil, fmt.Errorf("get system proxy fail: %w", err)
-	}
-
-	if httpProxy == nil {
-		return nil, nil
-	}
-
-	proxyHost := strings.ToLower(strings.Trim(httpProxy.Host, "[]"))
-	if network == define.GVISOR &&
-		(proxyHost == "127.0.0.1" || proxyHost == "localhost" || proxyHost == "::1") {
-		httpProxy.Host = define.HostDomainInGVPNet
-	}
-
-	return []string{"http_proxy=" + httpProxy.String(), "https_proxy=" + httpProxy.String()}, nil
 }
 
 func pathWithin(base, candidate string) bool {
@@ -220,7 +178,7 @@ func buildMachine(ctx context.Context, cfg VMOptions, lease *sessionRun) (*defin
 	b.pathMgr.rootfsDir = filepath.Join(lease.record.CacheDir, "rootfs")
 	b.LogFile = filepath.Join(lease.logDir, "vm.log")
 	b.MemoryInMB, b.Cpus = cfg.MemoryMB, uint8(cfg.CPUs)
-	if err := b.configureNetwork(define.VNetMode(cfg.Network)); err != nil {
+	if err := b.configureNetwork(); err != nil {
 		return nil, err
 	}
 	b.PortForwards = cfg.PortForwards
@@ -240,9 +198,6 @@ func buildMachine(ctx context.Context, cfg VMOptions, lease *sessionRun) (*defin
 	}
 	b.Storage.VirtioFS = cfg.Mounts
 	if err := b.configureGuestAgent(ctx); err != nil {
-		return nil, err
-	}
-	if err := b.configureVMCtlAPI(); err != nil {
 		return nil, err
 	}
 	return &b.MachineSpec, nil

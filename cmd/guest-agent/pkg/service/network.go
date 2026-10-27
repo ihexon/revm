@@ -9,44 +9,16 @@ import (
 	"path/filepath"
 )
 
-const (
-	eth0 = "eth0"
-)
+// The marker makes Podman publish container ports through gvproxy.
+const machineMarker = "/etc/containers/podman-machine"
 
-const (
-	resolveFile       = "/etc/resolv.conf"
-	defaultNameServer = "nameserver 1.1.1.1"
-
-	// Write the podman-machine marker so podman inside the VM calls gvproxy's
-	// expose/unexpose API on container start/stop, enabling -p port forwarding.
-	// "applehv" matches the constant used by podman for Apple Hypervisor based VMs.
-	//
-	// See:
-	// https://github.com/containers/podman/blob/a98154a9782670b3398719d48565cc2510fd0152/libpod/networking_machine.go
-	machineMarker = "/etc/containers/podman-machine"
-)
-
-// ConfigureNetwork must support TSI/Gvisor network
-func ConfigureNetwork(ctx context.Context, mode define.VNetMode) error {
-	if mode == define.TSI {
-		_ = os.Remove(machineMarker)
-		return os.WriteFile(resolveFile, []byte(defaultNameServer), 0644)
+func ConfigureNetwork(ctx context.Context) error {
+	if err := os.MkdirAll(filepath.Dir(machineMarker), 0755); err != nil {
+		return fmt.Errorf("create podman-machine marker dir: %w", err)
 	}
-
-	if mode == define.GVISOR {
-		if err := os.MkdirAll(filepath.Dir(machineMarker), 0755); err != nil {
-			return fmt.Errorf("create podman-machine marker dir: %w", err)
-		}
-
-		if err := os.WriteFile(machineMarker, []byte("applehv"), 0644); err != nil {
-			return fmt.Errorf("write podman-machine marker: %w", err)
-		}
-
-		// gvproxy's built-in address plan is fixed and its DHCP broadcast path
-		// is not reliable with current libkrun virtio-net on macOS. Configure
-		// the guest directly so startup does not depend on a raw packet socket.
-		return network.ConfigureStaticIPv4(ctx, eth0, define.GuestCIDR, define.GatewayIP, define.GatewayIP)
+	if err := os.WriteFile(machineMarker, []byte("applehv"), 0644); err != nil {
+		return fmt.Errorf("write podman-machine marker: %w", err)
 	}
-
-	return fmt.Errorf("unsupported network mode: %s", mode)
+	// Use gvproxy's fixed address plan without depending on DHCP broadcasts.
+	return network.ConfigureStaticIPv4(ctx, "eth0", define.GuestCIDR, define.GatewayIP, define.GatewayIP)
 }

@@ -9,8 +9,6 @@ package libkrun
 import "C"
 
 import (
-	"fmt"
-	"linuxvm/pkg/define"
 	"linuxvm/pkg/network"
 	"unsafe"
 
@@ -25,18 +23,6 @@ var guestMAC = [6]byte{0x5a, 0x94, 0xef, 0xe4, 0x0c, 0xee}
 const compatNetFeatures = (1 << 0) | (1 << 1) | (1 << 7) | (1 << 10) | (1 << 11) | (1 << 14)
 
 func (v *machine) setupNetwork() error {
-	switch v.cfg.VirtualNetworkMode {
-	case define.GVISOR:
-		return v.setupGVisor()
-	case define.TSI:
-		logrus.Info("configuring TSI network")
-		return nil
-	default:
-		return fmt.Errorf("unknown network mode: %s", v.cfg.VirtualNetworkMode)
-	}
-}
-
-func (v *machine) setupGVisor() error {
 	logrus.Info("configuring gvisor-tap-vsock network")
 	addr, err := network.ParseUnixAddr(v.cfg.GVPVNetAddr)
 	if err != nil {

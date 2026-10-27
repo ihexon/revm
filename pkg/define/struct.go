@@ -18,12 +18,9 @@ type MachineSpec struct {
 	// GVPNotifyAddr receives gvproxy lifecycle notifications.
 	GVPNotifyAddr string `json:"GVPNotifyAddr,omitempty"`
 
-	VirtualNetworkMode VNetMode `json:"virtualNetworkMode,omitempty"`
-
 	LogFile          string        `json:"logFile,omitempty"`
 	PodmanInfo       PodmanInfo    `json:"podmanInfo,omitempty"` // 仅在 container mode 下有意义
 	PortForwards     []PortForward `json:"portForwards,omitempty"`
-	VMCtlAddr        string        `json:"vmCtlAddr,omitempty"`
 	RunMode          RunMode       `json:"runMode,omitempty"`
 	GuestControlAddr string        `json:"guestControlAddr,omitempty"`
 	GuestAgentCfg    GuestAgentCfg `json:"guestAgentCfg,omitempty"`

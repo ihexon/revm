@@ -17,15 +17,8 @@ import (
 )
 
 func (v *machine) setupVSock() error {
-	var features C.uint32_t
-	if v.cfg.VirtualNetworkMode == define.TSI {
-		// Upstream's HIJACK_INET flag covers both AF_INET and AF_INET6.
-		// AF_UNIX remains intentionally disabled; it is a separate semantic
-		// choice and should not change the guest's Unix socket namespace.
-		features = C.KRUN_TSI_FLAGS_HIJACK_INET
-	}
 	var errOut C.KrunError
-	device := C.krun_vsock_device_new(C.uint64_t(define.GuestVSockCID), features, &errOut)
+	device := C.krun_vsock_device_new(C.uint64_t(define.GuestVSockCID), C.uint32_t(0), &errOut)
 	if err := checkKrunHandle("create vsock device", unsafe.Pointer(device), errOut); err != nil {
 		return err
 	}

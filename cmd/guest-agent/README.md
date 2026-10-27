@@ -13,11 +13,11 @@ Required service failure ends the VM. The host directly ends its own process to
 stop libkrun; there is no guest shutdown RPC, reboot sequence or automatic sync.
 Applications own flushing writes. Disconnect immediately kills an exec subtree.
 
-Gvisor uses a fixed IPv4 address, route and DNS configuration. TSI uses libkrun's
-socket interception. Podman uses gvisor networking and a private Unix API socket;
+Networking uses gvproxy with a fixed IPv4 address, route and DNS configuration.
+Podman has a private Unix API socket;
 the host reaches it through a dedicated vsock/Yamux proxy. Only explicit `--mount`
 paths are shared. Persistent storage is managed by the host.
 
-Build from the repository root with `go run ./scripts --build revm`. The nested
+Build from the repository root with `go run ./scripts`. The nested
 Go module uses the parent's protocol and execution packages through a local
 module replacement.

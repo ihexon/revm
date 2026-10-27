@@ -28,7 +28,7 @@ func testRoots(t *testing.T) Roots {
 	return r
 }
 func testConfig() VMOptions {
-	return VMOptions{RunMode: define.RootFsMode, SessionID: "test-" + uuid.NewString(), Network: "gvisor", ExecOptions: ExecOptions{Exec: execution.Request{Argv: []string{"true"}}}}
+	return VMOptions{RunMode: define.RootFsMode, SessionID: "test-" + uuid.NewString(), ExecOptions: ExecOptions{Exec: execution.Request{Argv: []string{"true"}}}}
 }
 func fakeVolume(t *testing.T, r Roots, id string) Volume {
 	t.Helper()

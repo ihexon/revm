@@ -21,8 +21,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var defaultBuildTargets = []string{"revm"}
-
 type depsLock struct {
 	Version string            `json:"version"`
 	BaseURL string            `json:"base_url"`
@@ -30,10 +28,9 @@ type depsLock struct {
 }
 
 type builder struct {
-	goos    string
-	goarch  string
-	targets []string
-	lint    bool
+	goos   string
+	goarch string
+	lint   bool
 
 	sourceDir  string
 	cacheDir   string
@@ -55,10 +52,9 @@ func main() {
 	verbose := flag.Bool("v", false, "enable debug logging")
 	runTests := flag.Bool("test", false, "run unit and race tests with the pinned native dependencies")
 	runLint := flag.Bool("lint", false, "run golangci-lint before building")
-	buildTarget := flag.String("build", "all", "target to build: all or revm")
 	localDeps := flag.String("deps-dir", "", "use locally built libkrun and libkrunfw archives from this directory")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: go run build.go [-v] [--lint] [--build all|revm]\n")
+		fmt.Fprintf(os.Stderr, "Usage: go run ./scripts [-v] [--lint] [--test]\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -67,12 +63,7 @@ func main() {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
-	targets, err := parseBuildTargets(*buildTarget)
-	if err != nil {
-		logrus.Fatal(err)
-	}
-
-	b, err := newBuilder(targets, *runLint)
+	b, err := newBuilder(*runLint)
 	if err != nil {
 		logrus.Fatal(err)
 	}
@@ -137,19 +128,19 @@ func (b *builder) run() error {
 			return err
 		}
 	}
-	if err := b.buildBundles(); err != nil {
+	if err := b.buildBundle(); err != nil {
 		return err
 	}
 	if err := b.packageSupportFiles(); err != nil {
 		return err
 	}
-	if err := b.packageTargets(); err != nil {
+	if err := b.packageBundle(); err != nil {
 		return err
 	}
 	return b.publish()
 }
 
-func newBuilder(targets []string, lint bool) (*builder, error) {
+func newBuilder(lint bool) (*builder, error) {
 	workspace, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("getwd: %w", err)
@@ -175,7 +166,6 @@ func newBuilder(targets []string, lint bool) (*builder, error) {
 	b := &builder{
 		goos:      runtime.GOOS,
 		goarch:    arch,
-		targets:   append([]string(nil), targets...),
 		lint:      lint,
 		sourceDir: workspace,
 		cacheDir:  cache,
@@ -215,30 +205,18 @@ func loadDepsLock(path string) (depsLock, error) {
 	return lock, nil
 }
 
-func parseBuildTargets(target string) ([]string, error) {
-	switch strings.TrimSpace(target) {
-	case "", "all":
-		return append([]string(nil), defaultBuildTargets...), nil
-	case "revm":
-		return []string{target}, nil
-	default:
-		return nil, fmt.Errorf("unsupported build target %q: use all or revm", target)
-	}
-}
-
 func (b *builder) prepareWorkspace() error {
-	logrus.Infof("targets=%s lint=%t os=%s arch=%s workspace=%s", strings.Join(b.targets, ","), b.lint, b.goos, b.goarch, b.workspace)
+	logrus.Infof("lint=%t os=%s arch=%s workspace=%s", b.lint, b.goos, b.goarch, b.workspace)
 	if err := mkdirAll(b.depsDir); err != nil {
 		return err
 	}
-	for _, target := range b.targets {
-		if err := mkdirAll(b.binDir(target)); err != nil {
-			return err
-		}
-		if err := mkdirAll(b.libDir(target)); err != nil {
-			return err
-		}
+	if err := mkdirAll(b.binDir()); err != nil {
+		return err
 	}
+	if err := mkdirAll(b.libDir()); err != nil {
+		return err
+	}
+
 	if err := mkdirAll(b.archiveDir); err != nil {
 		return err
 	}
@@ -280,7 +258,7 @@ func (b *builder) prepareDeps() error {
 	return copyWithCP(archive, filepath.Join(b.staticDir, "rootfs", "rootfs.tar.zst"), nil)
 }
 
-func (b *builder) buildBundles() error {
+func (b *builder) buildBundle() error {
 	version := commandOutput("unknown", "git", "-C", b.sourceDir, "describe", "--tags", "--match", "v[0-9]*", "--abbrev=0")
 	commit := commandOutput("unknown", "git", "-C", b.sourceDir, "rev-parse", "--short", "HEAD")
 	buildDate := time.Now().UTC().Format("20060102T150405Z")
@@ -292,28 +270,26 @@ func (b *builder) buildBundles() error {
 		ldflags += ` -linkmode=external -extldflags "-static-libgcc -static-libstdc++"`
 	}
 
-	logrus.Infof("building targets (%s-%s-%s)", version, commit, buildDate)
+	logrus.Infof("building revm (%s-%s-%s)", version, commit, buildDate)
 	if err := b.buildGuestAgent(); err != nil {
 		return err
 	}
-	for _, target := range b.targets {
-		logrus.Infof("building bundle for %s in %s", target, b.targetRoot(target))
+	logrus.Infof("building bundle in %s", b.bundleRoot())
 
-		env, err := b.nativeEnv()
-		if err != nil {
-			return err
-		}
-		if err := commandIn(b.workspace, env, "go", "build", "-trimpath", "-ldflags="+ldflags, "-o", b.executablePath(target), "./cmd/"+target); err != nil {
-			return err
-		}
+	env, err := b.nativeEnv()
+	if err != nil {
+		return err
+	}
+	if err := commandIn(b.workspace, env, "go", "build", "-trimpath", "-ldflags="+ldflags, "-o", b.executablePath(), "./cmd/revm"); err != nil {
+		return err
+	}
 
-		if err := b.prepareRuntimeLibsFor(target); err != nil {
+	if err := b.prepareRuntimeLibs(); err != nil {
+		return err
+	}
+	if b.goos == "linux" {
+		if err := b.writeLinuxLauncher(); err != nil {
 			return err
-		}
-		if b.goos == "linux" {
-			if err := b.writeLinuxLauncher(filepath.Join(b.binDir(target), target), target); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
@@ -336,12 +312,12 @@ func (b *builder) buildGuestAgent() error {
 	)
 }
 
-func (b *builder) prepareRuntimeLibsFor(target string) error {
-	logrus.Infof("preparing shared libraries for %s", target)
+func (b *builder) prepareRuntimeLibs() error {
+	logrus.Info("preparing shared libraries")
 	for _, dependency := range []string{"libkrun", "libkrunfw"} {
 		audit := filepath.Join(b.depsDir, dependency, "share", "revm")
 		if exists(audit) {
-			dest := filepath.Join(b.targetRoot(target), "share", dependency)
+			dest := filepath.Join(b.bundleRoot(), "share", dependency)
 			if err := mkdirAll(dest); err != nil {
 				return err
 			}
@@ -351,13 +327,13 @@ func (b *builder) prepareRuntimeLibsFor(target string) error {
 		}
 	}
 	if b.goos == "darwin" {
-		return b.prepareRuntimeLibsDarwin(target)
+		return b.prepareRuntimeLibsDarwin()
 	}
-	return b.prepareRuntimeLibsLinux(target)
+	return b.prepareRuntimeLibsLinux()
 }
 
-func (b *builder) prepareRuntimeLibsDarwin(target string) error {
-	libDir := b.libDir(target)
+func (b *builder) prepareRuntimeLibsDarwin() error {
+	libDir := b.libDir()
 	libkrunLibDir := filepath.Join(b.depsDir, "libkrun", "lib")
 	libkrunfwLibDir := filepath.Join(b.depsDir, "libkrunfw", "lib")
 
@@ -383,7 +359,7 @@ func (b *builder) prepareRuntimeLibsDarwin(target string) error {
 	}
 
 	entitlements := filepath.Join(b.workspace, "revm.entitlements")
-	bin := b.executablePath(target)
+	bin := b.executablePath()
 	if err := command(nil, "install_name_tool", "-change", "libkrun.2.dylib", "@loader_path/../lib/libkrun.2.dylib", bin); err != nil {
 		return err
 	}
@@ -396,8 +372,8 @@ func (b *builder) prepareRuntimeLibsDarwin(target string) error {
 	return command(nil, "codesign", "--entitlements", entitlements, "--force", "-s", "-", bin)
 }
 
-func (b *builder) prepareRuntimeLibsLinux(target string) error {
-	libDir := filepath.Clean(b.libDir(target))
+func (b *builder) prepareRuntimeLibsLinux() error {
+	libDir := filepath.Clean(b.libDir())
 
 	libkrunDir, err := b.depLibDir("libkrun")
 	if err != nil {
@@ -419,7 +395,7 @@ func (b *builder) prepareRuntimeLibsLinux(target string) error {
 		return err
 	}
 
-	deps, err := linuxRuntimeLibs(libDir, append([]string{b.executablePath(target)}, linuxSharedLibraries(libDir)...)...)
+	deps, err := linuxRuntimeLibs(libDir, append([]string{b.executablePath()}, linuxSharedLibraries(libDir)...)...)
 	if err != nil {
 		return err
 	}
@@ -554,59 +530,48 @@ func (b *builder) runTests() error {
 }
 
 func (b *builder) publish() error {
-	for _, target := range b.targets {
-		dest := filepath.Join(b.sourceDir, "out", target)
-		backup := dest + ".previous"
-		// Recover an interruption between the two renames without losing the last
-		// usable bundle. A failed build never reaches this publication step.
-		if !exists(dest) && exists(backup) {
-			if err := os.Rename(backup, dest); err != nil {
-				return err
-			}
-		}
-		if err := os.RemoveAll(backup); err != nil {
+	dest := filepath.Join(b.sourceDir, "out", "revm")
+	backup := dest + ".previous"
+	// Recover an interruption between the two renames without losing the last
+	// usable bundle. A failed build never reaches this publication step.
+	if !exists(dest) && exists(backup) {
+		if err := os.Rename(backup, dest); err != nil {
 			return err
 		}
-		hadOutput := exists(dest)
+	}
+	if err := os.RemoveAll(backup); err != nil {
+		return err
+	}
+	hadOutput := exists(dest)
+	if hadOutput {
+		if err := os.Rename(dest, backup); err != nil {
+			return err
+		}
+	}
+	if err := os.Rename(b.bundleRoot(), dest); err != nil {
 		if hadOutput {
-			if err := os.Rename(dest, backup); err != nil {
-				return err
-			}
+			err = errors.Join(err, os.Rename(backup, dest))
 		}
-		if err := os.Rename(b.targetRoot(target), dest); err != nil {
-			if hadOutput {
-				err = errors.Join(err, os.Rename(backup, dest))
-			}
-			return err
-		}
-		if err := os.RemoveAll(backup); err != nil {
-			return err
-		}
-		archive := fmt.Sprintf("%s-%s-%s.tar.zst", target, b.goos, b.goarch)
-		for _, name := range []string{archive, archive + ".sha256"} {
-			if err := os.Rename(filepath.Join(b.workspace, name), filepath.Join(b.sourceDir, name)); err != nil {
-				return err
-			}
-		}
-		logrus.Infof("published %s", dest)
+		return err
 	}
-	return nil
-}
-
-func (b *builder) packageTargets() error {
-	logrus.Info("packaging")
-	for _, target := range b.targets {
-		if err := b.packageTarget(target); err != nil {
+	if err := os.RemoveAll(backup); err != nil {
+		return err
+	}
+	archive := fmt.Sprintf("revm-%s-%s.tar.zst", b.goos, b.goarch)
+	for _, name := range []string{archive, archive + ".sha256"} {
+		if err := os.Rename(filepath.Join(b.workspace, name), filepath.Join(b.sourceDir, name)); err != nil {
 			return err
 		}
 	}
+	logrus.Infof("published %s", dest)
+
 	return nil
 }
 
-func (b *builder) packageTarget(target string) error {
-	tarName := fmt.Sprintf("%s-%s-%s.tar.zst", target, b.goos, b.goarch)
+func (b *builder) packageBundle() error {
+	tarName := fmt.Sprintf("revm-%s-%s.tar.zst", b.goos, b.goarch)
 	tarPath := filepath.Join(b.workspace, tarName)
-	if err := command(nil, "bsdtar", "--zstd", "-cf", tarPath, "-C", b.targetRoot(target), "."); err != nil {
+	if err := command(nil, "bsdtar", "--zstd", "-cf", tarPath, "-C", b.bundleRoot(), "."); err != nil {
 		return err
 	}
 	sum, err := sha256File(tarPath)
@@ -620,10 +585,14 @@ func (b *builder) packageTarget(target string) error {
 	return nil
 }
 
-func (b *builder) writeLinuxLauncher(path, target string) error {
-	realName := target + ".real"
-	command := fmt.Sprintf("exec \"$DIR/../lib/%s\" --library-path \"$DIR/../lib\" \"$DIR/%s\" \"$@\"", b.linuxDynLinkerName(), realName)
-	script := fmt.Sprintf("#!/bin/sh\nDIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\nREVM_BUNDLE_LAUNCHER=\"$DIR/%s\"\nexport REVM_BUNDLE_LAUNCHER\n%s\n", target, command)
+func (b *builder) writeLinuxLauncher() error {
+	path := filepath.Join(b.binDir(), "revm")
+	script := fmt.Sprintf(`#!/bin/sh
+DIR="$(cd "$(dirname "$0")" && pwd)"
+REVM_BUNDLE_LAUNCHER="$DIR/revm"
+export REVM_BUNDLE_LAUNCHER
+exec "$DIR/../lib/%s" --library-path "$DIR/../lib" "$DIR/revm.real" "$@"
+`, b.linuxDynLinkerName())
 	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
@@ -641,24 +610,24 @@ func (b *builder) linuxDynLinkerName() string {
 	}
 }
 
-func (b *builder) executablePath(target string) string {
-	name := target
+func (b *builder) executablePath() string {
+	name := "revm"
 	if b.goos == "linux" {
 		name += ".real"
 	}
-	return filepath.Join(b.binDir(target), name)
+	return filepath.Join(b.binDir(), name)
 }
 
-func (b *builder) targetRoot(target string) string {
-	return filepath.Join(b.outDir, target)
+func (b *builder) bundleRoot() string {
+	return filepath.Join(b.outDir, "revm")
 }
 
-func (b *builder) binDir(target string) string {
-	return filepath.Join(b.targetRoot(target), "bin")
+func (b *builder) binDir() string {
+	return filepath.Join(b.bundleRoot(), "bin")
 }
 
-func (b *builder) libDir(target string) string {
-	return filepath.Join(b.targetRoot(target), "lib")
+func (b *builder) libDir() string {
+	return filepath.Join(b.bundleRoot(), "lib")
 }
 
 func (b *builder) depAssetPlatform() (string, string, error) {
@@ -945,41 +914,39 @@ func symlink(target, path string) error {
 }
 
 func (b *builder) packageSupportFiles() error {
-	for _, target := range b.targets {
-		for _, name := range []string{"README.md", "LICENSE"} {
-			if !exists(filepath.Join(b.workspace, name)) {
-				continue
-			}
-			if err := copyWithCP(filepath.Join(b.workspace, name), filepath.Join(b.targetRoot(target), name), nil); err != nil {
-				return err
-			}
+	for _, name := range []string{"README.md", "LICENSE"} {
+		if !exists(filepath.Join(b.workspace, name)) {
+			continue
 		}
-		doc := filepath.Join(b.targetRoot(target), "share", "doc", "revm")
-		if err := mkdirAll(doc); err != nil {
+		if err := copyWithCP(filepath.Join(b.workspace, name), filepath.Join(b.bundleRoot(), name), nil); err != nil {
 			return err
 		}
-		if err := copyWithCP(filepath.Join(b.workspace, "docs")+"/.", doc+"/", nil); err != nil {
+	}
+	doc := filepath.Join(b.bundleRoot(), "share", "doc", "revm")
+	if err := mkdirAll(doc); err != nil {
+		return err
+	}
+	if err := copyWithCP(filepath.Join(b.workspace, "docs")+"/.", doc+"/", nil); err != nil {
+		return err
+	}
+	man := filepath.Join(b.bundleRoot(), "share", "man", "man1")
+	if err := mkdirAll(man); err != nil {
+		return err
+	}
+	if err := copyWithCP(filepath.Join(b.workspace, "docs", "revm.1"), filepath.Join(man, "revm.1"), nil); err != nil {
+		return err
+	}
+	for _, shell := range []string{"bash", "zsh", "fish"} {
+		output, err := exec.Command(filepath.Join(b.binDir(), "revm"), "completion", shell).Output()
+		if err != nil {
+			return fmt.Errorf("generate %s completion: %w", shell, err)
+		}
+		path := filepath.Join(b.bundleRoot(), "share", "completions", "revm."+shell)
+		if err = mkdirAll(filepath.Dir(path)); err != nil {
 			return err
 		}
-		man := filepath.Join(b.targetRoot(target), "share", "man", "man1")
-		if err := mkdirAll(man); err != nil {
+		if err = os.WriteFile(path, output, 0644); err != nil {
 			return err
-		}
-		if err := copyWithCP(filepath.Join(b.workspace, "docs", "revm.1"), filepath.Join(man, "revm.1"), nil); err != nil {
-			return err
-		}
-		for _, shell := range []string{"bash", "zsh", "fish"} {
-			output, err := exec.Command(filepath.Join(b.binDir(target), target), "completion", shell).Output()
-			if err != nil {
-				return fmt.Errorf("generate %s completion: %w", shell, err)
-			}
-			path := filepath.Join(b.targetRoot(target), "share", "completions", target+"."+shell)
-			if err = mkdirAll(filepath.Dir(path)); err != nil {
-				return err
-			}
-			if err = os.WriteFile(path, output, 0644); err != nil {
-				return err
-			}
 		}
 	}
 	return nil

@@ -131,11 +131,8 @@ func RunCleanup() error {
 		err = errors.Join(err, writeJSONAtomic(l.resultPath, l.record))
 	}
 	paths := newMachinePathManager(l.record.RuntimeDir)
-	for link, target := range map[string]string{l.session.Config.ManageAPIFile: paths.GetVMCtlSocketFile(), l.session.Config.PodmanProxyAPIFile: paths.GetPodmanSocketFile()} {
-		if link == "" {
-			continue
-		}
-		if actual, e := os.Readlink(link); e == nil && actual == target {
+	if link := l.session.Config.PodmanProxyAPIFile; link != "" {
+		if actual, e := os.Readlink(link); e == nil && actual == paths.GetPodmanSocketFile() {
 			err = errors.Join(err, os.Remove(link))
 		}
 	}
