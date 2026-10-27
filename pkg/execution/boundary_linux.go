@@ -7,8 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -56,24 +54,11 @@ func prepareBoundary(cmd *exec.Cmd) (*boundary, error) {
 	cmd.Path = exe
 	return b, nil
 }
-func (b *boundary) Signal(sig syscall.Signal) {
-	if b.dir != "" {
-		data, _ := os.ReadFile(filepath.Join(b.dir, "cgroup.procs"))
-		for _, s := range strings.Fields(string(data)) {
-			pid, e := strconv.Atoi(s)
-			if e == nil {
-				_ = syscall.Kill(pid, sig)
-			}
-		}
-		return
-	}
-	if b.cmd.Process != nil {
-		_ = syscall.Kill(-b.cmd.Process.Pid, sig)
-	}
-}
 func (b *boundary) Kill() error {
 	if b.dir == "" {
-		b.Signal(syscall.SIGKILL)
+		if b.cmd.Process != nil {
+			_ = syscall.Kill(-b.cmd.Process.Pid, syscall.SIGKILL)
+		}
 		return nil
 	}
 	return os.WriteFile(filepath.Join(b.dir, "cgroup.kill"), []byte("1"), 0600)

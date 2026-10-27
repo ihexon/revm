@@ -32,7 +32,7 @@ func TestExecutionPreservesBlockingOutput(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := Execute(ctx, a, Request{Version: 2, InstanceID: "instance", RequestID: "flags", Argv: []string{"cat"}}, Options{IO: IO{Stdin: input, Stdout: output}})
+		_, err := Execute(ctx, a, Request{Version: ProtocolVersion, InstanceID: "instance", Argv: []string{"cat"}}, Options{IO: IO{Stdin: input, Stdout: output}})
 		done <- err
 	}()
 	go func() { _, _ = writer.Write([]byte("ready")) }()

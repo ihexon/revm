@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/mdlayher/vsock"
 )
 
@@ -21,17 +20,17 @@ func WaitReady(ctx context.Context, target Target) (protocol.ExecReady, error) {
 	defer client.Close()
 	var lastErr error
 	for {
-		data, status, err := client.Get("/v2/ready").DoAndRead(ctx)
+		data, status, err := client.Get("/v3/ready").DoAndRead(ctx)
 		if err == nil {
 			if status == 404 {
-				return protocol.ExecReady{}, fmt.Errorf("guest lacks exec v2 capability; restart with the current revm")
+				return protocol.ExecReady{}, fmt.Errorf("guest lacks exec v3 capability; restart with the current revm")
 			}
 			if status == 200 {
 				var ready protocol.ExecReady
 				if err = json.Unmarshal(data, &ready); err != nil {
 					return ready, err
 				}
-				if ready.Version != 2 || ready.InstanceID == "" {
+				if ready.Version != execution.ProtocolVersion || ready.InstanceID == "" {
 					return ready, fmt.Errorf("unsupported guest execution protocol")
 				}
 				return ready, nil
@@ -58,17 +57,14 @@ func StreamExec(ctx context.Context, target Target, req execution.Request, opts 
 	if err != nil {
 		return execution.Result{}, err
 	}
-	req.Version, req.InstanceID = 2, ready.InstanceID
-	if req.RequestID == "" {
-		req.RequestID = uuid.NewString()
-	}
+	req.Version, req.InstanceID = execution.ProtocolVersion, ready.InstanceID
 	conn, err := dial(ctx, target)
 	if err != nil {
 		return execution.Result{}, err
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
-	if _, err = io.WriteString(conn, "GET /v2/exec HTTP/1.1\r\nHost: guest\r\nConnection: Upgrade\r\nUpgrade: revm-exec-v2\r\n\r\n"); err != nil {
+	if _, err = io.WriteString(conn, "GET /v3/exec HTTP/1.1\r\nHost: guest\r\nConnection: Upgrade\r\nUpgrade: revm-exec-v3\r\n\r\n"); err != nil {
 		return execution.Result{}, err
 	}
 	reader := bufio.NewReader(conn)

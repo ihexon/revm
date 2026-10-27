@@ -32,7 +32,7 @@ func Serve(ctx context.Context, conn net.Conn, instance string, defaultEnv ...st
 		return
 	}
 	_ = s.Control.SetReadDeadline(time.Time{})
-	if req.Version != 2 || req.InstanceID != instance || len(req.Argv) == 0 || req.RequestID == "" || len(req.RequestID) > 128 {
+	if req.Version != ProtocolVersion || req.InstanceID != instance || len(req.Argv) == 0 {
 		_ = s.Send(Message{Type: "error", Error: "invalid or stale execution request"})
 		return
 	}
@@ -61,8 +61,7 @@ func Serve(ctx context.Context, conn net.Conn, instance string, defaultEnv ...st
 	if terminal != nil {
 		defer terminal.Close()
 	}
-	execID := req.RequestID
-	if s.Send(Message{Type: "started", InstanceID: instance, ExecID: execID}) != nil {
+	if s.Send(Message{Type: "started"}) != nil {
 		if cmd.Process != nil {
 			_ = owned.Kill()
 			_ = cmd.Wait()
@@ -75,9 +74,8 @@ func Serve(ctx context.Context, conn net.Conn, instance string, defaultEnv ...st
 		s.Stdout.CloseWrite()
 		s.Stderr.CloseWrite()
 		r := FromProcess(startErr)
-		_ = s.Send(Message{Type: "exit", Result: &r})
 		_ = s.Send(Message{Type: "completed", Result: &r})
-		waitAck(ctx, s, controls, instance, execID)
+		waitAck(ctx, s, controls)
 		return
 	}
 	go func() { _, _ = io.Copy(input, s.Stdin); input.Close() }()
@@ -102,16 +100,8 @@ running:
 				_ = owned.Kill()
 				continue
 			}
-			if m.InstanceID != instance || m.ExecID != execID {
-				continue
-			}
 			if m.Type == "resize" && terminal != nil && m.Rows > 0 && m.Cols > 0 {
 				_ = pty.Setsize(terminal, &pty.Winsize{Rows: m.Rows, Cols: m.Cols})
-			}
-			if m.Type == "signal" {
-				if sig, ok := Signal(m.Signal); ok {
-					owned.Signal(sig)
-				}
 			}
 		case <-cancelCh:
 			cancelCh = nil
@@ -129,9 +119,6 @@ running:
 		result.Cleanup = "failed"
 		result.Message = cleanupErr.Error()
 	}
-	exitResult := result
-	exitResult.Output = "pending"
-	_ = s.Send(Message{Type: "exit", Result: &exitResult})
 	// Normal output follows downstream backpressure, regardless of duration.
 	// Only a cancellation or disconnect abandons the remaining output.
 draining:
@@ -157,10 +144,10 @@ draining:
 		s.Stderr.Close()
 	}
 	_ = s.Send(Message{Type: "completed", Result: &result})
-	waitAck(ctx, s, controls, instance, execID)
+	waitAck(ctx, s, controls)
 }
 
-func waitAck(ctx context.Context, s *Streams, controls <-chan Message, instance, execID string) {
+func waitAck(ctx context.Context, s *Streams, controls <-chan Message) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -171,7 +158,7 @@ func waitAck(ctx context.Context, s *Streams, controls <-chan Message, instance,
 			if !ok {
 				return
 			}
-			if m.InstanceID == instance && m.ExecID == execID && m.Type == "ack" {
+			if m.Type == "ack" {
 				return
 			}
 		}

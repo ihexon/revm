@@ -17,7 +17,7 @@ type IO struct {
 }
 type Options struct {
 	IO
-	OnStarted func(*Streams, Message) error
+	OnStarted func(*Streams) error
 }
 
 func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (result Result, retErr error) {
@@ -26,13 +26,13 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 			retErr = errors.Join(result.Err(), retErr)
 		}
 	}()
-	s, started, err := Open(ctx, conn, req)
+	s, err := Open(ctx, conn, req)
 	if err != nil {
 		return Result{}, err
 	}
 	defer s.Session.Close()
 	if opts.OnStarted != nil {
-		if err := opts.OnStarted(s, started); err != nil {
+		if err := opts.OnStarted(s); err != nil {
 			return Result{}, err
 		}
 	}
@@ -79,25 +79,11 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 		message Message
 		err     error
 	}
-	messages := make(chan controlEvent, 4)
-	readerDone := make(chan struct{})
-	defer close(readerDone)
+	messages := make(chan controlEvent, 1)
 	go func() {
-		for {
-			var m Message
-			err := s.Decoder.Decode(&m)
-			// Preserve wire order, including errors after an exit result. A peer may
-			// close immediately after its final message; only the consumer may stop
-			// delivery of a message that has already been decoded.
-			select {
-			case messages <- controlEvent{message: m, err: err}:
-			case <-readerDone:
-				return
-			}
-			if err != nil || m.Type == "completed" {
-				return
-			}
-		}
+		var m Message
+		err := s.Decoder.Decode(&m)
+		messages <- controlEvent{message: m, err: err}
 	}()
 
 	outputFailure := func(err error) error {
@@ -108,31 +94,10 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 		}
 		return failure
 	}
-	completed, drained := false, false
 	outputCh := outputDone
-	for {
-		if completed && drained {
-			// Copies publish their errors before closing outputDone.
-			for len(copyErrors) > 0 {
-				return result, outputFailure(<-copyErrors)
-			}
-			stopInput()
-			_ = s.Stdin.Close()
-			select {
-			case <-inputDone:
-			case <-time.After(200 * time.Millisecond):
-			}
-			select {
-			case err := <-inputErrors:
-				return result, err
-			default:
-			}
-			_ = s.Send(Message{Type: "ack", InstanceID: started.InstanceID, ExecID: started.ExecID})
-			return result, nil
-		}
+	for messages != nil || outputCh != nil {
 		select {
 		case <-outputCh:
-			drained = true
 			outputCh = nil
 		case err := <-inputErrors:
 			return result, err
@@ -141,20 +106,31 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 		case err := <-copyErrors:
 			return result, outputFailure(err)
 		case event := <-messages:
+			messages = nil
 			if event.err != nil {
 				return result, fmt.Errorf("execution disconnected before completion: %w", event.err)
 			}
-			m := event.message
-			if m.Type == "error" {
-				return result, errors.New(m.Error)
+			if event.message.Type != "completed" || event.message.Result == nil {
+				return result, fmt.Errorf("invalid execution result: %s", event.message.Type)
 			}
-			if m.Result != nil {
-				result = *m.Result
-			}
-			if m.Type == "completed" {
-				completed = true
-				stopInput()
-			}
+			result = *event.message.Result
+			stopInput()
 		}
 	}
+	// Copies publish their errors before closing outputDone.
+	if len(copyErrors) > 0 {
+		return result, outputFailure(<-copyErrors)
+	}
+	_ = s.Stdin.Close()
+	select {
+	case <-inputDone:
+	case <-time.After(200 * time.Millisecond):
+	}
+	select {
+	case err := <-inputErrors:
+		return result, err
+	default:
+	}
+	_ = s.Send(Message{Type: "ack"})
+	return result, nil
 }

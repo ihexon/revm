@@ -154,7 +154,7 @@ revm exec --id dev -- sh -c 'podman ps'
 revm ctl --id dev --list-port
 ~~~
 
-exec 使用 guest-control v2 执行普通命令和 PTY。ctl 只处理端口映射，不执行 guest 命令。
+exec 使用 guest-control v3 执行普通命令和 PTY。ctl 只处理端口映射，不执行 guest 命令。
 
 ## 停止行为
 

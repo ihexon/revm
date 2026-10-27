@@ -26,7 +26,7 @@ func TestServerOwnsUpgradedExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	fmt.Fprint(conn, "GET /v2/exec HTTP/1.1\r\nHost: guest\r\nConnection: Upgrade\r\nUpgrade: revm-exec-v2\r\n\r\n")
+	fmt.Fprint(conn, "GET /v3/exec HTTP/1.1\r\nHost: guest\r\nConnection: Upgrade\r\nUpgrade: revm-exec-v3\r\n\r\n")
 	response, err := http.ReadResponse(bufio.NewReader(conn), nil)
 	if err != nil || response.StatusCode != 101 {
 		t.Fatalf("upgrade: %v %v", response, err)
@@ -38,7 +38,7 @@ func TestServerOwnsUpgradedExecution(t *testing.T) {
 	clientCtx, stop := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stop()
 	go func() {
-		_, err := execution.Execute(clientCtx, conn, execution.Request{Version: 2, InstanceID: guestInstance, RequestID: "shutdown", Argv: []string{"sh", "-c", "trap '' TERM; printf ready; exec sleep 100"}}, execution.Options{IO: execution.IO{Stdout: writer}})
+		_, err := execution.Execute(clientCtx, conn, execution.Request{Version: execution.ProtocolVersion, InstanceID: guestInstance, Argv: []string{"sh", "-c", "trap '' TERM; printf ready; exec sleep 100"}}, execution.Options{IO: execution.IO{Stdout: writer}})
 		writer.CloseWithError(err)
 		done <- err
 	}()
@@ -73,7 +73,7 @@ func TestControlListenerFailure(t *testing.T) {
 	}
 }
 
-func TestRepeatedRequestIDOnSeparateConnections(t *testing.T) {
+func TestSeparateExecutionConnections(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -87,15 +87,15 @@ func TestRepeatedRequestIDOnSeparateConnections(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		fmt.Fprint(conn, "GET /v2/exec HTTP/1.1\r\nHost: guest\r\nConnection: Upgrade\r\nUpgrade: revm-exec-v2\r\n\r\n")
+		fmt.Fprint(conn, "GET /v3/exec HTTP/1.1\r\nHost: guest\r\nConnection: Upgrade\r\nUpgrade: revm-exec-v3\r\n\r\n")
 		response, err := http.ReadResponse(bufio.NewReader(conn), nil)
 		if err != nil || response.StatusCode != 101 {
 			t.Fatalf("upgrade: %v %v", response, err)
 		}
-		_, err = execution.Execute(ctx, conn, execution.Request{Version: 2, InstanceID: guestInstance, RequestID: "same-id", Argv: []string{"true"}}, execution.Options{})
+		_, err = execution.Execute(ctx, conn, execution.Request{Version: execution.ProtocolVersion, InstanceID: guestInstance, Argv: []string{"true"}}, execution.Options{})
 		conn.Close()
 		if err != nil {
-			t.Fatal("new connection was rejected by request history", err)
+			t.Fatal("new execution connection failed", err)
 		}
 	}
 }

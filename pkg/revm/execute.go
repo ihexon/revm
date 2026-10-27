@@ -27,11 +27,11 @@ func executeGuest(ctx context.Context, target guestcontrol.Target, cfg Config) (
 		defer controller.SetTerminal(nil)
 	}
 	opts := execution.Options{IO: execution.IO{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}}
-	opts.OnStarted = func(s *execution.Streams, m execution.Message) error {
+	opts.OnStarted = func(s *execution.Streams) error {
 		return terminal.Start(useTTY, func() {
 			w, h, err := term.GetSize(int(os.Stdin.Fd()))
 			if err == nil {
-				_ = s.Send(execution.Message{Type: "resize", InstanceID: m.InstanceID, ExecID: m.ExecID, Rows: uint16(h), Cols: uint16(w)})
+				_ = s.Send(execution.Message{Type: "resize", Rows: uint16(h), Cols: uint16(w)})
 			}
 		})
 	}

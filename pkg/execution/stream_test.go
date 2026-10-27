@@ -17,7 +17,7 @@ func runLocal(t *testing.T, argv []string, input io.Reader, tty bool) (Result, [
 	a, b := net.Pipe()
 	go Serve(ctx, b, "test-instance")
 	var out, diag bytes.Buffer
-	r, err := Execute(ctx, a, Request{Version: 2, InstanceID: "test-instance", RequestID: "request", Argv: argv, TTY: tty}, Options{IO: IO{Stdin: input, Stdout: &out, Stderr: &diag}})
+	r, err := Execute(ctx, a, Request{Version: ProtocolVersion, InstanceID: "test-instance", Argv: argv, TTY: tty}, Options{IO: IO{Stdin: input, Stdout: &out, Stderr: &diag}})
 	return r, out.Bytes(), diag.Bytes(), err
 }
 
@@ -42,7 +42,7 @@ func TestStreamingBeforeEOF(t *testing.T) {
 	defer read.Close()
 	done := make(chan error, 1)
 	go func() {
-		_, err := Execute(ctx, a, Request{Version: 2, InstanceID: "instance", RequestID: "live", Argv: []string{"cat"}}, Options{IO: IO{Stdin: input, Stdout: read}})
+		_, err := Execute(ctx, a, Request{Version: ProtocolVersion, InstanceID: "instance", Argv: []string{"cat"}}, Options{IO: IO{Stdin: input, Stdout: read}})
 		done <- err
 	}()
 	go func() { _, _ = writer.Write([]byte("before EOF")) }()
@@ -66,9 +66,7 @@ func TestPTYExecArgv(t *testing.T) {
 	}
 }
 
-// Once exit is known, a broken connection during output drain must not replace
-// a guest failure with a generic transport status (especially for attach).
-func TestKnownExitSurvivesDisconnect(t *testing.T) {
+func TestDisconnectBeforeResultFails(t *testing.T) {
 	a, b := net.Pipe()
 	go func() {
 		s, err := streams(context.Background(), b, true)
@@ -77,19 +75,13 @@ func TestKnownExitSurvivesDisconnect(t *testing.T) {
 		}
 		defer s.Session.Close()
 		var req Request
-		if s.Decoder.Decode(&req) != nil {
-			return
+		if s.Decoder.Decode(&req) == nil {
+			s.Send(Message{Type: "started"})
 		}
-		s.Send(Message{Type: "started", InstanceID: req.InstanceID, ExecID: req.RequestID})
-		code := 42
-		s.Send(Message{Type: "exit", Result: &Result{Code: &code, Cleanup: "complete", Output: "pending"}})
-		s.Control.CloseWrite()
-		io.Copy(io.Discard, s.Control)
 	}()
-	result, err := Execute(context.Background(), a, Request{Version: 2, InstanceID: "instance", RequestID: "req", Argv: []string{"true"}}, Options{})
-	var exit *ExitError
-	if result.ExitCode() != 42 || !errors.As(err, &exit) || exit.Result.ExitCode() != 42 {
-		t.Fatalf("%+v %v", result, err)
+	result, err := Execute(context.Background(), a, Request{Version: ProtocolVersion, InstanceID: "instance", Argv: []string{"true"}}, Options{})
+	if err == nil || result.Code != nil || result.ExitCode() == 0 {
+		t.Fatalf("disconnect reported a known exit: %+v %v", result, err)
 	}
 }
 
@@ -124,7 +116,7 @@ func TestSlowOutputDrain(t *testing.T) {
 	defer writer.Close()
 	done := make(chan error, 1)
 	go func() {
-		_, err := Execute(ctx, a, Request{Version: 2, InstanceID: "instance", RequestID: "slow", Argv: []string{"head", "-c", "1048576", "/dev/zero"}}, Options{IO: IO{Stdout: writer}})
+		_, err := Execute(ctx, a, Request{Version: ProtocolVersion, InstanceID: "instance", Argv: []string{"head", "-c", "1048576", "/dev/zero"}}, Options{IO: IO{Stdout: writer}})
 		writer.CloseWithError(err)
 		done <- err
 	}()
@@ -144,7 +136,7 @@ func TestAckIgnoresLateResize(t *testing.T) {
 	a, b := net.Pipe()
 	done := make(chan struct{})
 	go func() { Serve(ctx, b, "instance"); close(done) }()
-	s, started, err := Open(ctx, a, Request{Version: 2, InstanceID: "instance", RequestID: "ack", Argv: []string{"true"}})
+	s, err := Open(ctx, a, Request{Version: ProtocolVersion, InstanceID: "instance", Argv: []string{"true"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,14 +150,13 @@ func TestAckIgnoresLateResize(t *testing.T) {
 			break
 		}
 	}
-	s.Send(Message{Type: "resize", InstanceID: started.InstanceID, ExecID: started.ExecID, Rows: 24, Cols: 80})
-	s.Send(Message{Type: "ack", InstanceID: "stale", ExecID: started.ExecID})
+	s.Send(Message{Type: "resize", Rows: 24, Cols: 80})
 	select {
 	case <-done:
 		t.Fatal("accepted unrelated control message as ack")
 	case <-time.After(100 * time.Millisecond):
 	}
-	s.Send(Message{Type: "ack", InstanceID: started.InstanceID, ExecID: started.ExecID})
+	s.Send(Message{Type: "ack"})
 	select {
 	case <-done:
 	case <-ctx.Done():
@@ -186,7 +177,7 @@ func TestServerShutdownAfterCommandReady(t *testing.T) {
 	defer writer.Close()
 	done := make(chan error, 1)
 	go func() {
-		_, err := Execute(clientCtx, a, Request{Version: 2, InstanceID: "instance", RequestID: "shutdown", Argv: []string{"sh", "-c", "trap '' TERM; printf ready; exec sleep 100"}}, Options{IO: IO{Stdout: writer}})
+		_, err := Execute(clientCtx, a, Request{Version: ProtocolVersion, InstanceID: "instance", Argv: []string{"sh", "-c", "trap '' TERM; printf ready; exec sleep 100"}}, Options{IO: IO{Stdout: writer}})
 		writer.CloseWithError(err)
 		done <- err
 	}()

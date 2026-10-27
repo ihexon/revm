@@ -11,7 +11,7 @@ revm exec --id dev --tty=always -- sh
 revm exec --id dev --tty=always -- printf hello
 ```
 
-Commands and PTYs both use guest-control v2 and preserve argv. Input streams
+Commands and PTYs both use guest-control v3 and preserve argv. Input streams
 immediately; stdout and stderr stay separate without a PTY. Guest exit codes
 propagate, with signals mapped to 128 plus the Linux signal number.
 
@@ -30,6 +30,6 @@ revm logs --guest -f dev
 revm stop dev
 ```
 
-Older guests without v2 return a capability error and must be restarted. Use
+Older guests without v3 return a capability error and must be restarted. Use
 `ctl` for ports and [session commands](sessions.md) for lifecycle management.
 Run `revm exec --help` for all options.

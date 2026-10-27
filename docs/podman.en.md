@@ -153,7 +153,7 @@ revm exec --id dev -- sh -c 'podman ps'
 revm ctl --id dev --list-port
 ~~~
 
-exec uses guest-control v2 for both ordinary commands and PTYs. ctl only changes port mappings; it does not execute guest commands.
+exec uses guest-control v3 for both ordinary commands and PTYs. ctl only changes port mappings; it does not execute guest commands.
 
 ## Stop behavior
 

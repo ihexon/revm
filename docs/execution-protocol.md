@@ -1,8 +1,8 @@
-# Execution protocol v2
+# Execution protocol v3
 
 Run and exec start commands through the same guest-control service. The service
 becomes ready after filesystem mounts and network configuration. Older guests
-without v2 return a capability error and must be restarted.
+without v3 return a capability error and must be restarted.
 
 An HTTP upgrade carries four Yamux streams: control, stdin, stdout and stderr.
 Each stream has a bounded 256 KiB flow-control window; control traffic is not
@@ -10,12 +10,13 @@ queued behind command data. Stdin streams immediately and its write-side EOF
 does not close output. PTY mode combines output on stdout and does not translate
 input EOF into Ctrl-D. Commands are argv arrays, including when using a PTY.
 
-Execution requests carry an instance identifier and a connection-local request
-identifier. One connection starts one execution; the guest keeps no request
-history or lifetime execution limit. The host never retries a start after an
-ambiguous transport failure. Results distinguish process exit
-from completed cleanup and output delivery; the client acknowledges completion
-after draining both output streams.
+Execution requests carry the guest instance identifier to reject stale targets.
+One connection starts one execution; there are no request or execution IDs.
+The host never retries a start after an ambiguous transport failure. After the
+`started` notification, the guest sends one `completed` result after command
+cleanup and output forwarding. The client acknowledges it after draining both
+output streams. Before that result, a disconnect means the status is unknown.
+The only ongoing control message is PTY resize.
 
 Each guest command starts atomically in its own cgroup v2 subtree. Cancellation
 and completion kill the whole subtree, including descendants using setsid. The

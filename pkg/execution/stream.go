@@ -11,10 +11,11 @@ import (
 	yamux "github.com/libp2p/go-yamux/v5"
 )
 
+const ProtocolVersion = 3
+
 type Request struct {
 	Version    int      `json:"version"`
 	InstanceID string   `json:"instance_id"`
-	RequestID  string   `json:"request_id"`
 	Argv       []string `json:"argv"`
 	Env        []string `json:"env,omitempty"`
 	WorkDir    string   `json:"cwd,omitempty"`
@@ -25,14 +26,11 @@ type Request struct {
 }
 
 type Message struct {
-	Type       string  `json:"type"`
-	InstanceID string  `json:"instance_id,omitempty"`
-	ExecID     string  `json:"exec_id,omitempty"`
-	Signal     string  `json:"signal,omitempty"`
-	Rows       uint16  `json:"rows,omitempty"`
-	Cols       uint16  `json:"cols,omitempty"`
-	Result     *Result `json:"result,omitempty"`
-	Error      string  `json:"error,omitempty"`
+	Type   string  `json:"type"`
+	Rows   uint16  `json:"rows,omitempty"`
+	Cols   uint16  `json:"cols,omitempty"`
+	Result *Result `json:"result,omitempty"`
+	Error  string  `json:"error,omitempty"`
 }
 
 type Streams struct {
@@ -82,25 +80,25 @@ func (s *Streams) Send(m Message) error {
 	return json.NewEncoder(s.Control).Encode(m)
 }
 
-func Open(ctx context.Context, conn net.Conn, req Request) (*Streams, Message, error) {
+func Open(ctx context.Context, conn net.Conn, req Request) (*Streams, error) {
 	s, err := streams(ctx, conn, false)
 	if err != nil {
-		return nil, Message{}, err
+		return nil, err
 	}
 	_ = s.Control.SetDeadline(time.Now().Add(10 * time.Second))
 	defer s.Control.SetDeadline(time.Time{})
 	if err := json.NewEncoder(s.Control).Encode(req); err != nil {
 		s.Session.Close()
-		return nil, Message{}, err
+		return nil, err
 	}
 	var started Message
 	if err := s.Decoder.Decode(&started); err != nil {
 		s.Session.Close()
-		return nil, started, err
+		return nil, err
 	}
-	if started.Type != "started" || started.InstanceID != req.InstanceID || started.ExecID != req.RequestID {
+	if started.Type != "started" {
 		s.Session.Close()
-		return nil, started, fmt.Errorf("start execution: %s", started.Error)
+		return nil, fmt.Errorf("start execution: %s", started.Error)
 	}
-	return s, started, nil
+	return s, nil
 }

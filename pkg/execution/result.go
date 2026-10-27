@@ -93,7 +93,6 @@ func SignalName(sig syscall.Signal) string {
 	}
 	return fmt.Sprintf("SIG%d", sig)
 }
-func Signal(name string) (syscall.Signal, bool) { s, ok := signals[name]; return s, ok }
 
 var signals = map[string]syscall.Signal{
 	"SIGHUP": syscall.SIGHUP, "SIGINT": syscall.SIGINT, "SIGQUIT": syscall.SIGQUIT,

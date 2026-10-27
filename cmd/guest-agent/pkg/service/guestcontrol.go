@@ -91,13 +91,13 @@ func serveGuestControl(ctx context.Context, listener net.Listener, commandEnv []
 }
 
 func handleGuestControl(ctx context.Context, w http.ResponseWriter, r *http.Request, commandEnv ...string) {
-	if r.URL.Path == "/v2/ready" {
-		_ = json.NewEncoder(w).Encode(protocol.ExecReady{Version: 2, InstanceID: guestInstance})
+	if r.URL.Path == "/v3/ready" {
+		_ = json.NewEncoder(w).Encode(protocol.ExecReady{Version: execution.ProtocolVersion, InstanceID: guestInstance})
 		return
 	}
-	if r.URL.Path == "/v2/exec" {
-		if r.Header.Get("Upgrade") != "revm-exec-v2" {
-			http.Error(w, "exec v2 upgrade required", 400)
+	if r.URL.Path == "/v3/exec" {
+		if r.Header.Get("Upgrade") != "revm-exec-v3" {
+			http.Error(w, "exec v3 upgrade required", 400)
 			return
 		}
 		h, ok := w.(http.Hijacker)
@@ -109,7 +109,7 @@ func handleGuestControl(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		if err != nil {
 			return
 		}
-		_, err = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: revm-exec-v2\r\n\r\n")
+		_, err = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: revm-exec-v3\r\n\r\n")
 		if err != nil || rw.Flush() != nil {
 			conn.Close()
 			return
