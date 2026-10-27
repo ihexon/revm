@@ -84,16 +84,16 @@ Use a persistent path:
 ~~~bash
 revm podman --id dev \
   --podman-api /tmp/revm-dev.sock \
-  --container-disk "$HOME/.cache/revm/container-storage.ext4,version=containers-v1"
+  --container-disk "$HOME/.cache/revm/container-storage.ext4"
 ~~~
 
 Format:
 
 ~~~text
---container-disk <path>[,version=<string>]
+--container-disk <path>
 ~~~
 
-Missing external disks are created and remain user-owned. Existing disks are inspected; mismatched versions return an error without replacing data. Stopping or removing a session preserves its managed volume. Every launch explicitly selects storage; session names do not reconnect disks.
+Missing external disks are created and remain user-owned. Existing disks are inspected; invalid filesystems return an error without replacing data. Stopping or removing a session preserves its managed volume. Every launch explicitly selects storage; session names do not reconnect disks.
 Omit `--id` to remove session records after successful execution and cleanup. Interruptions and failures retain logs until `revm rm`. Use `volume rm NAME` for explicit deletion; active volumes cannot be deleted. Legacy layouts are not imported; select an existing disk explicitly with `--container-disk`.
 
 ## Port publishing

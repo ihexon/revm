@@ -35,8 +35,7 @@ const (
 	VMConfigFilePathInGuest = "/vmconfig.json"
 	HostDomainInGVPNet      = "host.containers.internal"
 
-	ContainerStorageMountPoint  = "/var/lib/containers"
-	DefaultContainerDiskVersion = "revm-container-storage-v1"
+	ContainerStorageMountPoint = "/var/lib/containers"
 
 	UnspecifiedAddress = "0.0.0.0"
 	GuestIP            = "192.168.127.2"

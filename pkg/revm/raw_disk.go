@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/disk"
-	"linuxvm/pkg/filesystem"
 	"linuxvm/pkg/static_resources"
 	"os"
 	gopath "path"
@@ -22,7 +21,6 @@ import (
 type RawDiskSpec struct {
 	Path     string `json:"path,omitempty"`
 	UUID     string `json:"uuid,omitempty"`
-	Version  string `json:"version,omitempty"`
 	MountTo  string `json:"mountTo,omitempty"`
 	ReadOnly bool   `json:"readOnly,omitempty"`
 	DirectIO bool   `json:"directIO,omitempty"`
@@ -30,13 +28,11 @@ type RawDiskSpec struct {
 }
 
 type ContainerDiskSpec struct {
-	Path    string `json:"path,omitempty"`
-	Version string `json:"version,omitempty"`
+	Path string `json:"path,omitempty"`
 }
 
 var (
 	newRawDiskManager      = func() (disk.Manager, error) { return disk.NewBlkManager() }
-	newRawDiskXattrManager = filesystem.NewXattrManager
 	extractEmbeddedRAWDisk = static_resources.ExtractEmbeddedRawDisk
 )
 
@@ -95,8 +91,6 @@ func ParseRawDiskSpec(input string) (RawDiskSpec, error) {
 				return RawDiskSpec{}, fmt.Errorf("invalid raw disk uuid %q: %w", value, err)
 			}
 			spec.UUID = value
-		case "version":
-			spec.Version = value
 		case "mnt":
 			cleanMount := gopath.Clean(value)
 			if !gopath.IsAbs(cleanMount) {
@@ -137,48 +131,9 @@ func ParseRawDiskSpec(input string) (RawDiskSpec, error) {
 func ParseContainerDiskSpec(input string) (ContainerDiskSpec, error) {
 	input = strings.TrimSpace(input)
 	if input == "" {
-		return ContainerDiskSpec{}, fmt.Errorf("container disk spec cannot be empty")
-	}
-
-	parts := strings.Split(input, ",")
-	spec := ContainerDiskSpec{
-		Path: strings.TrimSpace(parts[0]),
-	}
-	if spec.Path == "" {
 		return ContainerDiskSpec{}, fmt.Errorf("container disk path cannot be empty")
 	}
-
-	seen := map[string]struct{}{}
-	for _, part := range parts[1:] {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			return ContainerDiskSpec{}, fmt.Errorf("container disk spec %q contains an empty option", input)
-		}
-
-		key, value, ok := strings.Cut(part, "=")
-		if !ok {
-			return ContainerDiskSpec{}, fmt.Errorf("container disk option %q must use key=value syntax", part)
-		}
-
-		key = strings.ToLower(strings.TrimSpace(key))
-		value = strings.TrimSpace(value)
-		if key == "" || value == "" {
-			return ContainerDiskSpec{}, fmt.Errorf("container disk option %q must have non-empty key and value", part)
-		}
-		if _, exists := seen[key]; exists {
-			return ContainerDiskSpec{}, fmt.Errorf("container disk option %q is duplicated", key)
-		}
-		seen[key] = struct{}{}
-
-		switch key {
-		case "version":
-			spec.Version = value
-		default:
-			return ContainerDiskSpec{}, fmt.Errorf("unsupported container disk option %q", key)
-		}
-	}
-
-	return spec, nil
+	return ContainerDiskSpec{Path: input}, nil
 }
 
 func (v *machineBuilder) prepareRawDisk(ctx context.Context, spec RawDiskSpec) (define.BlockDeviceSpec, error) {
@@ -187,7 +142,7 @@ func (v *machineBuilder) prepareRawDisk(ctx context.Context, spec RawDiskSpec) (
 		return define.BlockDeviceSpec{}, err
 	}
 
-	logrus.Infof("preparing raw disk: path=%q requested_uuid=%q requested_version=%q requested_mount=%q", spec.Path, spec.UUID, spec.Version, spec.MountTo)
+	logrus.Infof("preparing raw disk: path=%q requested_uuid=%q requested_mount=%q", spec.Path, spec.UUID, spec.MountTo)
 
 	exists, err := rawDiskExists(spec.Path)
 	if err != nil {
@@ -196,10 +151,6 @@ func (v *machineBuilder) prepareRawDisk(ctx context.Context, spec RawDiskSpec) (
 
 	if exists {
 		logrus.Infof("raw disk already exists: path=%q", spec.Path)
-
-		if err := checkDiskVersion(ctx, spec); err != nil {
-			return define.BlockDeviceSpec{}, err
-		}
 
 		if spec.UUID != "" {
 			logrus.Infof("raw disk exists, requested uuid is ignored: path=%q requested_uuid=%q", spec.Path, spec.UUID)
@@ -233,26 +184,7 @@ func (v *machineBuilder) prepareContainerStorageDisk(ctx context.Context, spec *
 		return define.BlockDeviceSpec{}, err
 	}
 
-	logrus.Infof("preparing container disk: path=%q requested_version=%q effective_version=%q mount=%q", rawDiskSpec.Path, containerDiskVersionValue(spec), rawDiskSpec.Version, rawDiskSpec.MountTo)
-
-	exists, err := rawDiskExists(rawDiskSpec.Path)
-	if err != nil {
-		return define.BlockDeviceSpec{}, err
-	}
-
-	if exists {
-		logrus.Infof("container disk already exists: path=%q", rawDiskSpec.Path)
-
-		if err := checkDiskVersion(ctx, rawDiskSpec); err != nil {
-			return define.BlockDeviceSpec{}, err
-		}
-
-		dev, err := inspectRAWDisk(ctx, rawDiskSpec.Path, rawDiskSpec.MountTo)
-		return applyRawDiskRuntimeOptions(dev, rawDiskSpec), err
-	}
-
-	dev, err := createRAWDisk(ctx, rawDiskSpec)
-	return applyRawDiskRuntimeOptions(dev, rawDiskSpec), err
+	return v.prepareRawDisk(ctx, rawDiskSpec)
 }
 
 func normalizeRawDiskSpec(spec RawDiskSpec) (RawDiskSpec, error) {
@@ -274,7 +206,6 @@ func normalizeRawDiskSpec(spec RawDiskSpec) (RawDiskSpec, error) {
 		}
 	}
 
-	spec.Version = strings.TrimSpace(spec.Version)
 	spec.MountTo = strings.TrimSpace(spec.MountTo)
 	if spec.MountTo != "" {
 		spec.MountTo = gopath.Clean(spec.MountTo)
@@ -287,37 +218,15 @@ func normalizeRawDiskSpec(spec RawDiskSpec) (RawDiskSpec, error) {
 }
 
 func resolveContainerDiskSpec(spec *ContainerDiskSpec, defaultPath string) (RawDiskSpec, error) {
-	resolved := ContainerDiskSpec{
-		Path:    defaultPath,
-		Version: define.DefaultContainerDiskVersion,
+	if spec != nil && strings.TrimSpace(spec.Path) != "" {
+		defaultPath = spec.Path
 	}
-	if spec != nil {
-		if strings.TrimSpace(spec.Path) != "" {
-			resolved.Path = spec.Path
-		}
-		if strings.TrimSpace(spec.Version) != "" {
-			resolved.Version = spec.Version
-		}
-	}
-
 	return normalizeRawDiskSpec(RawDiskSpec{
-		Path:     resolved.Path,
+		Path:     defaultPath,
 		UUID:     define.ContainerDiskUUID,
-		Version:  resolved.Version,
 		MountTo:  define.ContainerStorageMountPoint,
 		SyncMode: define.SyncModeRelaxed,
 	})
-}
-
-func containerDiskVersionValue(spec *ContainerDiskSpec) string {
-	if spec == nil {
-		return ""
-	}
-	return spec.Version
-}
-
-func normalizeDiskVersionValue(value string) string {
-	return strings.TrimRight(value, "\r\n\x00")
 }
 
 func rawDiskExists(rawDiskPath string) (bool, error) {
@@ -329,21 +238,6 @@ func rawDiskExists(rawDiskPath string) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("stat raw disk %q: %w", rawDiskPath, err)
-}
-
-func checkDiskVersion(ctx context.Context, spec RawDiskSpec) error {
-	if spec.Version == "" {
-		return nil
-	}
-	stored, ok, err := newRawDiskXattrManager().LookupXattr(ctx, spec.Path, define.XattrDiskVersionKey)
-	if err != nil {
-		return fmt.Errorf("read disk version %q: %w", spec.Path, err)
-	}
-	if ok && normalizeDiskVersionValue(stored) != normalizeDiskVersionValue(spec.Version) {
-		return fmt.Errorf("disk %q version is %q, requested %q; disk preserved, migrate it explicitly before use", spec.Path, stored, spec.Version)
-	}
-	// Unknown metadata authorizes inspection, never replacement.
-	return nil
 }
 
 func createRAWDisk(ctx context.Context, spec RawDiskSpec) (define.BlockDeviceSpec, error) {
@@ -378,13 +272,6 @@ func createRAWDisk(ctx context.Context, spec RawDiskSpec) (define.BlockDeviceSpe
 	logrus.Infof("writing raw disk uuid: path=%q uuid=%q", spec.Path, diskUUID)
 	if err := diskMgr.NewUUID(ctx, diskUUID, spec.Path); err != nil {
 		return define.BlockDeviceSpec{}, fmt.Errorf("write uuid %q to raw disk %q: %w", diskUUID, spec.Path, err)
-	}
-
-	if spec.Version != "" {
-		logrus.Infof("writing raw disk version xattr: path=%q key=%q value=%q", spec.Path, define.XattrDiskVersionKey, spec.Version)
-		if err := newRawDiskXattrManager().SetXattr(ctx, spec.Path, define.XattrDiskVersionKey, spec.Version, true); err != nil {
-			return define.BlockDeviceSpec{}, fmt.Errorf("write raw disk version xattr on %q: %w", spec.Path, err)
-		}
 	}
 
 	if err := os.Link(spec.Path, target); err != nil {

@@ -76,19 +76,18 @@ revm run --id files \
 --raw-disk 将 raw/ext4 磁盘挂载到 guest。镜像不存在时自动创建。
 
 ~~~text
---raw-disk <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=none|relaxed|full]
+--raw-disk <path>[,uuid=<uuid>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=none|relaxed|full]
 ~~~
 
 ~~~bash
 revm run --id disk \
-  --raw-disk "$HOME/.cache/revm/data.ext4,version=v1,mnt=/data" \
+  --raw-disk "$HOME/.cache/revm/data.ext4,mnt=/data" \
   -- sh -c 'df -h /data'
 ~~~
 
 说明：
 
 - mnt 必须是绝对 guest 路径；省略时使用磁盘自身的默认挂载目标。
-- version 写入并校验 user.vm.rawdisk.version；版本不一致时报错并保留镜像；缺少版本属性时检查原盘，不自动删除。
 - readonly、directio 接受 true 或 false。
 - sync 支持 none、relaxed、full。
 - uuid 只在新建镜像时用于指定文件系统 UUID；已存在镜像不会强制改 UUID。

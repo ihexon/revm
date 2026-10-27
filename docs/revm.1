@@ -44,11 +44,10 @@ failures and interruptions retain them until revm rm.
 .B --mount HOST:GUEST[,ro]
 Share a host directory. Writes persist on the host.
 .TP
-.B --raw-disk PATH[,mnt=GUEST][,version=LABEL]
-Attach an external persistent raw/ext4 disk. Existing disks are never replaced
-because a version is missing or mismatched.
+.B --raw-disk PATH[,mnt=GUEST]
+Attach an external persistent raw/ext4 disk. Existing disks are inspected and never replaced automatically.
 .TP
-.B --container-disk PATH[,version=LABEL]
+.B --container-disk PATH
 Use an external Podman storage disk; mutually exclusive with --volume NAME.
 .SH SESSION MANAGEMENT
 .B ls --json

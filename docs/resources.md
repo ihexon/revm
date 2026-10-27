@@ -37,8 +37,8 @@ Failures, interruptions and crashes retain logs and results until `rm`. Supply
 inactive runtime/cache resources, preserving all diagnostic records.
 
 `--raw-disk` and `--container-disk` paths remain user-owned even when revm creates
-them. Existing images are inspected; mismatched version labels return an error.
-Missing labels never authorize deletion. New disks are published without
+them. Existing images are inspected; invalid filesystems return an error without
+replacing data. New disks are published without
 replacing an existing target. Session and volume cleanup never delete external
 disks or bind mount contents.
 

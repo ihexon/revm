@@ -239,31 +239,21 @@ func TestInheritedLockSurvivesOwnerClose(t *testing.T) {
 	}
 	lock.Close()
 }
-func TestDiskVersionNeverAuthorizesReplacement(t *testing.T) {
+func TestExistingDisksAreNeverReplaced(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "data.ext4")
 	original := []byte("existing data, not an ext4 disk")
-	os.WriteFile(p, original, 0600)
-	if err := newRawDiskXattrManager().SetXattr(context.Background(), p, "user.vm.rawdisk.version", "v1", true); err != nil {
+	if err := os.WriteFile(p, original, 0600); err != nil {
 		t.Fatal(err)
 	}
 	b := newMachineBuilder(0)
-	if _, err := b.prepareRawDisk(context.Background(), RawDiskSpec{Path: p, Version: "v2"}); err == nil {
-		t.Fatal("version mismatch accepted")
+	if _, err := b.prepareRawDisk(context.Background(), RawDiskSpec{Path: p}); err == nil {
+		t.Fatal("invalid raw disk accepted")
 	}
-	if _, err := b.prepareContainerStorageDisk(context.Background(), &ContainerDiskSpec{Path: p, Version: "v2"}, ""); err == nil {
-		t.Fatal("container version mismatch accepted")
+	if _, err := b.prepareContainerStorageDisk(context.Background(), &ContainerDiskSpec{Path: p}, ""); err == nil {
+		t.Fatal("invalid container disk accepted")
 	}
-	got, _ := os.ReadFile(p)
-	if !bytes.Equal(got, original) {
-		t.Fatal("existing disk changed")
-	}
-	unknown := filepath.Join(t.TempDir(), "unknown.ext4")
-	os.WriteFile(unknown, original, 0600)
-	if _, err := b.prepareContainerStorageDisk(context.Background(), &ContainerDiskSpec{Path: unknown}, ""); err == nil {
-		t.Fatal("invalid disk accepted")
-	}
-	got, _ = os.ReadFile(unknown)
-	if !bytes.Equal(got, original) {
-		t.Fatal("disk with missing version was replaced")
+	got, err := os.ReadFile(p)
+	if err != nil || !bytes.Equal(got, original) {
+		t.Fatal("existing disk changed", err)
 	}
 }

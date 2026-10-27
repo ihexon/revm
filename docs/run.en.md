@@ -74,19 +74,18 @@ Omit ro when the guest must write. Mount sources are resolved to absolute paths 
 Use --raw-disk to attach a raw/ext4 disk in the guest. Missing images are created automatically.
 
 ~~~text
---raw-disk <path>[,uuid=<uuid>][,version=<string>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=none|relaxed|full]
+--raw-disk <path>[,uuid=<uuid>][,mnt=<guest-path>][,readonly=true][,directio=true][,sync=none|relaxed|full]
 ~~~
 
 ~~~bash
 revm run --id disk \
-  --raw-disk "$HOME/.cache/revm/data.ext4,version=v1,mnt=/data" \
+  --raw-disk "$HOME/.cache/revm/data.ext4,mnt=/data" \
   -- sh -c 'df -h /data'
 ~~~
 
 Details:
 
 - mnt must be an absolute guest path. When omitted, the disk's default mount target is used.
-- version is stored and checked through user.vm.rawdisk.version; a mismatch returns an error and preserves the image.
 - readonly and directio accept true or false.
 - sync accepts none, relaxed, or full.
 - uuid selects the filesystem UUID when a new image is created; an existing image is not rewritten.

@@ -85,16 +85,16 @@ ${XDG_DATA_HOME:-~/.local/share}/revm/volumes/<volume-name>/disk.ext4
 ~~~bash
 revm podman --id dev \
   --podman-api /tmp/revm-dev.sock \
-  --container-disk "$HOME/.cache/revm/container-storage.ext4,version=containers-v1"
+  --container-disk "$HOME/.cache/revm/container-storage.ext4"
 ~~~
 
 格式：
 
 ~~~text
---container-disk <path>[,version=<string>]
+--container-disk <path>
 ~~~
 
-外部磁盘不存在时自动创建，之后仍由用户持有。已有磁盘缺少版本属性时检查原盘；版本不一致时报错并保留数据。停止或删除 session 不删除 volume；每次启动都显式选择卷，不通过 session 名称恢复磁盘。省略 `--id` 时退出后清理 session 记录。显式删除使用 `revm volume rm NAME`，运行中的卷不可删除。旧布局不会被自动导入；已有磁盘可通过 `--container-disk` 显式使用。
+外部磁盘不存在时自动创建，之后仍由用户持有。已有磁盘会检查文件系统，检查失败时报错并保留原盘。停止或删除 session 不删除 volume；每次启动都显式选择卷，不通过 session 名称恢复磁盘。省略 `--id` 时退出后清理 session 记录。显式删除使用 `revm volume rm NAME`，运行中的卷不可删除。旧布局不会被自动导入；已有磁盘可通过 `--container-disk` 显式使用。
 
 ## 端口发布
 

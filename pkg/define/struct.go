@@ -29,10 +29,6 @@ type MachineSpec struct {
 	GuestAgentCfg    GuestAgentCfg `json:"guestAgentCfg,omitempty"`
 }
 
-const (
-	XattrDiskVersionKey = "user.vm.rawdisk.version"
-)
-
 type StorageSpec struct {
 	Blocks   []BlockDeviceSpec `json:"blocks,omitempty"`
 	VirtioFS []VirtioFSSpec    `json:"virtiofs,omitempty"`
