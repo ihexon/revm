@@ -29,7 +29,6 @@ const (
 	overlayFileMode      = 0755
 	overlayDirectoryMode = 0755
 	virtiofsMemWindow    = 512 << 20
-	vsockCID             = 3
 )
 
 // machine owns one libkrun 2.x builder graph. The graph is kept alive until

@@ -7,6 +7,7 @@ import (
 	"linuxvm/pkg/execution"
 	"linuxvm/pkg/network"
 	"linuxvm/pkg/service/guestcontrol"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -186,10 +187,9 @@ func StopSession(ctx context.Context, id string) error {
 	if view.LastRun == nil {
 		return fmt.Errorf("session %q has no instance to stop", id)
 	}
-	client := network.NewUnixClient(newMachinePathManager(view.LastRun.RuntimeDir).GetVMCtlSocketFile())
-	defer client.Close()
+	socket := newMachinePathManager(view.LastRun.RuntimeDir).GetVMCtlSocketFile()
 	for {
-		_, status, requestErr := client.Post("/v2/stop").DoAndRead(ctx)
+		_, status, requestErr := network.UnixRequest(ctx, socket, http.MethodPost, "/v2/stop", nil)
 		if requestErr == nil {
 			if status != 200 {
 				return fmt.Errorf("stop API returned HTTP %d", status)
@@ -274,7 +274,7 @@ func waitInstance(ctx context.Context, s Session, ready, stop bool) (*RunRecord,
 		}
 		if ready {
 			probe, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
-			_, err := guestcontrol.WaitReady(probe, guestcontrol.Target{UnixSocket: newMachinePathManager(rec.RuntimeDir).GetGuestControlSocketFile()})
+			_, err := guestcontrol.WaitReady(probe, newMachinePathManager(rec.RuntimeDir).GetGuestControlSocketFile())
 			cancel()
 			if err == nil {
 				return &rec, nil

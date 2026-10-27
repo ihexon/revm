@@ -25,7 +25,7 @@ func (v *machine) setupVSock() error {
 		features = C.KRUN_TSI_FLAGS_HIJACK_INET
 	}
 	var errOut C.KrunError
-	device := C.krun_vsock_device_new(C.uint64_t(vsockCID), features, &errOut)
+	device := C.krun_vsock_device_new(C.uint64_t(define.GuestVSockCID), features, &errOut)
 	if err := checkKrunHandle("create vsock device", unsafe.Pointer(device), errOut); err != nil {
 		return err
 	}

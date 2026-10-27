@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Session CLI integration checks against a real VM."""
-import json, os, select, signal, subprocess, tempfile, time, uuid
+import json, os, select, signal, socket, subprocess, tempfile, time, uuid
 binary=os.path.abspath('out/revm/bin/revm')
 root=tempfile.TemporaryDirectory(prefix='revm-sessions-')
 env=dict(os.environ,XDG_STATE_HOME=root.name+'/state',XDG_CACHE_HOME=root.name+'/cache',XDG_DATA_HOME=root.name+'/data')
@@ -49,7 +49,14 @@ try:
  assert cli(['logs','--tail','0',sid]).stdout==b''
  lines=cli(['logs','--tail','2',sid]).stdout.splitlines()
  assert len(lines)<=2
- cli(['ctl','--id',sid,'--list-port','--json'])
+ with socket.socket() as listener:
+  listener.bind(('127.0.0.1',0))
+  port=str(listener.getsockname()[1])
+ cli(['ctl','--id',sid,'--port-export',port+':8080'])
+ ports=json.loads(cli(['ctl','--id',sid,'--list-port','--json']).stdout)
+ assert any(p['local']=='127.0.0.1:'+port and p['remote'].endswith(':8080') for p in ports),ports
+ cli(['ctl','--id',sid,'--port-unexport',port])
+ assert not any(p['local']=='127.0.0.1:'+port for p in json.loads(cli(['ctl','--id',sid,'--list-port','--json']).stdout))
  cli(['stop','--timeout','6s',sid]);owner.communicate(timeout=5)
  view=json.loads(cli(['inspect',sid]).stdout)
  assert not view['active'] and view['lastRun']['finishedAt'] and 'endpoints' not in view

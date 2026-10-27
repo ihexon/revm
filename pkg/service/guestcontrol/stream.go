@@ -7,20 +7,17 @@ import (
 	"fmt"
 	"io"
 	"linuxvm/pkg/execution"
+	"linuxvm/pkg/network"
 	"linuxvm/pkg/protocol"
 	"net"
 	"net/http"
 	"time"
-
-	"github.com/mdlayher/vsock"
 )
 
-func WaitReady(ctx context.Context, target Target) (protocol.ExecReady, error) {
-	client := newClient(target)
-	defer client.Close()
+func WaitReady(ctx context.Context, socket string) (protocol.ExecReady, error) {
 	var lastErr error
 	for {
-		data, status, err := client.Get("/v3/ready").DoAndRead(ctx)
+		data, status, err := network.UnixRequest(ctx, socket, http.MethodGet, "/v3/ready", nil)
 		if err == nil {
 			if status == 404 {
 				return protocol.ExecReady{}, fmt.Errorf("guest lacks exec v3 capability; restart with the current revm")
@@ -50,15 +47,15 @@ func WaitReady(ctx context.Context, target Target) (protocol.ExecReady, error) {
 	}
 }
 
-func StreamExec(ctx context.Context, target Target, req execution.Request, opts execution.Options) (execution.Result, error) {
+func StreamExec(ctx context.Context, socket string, req execution.Request, opts execution.Options) (execution.Result, error) {
 	readyCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	ready, err := WaitReady(readyCtx, target)
+	ready, err := WaitReady(readyCtx, socket)
 	cancel()
 	if err != nil {
 		return execution.Result{}, err
 	}
 	req.Version, req.InstanceID = execution.ProtocolVersion, ready.InstanceID
-	conn, err := dial(ctx, target)
+	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", socket)
 	if err != nil {
 		return execution.Result{}, err
 	}
@@ -85,35 +82,3 @@ type bufferedConn struct {
 }
 
 func (c *bufferedConn) Read(p []byte) (int, error) { return c.reader.Read(p) }
-func dial(ctx context.Context, target Target) (net.Conn, error) {
-	if target.UnixSocket != "" {
-		return (&net.Dialer{}).DialContext(ctx, "unix", target.UnixSocket)
-	}
-	if target.CID == 0 {
-		target.CID = DefaultTarget().CID
-	}
-	if target.Port == 0 {
-		target.Port = DefaultTarget().Port
-	}
-	type outcome struct {
-		conn net.Conn
-		err  error
-	}
-	ch := make(chan outcome)
-	go func() {
-		c, err := vsock.Dial(target.CID, target.Port, nil)
-		select {
-		case ch <- outcome{c, err}:
-		case <-ctx.Done():
-			if c != nil {
-				c.Close()
-			}
-		}
-	}()
-	select {
-	case r := <-ch:
-		return r.conn, r.err
-	case <-ctx.Done():
-		return nil, context.Cause(ctx)
-	}
-}

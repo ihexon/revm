@@ -152,7 +152,7 @@ func (vm *VM) Run(ctx context.Context) (*execution.Result, error) {
 	commandDone := make(chan completed, 1)
 	if vm.cfg.RunMode == ModeRootfs {
 		go func() {
-			result, err := executeGuest(ctx, vm.GuestControlTarget(), *vm.cfg)
+			result, err := executeGuest(ctx, newMachinePathManager(vm.spec.WorkspaceDir).GetGuestControlSocketFile(), *vm.cfg)
 			commandDone <- completed{result, err}
 		}()
 	}

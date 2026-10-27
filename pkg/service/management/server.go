@@ -6,12 +6,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	httpv2 "linuxvm/pkg/http"
+	"linuxvm/pkg/network"
+	"net"
 	"net/http"
+	"os"
 )
 
 type Server struct {
-	srv     *httpv2.Server
+	socket  string
 	machine Machine
 }
 
@@ -34,21 +36,31 @@ func NewServer(machine Machine) (*Server, error) {
 	if machine == nil {
 		return nil, fmt.Errorf("machine is nil")
 	}
-	config := machine.ManagementView()
-	if config.Endpoints.ManagementAPI == "" {
-		return nil, fmt.Errorf("management API endpoint is empty")
+	addr, err := network.ParseUnixAddr(machine.ManagementView().Endpoints.ManagementAPI)
+	if err != nil {
+		return nil, err
 	}
-	return &Server{
-		machine: machine,
-		srv:     httpv2.NewUnixSockHTTPServer("management-api", config.Endpoints.ManagementAPI),
-	}, nil
+	return &Server{machine: machine, socket: addr.Path}, nil
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	s.srv.Mux.HandleFunc("/v2/healthz", s.handleHealth)
-	s.srv.Mux.HandleFunc("/v2/vmconfig", s.handleVMConfig)
-	s.srv.Mux.HandleFunc("/v2/stop", s.handleRequestVMStop)
-	return s.srv.Serve(ctx)
+	listener, err := net.Listen("unix", s.socket)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+	if err := os.Chmod(s.socket, 0600); err != nil {
+		return err
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v2/healthz", s.handleHealth)
+	mux.HandleFunc("/v2/vmconfig", s.handleVMConfig)
+	mux.HandleFunc("/v2/stop", s.handleRequestVMStop)
+	server := &http.Server{Handler: mux}
+	defer server.Close()
+	stop := context.AfterFunc(ctx, func() { server.Close() })
+	defer stop()
+	return server.Serve(listener)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

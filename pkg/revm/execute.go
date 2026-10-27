@@ -10,7 +10,7 @@ import (
 	"golang.org/x/term"
 )
 
-func executeGuest(ctx context.Context, target guestcontrol.Target, cfg Config) (execution.Result, error) {
+func executeGuest(ctx context.Context, socket string, cfg Config) (execution.Result, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	useTTY := cfg.TTY == "always" || (cfg.TTY == "auto" && system.ForegroundTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())))
@@ -36,5 +36,5 @@ func executeGuest(ctx context.Context, target guestcontrol.Target, cfg Config) (
 		})
 	}
 
-	return guestcontrol.StreamExec(ctx, target, req, opts)
+	return guestcontrol.StreamExec(ctx, socket, req, opts)
 }

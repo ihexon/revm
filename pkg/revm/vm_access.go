@@ -10,7 +10,6 @@ import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/gvproxy"
 	"linuxvm/pkg/network"
-	guestcontrol "linuxvm/pkg/service/guestcontrol"
 	"linuxvm/pkg/service/management"
 	"net/http"
 	"os"
@@ -142,12 +141,12 @@ func execInSession(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	controlTarget := guestcontrol.Target{UnixSocket: newMachinePathManager(workspace).GetGuestControlSocketFile()}
+	socket := newMachinePathManager(workspace).GetGuestControlSocketFile()
 
 	if len(cfg.Exec.Argv) == 0 {
 		cfg.Exec.Argv = []string{"/bin/sh"}
 	}
-	_, err = executeGuest(ctx, controlTarget, cfg)
+	_, err = executeGuest(ctx, socket, cfg)
 	return err
 }
 
@@ -158,10 +157,7 @@ func fetchManagementView(ctx context.Context, workspaceDirPath string) (manageme
 func fetchManagementJSON[T any](ctx context.Context, workspaceDirPath, path, label string) (T, error) {
 	var value T
 	vmctlAddr := newMachinePathManager(workspaceDirPath).GetVMCtlSocketFile()
-	client := network.NewUnixClient(vmctlAddr)
-	defer client.Close()
-
-	body, status, err := client.Get(path).DoAndRead(ctx)
+	body, status, err := network.UnixRequest(ctx, vmctlAddr, http.MethodGet, path, nil)
 	if err != nil {
 		return value, fmt.Errorf("fetch %s: %w", label, err)
 	}

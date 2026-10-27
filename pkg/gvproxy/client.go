@@ -1,7 +1,6 @@
 package gvproxy
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -53,10 +52,7 @@ func getForwarder(ctx context.Context, controlAddr, path string, out any) error 
 		return fmt.Errorf("parse gvproxy control address: %w", err)
 	}
 
-	client := network.NewUnixClient(addr.Path)
-	defer client.Close()
-
-	respBody, status, err := client.Get(path).JSON().DoAndRead(ctx)
+	respBody, status, err := network.UnixRequest(ctx, addr.Path, http.MethodGet, path, nil)
 	if err != nil {
 		return err
 	}
@@ -84,10 +80,7 @@ func postForwarder(ctx context.Context, controlAddr, path string, req any) error
 		return fmt.Errorf("marshal gvproxy request: %w", err)
 	}
 
-	client := network.NewUnixClient(addr.Path)
-	defer client.Close()
-
-	respBody, status, err := client.Post(path).JSON().Body(bytes.NewReader(body)).DoAndRead(ctx)
+	respBody, status, err := network.UnixRequest(ctx, addr.Path, http.MethodPost, path, body)
 	if err != nil {
 		return err
 	}

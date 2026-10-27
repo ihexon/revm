@@ -28,10 +28,8 @@ func StartGuestControlServer(ctx context.Context, container bool) error {
 		commandEnv = []string{"CONTAINER_HOST=unix://" + define.GuestPodmanSocket}
 		// Commands use the already supervised engine, with no mount privileges.
 		// Publish readiness only after that engine can answer requests.
-		client := network.NewUnixClient(define.GuestPodmanSocket, network.WithTimeout(time.Second))
-		defer client.Close()
 		for {
-			_, status, err := client.Get("/_ping").DoAndRead(ctx)
+			_, status, err := network.UnixRequest(ctx, define.GuestPodmanSocket, http.MethodGet, "/_ping", nil)
 			if err == nil && status == 200 {
 				break
 			}

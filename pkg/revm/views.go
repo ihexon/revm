@@ -5,22 +5,8 @@ package revm
 import (
 	"linuxvm/pkg/define"
 	"linuxvm/pkg/gvproxy"
-	"linuxvm/pkg/network"
-	"linuxvm/pkg/service/guestcontrol"
 	"linuxvm/pkg/service/management"
 )
-
-func (vm *VM) GuestControlTarget() guestcontrol.Target {
-	return guestcontrol.Target{CID: define.GuestVSockCID, Port: define.GuestControlPort, UnixSocket: unixSocketPath(vm.spec.GuestControlAddr)}
-}
-
-func unixSocketPath(raw string) string {
-	addr, err := network.ParseUnixAddr(raw)
-	if err != nil {
-		return ""
-	}
-	return addr.Path
-}
 
 func (vm *VM) ManagementView() management.VMConfigView {
 	view := management.VMConfigView{
