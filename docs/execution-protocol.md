@@ -29,9 +29,13 @@ so `exec -- podman ps` remains usable without local mount privileges.
 
 `--tty=auto` requires both stdin and stdout to be terminals, with revm in the
 foreground. `always` and `never` override allocation.
-The host enters raw mode after `started`, retaining terminal-generated signals.
-Ctrl-C cancels locally, and suspend/exit restore the terminal. Resize reaches the
-guest PTY. Background jobs must use `--tty=never`; redirected stdin is allowed.
+The host enters raw mode after `started`, with local terminal signal generation
+disabled. Ctrl-C, Ctrl-Z and Ctrl-\ pass through stdin to the guest PTY, where
+the guest line discipline and foreground job handle them. Signals sent to the
+host process still cancel locally; host suspend/exit restore the terminal, and
+resume re-enters raw mode. Resize reaches the guest PTY. Background jobs must
+use `--tty=never`; redirected stdin is allowed. Before the PTY is ready, Ctrl-C
+still cancels startup.
 
 The revm process directly hosts libkrun and host services. There is no `_vmm`
 child, shutdown RPC, escalation timer or native teardown while the VM runs.

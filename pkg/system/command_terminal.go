@@ -81,22 +81,8 @@ func (t *CommandTerminal) Event(name string) {
 	}
 }
 
-// Keep terminal-generated INT/QUIT/TSTP local to the CLI. Cancellation ends
-// the VM process; control bytes are not reinterpreted in the guest stream.
+// Forward control characters to the guest PTY, whose line discipline and
+// foreground process group own interrupt, quit and suspend handling.
 func makeCommandRaw(fd int) (*term.State, error) {
-	state, err := term.MakeRaw(fd)
-	if err != nil {
-		return nil, err
-	}
-	raw := SaveTerminal(fd)
-	if raw == nil {
-		_ = term.Restore(fd, state)
-		return nil, fmt.Errorf("read raw terminal state")
-	}
-	raw.Lflag |= unix.ISIG
-	if err = RestoreTerminal(fd, raw); err != nil {
-		_ = term.Restore(fd, state)
-		return nil, err
-	}
-	return state, nil
+	return term.MakeRaw(fd)
 }

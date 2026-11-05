@@ -30,7 +30,9 @@ revm rm dev
 ```
 
 Without `--id`, successful runs remove their records; failed runs retain diagnostics.
-Ctrl-C and `revm stop` immediately end the VM process.
+Once the PTY is ready, Ctrl-C, Ctrl-Z and Ctrl-\ are handled by the guest terminal
+and foreground job. `revm stop` or host termination signals immediately end the
+VM process; Ctrl-C during startup or without a PTY still cancels locally.
 
 ```sh
 revm run --id demo --port-export 8080:8000 -- nc -lk -p 8000 -e cat

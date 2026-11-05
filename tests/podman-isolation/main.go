@@ -14,7 +14,7 @@ import (
 	"os"
 	"time"
 
-	yamux "github.com/libp2p/go-yamux/v5"
+	"github.com/hashicorp/yamux"
 	"github.com/mdlayher/vsock"
 	"linuxvm/pkg/define"
 )
@@ -65,14 +65,16 @@ func probe(cid, port uint32) {
 	defer c.Close()
 	var stream net.Conn = c
 	if port == define.GuestPodmanPort {
-		session, err := yamux.Client(c, nil, nil)
+		session, err := yamux.Client(c, nil)
 		if err != nil {
 			panic(err)
 		}
 		defer session.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		stream, err = session.Open(ctx)
+		stop := context.AfterFunc(ctx, func() { _ = session.Close() })
+		defer stop()
+		stream, err = session.Open()
 		if err != nil {
 			fmt.Printf("blocked %d:%d: %v\n", cid, port, err)
 			return

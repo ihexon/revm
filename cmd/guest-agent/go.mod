@@ -14,9 +14,8 @@ require (
 
 require (
 	github.com/creack/pty v1.1.24 // indirect
+	github.com/hashicorp/yamux v0.1.3-0.20261012062701-98ba9c9ac60f // indirect
 	github.com/inetaf/tcpproxy v0.0.0-20260515195445-c159a6051109 // indirect
-	github.com/libp2p/go-buffer-pool v0.0.2 // indirect
-	github.com/libp2p/go-yamux/v5 v5.1.0 // indirect
 	github.com/mdlayher/socket v0.6.0 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	golang.org/x/net v0.59.0 // indirect

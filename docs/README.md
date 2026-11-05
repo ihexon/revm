@@ -23,3 +23,8 @@ revm 在 libkrun VM 中执行 Linux 命令。所有命令和 PTY 共用 guest-co
 
 - [依赖构建](../deps/README.md)
 - [guest agent](../cmd/guest-agent/README.md)
+
+## 设计提案
+
+- [资源生命周期设计](resource-lifecycle-design.md)：临时资源、运行记录与持久数据的边界、清理规则和迁移方案，待实现。
+- [信号与终端行为设计](signal-terminal-design.md)：执行会话、TTY、信号路由、有界取消和退出结果，待实现。

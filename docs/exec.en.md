@@ -17,12 +17,15 @@ propagate, with signals mapped to 128 plus the Linux signal number.
 
 `--tty=auto` requires revm in the foreground with terminal stdin and stdout.
 `always` and `never` override this. PTY input EOF never
-injects Ctrl-D. Terminal state is restored on exit and suspend; resize is forwarded.
+injects Ctrl-D. Ctrl-C, Ctrl-Z and Ctrl-\ pass through to the guest terminal and
+foreground job. Terminal state is restored on exit and host suspend; resize is forwarded.
 
 Session records resolve the current instance's management socket. A stopped
 session cannot execute commands; inspect it with `revm ls` or `revm inspect ID`.
-INT, TERM, HUP and QUIT cancel only this execution and its descendants, preserving
-the VM. The client exits immediately; disconnect kills the execution subtree.
+INT, TERM, HUP and QUIT sent to the host process cancel only this execution and
+its descendants, preserving the VM. The client exits immediately; disconnect
+kills the execution subtree. Ctrl-C before the PTY is ready or without a PTY
+still cancels locally.
 
 ```sh
 revm wait --ready --timeout 30s dev

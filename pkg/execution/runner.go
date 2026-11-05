@@ -71,8 +71,8 @@ func Serve(ctx context.Context, conn net.Conn, instance string, defaultEnv ...st
 	}
 	if startErr != nil {
 		input.Close()
-		s.Stdout.CloseWrite()
-		s.Stderr.CloseWrite()
+		s.Stdout.Close()
+		s.Stderr.Close()
 		r := FromProcess(startErr)
 		_ = s.Send(Message{Type: "completed", Result: &r})
 		waitAck(ctx, s, controls)
@@ -81,8 +81,8 @@ func Serve(ctx context.Context, conn net.Conn, instance string, defaultEnv ...st
 	go func() { _, _ = io.Copy(input, s.Stdin); input.Close() }()
 	var copies sync.WaitGroup
 	copies.Add(2)
-	go func() { defer copies.Done(); _, _ = io.Copy(s.Stdout, outR); _ = s.Stdout.CloseWrite() }()
-	go func() { defer copies.Done(); _, _ = io.Copy(s.Stderr, errR); _ = s.Stderr.CloseWrite() }()
+	go func() { defer copies.Done(); _, _ = io.Copy(s.Stdout, outR); _ = s.Stdout.Close() }()
+	go func() { defer copies.Done(); _, _ = io.Copy(s.Stderr, errR); _ = s.Stderr.Close() }()
 	outputDone := make(chan struct{})
 	go func() { copies.Wait(); close(outputDone) }()
 	waited := make(chan error, 1)

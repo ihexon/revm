@@ -17,7 +17,9 @@ revm exec --id dev --tty=always -- printf hello
 
 exec 通过状态记录将 session ID 解析到本次实例的管理 socket。停止的 session 不可 exec；`revm ls` 和 `revm inspect ID` 可查看状态。
 
-收到 INT、TERM、HUP、QUIT 时，客户端立即退出并断开连接；guest 立即杀死本次命令及其后代，不关闭整个 VM。终端模式保留本地 Ctrl-C 信号，在退出和暂停前恢复终端，resize 会传到 guest。
+PTY 模式下，Ctrl-C、Ctrl-Z、Ctrl-\ 作为输入交给 guest 终端和前台任务处理；客户端不会因此直接退出或暂停。在退出和宿主暂停前恢复本地终端，resize 会传到 guest。
+
+宿主进程收到 INT、TERM、HUP、QUIT（例如通过 `kill`，或非 PTY 模式下按 Ctrl-C）时，客户端立即退出并断开连接；guest 立即杀死本次命令及其后代，不关闭整个 VM。PTY 就绪前的 Ctrl-C 仍取消启动。
 
 ```sh
 revm wait --ready --timeout 30s dev

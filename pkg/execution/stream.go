@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	yamux "github.com/libp2p/go-yamux/v5"
+	"github.com/hashicorp/yamux"
 )
 
 const ProtocolVersion = 3
@@ -43,12 +43,14 @@ type Streams struct {
 func streams(ctx context.Context, conn net.Conn, server bool) (*Streams, error) {
 	cfg := yamux.DefaultConfig()
 	cfg.MaxStreamWindowSize = 256 * 1024
+	// Slow consumers may still be reading buffered output after its writer closes.
+	cfg.StreamCloseTimeout = 0
 	var s *yamux.Session
 	var err error
 	if server {
-		s, err = yamux.Server(conn, cfg, nil)
+		s, err = yamux.Server(conn, cfg)
 	} else {
-		s, err = yamux.Client(conn, cfg, nil)
+		s, err = yamux.Client(conn, cfg)
 	}
 	if err != nil {
 		conn.Close()
@@ -61,7 +63,7 @@ func streams(ctx context.Context, conn net.Conn, server bool) (*Streams, error) 
 		if server {
 			*slot, err = s.AcceptStream()
 		} else {
-			*slot, err = s.OpenStream(ctx)
+			*slot, err = s.OpenStream()
 		}
 		if err != nil {
 			s.Close()

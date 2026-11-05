@@ -32,7 +32,8 @@ revm rm dev
 ```
 
 省略 `--id` 时，成功运行会清理记录；失败运行保留日志和结果。
-Ctrl-C 或 `revm stop` 立即结束 VM 进程。
+PTY 就绪后，Ctrl-C、Ctrl-Z、Ctrl-\ 交给 guest 终端和前台任务处理。
+`revm stop` 或宿主终止信号立即结束 VM 进程；启动期间或非 PTY 模式下的 Ctrl-C 仍按宿主取消处理。
 
 ```sh
 revm run --id demo --port-export 8080:8000 -- nc -lk -p 8000 -e cat

@@ -18,8 +18,10 @@ revm runs the supplied argv in a fresh Alpine system environment. Input and
 output stream without waiting for EOF. Without a PTY, stdout and stderr remain
 separate. Each session name permits one running instance.
 .PP
-The main process hosts libkrun. Ctrl-C, termination signals and revm stop end
-that process immediately. Cancellation may discard buffered writes and output;
+The main process hosts libkrun. Host termination signals and revm stop end
+that process immediately. Once a PTY is ready, Ctrl-C, Ctrl-Z and Ctrl-\e
+are handled by the guest terminal and foreground job. Ctrl-C during startup or
+without a PTY still cancels locally. Cancellation may discard buffered writes and output;
 normal completion drains output first. Applications are responsible for flushing
 writes; revm does not shut down the guest or sync its filesystems. A detached
 helper removes temporary files after process death and preserves persistent

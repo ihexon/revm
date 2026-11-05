@@ -9,8 +9,8 @@ import (
 	"os"
 	"sync"
 
+	"github.com/hashicorp/yamux"
 	"github.com/inetaf/tcpproxy"
-	yamux "github.com/libp2p/go-yamux/v5"
 )
 
 type dialFunc func(context.Context) (net.Conn, error)
@@ -93,13 +93,13 @@ func (c *client) Open(ctx context.Context) (net.Conn, error) {
 		if err != nil {
 			return nil, err
 		}
-		c.session, err = yamux.Client(conn, nil, nil)
+		c.session, err = yamux.Client(conn, muxConfig())
 		if err != nil {
 			conn.Close()
 			return nil, err
 		}
 	}
-	return c.session.Open(ctx)
+	return openStream(ctx, c.session)
 }
 
 func (c *client) Close() {
@@ -114,12 +114,12 @@ func (c *client) Close() {
 // listener, and connects their streams to Podman's private Unix socket.
 func ServeGuest(ctx context.Context, listener net.Listener, socket string) error {
 	return serveConnections(ctx, listener, func(ctx context.Context, conn net.Conn) {
-		session, err := yamux.Server(conn, nil, nil)
+		session, err := yamux.Server(conn, muxConfig())
 		if err != nil {
 			return
 		}
 		defer session.Close()
-		_ = serve(ctx, session, func(ctx context.Context) (net.Conn, error) {
+		_ = serve(ctx, streamListener{session}, func(ctx context.Context) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
 		})
 	})

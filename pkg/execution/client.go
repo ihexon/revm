@@ -49,7 +49,8 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 				inputErrors <- fmt.Errorf("read command input: %w", err)
 			}
 		}
-		_ = s.Stdin.CloseWrite()
+		// HashiCorp Yamux Close sends FIN while keeping the read side open.
+		_ = s.Stdin.Close()
 	}()
 	var copies sync.WaitGroup
 	copies.Add(2)
