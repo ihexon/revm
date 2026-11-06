@@ -46,8 +46,7 @@ func TestCanceledOpenPreservesSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer accepted.Close()
-	// Once the backlog clears, the abandoned open must send EOF and release
-	// its stream instead of retaining an unowned Podman connection.
+	// Once the backlog clears, the abandoned open must send EOF to its peer.
 	abandoned, err := server.AcceptStreamWithContext(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +55,13 @@ func TestCanceledOpenPreservesSession(t *testing.T) {
 	_ = abandoned.SetReadDeadline(time.Now().Add(time.Second))
 	if _, err := abandoned.Read(make([]byte, 1)); err != io.EOF {
 		t.Fatalf("abandoned stream was not closed: %v", err)
+	}
+	// Close is a half-close: the peer must finish its half too, just as the
+	// proxy's connection handler does. If FIN arrives before Accept sends ACK,
+	// the pending SYN keeps the sole backlog slot until both halves close.
+	// Deferring this close until after the next dial makes the test deadlock.
+	if err := abandoned.Close(); err != nil {
+		t.Fatal(err)
 	}
 	// Other streams still work, and a full local Close unblocks their reads.
 	conn, err := openStream(ctx, client)
