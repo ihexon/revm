@@ -24,6 +24,9 @@ revm inspect containers  # 在另一终端查询 Podman API 地址
 `--volume` 与 `--container-disk` 必须二选一。volume 独立于 session，删除 session 不会删除卷。
 `--podman-api` 创建自定义连接地址，拒绝覆盖已有文件。
 
+客户端连接相互独立，每条连接单独连接 guest。一个客户端断连不会取消其他客户端；
+关闭请求输入后仍可读取完整响应。并发连接会使用更多传输连接，以换取独立的资源生命周期。
+
 ```sh
 revm exec --id containers -- podman ps
 revm logs --guest containers

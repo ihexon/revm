@@ -17,9 +17,15 @@ Gvisor networking uses gvproxy with a fixed IPv4 address, route and DNS configur
 TSI uses host IPv4/IPv6 sockets without a virtual interface or gvproxy; the guest
 writes the host resolver snapshot from its boot configuration to /etc/resolv.conf.
 Unix sockets stay guest-local. Podman requires gvisor.
-Podman has a private Unix API socket;
-the host reaches it through a dedicated vsock/Yamux proxy. Only explicit `--mount`
-paths are shared. Persistent storage is managed by the host.
+Podman has a private Unix API socket. Each host client connection owns one
+vsock transport, with no pooling or multiplexing. In each direction, a four-byte
+big-endian length precedes at most 32 KiB of data; length zero is input EOF.
+Reading never writes acknowledgments or window updates. The underlying socket
+supplies backpressure. EOF preserves the response direction; copy errors or
+cancellation close both endpoints. Partial or oversized frames fail the connection.
+This internal protocol requires the host and guest agent from the same bundle;
+there is no legacy-protocol fallback. Only explicit `--mount` paths are shared.
+Persistent storage is managed by the host.
 
 Build from the repository root with `go run ./scripts`. The nested
 Go module uses the parent's protocol and execution packages through a local

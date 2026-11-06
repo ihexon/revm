@@ -6,7 +6,9 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -14,7 +16,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/hashicorp/yamux"
 	"github.com/mdlayher/vsock"
 	"linuxvm/pkg/define"
 )
@@ -63,29 +64,43 @@ func probe(cid, port uint32) {
 		return
 	}
 	defer c.Close()
-	var stream net.Conn = c
+	_ = c.SetDeadline(time.Now().Add(2 * time.Second))
+	request := []byte("GET /_ping HTTP/1.1\r\nHost: probe\r\nConnection: close\r\n\r\n")
+	var response *http.Response
 	if port == define.GuestPodmanPort {
-		session, err := yamux.Client(c, nil)
-		if err != nil {
-			panic(err)
-		}
-		defer session.Close()
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		stop := context.AfterFunc(ctx, func() { _ = session.Close() })
-		defer stop()
-		stream, err = session.Open()
-		if err != nil {
-			fmt.Printf("blocked %d:%d: %v\n", cid, port, err)
-			return
-		}
+		// Use the current wire protocol; an obsolete request could hide an
+		// exposed endpoint by failing before it reaches the HTTP service.
+		_ = binary.Write(c, binary.BigEndian, uint32(len(request)))
+		_, _ = c.Write(request)
+		_ = binary.Write(c, binary.BigEndian, uint32(0))
+		response, err = readPodmanResponse(c)
+	} else {
+		_, _ = c.Write(request)
+		response, err = http.ReadResponse(bufio.NewReader(c), nil)
 	}
-	_ = stream.SetDeadline(time.Now().Add(2 * time.Second))
-	_, _ = io.WriteString(stream, "GET /_ping HTTP/1.1\r\nHost: probe\r\nConnection: close\r\n\r\n")
-	response, err := http.ReadResponse(bufio.NewReader(stream), nil)
 	if err == nil {
 		response.Body.Close()
 		panic(fmt.Sprintf("management endpoint reachable at %d:%d: %s", cid, port, response.Status))
 	}
 	fmt.Printf("blocked %d:%d: %v\n", cid, port, err)
+}
+
+func readPodmanResponse(r io.Reader) (*http.Response, error) {
+	var data bytes.Buffer
+	for data.Len() <= 64<<10 {
+		var size uint32
+		if err := binary.Read(r, binary.BigEndian, &size); err != nil {
+			return nil, err
+		}
+		if size == 0 || size > 32<<10 {
+			return nil, fmt.Errorf("no HTTP response before EOF or invalid frame")
+		}
+		if _, err := io.CopyN(&data, r, int64(size)); err != nil {
+			return nil, err
+		}
+		if response, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(data.Bytes())), nil); err == nil {
+			return response, nil
+		}
+	}
+	return nil, fmt.Errorf("HTTP response headers exceed probe limit")
 }

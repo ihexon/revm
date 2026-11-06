@@ -1,19 +1,23 @@
 // Package podmanproxy carries the native Podman byte stream over a private
-// vsock channel. Yamux supplies half-close and flow control independently of
-// libkrun's Unix socket bridge; tcpproxy handles bidirectional copying.
+// vsock channel. Each client owns one transport. Bounded data frames carry EOF
+// without half-closing libkrun's Unix socket bridge.
 package podmanproxy
 
 import (
 	"context"
+	"io"
 	"net"
 	"os"
 	"sync"
-
-	"github.com/hashicorp/yamux"
-	"github.com/inetaf/tcpproxy"
+	"time"
 )
 
-type dialFunc func(context.Context) (net.Conn, error)
+type halfCloseConn interface {
+	net.Conn
+	CloseWrite() error
+}
+
+type dialFunc func(context.Context) (halfCloseConn, error)
 
 // serve owns the listener and all accepted connections until it returns.
 func serveConnections(ctx context.Context, listener net.Listener, handle func(context.Context, net.Conn)) error {
@@ -40,31 +44,37 @@ func serveConnections(ctx context.Context, listener net.Listener, handle func(co
 	}
 }
 
-func serve(ctx context.Context, listener net.Listener, dial dialFunc) error {
-	return serveConnections(ctx, listener, func(ctx context.Context, conn net.Conn) {
-		var stopBackend func() bool
-		defer func() {
-			if stopBackend != nil {
-				stopBackend()
-			}
-		}()
-		proxy := &tcpproxy.DialProxy{DialContext: func(dialCtx context.Context, _, _ string) (net.Conn, error) {
-			dialCtx, cancel := context.WithCancel(dialCtx)
-			stopDial := context.AfterFunc(ctx, cancel)
-			defer stopDial()
-			defer cancel()
-			backend, err := dial(dialCtx)
-			if err == nil {
-				stopBackend = context.AfterFunc(ctx, func() { _ = backend.Close() })
-			}
-			return backend, err
-		}}
-		proxy.HandleConn(conn)
-	})
+// proxyConnection owns both endpoints. EOF preserves the response direction;
+// any copy error or service cancellation closes both ends and joins the copies.
+func proxyConnection(ctx context.Context, conn halfCloseConn, dial dialFunc) {
+	defer conn.Close()
+	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	backend, err := dial(dialCtx)
+	cancel()
+	if err != nil {
+		return
+	}
+	defer backend.Close()
+	closeBoth := func() { conn.Close(); backend.Close() }
+	stop := context.AfterFunc(ctx, closeBoth)
+	defer stop()
+	done := make(chan error, 2)
+	copyHalf := func(dst, src halfCloseConn) {
+		_, err := io.Copy(dst, src)
+		if err == nil {
+			err = dst.CloseWrite()
+		}
+		done <- err
+	}
+	go copyHalf(conn, backend)
+	go copyHalf(backend, conn)
+	if err := <-done; err != nil {
+		closeBoth()
+	}
+	<-done
 }
 
-// ServeHost exposes the Podman Unix socket to native clients. All connections
-// share a Yamux session, which is recreated on the next dial if disconnected.
+// ServeHost gives each native client its own guest transport.
 func ServeHost(ctx context.Context, socket, transportSocket string) error {
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
@@ -74,53 +84,31 @@ func ServeHost(ctx context.Context, socket, transportSocket string) error {
 		listener.Close()
 		return err
 	}
-	client := &client{socket: transportSocket}
-	defer client.Close()
-	return serve(ctx, listener, client.Open)
+	return serveConnections(ctx, listener, func(ctx context.Context, conn net.Conn) {
+		proxyConnection(ctx, conn.(*net.UnixConn), func(ctx context.Context) (halfCloseConn, error) {
+			transport, err := dialUnix(ctx, transportSocket)
+			if err != nil {
+				return nil, err
+			}
+			return &framedConn{Conn: transport}, nil
+		})
+	})
 }
 
-type client struct {
-	mu      sync.Mutex
-	socket  string
-	session *yamux.Session
-}
-
-func (c *client) Open(ctx context.Context) (net.Conn, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.session == nil || c.session.IsClosed() {
-		conn, err := (&net.Dialer{}).DialContext(ctx, "unix", c.socket)
-		if err != nil {
-			return nil, err
-		}
-		c.session, err = yamux.Client(conn, muxConfig())
-		if err != nil {
-			conn.Close()
-			return nil, err
-		}
+func dialUnix(ctx context.Context, socket string) (*net.UnixConn, error) {
+	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", socket)
+	if err != nil {
+		return nil, err
 	}
-	return openStream(ctx, c.session)
-}
-
-func (c *client) Close() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.session != nil {
-		_ = c.session.Close()
-	}
+	return conn.(*net.UnixConn), nil
 }
 
 // ServeGuest accepts only connections already authenticated by the vsock
-// listener, and connects their streams to Podman's private Unix socket.
+// listener. Each transport carries exactly one Podman connection.
 func ServeGuest(ctx context.Context, listener net.Listener, socket string) error {
 	return serveConnections(ctx, listener, func(ctx context.Context, conn net.Conn) {
-		session, err := yamux.Server(conn, muxConfig())
-		if err != nil {
-			return
-		}
-		defer session.Close()
-		_ = serve(ctx, streamListener{session}, func(ctx context.Context) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+		proxyConnection(ctx, &framedConn{Conn: conn}, func(ctx context.Context) (halfCloseConn, error) {
+			return dialUnix(ctx, socket)
 		})
 	})
 }

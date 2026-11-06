@@ -22,6 +22,11 @@ revm inspect containers  # In another terminal, find the Podman API address
 Specify exactly one of `--volume` or `--container-disk`. Volumes survive session removal.
 `--podman-api` creates a custom connection address and refuses to overwrite existing files.
 
+Each client connection has its own guest transport. Disconnecting one client
+does not cancel other clients, and closing request input still allows the full
+response to drain. Concurrent clients use more transport connections in exchange
+for independent resource lifetimes.
+
 ```sh
 revm exec --id containers -- podman ps
 revm logs --guest containers

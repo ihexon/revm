@@ -1,5 +1,5 @@
 from support import prune_after_cleanup
-import os,subprocess,tempfile,time,json,signal,uuid,socket,http.client,urllib.parse
+import os,subprocess,tempfile,time,json,signal,uuid,socket,http.client,urllib.parse,concurrent.futures
 b=os.path.abspath('out/revm/bin/revm');root=tempfile.TemporaryDirectory(prefix='rv-', dir='/var/tmp');sid='audit-'+uuid.uuid4().hex[:10];owner=None
 env=dict(os.environ, REVM_HOME=root.name)
 def cli(args,ok=True):
@@ -32,13 +32,24 @@ try:
  cli(['exec','--id',sid,'--','podman','ps'])
  view=json.loads(cli(['inspect',sid]).stdout)
  address=urllib.parse.urlparse(view['endpoints']['podman'])
- connection=http.client.HTTPConnection('localhost',timeout=5)
- connection.sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
- connection.sock.settimeout(5)
- connection.sock.connect(urllib.parse.unquote(address.path))
- connection.request('GET','/_ping')
- assert connection.getresponse().status==200
- connection.close()
+ def ping(close_input=False):
+  connection=http.client.HTTPConnection('localhost',timeout=5)
+  connection.sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+  connection.sock.settimeout(5)
+  connection.sock.connect(urllib.parse.unquote(address.path))
+  try:
+   # Multiple HTTP requests still reuse their client's own connection.
+   for _ in range(1 if close_input else 2):
+    connection.request('GET','/_ping')
+    if close_input: connection.sock.shutdown(socket.SHUT_WR)
+    response=connection.getresponse()
+    assert response.status==200 and response.read()==b'OK'
+  finally:
+   connection.close()
+ with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+  list(pool.map(lambda _: ping(),range(8)))
+ ping(close_input=True)
+ print('PASS independent Podman clients, HTTP keep-alive and response after input EOF',flush=True)
  storage=json.loads(cli(['volume','ls','--json']).stdout)[0]
  assert storage['inUse'] and os.path.isfile(storage['path'])
  assert storage['sizeBytes']>=storage['allocatedBytes']>0
