@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -65,7 +64,7 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 			if dst == nil {
 				dst = io.Discard
 			}
-			_, err := io.Copy(dst, pair.src)
+			_, err := io.Copy(CancelOnBrokenPipe(ctx, dst), pair.src)
 			if err != nil {
 				copyErrors <- err
 			}
@@ -89,11 +88,7 @@ func Execute(ctx context.Context, conn net.Conn, req Request, opts Options) (res
 
 	outputFailure := func(err error) error {
 		result.Output = "truncated"
-		failure := fmt.Errorf("write command output: %w", err)
-		if errors.Is(err, syscall.EPIPE) {
-			return errors.Join(&Canceled{Signal: "SIGPIPE"}, failure)
-		}
-		return failure
+		return fmt.Errorf("copy command output: %w", err)
 	}
 	outputCh := outputDone
 	for messages != nil || outputCh != nil {

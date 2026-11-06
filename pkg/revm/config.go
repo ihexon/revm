@@ -134,7 +134,7 @@ func validateVMOptions(cfg VMOptions) error {
 	return validatePortForwardSet(cfg.PortForwards)
 }
 
-// validateSessionID keeps the session directory below ~/.cache/revm. Session
+// validateSessionID keeps the session directory below REVM_HOME/state/sessions. Session
 // IDs are also used in socket and lock file names, so accepting path syntax
 // here would let a caller escape the managed workspace.
 func validateSessionID(id string) error {

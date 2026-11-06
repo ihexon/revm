@@ -13,9 +13,15 @@ import (
 	"linuxvm/pkg/revm"
 	"linuxvm/pkg/system"
 	"os"
+	"os/signal"
+	"syscall"
 )
 
 func main() {
+	// SIGPIPE does not identify which descriptor failed. Internal sockets and
+	// user output share this process, so their owners must handle write errors.
+	// Keep this policy through terminal restoration and final diagnostics too.
+	signal.Ignore(syscall.SIGPIPE)
 	if len(os.Args) == 2 && os.Args[1] == "_cleanup" {
 		if err := revm.RunCleanup(); err != nil {
 			fmt.Fprintln(os.Stderr, "revm cleanup:", err)

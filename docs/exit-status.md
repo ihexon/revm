@@ -28,7 +28,11 @@ memory, bounded to 512–2048 MiB. Explicit memory values below 512 MiB are erro
 
 The first host cancellation returns `128+signal` immediately, even during output
 draining. A downstream pipe closing while execution is active returns 141
-(SIGPIPE). There is no VM shutdown, escalation timer or automatic filesystem
+(SIGPIPE), including when the other output stream is blocked. The executable
+ignores the process-wide SIGPIPE notification; only an EPIPE from a CLI or guest
+stdout/stderr write triggers this cancellation. Internal socket failures belong
+to their operation (for example, a readiness probe can retry) and do not by
+themselves cancel the CLI. There is no VM shutdown, escalation timer or automatic filesystem
 sync; applications own flushing their data. Joined error diagnostics are
 deduplicated onto one stderr line;
 human wording is not a parsing contract. Use exit status, `ls --json`, `inspect`,

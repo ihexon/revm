@@ -2,7 +2,28 @@
 
 package revm
 
-import "path/filepath"
+import (
+	"fmt"
+	"path/filepath"
+
+	"golang.org/x/sys/unix"
+)
+
+// Reject long homes before creating resources instead of falling back to /tmp.
+func validateRuntimePath(dir string) error {
+	paths := newMachinePathManager(dir)
+	for _, path := range []string{
+		paths.GetPodmanTransportSocketFile(),
+		paths.GetGuestControlSocketFile(),
+		// libkrun uses a uint32 PID and counter for its temporary network socket.
+		filepath.Join(dir, "krun-net-4294967295-4294967295.sock"),
+	} {
+		if len(path) >= len(unix.RawSockaddrUnix{}.Path) {
+			return fmt.Errorf("REVM_HOME is too long for Unix sockets; choose a shorter absolute path: %s", dir)
+		}
+	}
+	return nil
+}
 
 // machinePathManager handles all workspace-relative path calculations.
 type machinePathManager struct {

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run Linux-only guest service and supervisor tests inside the built VM."""
+from support import prune_after_cleanup
 import os
 from pathlib import Path
 import platform
@@ -9,7 +10,7 @@ import tempfile
 repo = Path(__file__).resolve().parents[1]
 binary = repo / 'out/revm/bin/revm'
 arch = {'aarch64': 'arm64', 'arm64': 'arm64', 'x86_64': 'amd64'}[platform.machine()]
-with tempfile.TemporaryDirectory(prefix='revm-guest-tests-') as root:
+with tempfile.TemporaryDirectory(prefix='rv-', dir='/var/tmp') as root:
     root = Path(root)
     fixtures = root / 'tests'
     fixtures.mkdir()
@@ -18,14 +19,12 @@ with tempfile.TemporaryDirectory(prefix='revm-guest-tests-') as root:
         subprocess.run(['go', 'test', '-c', '-o', str(fixtures / (package + '.test')),
                         './pkg/' + package], cwd=repo / 'cmd/guest-agent',
                        env=build_env, check=True, timeout=120)
-    env = dict(os.environ, XDG_STATE_HOME=str(root / 'state'),
-               XDG_CACHE_HOME=str(root / 'cache'), XDG_DATA_HOME=str(root / 'data'))
+    env = dict(os.environ, REVM_HOME=str(root))
     try:
         subprocess.run([str(binary), 'run', '--cpus', '1', '--memory', '512',
                         '--mount', str(fixtures) + ':/tests,ro', '--', 'sh', '-c',
                         'set -e; for test in /tests/*.test; do "$test" -test.v; done'],
                        env=env, check=True, timeout=45)
     finally:
-        subprocess.run([str(binary), 'cache', 'prune'], env=env, timeout=10,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        prune_after_cleanup(binary, env)
 print('PASS Linux guest service ownership, supervisor and host-only transport')

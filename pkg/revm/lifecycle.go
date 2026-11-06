@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"linuxvm/pkg/commanderr"
 	"linuxvm/pkg/execution"
+	"linuxvm/pkg/system"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -16,25 +17,19 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type Roots struct{ Runtime, Cache, State, Data string }
+type Roots struct{ Home, Runtime, Cache, State, Data string }
 
-// ResolveRoots is shared by execution and management. XDG paths work on both
-// supported hosts; the fallback runtime path is deliberately short and private.
+// ResolveRoots keeps all managed resources below one home on both hosts.
 func ResolveRoots() (Roots, error) {
-	home, err := os.UserHomeDir()
+	home, err := system.RevmHome()
 	if err != nil {
 		return Roots{}, err
 	}
-	xdg := func(key, fallback string) string {
-		if v := os.Getenv(key); v != "" {
-			return filepath.Join(v, "revm")
-		}
-		return filepath.Join(home, fallback, "revm")
+	home, err = canonicalPath(home)
+	if err != nil {
+		return Roots{}, err
 	}
-	r := Roots{Cache: xdg("XDG_CACHE_HOME", ".cache"), State: xdg("XDG_STATE_HOME", ".local/state"), Data: xdg("XDG_DATA_HOME", ".local/share"), Runtime: runtimeFallback()}
-	if base := os.Getenv("XDG_RUNTIME_DIR"); base != "" && len(filepath.Join(base, "revm")) <= 45 {
-		r.Runtime = filepath.Join(base, "revm")
-	}
+	r := Roots{Home: home, Cache: filepath.Join(home, "cache"), State: filepath.Join(home, "state"), Data: filepath.Join(home, "data"), Runtime: filepath.Join(home, "run")}
 	paths := []*string{&r.Runtime, &r.Cache, &r.State, &r.Data}
 	for _, p := range paths {
 		if !filepath.IsAbs(*p) {
@@ -43,6 +38,9 @@ func ResolveRoots() (Roots, error) {
 		*p, err = canonicalPath(*p)
 		if err != nil {
 			return r, err
+		}
+		if *p == home || !pathWithin(home, *p) {
+			return r, fmt.Errorf("resource directory must stay inside REVM_HOME: %s", *p)
 		}
 	}
 	for i, a := range paths {
@@ -54,7 +52,6 @@ func ResolveRoots() (Roots, error) {
 	}
 	return r, nil
 }
-func runtimeFallback() string { return fmt.Sprintf("/tmp/revm-%d", os.Getuid()) }
 func canonicalPath(p string) (string, error) {
 	p, err := filepath.Abs(p)
 	if err != nil {
@@ -66,6 +63,9 @@ func canonicalPath(p string) (string, error) {
 	}
 	if !os.IsNotExist(err) {
 		return "", err
+	}
+	if info, statErr := os.Lstat(p); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("path contains a dangling symbolic link: %s", p)
 	}
 	parent := filepath.Dir(p)
 	if parent == p {
@@ -254,6 +254,14 @@ func beginRun(ctx context.Context, cfg *VMOptions) (lease *sessionRun, retErr er
 	if err != nil {
 		return nil, err
 	}
+	instance := uuid.NewString()
+	runtimeDir := filepath.Join(r.Runtime, instance[:12])
+	if err := validateRuntimePath(runtimeDir); err != nil {
+		return nil, err
+	}
+	if err := privateDir(r.Home); err != nil {
+		return nil, err
+	}
 	lock, err := acquireLock(r.sessionLock(cfg.SessionID))
 	if err != nil {
 		return nil, fmt.Errorf("lock session %q (another instance may be running): %w", cfg.SessionID, err)
@@ -308,25 +316,34 @@ func beginRun(ctx context.Context, cfg *VMOptions) (lease *sessionRun, retErr er
 		s.VolumeID = v.ID
 		cfg.ContainerDisk = &ContainerDiskSpec{Path: path}
 	}
-	// External disk ownership never transfers to a session. A stable path lock
-	// prevents two VMMs writing one disk, even across different state roots.
-	diskPaths := []string{}
-	for _, d := range cfg.Disks {
-		diskPaths = append(diskPaths, d.Path)
-	}
+	// Lock the disk inode itself so different REVM_HOME values and hard links
+	// cannot bypass exclusivity. No global lock files outside the home are needed.
+	diskSpecs := append([]RawDiskSpec(nil), cfg.Disks...)
 	if cfg.ContainerDisk != nil {
-		diskPaths = append(diskPaths, cfg.ContainerDisk.Path)
+		spec, err := resolveContainerDiskSpec(cfg.ContainerDisk, "")
+		if err != nil {
+			return nil, err
+		}
+		diskSpecs = append(diskSpecs, spec)
 	}
 	seen := map[string]bool{}
-	for _, p := range diskPaths {
-		canonical, err := canonicalPath(p)
+	for _, spec := range diskSpecs {
+		canonical, err := canonicalPath(spec.Path)
 		if err != nil {
 			return nil, err
 		}
 		if seen[canonical] {
-			return nil, fmt.Errorf("disk attached more than once: %s", p)
+			return nil, fmt.Errorf("disk attached more than once: %s", spec.Path)
 		}
 		seen[canonical] = true
+		if exists, err := rawDiskExists(canonical); err != nil {
+			return nil, err
+		} else if !exists {
+			spec.Path = canonical
+			if _, err := createRAWDisk(ctx, spec); err != nil {
+				return nil, err
+			}
+		}
 		lock, err := lockDisk(canonical)
 		if err != nil {
 			return nil, err
@@ -351,8 +368,7 @@ func beginRun(ctx context.Context, cfg *VMOptions) (lease *sessionRun, retErr er
 		}
 		rollback = append(rollback, sessionDir)
 	}
-	instance := uuid.NewString()
-	rec := RunRecord{StateRoot: r.State, Version: 1, SessionID: s.ID, InstanceID: instance, RuntimeDir: filepath.Join(r.Runtime, instance[:12]), CacheDir: filepath.Join(r.Cache, "instances", instance), StartedAt: time.Now().UTC(), Status: "starting"}
+	rec := RunRecord{StateRoot: r.State, Version: 1, SessionID: s.ID, InstanceID: instance, RuntimeDir: runtimeDir, CacheDir: filepath.Join(r.Cache, "instances", instance), StartedAt: time.Now().UTC(), Status: "starting"}
 	if err = privateDir(r.Runtime); err != nil {
 		return nil, err
 	}

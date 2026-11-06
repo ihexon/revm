@@ -34,9 +34,9 @@ func sessionCommands() []*cli.Command {
 				return err
 			}
 			if c.Bool("json") {
-				return json.NewEncoder(c.Writer).Encode(views)
+				return json.NewEncoder(c.Root().Writer).Encode(views)
 			}
-			return writeSessions(c.Writer, views, time.Now())
+			return writeSessions(c.Root().Writer, views, time.Now())
 		}},
 		{Name: "inspect", Usage: "print configuration, last result, log directory and active connection URLs as JSON", Action: func(ctx context.Context, c *cli.Command) error {
 			id, err := sessionArg(c)
@@ -47,7 +47,7 @@ func sessionCommands() []*cli.Command {
 			if err != nil {
 				return err
 			}
-			e := json.NewEncoder(c.Writer)
+			e := json.NewEncoder(c.Root().Writer)
 			e.SetIndent("", "  ")
 			return e.Encode(view)
 		}},
@@ -90,7 +90,7 @@ func sessionCommands() []*cli.Command {
 			if c.Int("tail") < -1 {
 				return commanderr.Usage(fmt.Errorf("--tail must be -1 (all lines) or nonnegative"))
 			}
-			return revm.SessionLogs(ctx, id, c.String("instance"), c.Bool("guest"), c.Bool("follow"), c.Int("tail"), c.Writer)
+			return revm.SessionLogs(ctx, id, c.String("instance"), c.Bool("guest"), c.Bool("follow"), c.Int("tail"), c.Root().Writer)
 		}},
 	}
 }

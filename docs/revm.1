@@ -83,12 +83,12 @@ lists current startup forwards and Podman-published ports (gvisor only).
 .B rm NAME
 removes a stopped session, preserving volumes.
 .SH DATA
-Runtime sockets use XDG_RUNTIME_DIR, with a short private /tmp fallback.
-Private rootfs copies use XDG_CACHE_HOME/revm/instances.
-Logs and results use XDG_STATE_HOME/revm/sessions.
-Volumes use XDG_DATA_HOME/revm/volumes.
-Unset cache, state and data roots default to ~/.cache, ~/.local/state and
-~/.local/share. Roots may not overlap.
+All managed data lives under ~/.revm. REVM_HOME selects another absolute path.
+Runtime sockets use run/, private rootfs copies use cache/instances/,
+logs and results use state/sessions/, and volumes use data/volumes/.
+Build dependency caches use cache/build/v1/. XDG variables do not change these paths.
+An overly long home is rejected before VM startup; there is no /tmp fallback.
+Old data directories are not automatically moved or deleted.
 .PP
 .B volume create NAME
 creates independent persistent storage, selected by podman --volume NAME.

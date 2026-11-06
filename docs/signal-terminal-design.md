@@ -168,7 +168,7 @@ SIGKILL 和 SIGSTOP 无法捕获；单进程方案不能保证在这两种情况
 
 ## 断管与退出结果
 
-下游提前关闭 stdout，例如将输出接入 head，应触发当前执行的有界取消。宿主需要处理 SIGPIPE 和实际写入错误 EPIPE，避免直接退出而跳过清理；取消不得依赖继续向已关闭的输出写入诊断。run 清理后关闭自己的 VM，attach 保留 VM。[Go 的 SIGPIPE 行为](https://pkg.go.dev/os/signal#hdr-SIGPIPE)
+下游提前关闭 stdout 或 stderr，例如将输出接入 head，应触发当前执行的有界取消。可执行文件入口忽略进程级 SIGPIPE，由输出写入边界根据实际 EPIPE 取消当前命令并返回 141；这一策略持续到终端恢复和最终诊断结束。CLI 与 guest 输出使用同一个写入包装器，即使另一输出流阻塞也能通知 CLI 立即退出。内部 socket 的 EPIPE 由对应操作处理，例如 readiness 探测重试，不能被当成用户输出断管；进程级 SIGPIPE 无法识别出错的文件描述符，不再进入取消信号路由。取消不得依赖继续向已关闭的输出写入诊断。run 退出后由独立进程清理自己的 VM 资源，exec 保留 VM。[Go 的 SIGPIPE 行为](https://pkg.go.dev/os/signal#hdr-SIGPIPE)
 
 结果记录分别保存命令退出状态、宿主取消原因、VM 清理状态和输出是否完整，避免一个 error 字符串覆盖所有信息。
 

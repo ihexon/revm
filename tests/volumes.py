@@ -1,16 +1,17 @@
+from support import prune_after_cleanup
 import os,subprocess,tempfile,time,json,signal,uuid,socket,http.client,urllib.parse
-b=os.path.abspath('out/revm/bin/revm');root=tempfile.TemporaryDirectory(prefix='revm-volume-');sid='audit-'+uuid.uuid4().hex[:10];owner=None
-env=dict(os.environ,XDG_STATE_HOME=root.name+'/state',XDG_CACHE_HOME=root.name+'/cache',XDG_DATA_HOME=root.name+'/data')
+b=os.path.abspath('out/revm/bin/revm');root=tempfile.TemporaryDirectory(prefix='rv-', dir='/var/tmp');sid='audit-'+uuid.uuid4().hex[:10];owner=None
+env=dict(os.environ, REVM_HOME=root.name)
 def cli(args,ok=True):
  r=subprocess.run([b]+args,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=40)
  if ok: assert r.returncode==0,(args,r.returncode,r.stdout,r.stderr)
  return r
 def start():
  global owner
- meta=root.name+'/state/revm/sessions/'+sid+'/session.json'
+ meta=root.name+'/state/sessions/'+sid+'/session.json'
  previous=json.load(open(meta))['instanceID'] if os.path.exists(meta) else None
  owner=subprocess.Popen([b,'podman','--volume','data','--id',sid,'--cpus','1','--memory','512'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
- meta=root.name+'/state/revm/sessions/'+sid+'/session.json'
+ meta=root.name+'/state/sessions/'+sid+'/session.json'
  end=time.monotonic()+20
  while not os.path.exists(meta) or json.load(open(meta))['instanceID']==previous:
   if owner.poll() is not None: raise AssertionError(owner.communicate())
@@ -65,5 +66,5 @@ try:
  print('PASS real Podman volume reuse, active deletion refusal, preserved contents and missing references')
 finally:
  if owner and owner.poll() is None: owner.kill();owner.communicate(timeout=5)
- subprocess.run([b, "cache", "prune"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+ prune_after_cleanup(b, env)
  root.cleanup()

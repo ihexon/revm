@@ -54,6 +54,10 @@ podman run --rm alpine uname -a
 
 ## Storage
 
+All revm-managed data lives under `~/.revm`. Set `REVM_HOME` to an absolute path
+to select another root for runtime files, logs, caches and volumes. Existing data
+is not migrated automatically. See [data layout](docs/resources.md).
+
 ```sh
 revm volume ls
 revm stop containers

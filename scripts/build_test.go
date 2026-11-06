@@ -15,6 +15,20 @@ import (
 	"testing"
 )
 
+func TestBuildCacheUsesRevmHome(t *testing.T) {
+	t.Chdir("..")
+	home := t.TempDir()
+	t.Setenv("REVM_HOME", home)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(t.TempDir(), "unused"))
+	b, err := newBuilder(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(home, "cache", "build", "v1"); b.cacheDir != want {
+		t.Fatalf("build cache = %s, want %s", b.cacheDir, want)
+	}
+}
+
 func TestConcurrentDependencyCache(t *testing.T) {
 	source := t.TempDir()
 	payload := filepath.Join(source, "payload")

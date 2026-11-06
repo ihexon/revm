@@ -145,9 +145,9 @@ func newPortsCommand() *cli.Command {
 				return err
 			}
 			if c.Bool("json") {
-				return json.NewEncoder(c.Writer).Encode(ports)
+				return json.NewEncoder(c.Root().Writer).Encode(ports)
 			}
-			return writePortMappings(c.Writer, ports)
+			return writePortMappings(c.Root().Writer, ports)
 		},
 	}
 }

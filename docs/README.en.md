@@ -17,7 +17,7 @@ Omit `--id` to discard successful run records; failures retain logs and results.
 
 Volumes are independent: `volume create NAME` creates storage, `podman --volume NAME` uses it, and `volume rm NAME` deletes it. Sessions do not implicitly create or reconnect volumes. `--container-disk PATH` selects an external disk.
 
-Logs and results live under `${XDG_STATE_HOME:-~/.local/state}/revm/sessions/<id>/runs/<instance>/`. Use `logs` for host logs and `logs --guest` for guest logs. Private rootfs copies use XDG_CACHE_HOME; volumes use XDG_DATA_HOME. `cache prune` removes inactive temporary resources.
+All managed data lives under `~/.revm`, or the absolute path selected by `REVM_HOME`. Logs and results use `state/sessions/<id>/runs/<instance>/`, runtime files use `run/`, private rootfs copies use `cache/instances/`, and volumes use `data/volumes/`. Use `logs` for host logs and `logs --guest` for guest logs. `cache prune` removes inactive temporary resources. XDG variables no longer split these directories.
 
 ## Build documentation
 

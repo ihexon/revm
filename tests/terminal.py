@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Real terminal and early pipe-close checks (requires a VM-capable host)."""
+from support import prune_after_cleanup
 import fcntl, os, pty, select, signal, subprocess, tempfile, termios, time, uuid
 binary=os.path.abspath('out/revm/bin/revm')
 network=os.environ.get('REVM_TEST_NETWORK','gvisor')
-root=tempfile.TemporaryDirectory(prefix='revm-terminal-')
-env=dict(os.environ,XDG_STATE_HOME=root.name+'/state',XDG_CACHE_HOME=root.name+'/cache',XDG_DATA_HOME=root.name+'/data')
+root=tempfile.TemporaryDirectory(prefix='rv-', dir='/var/tmp')
+env=dict(os.environ, REVM_HOME=root.name)
 processes=[];child=None
 
 def argv(command):
@@ -37,6 +38,21 @@ try:
  assert p.stdout.readline();p.stdout.close();p.stdout=None
  _,err=p.communicate(timeout=8)
  assert p.returncode == 141, (p.returncode,err)
+
+ # One broken output must cancel even while the other output is blocked.
+ for output in ['stdout','stderr']:
+  p=subprocess.Popen(argv(['sh','-c','yes & exec yes >&2']),env=env,
+                     stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  processes.append(p)
+  broken=getattr(p,output)
+  assert select.select([broken],[],[],20)[0],output
+  assert broken.read(1)
+  time.sleep(.3)
+  broken.close();setattr(p,output,None)
+  p.wait(timeout=2)
+  assert p.returncode==141,(output,p.returncode)
+  p.communicate(timeout=2)
+ print('PASS broken stdout/stderr cancels with the other output blocked',flush=True)
 
  for output in ['stdout','stderr']:
   read,write=os.pipe()
@@ -125,5 +141,5 @@ finally:
  if child:
   try:os.kill(child,signal.SIGKILL);os.waitpid(child,0)
   except ProcessLookupError:pass
- subprocess.run([binary, "cache", "prune"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+ prune_after_cleanup(binary, env)
  root.cleanup()

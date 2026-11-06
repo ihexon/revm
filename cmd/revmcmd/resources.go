@@ -37,7 +37,7 @@ func resourceCommands() []*cli.Command {
 				if err != nil {
 					return err
 				}
-				_, err = fmt.Fprintln(c.Writer, v.Name)
+				_, err = fmt.Fprintln(c.Root().Writer, v.Name)
 				return err
 			}},
 			{Name: "ls", Usage: "list volume paths, usage state, capacity and allocated space", Flags: []cli.Flag{&cli.BoolFlag{Name: "json", Usage: "print structured volume records with sizes in bytes"}}, Action: func(ctx context.Context, c *cli.Command) error {
@@ -49,9 +49,9 @@ func resourceCommands() []*cli.Command {
 					return err
 				}
 				if c.Bool("json") {
-					return json.NewEncoder(c.Writer).Encode(list)
+					return json.NewEncoder(c.Root().Writer).Encode(list)
 				}
-				return writeVolumes(c.Writer, list)
+				return writeVolumes(c.Root().Writer, list)
 			}},
 			{Name: "rm", Usage: "delete one unused managed volume", Action: func(ctx context.Context, c *cli.Command) error {
 				name, err := oneArg(c)
@@ -68,7 +68,7 @@ func resourceCommands() []*cli.Command {
 				}
 				paths, err := revm.PruneCache()
 				for _, p := range paths {
-					if _, writeErr := fmt.Fprintln(c.Writer, p); writeErr != nil {
+					if _, writeErr := fmt.Fprintln(c.Root().Writer, p); writeErr != nil {
 						return errors.Join(err, writeErr)
 					}
 				}

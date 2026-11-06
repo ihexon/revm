@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Process death, cleanup ownership and persistence on a VM-capable host."""
+from support import prune_after_cleanup
 import json
 import os
 from pathlib import Path
@@ -9,9 +10,8 @@ import tempfile
 import time
 
 binary = os.path.abspath('out/revm/bin/revm')
-root = tempfile.TemporaryDirectory(prefix='revm-lifecycle-')
-env = dict(os.environ, XDG_STATE_HOME=root.name+'/state',
-           XDG_CACHE_HOME=root.name+'/cache', XDG_DATA_HOME=root.name+'/data')
+root = tempfile.TemporaryDirectory(prefix='rv-', dir='/var/tmp')
+env = dict(os.environ, REVM_HOME=root.name)
 processes = []
 
 
@@ -89,5 +89,5 @@ finally:
         if p.poll() is None:
             p.kill()
             p.communicate(timeout=5)
-    subprocess.run([binary, 'cache', 'prune'], env=env, capture_output=True, timeout=10)
+    prune_after_cleanup(binary, env)
     root.cleanup()

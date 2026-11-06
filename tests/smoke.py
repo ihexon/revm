@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Real VM checks: python3 tests/smoke.py out/revm/bin/revm (macOS arm64/Linux)."""
+from support import prune_after_cleanup
 import os
 import select
-import shutil
 import signal
 import subprocess
 import sys
@@ -12,10 +12,8 @@ import uuid
 
 binary = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else 'out/revm/bin/revm')
 processes, sessions = [], []
-root = tempfile.TemporaryDirectory(prefix='revm-smoke-')
-env = dict(os.environ, XDG_STATE_HOME=root.name+'/state', XDG_CACHE_HOME=root.name+'/cache',
-           XDG_DATA_HOME=root.name+'/data', XDG_RUNTIME_DIR=root.name+'/runtime')
-os.mkdir(env['XDG_RUNTIME_DIR'], 0o700)
+root = tempfile.TemporaryDirectory(prefix='rv-', dir='/var/tmp')
+env = dict(os.environ, REVM_HOME=root.name)
 
 def start(argv, stdin=subprocess.DEVNULL):
     p = subprocess.Popen([binary]+argv, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
@@ -138,8 +136,5 @@ finally:
         if p.poll() is None: p.kill()
         try: p.communicate(timeout=5)
         except subprocess.TimeoutExpired: pass
-    # Before the XDG layout upgrade, these uniquely named sessions live here.
-    for sid in sessions:
-        shutil.rmtree(os.path.expanduser('~/.cache/revm/'+sid), ignore_errors=True)
-    subprocess.run([binary, "cache", "prune"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+    prune_after_cleanup(binary, env)
     root.cleanup()

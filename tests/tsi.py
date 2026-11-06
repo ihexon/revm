@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """TSI sockets and session lifecycle; all network fixtures run on this host."""
+from support import prune_after_cleanup
 import json
 import os
 from pathlib import Path
@@ -39,15 +40,14 @@ class DNS(socketserver.BaseRequestHandler):
         question = data[12:end + 5]
         sock.sendto(header + question + answer, self.client_address)
 
-with tempfile.TemporaryDirectory(prefix='revm-tsi-') as root:
+with tempfile.TemporaryDirectory(prefix='rv-', dir='/var/tmp') as root:
     root = Path(root)
     fixtures = root / 'fixtures'
     fixtures.mkdir()
     arch = {'arm64': 'arm64', 'aarch64': 'arm64', 'x86_64': 'amd64'}[platform.machine()]
     subprocess.run(['go', 'build', '-o', str(fixtures / 'probe'), './tests/tsi'], cwd=repo,
                    env=dict(os.environ, GOOS='linux', GOARCH=arch, CGO_ENABLED='0'), check=True, timeout=90)
-    env = dict(os.environ, XDG_STATE_HOME=str(root / 'state'),
-               XDG_CACHE_HOME=str(root / 'cache'), XDG_DATA_HOME=str(root / 'data'))
+    env = dict(os.environ, REVM_HOME=str(root))
     processes, servers = [], []
 
     def cli(args, code=0, data=None):
@@ -181,7 +181,7 @@ with tempfile.TemporaryDirectory(prefix='revm-tsi-') as root:
             if p.poll() is None:
                 p.kill()
             p.communicate(timeout=5)
-        subprocess.run([binary, 'cache', 'prune'], env=env, capture_output=True, timeout=10)
+        prune_after_cleanup(binary, env)
         for server in servers:
             server.shutdown()
             server.server_close()

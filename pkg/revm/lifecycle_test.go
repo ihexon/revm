@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -17,10 +18,13 @@ import (
 
 func testRoots(t *testing.T) Roots {
 	t.Helper()
-	base := t.TempDir()
-	for key, sub := range map[string]string{"XDG_CACHE_HOME": "cache", "XDG_STATE_HOME": "state", "XDG_DATA_HOME": "data", "XDG_RUNTIME_DIR": "run"} {
-		t.Setenv(key, filepath.Join(base, sub))
+	// Keep real Unix sockets below the platform path limit, including on macOS.
+	base, err := os.MkdirTemp("/tmp", "rv-")
+	if err != nil {
+		t.Fatal(err)
 	}
+	t.Cleanup(func() { os.RemoveAll(base) })
+	t.Setenv("REVM_HOME", base)
 	r, err := ResolveRoots()
 	if err != nil {
 		t.Fatal(err)
@@ -42,11 +46,94 @@ func fakeVolume(t *testing.T, r Roots, id string) Volume {
 	return v
 }
 func TestResourceRootsRejectOverlap(t *testing.T) {
-	testRoots(t)
-	t.Setenv("XDG_DATA_HOME", os.Getenv("XDG_CACHE_HOME"))
+	r := testRoots(t)
+	if err := os.Mkdir(r.Cache, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(r.Cache, r.Data); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := ResolveRoots(); err == nil {
 		t.Fatal("overlapping roots accepted")
 	}
+}
+
+func TestResourceRootsRejectDanglingSymlink(t *testing.T) {
+	r := testRoots(t)
+	if err := os.Symlink(filepath.Join(t.TempDir(), "not-created"), r.Data); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveRoots(); err == nil {
+		t.Fatal("dangling resource symlink accepted")
+	}
+}
+
+func TestResourceRootsStayInOneHome(t *testing.T) {
+	r := testRoots(t)
+	for _, key := range []string{"XDG_CACHE_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR", "TMPDIR"} {
+		t.Setenv(key, filepath.Join(t.TempDir(), "unused"))
+	}
+	got, err := ResolveRoots()
+	if err != nil || got != r {
+		t.Fatalf("legacy environment changed the home: %+v %v", got, err)
+	}
+	for _, path := range []string{r.Runtime, r.Cache, r.State, r.Data} {
+		if !pathWithin(r.Home, path) {
+			t.Fatalf("resource escaped home: %s", path)
+		}
+	}
+	if err := os.Symlink(t.TempDir(), r.Runtime); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveRoots(); err == nil {
+		t.Fatal("resource symlink outside home accepted")
+	}
+}
+
+func TestLongHomeDoesNotFallBackToTmp(t *testing.T) {
+	r := testRoots(t)
+	longHome := filepath.Join(r.Home, strings.Repeat("long", 30))
+	t.Setenv("REVM_HOME", longHome)
+	cfg := testConfig()
+	if _, err := beginRun(context.Background(), &cfg); err == nil || !strings.Contains(err.Error(), "REVM_HOME is too long") {
+		t.Fatalf("long home was not rejected: %v", err)
+	}
+	if _, err := os.Stat(longHome); !os.IsNotExist(err) {
+		t.Fatal("failed startup created resources")
+	}
+}
+
+func TestExternalDiskLockAcrossHomesAndHardLinks(t *testing.T) {
+	r := testRoots(t)
+	disk := filepath.Join(r.Home, "external.ext4")
+	if err := os.WriteFile(disk, []byte("persistent data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(r.Home, "alias.ext4")
+	if err := os.Link(disk, alias); err != nil {
+		t.Fatal(err)
+	}
+	cfg := testConfig()
+	cfg.Disks = []RawDiskSpec{{Path: disk}}
+	l, err := beginRun(context.Background(), &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.close()
+	testRoots(t)
+	cfg = testConfig()
+	cfg.Disks = []RawDiskSpec{{Path: alias}}
+	if _, err := beginRun(context.Background(), &cfg); !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Fatalf("another home bypassed the disk lock: %v", err)
+	}
+	if err := l.close(); err != nil {
+		t.Fatal(err)
+	}
+	other, err := beginRun(context.Background(), &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.close()
 }
 func TestSessionResourcesAndStableLock(t *testing.T) {
 	r := testRoots(t)

@@ -2,7 +2,6 @@ package revm
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -130,19 +129,24 @@ func RemoveVolume(name string) error {
 		return fmt.Errorf("volume %q: %w", name, err)
 	}
 	diskLock, err := lockDisk(filepath.Join(path, "disk.ext4"))
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	defer diskLock.Close()
+	if diskLock != nil {
+		defer diskLock.Close()
+	}
 	return os.RemoveAll(path)
 }
 func lockDisk(path string) (*os.File, error) {
-	canonical, err := canonicalPath(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	sum := sha256.Sum256([]byte(canonical))
-	return acquireLock(filepath.Join(runtimeFallback(), "locks", fmt.Sprintf("disk-%x.lock", sum)))
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("disk in use: %s: %w", path, err)
+	}
+	return f, nil
 }
 
 // PruneCache only recognizes instance directories with a valid ownership

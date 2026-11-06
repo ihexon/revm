@@ -3,19 +3,20 @@ package revmcmd
 import (
 	"context"
 	"errors"
-	"github.com/sirupsen/logrus"
 	"io"
 	"linuxvm/pkg/execution"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/sirupsen/logrus"
 )
 
 func Execute(ctx context.Context, args []string) error {
 	logrus.SetOutput(io.Discard)
 	ctx, controller := execution.WithController(ctx)
 	ch := make(chan os.Signal, 8)
-	signals := []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGPIPE, syscall.SIGWINCH, syscall.SIGTSTP, syscall.SIGCONT}
+	signals := []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGWINCH, syscall.SIGTSTP, syscall.SIGCONT}
 	if !signal.Ignored(syscall.SIGHUP) {
 		signals = append(signals, syscall.SIGHUP)
 	}
@@ -24,7 +25,10 @@ func Execute(ctx context.Context, args []string) error {
 	// Only the process boundary waits for command completion. A blocked writer
 	// or native call must never prevent main from restoring the terminal and exiting.
 	done := make(chan error, 1)
-	go func() { done <- NewApp("revm").Run(ctx, args) }()
+	app := NewApp("revm")
+	app.Writer = execution.CancelOnBrokenPipe(ctx, os.Stdout)
+	app.ErrWriter = execution.CancelOnBrokenPipe(ctx, os.Stderr)
+	go func() { done <- app.Run(ctx, args) }()
 	for {
 		select {
 		case err := <-done:

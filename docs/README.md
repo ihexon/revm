@@ -17,7 +17,7 @@ revm 在 libkrun VM 中执行 Linux 命令。所有命令和 PTY 共用 guest-co
 
 持久卷独立管理：`volume create NAME` 创建，`podman --volume NAME` 使用，`volume rm NAME` 删除。session 不隐式创建或重新关联卷。`--container-disk PATH` 可直接使用外部磁盘。
 
-日志和结果位于 `${XDG_STATE_HOME:-~/.local/state}/revm/sessions/<id>/runs/<instance>/`。`logs` 读取宿主日志，`logs --guest` 读取 guest 日志。私有 rootfs 使用 XDG_CACHE_HOME，持久卷使用 XDG_DATA_HOME；`cache prune` 清理已停止实例的临时资源。
+所有托管数据统一放在 `~/.revm`，可用 `REVM_HOME` 指定其他绝对路径。日志和结果位于 `state/sessions/<id>/runs/<instance>/`，运行时文件在 `run/`，私有 rootfs 在 `cache/instances/`，持久卷在 `data/volumes/`。`logs` 读取宿主日志，`logs --guest` 读取 guest 日志；`cache prune` 清理已停止实例的临时资源。XDG 环境变量不再分散这些目录。
 
 ## 构建说明
 

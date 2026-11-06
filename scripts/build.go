@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"linuxvm/pkg/system"
 	"net/http"
 	"os"
 	"os/exec"
@@ -152,17 +153,11 @@ func newBuilder(lint bool) (*builder, error) {
 		return nil, err
 	}
 
-	cache, err := os.UserCacheDir()
+	home, err := system.RevmHome()
 	if err != nil {
 		return nil, err
 	}
-	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
-		if !filepath.IsAbs(xdg) {
-			return nil, fmt.Errorf("XDG_CACHE_HOME must be absolute")
-		}
-		cache = xdg
-	}
-	cache = filepath.Join(cache, "revm-build", "v1")
+	cache := filepath.Join(home, "cache", "build", "v1")
 	b := &builder{
 		goos:      runtime.GOOS,
 		goarch:    arch,

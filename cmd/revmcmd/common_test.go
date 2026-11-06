@@ -113,11 +113,9 @@ func TestHelpDocumentsRequiredArgumentsAndSupportedShells(t *testing.T) {
 
 func TestResourceNameCompletion(t *testing.T) {
 	root := t.TempDir()
-	for key, sub := range map[string]string{"XDG_STATE_HOME": "state", "XDG_DATA_HOME": "data", "XDG_CACHE_HOME": "cache", "XDG_RUNTIME_DIR": "runtime"} {
-		t.Setenv(key, filepath.Join(root, sub))
-	}
-	session := filepath.Join(root, "state/revm/sessions/dev")
-	volume := filepath.Join(root, "data/revm/volumes/data")
+	t.Setenv("REVM_HOME", root)
+	session := filepath.Join(root, "state/sessions/dev")
+	volume := filepath.Join(root, "data/volumes/data")
 	for _, dir := range []string{session, volume} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			t.Fatal(err)
@@ -156,7 +154,7 @@ func TestResourceNameCompletion(t *testing.T) {
 	if err := Execute(context.Background(), []string{"revm", "_complete", "run", "--id", "completion-must-not-run", "--", "false"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "state/revm/sessions/completion-must-not-run")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root, "state/sessions/completion-must-not-run")); !os.IsNotExist(err) {
 		t.Fatal("completion created a session", err)
 	}
 }

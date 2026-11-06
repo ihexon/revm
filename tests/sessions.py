@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Session CLI integration checks against a real VM."""
+from support import prune_after_cleanup
 import json, os, select, signal, socket, subprocess, tempfile, time, uuid
 binary=os.path.abspath('out/revm/bin/revm')
-root=tempfile.TemporaryDirectory(prefix='revm-sessions-')
-env=dict(os.environ,XDG_STATE_HOME=root.name+'/state',XDG_CACHE_HOME=root.name+'/cache',XDG_DATA_HOME=root.name+'/data')
+root=tempfile.TemporaryDirectory(prefix='rv-', dir='/var/tmp')
+env=dict(os.environ, REVM_HOME=root.name)
 processes=[]
 def cli(args,code=0):
  p=subprocess.run([binary]+args,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=25)
@@ -12,7 +13,7 @@ def cli(args,code=0):
 try:
  # Query commands must exit even when their output pipe is full.
  iid=str(uuid.uuid4())
- session=root.name+'/state/revm/sessions/blocked-logs'
+ session=root.name+'/state/sessions/blocked-logs'
  run=session+'/runs/'+iid
  os.makedirs(run+'/logs')
  with open(session+'/session.json','w') as f:
@@ -31,7 +32,7 @@ try:
  cli(['rm','blocked-logs'])
  print('PASS blocked log output exits on the first termination signal',flush=True)
 
- os.makedirs(root.name+'/state/revm/sessions/broken/runs/incomplete')
+ os.makedirs(root.name+'/state/sessions/broken/runs/incomplete')
  views=json.loads(cli(['ls','--json']).stdout)
  assert views[0]['id']=='broken' and views[0]['status']=='broken' and views[0]['error']
  cli(['rm','broken'])
@@ -118,5 +119,5 @@ try:
 finally:
  for p in processes:
   if p.poll() is None:p.kill();p.communicate(timeout=5)
- subprocess.run([binary, "cache", "prune"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+ prune_after_cleanup(binary, env)
  root.cleanup()

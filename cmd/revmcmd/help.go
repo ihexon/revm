@@ -12,7 +12,7 @@ import (
 // Keep usage and examples beside the command tree; generated completion and
 // --help use the same definitions as execution.
 func configureHelp(app *cli.Command) {
-	app.Description = "Run one Linux command in a temporary VM. Successful temporary runs clean up automatically; failed runs keep diagnostics.\n\nExamples:\n  revm run -- uname -a\n  printf 'hello\\n' | revm run -- cat\n  revm run --id dev --mount \"$PWD:/work\" --workdir /work -- sh"
+	app.Description = "Run one Linux command in a temporary VM. Successful temporary runs clean up automatically; failed runs keep diagnostics.\n\nData is stored under ~/.revm; set REVM_HOME to another absolute path to select a different data root. Existing data is not migrated.\n\nExamples:\n  revm run -- uname -a\n  printf 'hello\\n' | revm run -- cat\n  revm run --id dev --mount \"$PWD:/work\" --workdir /work -- sh"
 	examples := map[string]string{
 		"run":           "Arguments after -- are passed unchanged. Use sh -c for shell syntax.\n\nExamples:\n  revm run -- uname -a\n  revm run --mount \"$PWD:/work\" --workdir /work -- sh\n  revm run -- sh -c 'echo hello; exit 42'\n  revm run --network tsi -- nc -lk -s 127.0.0.1 -p 8080 -e cat",
 		"podman":        "Runs in the foreground until stopped. Create the volume first; it survives session removal.\n\nExamples:\n  revm volume create data\n  revm podman --id containers --volume data --podman-api /tmp/revm-podman.sock\n  # In another terminal:\n  CONTAINER_HOST=unix:///tmp/revm-podman.sock podman info",

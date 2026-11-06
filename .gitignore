@@ -1,6 +1,7 @@
 .idea/
 bin/**
 out/**
+__pycache__/
 CLAUDE.md
 .claude/
 .deps/
