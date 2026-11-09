@@ -45,7 +45,7 @@ func (v *machine) setupVSock() error {
 		defer podmanPath.free()
 		C.krun_vsock_device_add_unix_port(device, C.uint32_t(define.GuestPodmanPort), podmanPath.value, C.bool(true))
 	}
-	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
+	C.krun_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
 	logrus.Infof("vsock port %d → %s", define.GuestControlPort, controlAddr.Path)
 	return nil
 }

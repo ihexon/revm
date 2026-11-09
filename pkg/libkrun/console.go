@@ -58,7 +58,7 @@ func (v *machine) setupConsole() error {
 	if err = checkKrunHandle("build console", unsafe.Pointer(console), errOut); err != nil {
 		return err
 	}
-	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(console)))
+	C.krun_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(console)))
 	return nil
 }
 

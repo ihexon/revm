@@ -6,7 +6,8 @@ permissions:
 jobs:
   vm:
     # Trusted, dedicated Apple Silicon or Linux KVM host with native build
-    # dependencies installed. Run manually; never execute untrusted PR code here.
+    # dependencies and the Podman remote CLI installed. Run manually; never
+    # execute untrusted PR code here.
     runs-on: [self-hosted, revm-vm]
     timeout-minutes: 20
     steps:
@@ -23,6 +24,7 @@ jobs:
       - name: Real VM regressions
         run: |
           python3 tests/storage.py
+          python3 tests/discard.py
           python3 tests/smoke.py
           python3 tests/tsi.py
           python3 tests/terminal.py

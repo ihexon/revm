@@ -76,6 +76,8 @@ The repository's `deps/config/config-libkrunfw_*` files remain the starting poin
 
 Intentional exclusions are GPU display and its helpers, plus x86 32-bit compatibility. ARM64 retains 4 KB pages. Dependency archives include input/final configs and diffs under `share/revm/kernel`; application bundles copy them to `share/libkrunfw/kernel` along with source revision metadata.
 
+After updating libkrun, run `python3 tests/discard.py` (requires the Podman remote CLI and e2fsprogs). It uses disposable 128 MiB images to verify remounting after fstrim and ensure tail DISCARD / WRITE_ZEROES preserve raw file length. Never run destructive block regressions on production disks. Updating the dependencies cannot repair images already truncated by an older release.
+
 Test a running disposable session with `CONTAINER_HOST=unix:///path/to/podman-api.sock tests/podman-isolation/test.sh`.
 
 ## Dependency change checklist

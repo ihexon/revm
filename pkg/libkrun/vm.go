@@ -37,7 +37,7 @@ const (
 type machine struct {
 	cfg *define.MachineSpec
 
-	manager    C.KrunMmioDeviceManager
+	manager    C.KrunDeviceManager
 	payload    C.KrunPayload
 	initConfig C.KrunInitConfig
 	vmmBuilder C.KrunVmmBuilder
@@ -96,7 +96,7 @@ func (v *machine) init() error {
 	if err := checkKrunResult("initialize logging", result, errOut); err != nil {
 		return err
 	}
-	v.manager = C.krun_mmio_device_manager_new()
+	v.manager = C.KrunDeviceManager(C.krun_mmio_device_manager_new())
 	if v.manager == nil {
 		return errors.New("libkrun: failed to allocate device manager")
 	}
@@ -182,7 +182,7 @@ func (v *machine) setupRNG() error {
 	if err := checkKrunHandle("create RNG device", unsafe.Pointer(device), errOut); err != nil {
 		return err
 	}
-	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
+	C.krun_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
 	return nil
 }
 
@@ -192,7 +192,7 @@ func (v *machine) setupBalloon() error {
 	if err := checkKrunHandle("create virtio-balloon device", unsafe.Pointer(device), errOut); err != nil {
 		return err
 	}
-	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
+	C.krun_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
 	return nil
 }
 
@@ -235,7 +235,7 @@ func (v *machine) setupRootFS() error {
 		return err
 	}
 	C.krun_fs_device_set_overlay(root, overlay)
-	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(root)))
+	C.krun_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(root)))
 	return nil
 }
 

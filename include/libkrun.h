@@ -9,6 +9,7 @@
 
 typedef void* KrunVmmError;
 typedef void* KrunMmioDeviceManager;
+typedef void* KrunPciDeviceManager;
 typedef void* KrunFsDevice;
 typedef void* KrunConsoleDevice;
 typedef void* KrunConsoleBuilder;
@@ -20,6 +21,7 @@ typedef void* KrunVmm;
 typedef void* KrunVmmHandle;
 typedef void* KrunBalloonDevice;
 typedef void* KrunRngDevice;
+typedef void* KrunRtcDevice;
 typedef void* KrunVsockDevice;
 typedef void* KrunBlockDevice;
 typedef void* KrunNetDevice;
@@ -28,14 +30,15 @@ typedef void* KrunVhostUserDevice;
 typedef void* KrunDisplayBackend;
 typedef void* KrunGpuDevice;
 typedef void* KrunInputDevice;
-typedef void* KrunAttachDevice; /* KrunFsDevice | KrunConsoleDevice | KrunBlockDevice | KrunNetDevice | KrunGpuDevice | KrunInputDevice | KrunVhostUserDevice | KrunBalloonDevice | KrunRngDevice | KrunVsockDevice */
+typedef void* KrunAttachDevice; /* KrunRtcDevice | KrunFsDevice | KrunConsoleDevice | KrunBlockDevice | KrunNetDevice | KrunGpuDevice | KrunInputDevice | KrunVhostUserDevice | KrunBalloonDevice | KrunRngDevice | KrunVsockDevice */
+typedef void* KrunDeviceManager; /* KrunMmioDeviceManager | KrunPciDeviceManager */
 typedef void* KrunError; /* KrunVmmError | KrunVtableError */
 typedef void* KrunPushStr; /* KrunVtablePushStr */
 
 #ifndef KRUN_PRIMITIVES_DEFINED
 #define KRUN_PRIMITIVES_DEFINED
 
-typedef void* KrunObject; /* KrunVmmError | KrunMmioDeviceManager | KrunFsDevice | KrunConsoleDevice | KrunConsoleBuilder | KrunFsOverlay | KrunPayload | KrunNitroConfig | KrunVmmBuilder | KrunVmm | KrunVmmHandle | KrunBalloonDevice | KrunRngDevice | KrunVsockDevice | KrunBlockDevice | KrunNetDevice | KrunDisplayInfoBuilder | KrunVhostUserDevice | KrunDisplayBackend | KrunGpuDevice | KrunInputDevice */
+typedef void* KrunObject; /* KrunVmmError | KrunMmioDeviceManager | KrunPciDeviceManager | KrunFsDevice | KrunConsoleDevice | KrunConsoleBuilder | KrunFsOverlay | KrunPayload | KrunNitroConfig | KrunVmmBuilder | KrunVmm | KrunVmmHandle | KrunBalloonDevice | KrunRngDevice | KrunRtcDevice | KrunVsockDevice | KrunBlockDevice | KrunNetDevice | KrunDisplayInfoBuilder | KrunVhostUserDevice | KrunDisplayBackend | KrunGpuDevice | KrunInputDevice */
 
 typedef uint64_t KrunResult;
 #define KRUN_RESULT_SUCCESS 0
@@ -138,6 +141,11 @@ typedef void (*krun_free_object_array_fn)(KrunObjectArray a);
 #define KRUN_SYNC_MODE_RELAXED 1
 #define KRUN_SYNC_MODE_FULL 2
 
+/* FreePageReportingMode --------------------------------------------- */
+
+#define KRUN_FREE_PAGE_REPORTING_MODE_DEFAULT 0
+#define KRUN_FREE_PAGE_REPORTING_MODE_REPLACE 1
+
 /* LogLevel ---------------------------------------------------------- */
 
 #define KRUN_LOG_LEVEL_OFF 0
@@ -152,6 +160,18 @@ typedef void (*krun_free_object_array_fn)(KrunObjectArray a);
 #define KRUN_LOG_STYLE_AUTO 0
 #define KRUN_LOG_STYLE_ALWAYS 1
 #define KRUN_LOG_STYLE_NEVER 2
+
+/* PermissionSemantics ----------------------------------------------- */
+
+#define KRUN_PERMISSION_SEMANTICS_LINUX_COMPLETE 0
+#define KRUN_PERMISSION_SEMANTICS_LINUX_SIMPLIFIED 1
+#define KRUN_PERMISSION_SEMANTICS_LINUX_SIMPLIFIED_FIXED_OWNER 2
+
+/* CachePolicy ------------------------------------------------------- */
+
+#define KRUN_CACHE_POLICY_NEVER 0
+#define KRUN_CACHE_POLICY_AUTO 1
+#define KRUN_CACHE_POLICY_ALWAYS 2
 
 /* LogOptions -------------------------------------------------------- */
 
@@ -191,17 +211,15 @@ typedef void (*krun_free_object_array_fn)(KrunObjectArray a);
 /** Create an empty device manager. */
 KrunMmioDeviceManager krun_mmio_device_manager_new();
 typedef KrunMmioDeviceManager (*krun_mmio_device_manager_new_fn)();
-/**
- * Add a device to this manager.
- *
- * Devices are attached in the order they are added. The device must
- * implement [`AttachDevice`] — all built-in device types
- * (`FsDevice`, `ConsoleDevice`, etc.) implement this trait.
- */
-void krun_mmio_device_manager_add(KrunMmioDeviceManager handle, KrunAttachDevice device);
-typedef void (*krun_mmio_device_manager_add_fn)(KrunMmioDeviceManager handle, KrunAttachDevice device);
 void krun_mmio_device_manager_destroy(KrunMmioDeviceManager handle);
 typedef void (*krun_mmio_device_manager_destroy_fn)(KrunMmioDeviceManager handle);
+
+/* PciDeviceManager -------------------------------------------------- */
+
+KrunPciDeviceManager krun_pci_device_manager_new();
+typedef KrunPciDeviceManager (*krun_pci_device_manager_new_fn)();
+void krun_pci_device_manager_destroy(KrunPciDeviceManager handle);
+typedef void (*krun_pci_device_manager_destroy_fn)(KrunPciDeviceManager handle);
 
 /* FsDevice ---------------------------------------------------------- */
 
@@ -244,6 +262,47 @@ typedef void (*krun_fs_device_set_overlay_fn)(KrunFsDevice handle, KrunFsOverlay
  */
 void krun_fs_device_set_dax_window_size(KrunFsDevice handle, uint64_t bytes);
 typedef void (*krun_fs_device_set_dax_window_size_fn)(KrunFsDevice handle, uint64_t bytes);
+/**
+ * Select the permission semantics before attaching this device.
+ *
+ * Defaults to `LinuxComplete`. `LinuxSimplified` disables xattrs and idmaps
+ * and disables attribute caching because ownership depends on the requester.
+ * `LinuxSimplifiedFixedOwner` also disables xattrs and idmaps, but keeps attribute
+ * caching, and needs an owner from [`set_fixed_owner`](Self::set_fixed_owner).
+ * Selecting `LinuxSimplified` on a Linux host, or `LinuxSimplifiedFixedOwner` on a host
+ * other than macOS, returns `InvalidParam` without changing the device configuration.
+ * Selecting the semantics again clears the fixed owner.
+ * A NullFs device has no host permission semantics and returns `InvalidParam`.
+ */
+KrunResult krun_fs_device_set_permission_semantics(KrunFsDevice handle, uint32_t semantics, KrunError* err_out);
+typedef KrunResult (*krun_fs_device_set_permission_semantics_fn)(KrunFsDevice handle, uint32_t semantics, KrunError* err_out);
+/**
+ * Set the owner that `LinuxSimplifiedFixedOwner` reports for every file, before attaching
+ * this device.
+ *
+ * The guest sees `uid`:`gid` as the owner of every file, while files are created and
+ * changed on the host as the user running libkrun. Ownership changes from the guest are
+ * not kept. Attaching a device in `LinuxSimplifiedFixedOwner` without an owner fails.
+ *
+ * The guest sees every set-user-ID and set-group-ID file in the directory as owned by `uid`
+ * and `gid`, so with a `uid` of 0 such a file runs as root in the guest. Mount the share
+ * with `nosuid` unless the guest should allow that.
+ *
+ * Returns `InvalidParam` unless the permission semantics are `LinuxSimplifiedFixedOwner`.
+ */
+KrunResult krun_fs_device_set_fixed_owner(KrunFsDevice handle, uint32_t uid, uint32_t gid, KrunError* err_out);
+typedef KrunResult (*krun_fs_device_set_fixed_owner_fn)(KrunFsDevice handle, uint32_t uid, uint32_t gid, KrunError* err_out);
+/**
+ * Select guest file-data caching before attaching this device.
+ *
+ * Defaults to `Auto`, which uses close-to-open consistency. `Never` forwards file-data
+ * I/O to the server without caching it in the guest. `Always` keeps cached file data
+ * across opens and should only be used when the filesystem has exclusive access to
+ * the shared directory. Attribute caching is controlled by the permission semantics.
+ * A NullFs device has no host-backed file data and returns `InvalidParam`.
+ */
+KrunResult krun_fs_device_set_cache_policy(KrunFsDevice handle, uint32_t policy, KrunError* err_out);
+typedef KrunResult (*krun_fs_device_set_cache_policy_fn)(KrunFsDevice handle, uint32_t policy, KrunError* err_out);
 void krun_fs_device_destroy(KrunFsDevice handle);
 typedef void (*krun_fs_device_destroy_fn)(KrunFsDevice handle);
 
@@ -383,8 +442,13 @@ KrunResult krun_vmm_builder_ram_mib(KrunVmmBuilder* handle, uint32_t mib, KrunEr
 typedef KrunResult (*krun_vmm_builder_ram_mib_fn)(KrunVmmBuilder* handle, uint32_t mib, KrunError* err_out);
 void krun_vmm_builder_payload(KrunVmmBuilder* handle, KrunPayload payload);
 typedef void (*krun_vmm_builder_payload_fn)(KrunVmmBuilder* handle, KrunPayload payload);
-void krun_vmm_builder_devices(KrunVmmBuilder* handle, KrunMmioDeviceManager devices);
-typedef void (*krun_vmm_builder_devices_fn)(KrunVmmBuilder* handle, KrunMmioDeviceManager devices);
+/**
+ * Add devices using their manager's transport.
+ *
+ * PCI devices require ACPI to be enabled with [`VmmBuilder::acpi`].
+ */
+void krun_vmm_builder_devices(KrunVmmBuilder* handle, KrunDeviceManager devices);
+typedef void (*krun_vmm_builder_devices_fn)(KrunVmmBuilder* handle, KrunDeviceManager devices);
 void krun_vmm_builder_set_kernel_console(KrunVmmBuilder* handle, KrunStr console);
 typedef void (*krun_vmm_builder_set_kernel_console_fn)(KrunVmmBuilder* handle, KrunStr console);
 /**
@@ -401,14 +465,26 @@ KrunResult krun_vmm_builder_add_serial_console(KrunVmmBuilder* handle, int input
 typedef KrunResult (*krun_vmm_builder_add_serial_console_fn)(KrunVmmBuilder* handle, int input_fd, int output_fd, KrunError* err_out);
 void krun_vmm_builder_nested_virt(KrunVmmBuilder* handle, bool enabled);
 typedef void (*krun_vmm_builder_nested_virt_fn)(KrunVmmBuilder* handle, bool enabled);
+/**
+ * Exit the process with `code` when the guest resets instead of
+ * powering off.
+ *
+ * By default both end the VMM with exit code 0. With a reset exit code
+ * the caller can tell a reboot from a shutdown and start the VM again.
+ * A guest reset reaches the VMM through PSCI SYSTEM_RESET on aarch64 and
+ * the i8042 reset line on x86_64; an exit code set by the guest init
+ * takes precedence.
+ */
+void krun_vmm_builder_reset_exit_code(KrunVmmBuilder* handle, uint8_t code);
+typedef void (*krun_vmm_builder_reset_exit_code_fn)(KrunVmmBuilder* handle, uint8_t code);
 KrunResult krun_vmm_builder_split_irqchip(KrunVmmBuilder* handle, bool enabled, KrunError* err_out);
 typedef KrunResult (*krun_vmm_builder_split_irqchip_fn)(KrunVmmBuilder* handle, bool enabled, KrunError* err_out);
 /**
  * Enable ACPI table generation for x86_64 guests.
  *
  * When disabled (the default), virtio-mmio devices are passed on the kernel
- * command line and SMP uses the MP table. When enabled, devices are described
- * in the ACPI DSDT and the RSDP is published in boot parameters.
+ * command line and SMP uses the MP table. When enabled, devices and the PCI
+ * host bridge are described in ACPI and the RSDP is published in boot parameters.
  */
 KrunResult krun_vmm_builder_acpi(KrunVmmBuilder* handle, bool enabled, KrunError* err_out);
 typedef KrunResult (*krun_vmm_builder_acpi_fn)(KrunVmmBuilder* handle, bool enabled, KrunError* err_out);
@@ -467,6 +543,22 @@ typedef void (*krun_vmm_handle_destroy_fn)(KrunVmmHandle handle);
 
 KrunBalloonDevice krun_balloon_device_new(KrunError* err_out);
 typedef KrunBalloonDevice (*krun_balloon_device_new_fn)(KrunError* err_out);
+/**
+ * Set how memory that the guest reports as free is given back to the host. Defaults to
+ * [`FreePageReportingMode::Default`], which madvise()s it on Linux and macOS, and
+ * discards it with DiscardVirtualMemory() on Windows.
+ *
+ * On macOS, madvise() doesn't release guest memory that the guest has written to.
+ * [`FreePageReportingMode::Replace`] has the VMM replace the reported pages with fresh
+ * memory instead, which does release them. This costs a few system calls per report, and
+ * the guest's next access to each page faults it in again. It also has the VMM map guest
+ * RAM in blocks of 2 MiB, one map entry each, and replace whole blocks only. If it can't
+ * map RAM like that, the VM starts anyway and uses [`FreePageReportingMode::Default`].
+ * Other platforms don't implement [`FreePageReportingMode::Replace`], and use
+ * [`FreePageReportingMode::Default`] instead.
+ */
+void krun_balloon_device_set_free_page_reporting_mode(KrunBalloonDevice handle, uint32_t mode);
+typedef void (*krun_balloon_device_set_free_page_reporting_mode_fn)(KrunBalloonDevice handle, uint32_t mode);
 void krun_balloon_device_destroy(KrunBalloonDevice handle);
 typedef void (*krun_balloon_device_destroy_fn)(KrunBalloonDevice handle);
 
@@ -476,6 +568,13 @@ KrunRngDevice krun_rng_device_new(KrunError* err_out);
 typedef KrunRngDevice (*krun_rng_device_new_fn)(KrunError* err_out);
 void krun_rng_device_destroy(KrunRngDevice handle);
 typedef void (*krun_rng_device_destroy_fn)(KrunRngDevice handle);
+
+/* RtcDevice --------------------------------------------------------- */
+
+KrunRtcDevice krun_rtc_device_new(KrunError* err_out);
+typedef KrunRtcDevice (*krun_rtc_device_new_fn)(KrunError* err_out);
+void krun_rtc_device_destroy(KrunRtcDevice handle);
+typedef void (*krun_rtc_device_destroy_fn)(KrunRtcDevice handle);
 
 /* VsockDevice ------------------------------------------------------- */
 
@@ -501,7 +600,7 @@ typedef void (*krun_vsock_device_destroy_fn)(KrunVsockDevice handle);
  * Create a new block device.
  *
  * Defaults to read-write (`read_only = false`), cached I/O (`direct_io = false`),
- * and [`SyncMode::Relaxed`].
+ * [`SyncMode::Relaxed`], and serialized reads (`parallel_reads = false`).
  */
 KrunBlockDevice krun_block_device_new(KrunStr id, KrunStr disk_image_path, uint32_t format, KrunError* err_out);
 typedef KrunBlockDevice (*krun_block_device_new_fn)(KrunStr id, KrunStr disk_image_path, uint32_t format, KrunError* err_out);
@@ -519,6 +618,23 @@ typedef void (*krun_block_device_set_direct_io_fn)(KrunBlockDevice handle, bool 
  */
 void krun_block_device_set_sync_mode(KrunBlockDevice handle, uint32_t sync_mode);
 typedef void (*krun_block_device_set_sync_mode_fn)(KrunBlockDevice handle, uint32_t sync_mode);
+/**
+ * Serve guest reads on a host thread pool with out-of-order completion.
+ *
+ * Disabled by default. Writes, flushes, and discards stay on the device thread.
+ * The pool size is automatic unless overridden with [`set_read_pool_size`](Self::set_read_pool_size).
+ */
+void krun_block_device_set_parallel_reads(KrunBlockDevice handle, bool enabled);
+typedef void (*krun_block_device_set_parallel_reads_fn)(KrunBlockDevice handle, bool enabled);
+/**
+ * Set the requested number of worker threads for parallel reads.
+ *
+ * Only applies when parallel reads are enabled. If the requested size is greater than the
+ * available host parallelism, or it cannot be determined, reads remain serialized. Pass 0
+ * to restore automatic pool sizing.
+ */
+void krun_block_device_set_read_pool_size(KrunBlockDevice handle, size_t size);
+typedef void (*krun_block_device_set_read_pool_size_fn)(KrunBlockDevice handle, size_t size);
 void krun_block_device_destroy(KrunBlockDevice handle);
 typedef void (*krun_block_device_destroy_fn)(KrunBlockDevice handle);
 
@@ -639,6 +755,14 @@ typedef KrunInputDevice (*krun_input_device_new_from_fd_fn)(int input_fd, KrunEr
 void krun_input_device_destroy(KrunInputDevice handle);
 typedef void (*krun_input_device_destroy_fn)(KrunInputDevice handle);
 
+/* DeviceManager (dispatch) ------------------------------------------ */
+
+/** Add a device to this manager, preserving the order devices are added. */
+void krun_device_manager_add(KrunDeviceManager handle, KrunAttachDevice device);
+typedef void (*krun_device_manager_add_fn)(KrunDeviceManager handle, KrunAttachDevice device);
+void krun_device_manager_destroy(KrunDeviceManager handle);
+typedef void (*krun_device_manager_destroy_fn)(KrunDeviceManager handle);
+
 /* KrunPushStrVtable ------------------------------------------------- */
 
 #define KRUN_PUSH_STR_TYPE_TAG 16777228
@@ -676,6 +800,10 @@ uint64_t krun_error_result(KrunError handle);
 typedef uint64_t (*krun_error_result_fn)(KrunError handle);
 void krun_error_destroy(KrunError handle);
 typedef void (*krun_error_destroy_fn)(KrunError handle);
+void krun_mmio_device_manager_add(KrunMmioDeviceManager handle, KrunAttachDevice device);
+typedef void (*krun_mmio_device_manager_add_fn)(KrunMmioDeviceManager handle, KrunAttachDevice device);
+void krun_pci_device_manager_add(KrunPciDeviceManager handle, KrunAttachDevice device);
+typedef void (*krun_pci_device_manager_add_fn)(KrunPciDeviceManager handle, KrunAttachDevice device);
 uint32_t krun_vmm_error_code(KrunVmmError handle);
 typedef uint32_t (*krun_vmm_error_code_fn)(KrunVmmError handle);
 void krun_vmm_error_message(KrunVmmError handle, KrunPushStr writer);

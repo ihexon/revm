@@ -48,6 +48,6 @@ func (v *machine) setupNetwork() error {
 	if err := checkKrunHandle("create gvisor network device", unsafe.Pointer(device), errOut); err != nil {
 		return err
 	}
-	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
+	C.krun_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
 	return nil
 }

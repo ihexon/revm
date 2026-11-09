@@ -78,6 +78,8 @@ Apple Silicon 可使用已有 revm 启动构建 VM，通过 Podman 在 `deps/doc
 
 有意排除的官方功能只有 GPU 显示及其依赖、x86 的 32 位兼容支持。ARM64 保留 4 KB 页。构建产物的 `share/revm/kernel` 保存输入、最终配置和差异，应用 bundle 将它们收录到 `share/libkrunfw/kernel`；源码 commit 一并保存，便于核对实际使用的内核。
 
+升级 libkrun 后，运行 `python3 tests/discard.py`（需要 Podman remote CLI 和 e2fsprogs），使用一次性 128 MiB 磁盘验证 fstrim 后重新挂载，以及磁盘尾部 DISCARD / WRITE_ZEROES 不改变 raw 文件长度。不要用业务磁盘运行破坏性的块设备回归测试。新版依赖不会修复已经被旧版截短的磁盘。
+
 运行隔离与流式传输测试：
 
 ~~~bash

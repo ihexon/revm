@@ -1,15 +1,15 @@
 {
   "assets": {
-    "alpine-rootfs-Linux-aarch64.tar.zst": "493b1f2d1869b86f47fd67a3c1c99a0ee86cd42b22ac252d41f1f7037d0dd3d4",
-    "alpine-rootfs-Linux-x86_64.tar.zst": "9d80e47850600a06a04c3ef705522f090e4369dd1f5216d4d7e5e9300965eaf1",
-    "libkrun-Darwin-arm64.tar.zst": "8966f5a6d5e531e3014960e17f97d7c7e9d05d55203d0a56bec61c0b15342fb0",
-    "libkrun-Linux-aarch64.tar.zst": "8ab5f51affb4ee10a33d98934c538dd1974204a0f54187911fd4f8e9883c3789",
-    "libkrun-Linux-x86_64.tar.zst": "27e19dd024cb6aff5f1da0374d4465a2235114a3a548f34bcd369b4a6ed4c36b",
-    "libkrunfw-Darwin-arm64.tar.zst": "4a6c4e27658e60201f9aa968b8a2bfb6cae5489d29970369d7e7dea57fb24f9d",
-    "libkrunfw-Linux-aarch64.tar.zst": "0d809aca43495f9a15b1fd237e3d484efcf53445821361f2d00f0c5de4fc820b",
-    "libkrunfw-Linux-x86_64.tar.zst": "4cb66bd49a9a581e89c2fab968bb65e0e8825638bb1a4b481cf86fff0a804318",
-    "libkrunfw-src-Linux-aarch64.tar.zst": "e62cb5d7bf12cd86221c34c32a683014d3ed88a7c429baaaa9ada46611407a68"
+    "alpine-rootfs-Linux-aarch64.tar.zst": "33437065b5f2ec0e32e6016759b4c33e1b496be82742d629047c5c0b0c2188c8",
+    "alpine-rootfs-Linux-x86_64.tar.zst": "7b16cd0a04132adf62854f225ca446084bd37a5db7fc3f33262d1224b52a12d3",
+    "libkrun-Darwin-arm64.tar.zst": "eb132da95958b20380f59f8e595e10944799bc58f073f6f4393981fc1521dff0",
+    "libkrun-Linux-aarch64.tar.zst": "060900d9a65b6efe85e57fff947c676337e0e716530168b27a7f97c4fd146cb7",
+    "libkrun-Linux-x86_64.tar.zst": "afadae4f48c4b429dfaa70778da3eb2674d38036a2e66f50192934b9366f399c",
+    "libkrunfw-Darwin-arm64.tar.zst": "858b02a2cf95e1a9cf50ff2cdb05f3cbfdfd266f24b1efccc5080d7c7130e8a1",
+    "libkrunfw-Linux-aarch64.tar.zst": "f8da1144642370f39499246f1863ec93923f9148a53181138c6b4059523aac3a",
+    "libkrunfw-Linux-x86_64.tar.zst": "652349be1f18433dc2894bf85dac8209b42b000d7796b4f7e7e82bba98228b74",
+    "libkrunfw-src-Linux-aarch64.tar.zst": "a9a0cf8352c9db237f292f83998a81e1129d355472951e52cc7c59f8d571ce3a"
   },
-  "base_url": "https://github.com/ihexon/revm/releases/download/deps-v20261016.1",
-  "version": "deps-v20261016.1"
+  "base_url": "https://github.com/ihexon/revm/releases/download/deps-v20261110.1",
+  "version": "deps-v20261110.1"
 }

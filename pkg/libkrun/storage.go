@@ -62,7 +62,7 @@ func (v *machine) addDisk(spec define.BlockDeviceSpec) error {
 	C.krun_block_device_set_read_only(device, C.bool(spec.ReadOnly))
 	C.krun_block_device_set_direct_io(device, C.bool(spec.DirectIO))
 	C.krun_block_device_set_sync_mode(device, C.uint32_t(spec.SyncMode))
-	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
+	C.krun_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
 	return nil
 }
 
@@ -98,6 +98,6 @@ func (v *machine) addVirtioFS(spec define.VirtioFSSpec) error {
 		return err
 	}
 	C.krun_fs_device_set_dax_window_size(device, C.uint64_t(virtiofsMemWindow))
-	C.krun_mmio_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
+	C.krun_device_manager_add(v.manager, C.KrunAttachDevice(unsafe.Pointer(device)))
 	return nil
 }
